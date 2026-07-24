@@ -61,6 +61,7 @@ function setup(user = baseUser) {
     REFRESH_TOKEN_PEPPER: 'refresh-pepper-long-enough-for-unit-tests',
     SECURITY_HMAC_KEY: 'security-hmac-key-long-enough-for-tests',
     AUDIT_INTEGRITY_KEY: 'audit-key-long-enough-for-unit-tests',
+    JWT_ACCESS_SECRET: 'jwt-access-secret-long-enough-for-tests',
     JWT_ISSUER: 'personal-loan-platform',
     JWT_AUDIENCE: 'personal-loan-admin',
     JWT_ACCESS_EXPIRES_IN: '10m',
@@ -70,7 +71,7 @@ function setup(user = baseUser) {
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const security = { record: jest.fn().mockResolvedValue(undefined) };
   const service = new AuthService(prisma, config as any, jwt as any, audit as any, security as any);
-  return { service, prisma, audit, security };
+  return { service, prisma, audit, security, jwt };
 }
 
 describe('AuthService', () => {
@@ -157,6 +158,16 @@ describe('AuthService', () => {
     const stored = prisma.refreshToken.create.mock.calls[0][0].data.tokenHash;
     expect(stored).toHaveLength(64);
     expect(stored).not.toBe(result.refreshToken);
+  });
+
+  it('signs access tokens with the configured JWT secret', async () => {
+    (argon2.verify as jest.Mock).mockResolvedValue(true);
+    const { service, jwt } = setup();
+    await service.login({ email: 'admin@example.com', password: 'V3ry-Str0ng-Phrase!' }, requestContext);
+    expect(jwt.signAsync).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ secret: 'jwt-access-secret-long-enough-for-tests' }),
+    );
   });
 
   it('rotates refresh tokens and invalidates the previous token', async () => {

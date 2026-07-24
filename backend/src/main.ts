@@ -2,11 +2,12 @@ import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import cookieParser from 'cookie-parser';
-import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { JsonLoggerService } from './infrastructure/logging/json-logger.service';
+
+const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });

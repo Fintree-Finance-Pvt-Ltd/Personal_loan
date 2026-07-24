@@ -431,6 +431,7 @@ export class AuthService implements OnModuleInit {
     return this.jwt.signAsync(
       { sub: userId, sid: sessionId, type: 'access', authVersion },
       {
+        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
         issuer: this.config.getOrThrow<string>('JWT_ISSUER'),
         audience: this.config.getOrThrow<string>('JWT_AUDIENCE'),
         expiresIn: this.config.getOrThrow<string>('JWT_ACCESS_EXPIRES_IN') as any,
