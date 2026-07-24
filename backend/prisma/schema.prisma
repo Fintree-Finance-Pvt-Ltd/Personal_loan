@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  DISABLED
+}
+
+enum RoleStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LoginOutcome {
+  SUCCESS
+  FAILURE
+  LOCKED
+  DISABLED
+  RATE_LIMITED
+}
+
+enum SecuritySeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+model User {
+  id                 String          @id @default(cuid())
+  name               String          @db.VarChar(120)
+  email              String          @unique @db.VarChar(254)
+  passwordHash       String          @db.VarChar(255)
+  status             UserStatus      @default(ACTIVE)
+  failedLoginCount   Int             @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  passwordChangedAt  DateTime        @default(now())
+  authVersion        Int             @default(1)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  roles              UserRole[]
+  assignedRoles      UserRole[]      @relation("RoleAssigner")
+  sessions           Session[]
+  loginAttempts      LoginAttempt[]
+  securityEvents     SecurityEvent[]
+  auditLogs          AuditLog[]
+
+  @@index([status])
+  @@index([lockedUntil])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @db.VarChar(100)
+  code        String           @unique @db.VarChar(80)
+  description String?          @db.VarChar(255)
+  status      RoleStatus       @default(ACTIVE)
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@index([status])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique @db.VarChar(100)
+  module      String           @db.VarChar(80)
+  description String?          @db.VarChar(255)
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@index([module])
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedBy String?
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assigner   User?    @relation("RoleAssigner", fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([assignedBy])
+}
+
+model RolePermission {
+  roleId      String
+  permissionId String
+  assignedAt  DateTime   @default(now())
+  role        Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission  Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Session {
+  id                String          @id @default(cuid())
+  userId            String
+  createdAt         DateTime        @default(now())
+  lastSeenAt        DateTime        @default(now())
+  absoluteExpiresAt DateTime
+  idleExpiresAt     DateTime
+  revokedAt         DateTime?
+  revokedReason     String?         @db.VarChar(120)
+  ipAddress         String?         @db.VarChar(64)
+  userAgent         String?         @db.VarChar(512)
+  deviceLabel       String?         @db.VarChar(160)
+  requestId         String          @db.VarChar(64)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  refreshTokens     RefreshToken[]
+  securityEvents    SecurityEvent[]
+
+  @@index([userId, revokedAt])
+  @@index([absoluteExpiresAt])
+  @@index([idleExpiresAt])
+}
+
+model RefreshToken {
+  id            String         @id @default(cuid())
+  sessionId     String
+  tokenHash     String         @unique @db.Char(64)
+  parentTokenId String?
+  issuedAt      DateTime       @default(now())
+  expiresAt     DateTime
+  usedAt        DateTime?
+  revokedAt     DateTime?
+  session       Session        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  parent        RefreshToken?  @relation("TokenRotation", fields: [parentTokenId], references: [id], onDelete: Restrict)
+  children      RefreshToken[] @relation("TokenRotation")
+
+  @@index([sessionId, revokedAt])
+  @@index([parentTokenId])
+  @@index([expiresAt])
+}
+
+model LoginAttempt {
+  id               String       @id @default(cuid())
+  userId           String?
+  emailFingerprint String       @db.Char(64)
+  maskedEmail      String       @db.VarChar(254)
+  outcome          LoginOutcome
+  reasonCode       String       @db.VarChar(80)
+  ipAddress        String?      @db.VarChar(64)
+  userAgent        String?      @db.VarChar(512)
+  requestId        String       @db.VarChar(64)
+  createdAt        DateTime     @default(now())
+  user             User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([emailFingerprint, createdAt])
+  @@index([userId, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+model SecurityEvent {
+  id         String           @id @default(cuid())
+  userId     String?
+  sessionId  String?
+  eventType  String           @db.VarChar(80)
+  severity   SecuritySeverity
+  requestId  String           @db.VarChar(64)
+  ipAddress  String?          @db.VarChar(64)
+  userAgent  String?          @db.VarChar(512)
+  metadata   Json?
+  createdAt  DateTime         @default(now())
+  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session    Session?         @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([severity, createdAt])
+  @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
+}
+
+model AuditLog {
+  id              String       @id @default(cuid())
+  actorUserId     String?
+  actorRoleCodes  Json
+  permissionCode  String?      @db.VarChar(100)
+  module          String       @db.VarChar(80)
+  action          String       @db.VarChar(100)
+  entityType      String       @db.VarChar(80)
+  entityId        String?      @db.VarChar(191)
+  outcome         AuditOutcome
+  reason          String?      @db.VarChar(255)
+  previousValue   Json?
+  newValue        Json?
+  requestId       String       @db.VarChar(64)
+  ipAddress       String?      @db.VarChar(64)
+  userAgent       String?      @db.VarChar(512)
+  integrityHash   String       @db.Char(64)
+  createdAt       DateTime     @default(now())
+  actor           User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([module, action, createdAt])
+  @@index([entityType, entityId])
+  @@index([requestId])
+}
