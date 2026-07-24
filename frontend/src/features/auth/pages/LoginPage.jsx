@@ -3,9 +3,9 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useAuth } from '../auth/AuthContext';
-import { Alert, Button, Input, PasswordInput, Spinner } from '../components/ui';
-import { apiError } from '../lib/api';
+import { useAuth } from '../../../auth/AuthContext';
+import { Alert, Button, Input, PasswordInput, Spinner } from '../../../components/ui';
+import { apiError } from '../../../lib/api';
 
 const schema = z.object({
   email: z.string().max(254).email('Enter a valid email address.'),
@@ -78,3 +78,4 @@ export function LoginPage() {
     </main>
   );
 }
+

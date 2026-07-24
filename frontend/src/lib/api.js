@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { appendUtmToParams } from '../features/utm/utm';
 
 let accessToken = null;
 let refreshPromise = null;
@@ -36,6 +37,13 @@ export const refreshAccess = async () => {
 
 api.interceptors.request.use((config) => {
   if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
+  // Attach UTM parameters as query params for marketing attribution
+  if (config.params) {
+    appendUtmToParams(config.params);
+  } else {
+    config.params = {};
+    appendUtmToParams(config.params);
+  }
   return config;
 });
 
