@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.DS_Store
+backend/.env
+backend/test-results/
+frontend/dist/
+.env.example
+!backend/.env.example
