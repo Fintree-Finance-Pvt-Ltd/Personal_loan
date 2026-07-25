@@ -1,56 +1,51 @@
-import {
-  Navigate,
-  Route,
-  Routes,
-} from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { AdminLayout } from './components/AdminLayout';
-import { ProtectedRoute } from './components/ProtectedRoute';
+import { PermissionRoute, ProtectedRoute } from './components/ProtectedRoute';
 
+// Customer
 import CustomerLayout from './components/layout/customer/CustomerLayout';
-
-import { LoginPage } from './features/auth/pages/LoginPage';
-import { DashboardPage } from './features/dashboard/pages/DashboardPage';
-import { SessionsPage } from './features/admin/pages/SessionsPage';
-
 import CustomerSignIn from './features/auth/pages/CustomerSignIn';
 import CustomerDashboard from './features/customer/pages/CustomerDashboard';
 import CustomerPlaceholderPage from './features/customer/pages/CustomerPlaceholderPage';
 import MyApplicationPage from './features/customer/pages/MyApplicationPage';
 
-import {
-  PermissionRoute,
-  ProtectedRoute,
-} from './components/ProtectedRoute';
-import { CreateLenderPage } from './features/lenders/pages/CreateLenderPage';
-import { EditLenderPage } from './features/lenders/pages/EditLenderPage';
-import { LenderDetailsPage } from './features/lenders/pages/LenderDetailsPage';
+// Admin auth + core
+import { LoginPage } from './features/auth/pages/LoginPage';
+import { DashboardPage } from './features/dashboard/pages/DashboardPage';
+import { SessionsPage } from './features/admin/pages/SessionsPage';
+
+// Lenders
 import { LendersPage } from './features/lenders/pages/LendersPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { LoginPage } from './pages/LoginPage';
-import { SessionsPage } from './pages/SessionsPage';
+import { CreateLenderPage } from './features/lenders/pages/CreateLenderPage';
+import { LenderDetailsPage } from './features/lenders/pages/LenderDetailsPage';
+import { EditLenderPage } from './features/lenders/pages/EditLenderPage';
+
+// Permissions
+import { PermissionsPage } from './features/permissions/pages/PermissionsPage';
+
+// Roles
+import { RolesPage } from './features/roles/pages/RolesPage';
+import { CreateRolePage } from './features/roles/pages/CreateRolePage';
+import { RoleDetailsPage } from './features/roles/pages/RoleDetailsPage';
+import { EditRolePage } from './features/roles/pages/EditRolePage';
+
+// Users
+import { UsersPage } from './features/users/pages/UsersPage';
+import { CreateUserPage } from './features/users/pages/CreateUserPage';
+import { UserDetailsPage } from './features/users/pages/UserDetailsPage';
+import { EditUserPage } from './features/users/pages/EditUserPage';
 
 export default function App() {
   return (
     <Routes>
       {/* Public customer login */}
-      <Route
-        path="/customer/login"
-        element={<CustomerSignIn />}
-      />
+      <Route path="/customer/login" element={<CustomerSignIn />} />
 
       {/* Customer layout routes */}
       <Route element={<CustomerLayout />}>
-        <Route
-          path="/customer/dashboard"
-          element={<CustomerDashboard />}
-        />
-
-     <Route
-  path="/customer/application"
-  element={<MyApplicationPage />}
-/>
-
+        <Route path="/customer/dashboard" element={<CustomerDashboard />} />
+        <Route path="/customer/application" element={<MyApplicationPage />} />
         <Route
           path="/customer/loan-details"
           element={
@@ -60,7 +55,6 @@ export default function App() {
             />
           }
         />
-
         <Route
           path="/customer/profile"
           element={
@@ -70,7 +64,6 @@ export default function App() {
             />
           }
         />
-
         <Route
           path="/customer/support"
           element={
@@ -83,19 +76,14 @@ export default function App() {
       </Route>
 
       {/* Admin public login */}
-      <Route
-        path="/admin-master/login"
-        element={<LoginPage />}
-      />
-
-      {/* Admin protected layout */}
       <Route path="/admin-master/login" element={<LoginPage />} />
 
+      {/* Admin protected layout */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminLayout />}>
+          {/* Dashboard */}
           <Route
             path="/admin-master/dashboard"
-            element={<DashboardPage />}
             element={
               <PermissionRoute permission="ADMIN_DASHBOARD_VIEW">
                 <DashboardPage />
@@ -103,6 +91,7 @@ export default function App() {
             }
           />
 
+          {/* Lenders */}
           <Route
             path="/admin-master/lenders"
             element={
@@ -111,7 +100,6 @@ export default function App() {
               </PermissionRoute>
             }
           />
-
           <Route
             path="/admin-master/lenders/new"
             element={
@@ -120,7 +108,6 @@ export default function App() {
               </PermissionRoute>
             }
           />
-
           <Route
             path="/admin-master/lenders/:lenderId"
             element={
@@ -129,7 +116,6 @@ export default function App() {
               </PermissionRoute>
             }
           />
-
           <Route
             path="/admin-master/lenders/:lenderId/edit"
             element={
@@ -139,9 +125,87 @@ export default function App() {
             }
           />
 
+          {/* Permissions */}
+          <Route
+            path="/admin-master/permissions"
+            element={
+              <PermissionRoute permission="PERMISSION_READ">
+                <PermissionsPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Roles */}
+          <Route
+            path="/admin-master/roles"
+            element={
+              <PermissionRoute permission="ROLE_READ">
+                <RolesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/roles/new"
+            element={
+              <PermissionRoute permission="ROLE_CREATE">
+                <CreateRolePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/roles/:roleId"
+            element={
+              <PermissionRoute permission="ROLE_READ">
+                <RoleDetailsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/roles/:roleId/edit"
+            element={
+              <PermissionRoute permission="ROLE_UPDATE">
+                <EditRolePage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Users */}
+          <Route
+            path="/admin-master/users"
+            element={
+              <PermissionRoute permission="USER_READ">
+                <UsersPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/users/new"
+            element={
+              <PermissionRoute permission="USER_CREATE">
+                <CreateUserPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/users/:userId"
+            element={
+              <PermissionRoute permission="USER_READ">
+                <UserDetailsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/users/:userId/edit"
+            element={
+              <PermissionRoute permission="USER_UPDATE">
+                <EditUserPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Sessions */}
           <Route
             path="/admin-master/sessions"
-            element={<SessionsPage />}
             element={
               <PermissionRoute permission="SESSION_READ_OWN">
                 <SessionsPage />
@@ -151,26 +215,9 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route
-        path="/"
-        element={
-          <Navigate
-            to="/customer/login"
-            replace
-          />
-        }
-      />
-
-      <Route
-        path="*"
-        element={
-          <Navigate
-            to="/customer/login"
-            replace
-          />
-        }
-      />
-      <Route path="*" element={<Navigate to="/admin-master/dashboard" replace />} />
+      {/* Root redirects to customer login */}
+      <Route path="/" element={<Navigate to="/customer/login" replace />} />
+      <Route path="*" element={<Navigate to="/customer/login" replace />} />
     </Routes>
   );
 }
