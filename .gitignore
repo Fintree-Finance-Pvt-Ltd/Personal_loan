@@ -9,3 +9,4 @@ backend/test-results/
 frontend/dist/
 .env.example
 !backend/.env.example
+frontend/.env.local

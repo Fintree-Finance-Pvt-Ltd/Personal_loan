@@ -20,6 +20,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { LendersModule } from './modules/lenders/lenders.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     UsersModule,
     RolesModule,
     PermissionsModule,
+    LendersModule,
     AdminDashboardModule,
   ],
   providers: [

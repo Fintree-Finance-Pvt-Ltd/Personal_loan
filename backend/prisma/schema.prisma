@@ -41,25 +41,49 @@ enum AuditOutcome {
   DENIED
 }
 
+enum LenderApprovalStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum LenderOperationalStatus {
+  INACTIVE
+  ACTIVE
+}
+
+enum LenderIntegrationHealth {
+  NOT_CONFIGURED
+  HEALTHY
+  DEGRADED
+  DOWN
+}
+
 model User {
-  id                 String          @id @default(cuid())
-  name               String          @db.VarChar(120)
-  email              String          @unique @db.VarChar(254)
-  passwordHash       String          @db.VarChar(255)
-  status             UserStatus      @default(ACTIVE)
-  failedLoginCount   Int             @default(0)
-  lockedUntil        DateTime?
-  lastLoginAt        DateTime?
-  passwordChangedAt  DateTime        @default(now())
-  authVersion        Int             @default(1)
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  roles              UserRole[]
-  assignedRoles      UserRole[]      @relation("RoleAssigner")
-  sessions           Session[]
-  loginAttempts      LoginAttempt[]
-  securityEvents     SecurityEvent[]
-  auditLogs          AuditLog[]
+  id                String          @id @default(cuid())
+  name              String          @db.VarChar(120)
+  email             String          @unique @db.VarChar(254)
+  passwordHash      String          @db.VarChar(255)
+  status            UserStatus      @default(ACTIVE)
+  failedLoginCount  Int             @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime        @default(now())
+  authVersion       Int             @default(1)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  roles             UserRole[]
+  assignedRoles     UserRole[]      @relation("RoleAssigner")
+  sessions          Session[]
+  loginAttempts     LoginAttempt[]
+  securityEvents    SecurityEvent[]
+  auditLogs         AuditLog[]
+  lendersCreated    Lender[]        @relation("LenderCreatedBy")
+  lendersUpdated    Lender[]        @relation("LenderUpdatedBy")
+  lendersSubmitted  Lender[]        @relation("LenderSubmittedBy")
+  lendersApproved   Lender[]        @relation("LenderApprovedBy")
+  lendersRejected   Lender[]        @relation("LenderRejectedBy")
 
   @@index([status])
   @@index([lockedUntil])
@@ -106,11 +130,11 @@ model UserRole {
 }
 
 model RolePermission {
-  roleId      String
+  roleId       String
   permissionId String
-  assignedAt  DateTime   @default(now())
-  role        Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  permission  Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+  assignedAt   DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
 
   @@id([roleId, permissionId])
   @@index([permissionId])
@@ -175,18 +199,18 @@ model LoginAttempt {
 }
 
 model SecurityEvent {
-  id         String           @id @default(cuid())
-  userId     String?
-  sessionId  String?
-  eventType  String           @db.VarChar(80)
-  severity   SecuritySeverity
-  requestId  String           @db.VarChar(64)
-  ipAddress  String?          @db.VarChar(64)
-  userAgent  String?          @db.VarChar(512)
-  metadata   Json?
-  createdAt  DateTime         @default(now())
-  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
-  session    Session?         @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  id        String           @id @default(cuid())
+  userId    String?
+  sessionId String?
+  eventType String           @db.VarChar(80)
+  severity  SecuritySeverity
+  requestId String           @db.VarChar(64)
+  ipAddress String?          @db.VarChar(64)
+  userAgent String?          @db.VarChar(512)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  user      User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session   Session?         @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([eventType, createdAt])
   @@index([severity, createdAt])
@@ -195,27 +219,79 @@ model SecurityEvent {
 }
 
 model AuditLog {
-  id              String       @id @default(cuid())
-  actorUserId     String?
-  actorRoleCodes  Json
-  permissionCode  String?      @db.VarChar(100)
-  module          String       @db.VarChar(80)
-  action          String       @db.VarChar(100)
-  entityType      String       @db.VarChar(80)
-  entityId        String?      @db.VarChar(191)
-  outcome         AuditOutcome
-  reason          String?      @db.VarChar(255)
-  previousValue   Json?
-  newValue        Json?
-  requestId       String       @db.VarChar(64)
-  ipAddress       String?      @db.VarChar(64)
-  userAgent       String?      @db.VarChar(512)
-  integrityHash   String       @db.Char(64)
-  createdAt       DateTime     @default(now())
-  actor           User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  id             String       @id @default(cuid())
+  actorUserId    String?
+  actorRoleCodes Json
+  permissionCode String?      @db.VarChar(100)
+  module         String       @db.VarChar(80)
+  action         String       @db.VarChar(100)
+  entityType     String       @db.VarChar(80)
+  entityId       String?      @db.VarChar(191)
+  outcome        AuditOutcome
+  reason         String?      @db.VarChar(255)
+  previousValue  Json?
+  newValue       Json?
+  requestId      String       @db.VarChar(64)
+  ipAddress      String?      @db.VarChar(64)
+  userAgent      String?      @db.VarChar(512)
+  integrityHash  String       @db.Char(64)
+  createdAt      DateTime     @default(now())
+  actor          User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([actorUserId, createdAt])
   @@index([module, action, createdAt])
   @@index([entityType, entityId])
   @@index([requestId])
+}
+
+model Lender {
+  id           String  @id @default(cuid())
+  legalName    String  @db.VarChar(255)
+  displayName  String  @db.VarChar(150)
+  code         String  @unique @db.VarChar(30)
+  supportEmail String? @db.VarChar(254)
+  supportPhone String? @db.VarChar(20)
+
+  approvalStatus    LenderApprovalStatus    @default(DRAFT)
+  operationalStatus LenderOperationalStatus @default(INACTIVE)
+  integrationHealth LenderIntegrationHealth @default(NOT_CONFIGURED)
+
+  version Int @default(1)
+
+  createdById   String
+  updatedById   String
+  submittedById String?
+  approvedById  String?
+  rejectedById  String?
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User @relation("LenderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  updatedBy User @relation("LenderUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  submittedBy User? @relation("LenderSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+
+  approvedBy User? @relation("LenderApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  rejectedBy User? @relation("LenderRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+
+  @@index([approvalStatus])
+  @@index([operationalStatus])
+  @@index([integrationHealth])
+  @@index([createdById])
+  @@index([updatedById])
+  @@index([submittedById])
+  @@index([approvedById])
+  @@index([rejectedById])
+  @@index([approvalStatus, updatedAt])
+  @@index([operationalStatus, updatedAt])
+  @@index([createdAt])
+  @@index([updatedAt])
 }

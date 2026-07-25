@@ -1,12 +1,12 @@
 # Personal Loan Platform — Phase 1
 
-Production-oriented authentication and authorization foundation for a regulated personal-loan administration platform. Phase 1 delivers Admin login, rotating sessions, backend-enforced RBAC, security events, integrity-protected audit logs, health checks, and a responsive React Admin interface. It is a security foundation, not a claim of RBI or DPDP compliance.
+Production-oriented authentication and authorization foundation for a regulated personal-loan administration platform. The current build delivers Admin login, rotating sessions, backend-enforced RBAC, security events, integrity-protected audit logs, health checks, a responsive React Admin interface, and the first complete business module: Lender Management with maker-checker controls. It is a security and administration foundation, not a claim of RBI or DPDP compliance.
 
 ## Technology stack
 
 - Frontend: React 19 (JavaScript only), Vite, React Router, Axios, React Hook Form, Zod, Tailwind CSS.
 - Backend: NestJS 11, TypeScript, Prisma ORM, Argon2id, JWT access tokens, opaque refresh tokens, Helmet, class-validator, throttling.
-- Data: MySQL 8, UUID/CUID string identifiers, Prisma migrations, UTC timestamps.
+- Data: MySQL 8, CUID string identifiers, Prisma migrations, UTC timestamps.
 
 ## Project structure
 
@@ -54,7 +54,7 @@ All backend environment variables belong in exactly:
 personal-loan-platform/backend/.env
 ```
 
-There is intentionally no root or frontend `.env`. The browser calls `/api`; Vite proxies it to `http://localhost:3000`.
+There is intentionally no root environment file. Backend secrets live only in `backend/.env`. The frontend includes only a non-secret `frontend/.env.local` switch for optional lender mocks; it is set to `false` in this corrected build. The browser calls `/api`; Vite proxies it to `http://localhost:3000`.
 
 ```powershell
 cd personal-loan-platform
@@ -105,9 +105,40 @@ npm test
 
 - Admin login: `http://localhost:5173/admin-master/login`
 - Admin dashboard: `http://localhost:5173/admin-master/dashboard`
+- Lender management: `http://localhost:5173/admin-master/lenders`
 - Session management: `http://localhost:5173/admin-master/sessions`
 - Liveness: `http://localhost:3000/api/health`
 - Readiness: `http://localhost:3000/api/health/ready`
+
+
+## Lender Management module
+
+The lender module uses Zod validation directly and intentionally has no Lender DTO folder. It provides permission-protected APIs for listing, creating, editing, submitting, approving, rejecting, activating, and deactivating lenders. Lender records are never physically deleted.
+
+Lifecycle:
+
+```text
+DRAFT -> SUBMITTED -> APPROVED -> ACTIVE
+                   \-> REJECTED -> edit -> DRAFT
+```
+
+Maker-checker is enforced on the backend: the user who submitted the lender cannot approve or reject the same record. Optimistic concurrency uses the `version` field to prevent stale updates. Every mutation writes an audit record.
+
+API routes:
+
+```text
+GET    /api/admin/lenders
+GET    /api/admin/lenders/:id
+POST   /api/admin/lenders
+PATCH  /api/admin/lenders/:id
+POST   /api/admin/lenders/:id/submit
+POST   /api/admin/lenders/:id/approve
+POST   /api/admin/lenders/:id/reject
+POST   /api/admin/lenders/:id/activate
+POST   /api/admin/lenders/:id/deactivate
+```
+
+The committed `20260724130000_add_lender_management` migration creates the lender table, indexes, foreign keys, lifecycle enums, and optimistic-lock version column. The frontend uses the backend by default (`VITE_USE_LENDER_MOCKS=false`).
 
 ## Authentication and session behavior
 
@@ -154,7 +185,7 @@ The following remain future work:
 
 - Mandatory Admin MFA.
 - Forgot/reset-password flow.
-- Maker-checker workflows.
+- Reusable maker-checker/versioning framework for product, pricing, policy, and MLM configuration.
 - Redis-backed distributed rate limiting.
 - Cloud KMS/HSM.
 - Secret manager integration.
