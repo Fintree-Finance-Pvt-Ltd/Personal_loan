@@ -4,15 +4,17 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
-import { JsonLoggerService } from './infrastructure/logging/json-logger.service';
+import { Logger } from "@nestjs/common";
+
 
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 
 async function bootstrap(): Promise<void> {
+  
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const config = app.get(ConfigService);
-  const logger = app.get(JsonLoggerService);
+   const logger = new Logger("UserService");
   app.useLogger(logger);
   app.use(helmet());
   app.use(json({ limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));

@@ -22,6 +22,29 @@ export const ADMIN_NAVIGATION = [
     ],
   },
   {
+    group: 'Access Management',
+    items: [
+      {
+        label: 'Users',
+        shortLabel: 'US',
+        path: '/admin-master/users',
+        permission: 'USER_READ',
+      },
+      {
+        label: 'Roles',
+        shortLabel: 'RL',
+        path: '/admin-master/roles',
+        permission: 'ROLE_READ',
+      },
+      {
+        label: 'Permissions',
+        shortLabel: 'PM',
+        path: '/admin-master/permissions',
+        permission: 'PERMISSION_READ',
+      },
+    ],
+  },
+  {
     group: 'Security',
     items: [
       {

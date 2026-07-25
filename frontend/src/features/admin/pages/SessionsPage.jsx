@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, apiError } from '../lib/api';
-import { Alert, Badge, Button, Card, PageHeader, Spinner } from '../components/ui';
-import { ConfirmationDialog } from '../components/ConfirmationDialog';
-import { PermissionGate } from '../components/ProtectedRoute';
+import { api, apiError } from '../../../lib/api';
+import { Alert, Badge, Button, Card, PageHeader, Spinner } from '../../../components/ui';
+import { ConfirmationDialog } from '../../../components/ConfirmationDialog';
+import { PermissionGate } from '../../../components/ProtectedRoute';
 
 export function SessionsPage() {
   const [sessions, setSessions] = useState([]);
@@ -79,3 +79,4 @@ export function SessionsPage() {
     </>
   );
 }
+

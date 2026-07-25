@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext';
-import { api } from '../lib/api';
-import { Badge, Card, PageHeader } from '../components/ui';
+import { useAuth } from '../../../auth/AuthContext';
+import { api } from '../../../lib/api';
+import { Badge, Card, PageHeader } from '../../../components/ui';
 
 const controls = [
   ['Access tokens', 'Short-lived and memory-only'],
@@ -50,3 +50,4 @@ export function DashboardPage() {
     </>
   );
 }
+
