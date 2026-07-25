@@ -295,3 +295,248 @@ model Lender {
   @@index([createdAt])
   @@index([updatedAt])
 }
+
+enum OtpPurpose {
+  MOBILE_VERIFICATION
+  EMAIL_VERIFICATION
+  LOGIN
+  PASSWORD_RESET
+  PAYMENT_VERIFICATION
+}
+
+enum OtpChannel {
+  SMS
+  EMAIL
+}
+
+model OtpSession {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt?   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  mobileNumber String? @map("mobile_number") @db.VarChar(15)
+  emailId      String? @map("email_id") @db.VarChar(255)
+
+  purpose OtpPurpose @default(MOBILE_VERIFICATION)
+  channel OtpChannel
+
+  otpHash String @map("otp_hash") @db.VarChar(255)
+
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at") @db.DateTime(0)
+
+  attempts    Int @default(0) @db.UnsignedInt
+  maxAttempts Int @default(5) @map("max_attempts") @db.UnsignedInt
+
+  expiresAt  DateTime @map("expires_at") @db.DateTime(0)
+  lastSentAt DateTime @map("last_sent_at") @db.DateTime(0)
+
+  resendCount Int @default(0) @map("resend_count") @db.UnsignedInt
+
+  consentGiven Boolean   @default(false) @map("consent_given")
+  consentText  String?   @map("consent_text") @db.Text
+  consentAt    DateTime? @map("consent_at") @db.DateTime(0)
+
+  invalidatedAt DateTime? @map("invalidated_at") @db.DateTime(0)
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([customerId], map: "idx_otp_sessions_customer_id")
+  @@index([mobileNumber], map: "idx_otp_sessions_mobile_number")
+  @@index([emailId], map: "idx_otp_sessions_email_id")
+  @@index([verified], map: "idx_otp_sessions_verified")
+  @@index([expiresAt], map: "idx_otp_sessions_expires_at")
+  @@index([purpose], map: "idx_otp_sessions_purpose")
+  @@index([createdAt], map: "idx_otp_sessions_created_at")
+  @@index([mobileNumber, purpose, createdAt], map: "idx_otp_mobile_purpose_created")
+  @@index([emailId, purpose, createdAt], map: "idx_otp_email_purpose_created")
+  @@map("otp_sessions")
+}
+
+enum CustomerAccountStatus {
+  ACTIVE
+  BLOCKED
+  INACTIVE
+}
+
+enum CustomerOnboardingStatus {
+  MOBILE_VERIFIED
+  BASIC_DETAILS_PENDING
+  PAN_VERIFIED
+  EMAIL_VERIFIED
+  PLATFORM_BRE_PENDING
+  PLATFORM_ELIGIBLE
+  PLATFORM_INELIGIBLE
+  APPLICATION_IN_PROGRESS
+  APPLICATION_SUBMITTED
+  LENDER_APPROVED
+  LENDER_REJECTED
+  DISBURSED
+}
+
+enum CustomerEligibilityStatus {
+  NOT_CHECKED
+  ELIGIBLE
+  INELIGIBLE
+}
+
+enum CustomerGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum CustomerResidenceStatus {
+  RENTED
+  OWNED
+  FAMILY_OWNED
+  COMPANY_PROVIDED
+}
+
+enum CustomerEmploymentType {
+  SALARIED
+  SELF_EMPLOYED
+}
+
+enum CustomerCompanyType {
+  PRIVATE_LIMITED
+  PUBLIC_LIMITED
+  PARTNERSHIP
+  GOVERNMENT
+  OTHER
+}
+
+enum CustomerBusinessConstitution {
+  PROPRIETORSHIP
+  PARTNERSHIP
+  LLP
+  PRIVATE_LIMITED
+  OTHER
+}
+
+model Customer {
+  id           BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  customerCode String @unique @map("customer_code") @db.VarChar(30)
+
+  countryCode      String       @default("+91") @map("country_code") @db.VarChar(5)
+  mobileNumber     String       @unique @map("mobile_number") @db.VarChar(15)
+  otpSessions      OtpSession[]
+  mobileVerified   Boolean      @default(false) @map("mobile_verified")
+  mobileVerifiedAt DateTime?    @map("mobile_verified_at") @db.DateTime(0)
+
+  fullName   String? @map("full_name") @db.VarChar(150)
+  firstName  String? @map("first_name") @db.VarChar(60)
+  middleName String? @map("middle_name") @db.VarChar(60)
+  lastName   String? @map("last_name") @db.VarChar(60)
+  fatherName String? @map("father_name") @db.VarChar(150)
+
+  panNumber                String?   @unique @map("pan_number") @db.VarChar(10)
+  panVerified              Boolean   @default(false) @map("pan_verified")
+  panVerifiedAt            DateTime? @map("pan_verified_at") @db.DateTime(0)
+  panProviderApplicationId String?   @map("pan_provider_application_id") @db.VarChar(100)
+  panHolderType            String?   @map("pan_holder_type") @db.VarChar(100)
+
+  dateOfBirth DateTime?       @map("date_of_birth") @db.Date
+  gender      CustomerGender?
+
+  email           String?   @db.VarChar(255)
+  emailVerified   Boolean   @default(false) @map("email_verified")
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.DateTime(0)
+
+  residentialPincode String?                  @map("residential_pincode") @db.VarChar(6)
+  workPincode        String?                  @map("work_pincode") @db.VarChar(6)
+  residenceStatus    CustomerResidenceStatus? @map("residence_status")
+
+  employmentType CustomerEmploymentType? @map("employment_type")
+  companyType    CustomerCompanyType?    @map("company_type")
+  companyName    String?                 @map("company_name") @db.VarChar(200)
+  designation    String?                 @db.VarChar(150)
+
+  businessName         String?                       @map("business_name") @db.VarChar(200)
+  businessConstitution CustomerBusinessConstitution? @map("business_constitution")
+
+  monthlyIncome  Decimal? @map("monthly_income") @db.Decimal(15, 2)
+  annualTurnover Decimal? @map("annual_turnover") @db.Decimal(15, 2)
+
+  accountStatus     CustomerAccountStatus     @default(ACTIVE) @map("account_status")
+  onboardingStatus  CustomerOnboardingStatus  @default(MOBILE_VERIFIED) @map("onboarding_status")
+  eligibilityStatus CustomerEligibilityStatus @default(NOT_CHECKED) @map("eligibility_status")
+
+  eligibilityReason    String?   @map("eligibility_reason") @db.VarChar(500)
+  eligibilityCheckedAt DateTime? @map("eligibility_checked_at") @db.DateTime(0)
+
+  latestApplicationId BigInt? @map("latest_application_id") @db.UnsignedBigInt
+
+  lastLoginAt    DateTime? @map("last_login_at") @db.DateTime(0)
+  lastActivityAt DateTime? @map("last_activity_at") @db.DateTime(0)
+
+  createdAt               DateTime                @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt               DateTime                @updatedAt @map("updated_at") @db.DateTime(0)
+  kycVerificationStatuses KycVerificationStatus[]
+
+  @@index([email], map: "idx_customers_email")
+  @@index([accountStatus], map: "idx_customers_account_status")
+  @@index([onboardingStatus], map: "idx_customers_onboarding_status")
+  @@index([eligibilityStatus], map: "idx_customers_eligibility_status")
+  @@index([createdAt], map: "idx_customers_created_at")
+  @@map("customers")
+}
+
+enum KycStatus {
+  PENDING
+  INITIATED
+  VERIFIED
+  FAILED
+}
+
+model KycVerificationStatus {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @unique(map: "uk_kyc_verification_status_customer_id") @map("customerId") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  panStatus     KycStatus @default(PENDING) @map("panStatus")
+  gstStatus     KycStatus @default(PENDING) @map("gstStatus")
+  aadhaarStatus KycStatus @default(PENDING) @map("aadhaarStatus")
+  bureauStatus  KycStatus @default(PENDING) @map("bureauStatus")
+  mobileStatus  KycStatus @default(PENDING) @map("mobileStatus")
+  emailStatus   KycStatus @default(PENDING) @map("emailStatus")
+
+  mobileApiRequest  String? @map("mobileApiRequest") @db.LongText
+  mobileApiResponse String? @map("mobileApiResponse") @db.LongText
+  emailApiRequest   String? @map("emailApiRequest") @db.LongText
+  emailApiResponse  String? @map("emailApiResponse") @db.LongText
+
+  aadhaarTransactionId String?   @map("aadhaarTransactionId") @db.VarChar(255)
+  aadhaarName          String?   @map("aadhaarName") @db.VarChar(255)
+  aadhaarMaskedNumber  String?   @map("aadhaarMaskedNumber") @db.VarChar(255)
+  aadhaarDob           DateTime? @map("aadhaarDob") @db.Date
+  aadhaarAddress       String?   @map("aadhaarAddress") @db.Text
+
+  firstName  String? @map("firstName") @db.VarChar(255)
+  middleName String? @map("middleName") @db.VarChar(255)
+  lastName   String? @map("lastName") @db.VarChar(255)
+
+  bureauApiRequest  String? @map("bureauApiRequest") @db.LongText
+  bureauApiResponse String? @map("bureauApiResponse") @db.LongText
+
+  updatedAt      DateTime @default(now()) @updatedAt @map("updatedAt") @db.DateTime(6)
+  isPdfGenerated Boolean  @default(false) @map("is_pdf_generated")
+
+  panApiRequest  String? @map("panApiRequest") @db.LongText
+  panApiResponse String? @map("panApiResponse") @db.LongText
+  gstApiRequest  String? @map("gstApiRequest") @db.LongText
+  gstApiResponse String? @map("gstApiResponse") @db.LongText
+
+  aadhaarApiRequest      String? @map("aadhaarApiRequest") @db.LongText
+  aadhaarApiResponse     String? @map("aadhaarApiResponse") @db.LongText
+  aadhaarWebhookResponse String? @map("aadhaarWebhookResponse") @db.LongText
+  aadhaarUniqueId        String? @map("aadhaarUniqueId") @db.VarChar(255)
+
+  @@map("kyc_verification_status")
+}
