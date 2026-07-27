@@ -19,6 +19,12 @@ export const ADMIN_NAVIGATION = [
         path: '/admin-master/lenders',
         permission: 'LENDER_READ',
       },
+      {
+        label: 'Product & offer strategy',
+        shortLabel: 'PO',
+        path: '/admin-master/products',
+        permission: 'PRODUCT_READ',
+      },
     ],
   },
   {

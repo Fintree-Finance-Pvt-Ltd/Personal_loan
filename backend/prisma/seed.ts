@@ -56,6 +56,14 @@ const permissions = [
   ["LENDER_REJECT", "LENDER"],
   ["LENDER_ACTIVATE", "LENDER"],
   ["LENDER_DEACTIVATE", "LENDER"],
+  ["PRODUCT_READ", "PRODUCT"],
+  ["PRODUCT_CREATE", "PRODUCT"],
+  ["PRODUCT_UPDATE", "PRODUCT"],
+  ["PRODUCT_SUBMIT", "PRODUCT"],
+  ["PRODUCT_APPROVE", "PRODUCT"],
+  ["PRODUCT_REJECT", "PRODUCT"],
+  ["PRODUCT_VERSION_CREATE", "PRODUCT"],
+  ["PRODUCT_ACTIVATE", "PRODUCT"],
 ] as const;
 
 const ownSession = [
@@ -81,6 +89,11 @@ const grants: Record<string, string[]> = {
     'LENDER_CREATE',
     'LENDER_UPDATE',
     'LENDER_SUBMIT',
+    'PRODUCT_READ',
+    'PRODUCT_CREATE',
+    'PRODUCT_UPDATE',
+    'PRODUCT_SUBMIT',
+    'PRODUCT_VERSION_CREATE',
   ],
 
   CONFIG_CHECKER: [
@@ -90,6 +103,10 @@ const grants: Record<string, string[]> = {
     'LENDER_REJECT',
     'LENDER_ACTIVATE',
     'LENDER_DEACTIVATE',
+    'PRODUCT_READ',
+    'PRODUCT_APPROVE',
+    'PRODUCT_REJECT',
+    'PRODUCT_ACTIVATE',
   ],
   OPERATIONS: [...ownSession, "LENDER_READ", "APPLICATION_VIEW_MASKED"],
   CREDIT_MAKER: [...ownSession, "APPLICATION_VIEW_MASKED"],
@@ -102,7 +119,7 @@ const grants: Record<string, string[]> = {
   POLICY_CHECKER: [...ownSession, "POLICY_APPROVE"],
   FINANCE_MAKER: [...ownSession, "PAYMENT_REFUND_CREATE"],
   FINANCE_CHECKER: [...ownSession, "PAYMENT_REFUND_APPROVE"],
-  AUDITOR: [...ownSession, "LENDER_READ", "AUDIT_LOG_VIEW", "SECURITY_EVENT_VIEW"],
+  AUDITOR: [...ownSession, "LENDER_READ", "AUDIT_LOG_VIEW", "SECURITY_EVENT_VIEW", "PRODUCT_READ"],
   SUPPORT: [...ownSession, "USER_READ", "LENDER_READ", "APPLICATION_VIEW_MASKED"],
 };
 

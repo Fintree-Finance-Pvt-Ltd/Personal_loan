@@ -21,6 +21,7 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LendersModule } from './modules/lenders/lenders.module';
+import { ProductsModule } from './modules/products/products.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { LendersModule } from './modules/lenders/lenders.module';
     RolesModule,
     PermissionsModule,
     LendersModule,
+    ProductsModule,
     AdminDashboardModule,
   ],
   providers: [

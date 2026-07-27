@@ -21,6 +21,12 @@ import { CreateLenderPage } from './features/lenders/pages/CreateLenderPage';
 import { LenderDetailsPage } from './features/lenders/pages/LenderDetailsPage';
 import { EditLenderPage } from './features/lenders/pages/EditLenderPage';
 
+// Products
+import { ProductsPage } from './features/products/pages/ProductsPage';
+import { CreateProductPage } from './features/products/pages/CreateProductPage';
+import { ProductDetailsPage } from './features/products/pages/ProductDetailsPage';
+import { EditProductVersionPage } from './features/products/pages/EditProductVersionPage';
+
 // Permissions
 import { PermissionsPage } from './features/permissions/pages/PermissionsPage';
 
@@ -121,6 +127,40 @@ export default function App() {
             element={
               <PermissionRoute permission="LENDER_UPDATE">
                 <EditLenderPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Products */}
+          <Route
+            path="/admin-master/products"
+            element={
+              <PermissionRoute permission="PRODUCT_READ">
+                <ProductsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/products/new"
+            element={
+              <PermissionRoute permission="PRODUCT_CREATE">
+                <CreateProductPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/products/:productId"
+            element={
+              <PermissionRoute permission="PRODUCT_READ">
+                <ProductDetailsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/products/:productId/versions/:versionId/edit"
+            element={
+              <PermissionRoute permission="PRODUCT_UPDATE">
+                <EditProductVersionPage />
               </PermissionRoute>
             }
           />
