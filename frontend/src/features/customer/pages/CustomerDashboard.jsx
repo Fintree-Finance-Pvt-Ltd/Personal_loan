@@ -1,5 +1,7 @@
 
+import { useEffect, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
   BriefcaseBusiness,
   CalendarDays,
@@ -8,83 +10,144 @@ import {
   FileText,
   IndianRupee,
   Landmark,
+  LoaderCircle,
   Mail,
   MapPin,
   Phone,
   ReceiptText,
+  RotateCcw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-const APPLICATION_STORAGE_KEY = 'customerLoanApplication';
-
-function getStoredApplication() {
-  try {
-    const storedApplication = localStorage.getItem(
-      APPLICATION_STORAGE_KEY,
-    );
-
-    return storedApplication
-      ? JSON.parse(storedApplication)
-      : null;
-  } catch (error) {
-    console.error(
-      'Unable to read customer application:',
-      error,
-    );
-
-    return null;
-  }
-}
+import { customerApi } from '../customerApi';
 
 export default function CustomerDashboard() {
   const navigate = useNavigate();
 
+  const [backendCustomer, setBackendCustomer] = useState(null);
+  const [isLoadingCustomer, setIsLoadingCustomer] = useState(true);
+  const [customerError, setCustomerError] = useState('');
+
   const storedSession = getStoredSession();
-  const storedApplication = getStoredApplication();
+  const customerId = storedSession?.customerId || null;
 
-  const mobileNumber =
-    storedSession?.mobileNumber || '';
+  const fetchCustomerData = async () => {
+    if (!customerId) return;
+    setIsLoadingCustomer(true);
+    setCustomerError('');
 
-  const applicationSubmitted =
-    storedApplication?.applicationSubmitted === true;
+    try {
+      const customerData = await customerApi.getCustomerById(customerId);
+      setBackendCustomer(customerData);
+    } catch (error) {
+      console.error('Failed to fetch customer data:', error);
+      setCustomerError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load customer details.',
+      );
+    } finally {
+      setIsLoadingCustomer(false);
+    }
+  };
 
-  const submittedPayload =
-    storedApplication?.submittedPayload || null;
-
-  const applicationNumber =
-    storedApplication?.applicationNumber ||
-    submittedPayload?.applicationNumber ||
-    '';
-
-  const applicant =
-    submittedPayload?.applicant ||
-    storedApplication?.form ||
-    {};
-
-  const lender =
-    submittedPayload?.lender?.name ||
-    'Fintree Finance Private Limited';
-
-  const applicationStatus =
-    submittedPayload?.applicationStatus ||
-    'SUBMITTED_TO_LENDER';
-
-  const submittedAt =
-    submittedPayload?.submittedAt ||
-    storedApplication?.updatedAt ||
-    '';
-
-  const feeDetails =
-    submittedPayload?.assessmentFee || null;
-
-  const handleApplicationButton = () => {
-    if (applicationSubmitted) {
-      navigate('/customer/application');
+  // Fetch backend customer data on mount or redirect if missing session
+  useEffect(() => {
+    if (!customerId) {
+      sessionStorage.removeItem('customerSession');
+      navigate('/customer/login', { replace: true });
       return;
     }
 
+    fetchCustomerData();
+  }, [customerId, navigate]);
+
+  // Determine application progress and status directly from backend customer
+  const hasBackendProgress =
+    Boolean(
+      backendCustomer?.panVerified ||
+        backendCustomer?.emailVerified ||
+        backendCustomer?.fullName ||
+        (backendCustomer?.onboardingStatus &&
+          backendCustomer.onboardingStatus !== 'MOBILE_VERIFIED'),
+    );
+
+  const mobileNumber =
+    backendCustomer?.mobileNumber ||
+    storedSession?.mobileNumber ||
+    '';
+
+  const applicationSubmitted = Boolean(
+    backendCustomer?.latestApplicationId,
+  );
+
+  const applicationNumber =
+    backendCustomer?.latestApplicationId
+      ? `PL-APP-${backendCustomer.latestApplicationId}`
+      : '';
+
+  const applicant = backendCustomer || {};
+
+  const lender = 'Fintree Finance Private Limited';
+
+  const applicationStatus =
+    backendCustomer?.eligibilityStatus ||
+    'SUBMITTED_TO_LENDER';
+
+  const submittedAt = backendCustomer?.updatedAt || '';
+
+  const feeDetails = null;
+
+  const handleApplicationButton = () => {
     navigate('/customer/application');
   };
+
+  if (isLoadingCustomer) {
+    return (
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <LoaderCircle className="h-10 w-10 animate-spin text-emerald-600" />
+          <p className="mt-4 text-sm font-medium text-slate-600">
+            Loading your application details...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (customerError) {
+    return (
+      <div className="mx-auto max-w-7xl">
+        <div className="mx-auto max-w-xl rounded-3xl border border-red-200 bg-white p-8 text-center shadow-lg">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-red-100 text-red-600">
+            <AlertCircle size={28} />
+          </div>
+
+          <h3 className="mt-4 text-lg font-bold text-slate-900">
+            Unable to load customer profile
+          </h3>
+
+          <p className="mt-2 text-sm text-slate-600">
+            {customerError}
+          </p>
+
+          <button
+            type="button"
+            onClick={fetchCustomerData}
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-emerald-700"
+          >
+            <RotateCcw size={16} />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const buttonLabel = applicationSubmitted
+    ? 'View Application'
+    : hasBackendProgress
+      ? 'Continue Application'
+      : 'Start Application';
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -116,10 +179,7 @@ export default function CustomerDashboard() {
               onClick={handleApplicationButton}
               className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-emerald-700 shadow-lg transition hover:bg-emerald-50"
             >
-              {applicationSubmitted
-                ? 'View My Application'
-                : 'Start New Application'}
-
+              {buttonLabel}
               <ArrowRight size={17} />
             </button>
           </div>

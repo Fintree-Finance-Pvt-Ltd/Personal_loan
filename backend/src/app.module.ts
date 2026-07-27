@@ -26,6 +26,8 @@ import { ProductsModule } from './modules/products/products.module';
 import { PlatformPoliciesModule } from './modules/platform-policies/platform-policies.module';
 
 import { OtpModule } from './modules/otp/otp.module';
+import { CustomerModule } from './modules/customer/customer.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -51,6 +53,8 @@ import { OtpModule } from './modules/otp/otp.module';
     AdminDashboardModule,
     ExternalApiModule,
     OtpModule,
+    CustomerModule,
+    DocumentsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

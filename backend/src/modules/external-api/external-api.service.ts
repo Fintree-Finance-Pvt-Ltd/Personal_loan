@@ -114,8 +114,13 @@ export class ExternalApiService {
 
     const clientRefNum = input.clientRefNum || `LIVENESS_${customerId}_${Date.now()}`.slice(0, 45);
 
+    let base64Image = String(input.inputImage || '').trim();
+    if (base64Image.includes(',')) {
+      base64Image = base64Image.split(',')[1];
+    }
+
     const requestPayload = {
-      input_image: input.inputImage,
+      input_image: base64Image,
       client_ref_num: clientRefNum,
       ...(input.allowDeepfake ? { allow_deepfake: input.allowDeepfake } : {}),
     };
@@ -771,5 +776,85 @@ export class ExternalApiService {
       }
     }
     return 'Unknown provider error';
+  }
+
+  async reverseGeocode(input: { latitude: number; longitude: number }) {
+    const lat = Number(input?.latitude);
+    const lon = Number(input?.longitude);
+
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      throw new BadRequestException('Latitude must be a valid number between -90 and 90.');
+    }
+
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      throw new BadRequestException('Longitude must be a valid number between -180 and 180.');
+    }
+
+    const apiUrl = process.env.GEOCODING_API_URL || 'https://nominatim.openstreetmap.org/reverse';
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(apiUrl, {
+          params: {
+            format: 'json',
+            lat,
+            lon,
+            zoom: 18,
+            addressdetails: 1,
+            ...(process.env.GEOCODING_API_KEY ? { key: process.env.GEOCODING_API_KEY } : {}),
+          },
+          headers: {
+            'User-Agent': 'PersonalLoanPlatform/1.0',
+            Accept: 'application/json',
+          },
+          timeout: Number(process.env.GEOCODING_TIMEOUT || 15000),
+        }),
+      );
+
+      const addressData = response.data?.address || {};
+      const displayName = response.data?.display_name || '';
+
+      const city =
+        addressData.city ||
+        addressData.town ||
+        addressData.village ||
+        addressData.suburb ||
+        addressData.county ||
+        '';
+
+      const state = addressData.state || '';
+      const country = addressData.country || 'India';
+      const postalCode = addressData.postcode || '';
+
+      const formattedAddress = displayName || [city, state, country].filter(Boolean).join(', ');
+
+      return {
+        success: true,
+        data: {
+          formattedAddress,
+          city,
+          state,
+          country,
+          postalCode,
+          latitude: lat,
+          longitude: lon,
+        },
+      };
+    } catch (error) {
+      this.logger.warn(`Reverse geocoding API lookup failed for ${lat}, ${lon}. Using fallback format.`);
+
+      return {
+        success: true,
+        data: {
+          formattedAddress: `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`,
+          city: '',
+          state: '',
+          country: 'India',
+          postalCode: '',
+          latitude: lat,
+          longitude: lon,
+        },
+      };
+    }
   }
 }
