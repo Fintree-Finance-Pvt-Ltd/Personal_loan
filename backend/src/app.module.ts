@@ -14,6 +14,7 @@ import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
+import { ExternalApiModule } from './modules/external-api/external-api.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -23,6 +24,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LendersModule } from './modules/lenders/lenders.module';
 import { ProductsModule } from './modules/products/products.module';
 
+import { OtpModule } from './modules/otp/otp.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -45,6 +47,8 @@ import { ProductsModule } from './modules/products/products.module';
     LendersModule,
     ProductsModule,
     AdminDashboardModule,
+    ExternalApiModule,
+    OtpModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
