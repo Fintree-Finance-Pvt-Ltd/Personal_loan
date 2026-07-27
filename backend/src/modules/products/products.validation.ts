@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProductOperationalStatus, ProductVersionStatus, RepeatTierScope, AmountRoundingMethod } from '@prisma/client';
+import { ProductOperationalStatus, ProductVersionStatus, RepeatTierScope, AmountRoundingMethod, InterestCalculationMethod, TenureType } from '@prisma/client';
 
 export const decimalStringSchema = z.string()
   .trim()
@@ -11,11 +11,9 @@ export const moneyStringSchema = z.string()
   .regex(/^(0|[1-9]\d*)(\.\d{1,2})?$/, 'Must be a valid positive monetary amount with up to 2 decimal places')
   .refine(val => Number(val) >= 0, 'Cannot be negative');
 
-const offerTierSchema = z.object({
-  completedLoansFrom: z.number().int().min(0),
-  completedLoansTo: z.number().int().min(0).nullable(),
-  multiplier: decimalStringSchema,
-  tierCap: moneyStringSchema.nullable().optional().transform(v => v || null),
+const offerMultiplierSchema = z.object({
+  minimumCompletedLoans: z.number().int().min(0),
+  multiplier: decimalStringSchema.refine(val => Number(val) > 0, 'Multiplier must be greater than 0'),
 }).strict();
 
 export const createProductStrategySchema = z.object({
@@ -25,8 +23,30 @@ export const createProductStrategySchema = z.object({
   repeatTierScope: z.nativeEnum(RepeatTierScope),
   roundingMethod: z.nativeEnum(AmountRoundingMethod),
   roundingUnit: moneyStringSchema.nullable().optional().transform(v => v || null),
+  interestMethod: z.nativeEnum(InterestCalculationMethod),
+  annualRoiPercent: decimalStringSchema,
+  processingFeePercent: decimalStringSchema,
+  processingFeeGstPercent: decimalStringSchema,
+  assessmentFeeAmount: moneyStringSchema,
+  assessmentFeeGstPercent: decimalStringSchema,
+  penalChargeAmount: moneyStringSchema,
+  bounceChargeAmount: moneyStringSchema,
+  emiDueDay: z.number().int().min(1).max(28),
+  includeAssessmentFeeInApr: z.boolean().default(false),
   effectiveFrom: z.string().datetime().nullable().optional().transform(v => v || null),
-  tiers: z.array(offerTierSchema).min(1, 'At least one tier is required'),
+  tenureType: z.nativeEnum(TenureType).default('MONTHS'),
+  tenures: z.array(z.number().int().min(1)).min(1, 'At least one tenure is required'),
+  multipliers: z.array(offerMultiplierSchema)
+    .min(1, 'At least one multiplier is required')
+    .refine(tiers => {
+      if (tiers.length === 0) return true;
+      const first = tiers[0];
+      return first.minimumCompletedLoans === 0 && Number(first.multiplier) === 1;
+    }, 'The first multiplier must be for 0 completed loans with a multiplier of exactly 1.0000')
+    .refine(tiers => {
+      const thresholds = tiers.map(t => t.minimumCompletedLoans);
+      return new Set(thresholds).size === thresholds.length;
+    }, 'Minimum completed loans thresholds must be unique'),
 }).strict();
 
 export const createProductSchema = z.object({
@@ -42,20 +62,12 @@ export const updateProductIdentitySchema = z.object({
   description: z.string().trim().max(255).nullable().optional(),
 }).strict();
 
-export const updateProductVersionSchema = z.object({
-  expectedVersion: z.number().int().min(1),
-  minimumAmount: moneyStringSchema.optional(),
-  firstLoanBaseAmount: moneyStringSchema.optional(),
-  maximumAmountCap: moneyStringSchema.optional(),
-  repeatTierScope: z.nativeEnum(RepeatTierScope).optional(),
-  roundingMethod: z.nativeEnum(AmountRoundingMethod).optional(),
-  roundingUnit: moneyStringSchema.nullable().optional(),
-  effectiveFrom: z.string().datetime().nullable().optional(),
+export const updateProductStatusSchema = z.object({
+  operationalStatus: z.nativeEnum(ProductOperationalStatus),
 }).strict();
 
-export const replaceOfferTiersSchema = z.object({
+export const updateProductStrategySchema = createProductStrategySchema.extend({
   expectedVersion: z.number().int().min(1),
-  tiers: z.array(offerTierSchema).min(1, 'At least one tier is required'),
 }).strict();
 
 export const rejectProductVersionSchema = z.object({
@@ -64,6 +76,7 @@ export const rejectProductVersionSchema = z.object({
 
 export const simulateProductAmountSchema = z.object({
   completedLoans: z.number().int().min(0),
+  tenure: z.number().int().min(1),
   lenderApprovedAmount: moneyStringSchema.optional(),
 }).strict();
 

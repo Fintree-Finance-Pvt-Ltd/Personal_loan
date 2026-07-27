@@ -25,13 +25,13 @@ export const productsApi = {
     return dataOf(response);
   },
 
-  updateProductVersion: async (versionId, payload) => {
-    const response = await api.patch(`/admin/product-versions/${versionId}`, payload);
+  updateProductStatus: async (id, operationalStatus) => {
+    const response = await api.patch(`/admin/products/${id}/status`, { operationalStatus });
     return dataOf(response);
   },
 
-  replaceOfferTiers: async (versionId, payload) => {
-    const response = await api.put(`/admin/product-versions/${versionId}/tiers`, payload);
+  updateProductStrategy: async (versionId, payload) => {
+    const response = await api.put(`/admin/product-versions/${versionId}/strategy`, payload);
     return dataOf(response);
   },
 

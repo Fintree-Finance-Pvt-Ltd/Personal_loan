@@ -21,11 +21,11 @@ import { EmptyBodyDto } from '../../common/types/empty-body.dto';
 import {
   createProductSchema,
   updateProductIdentitySchema,
-  updateProductVersionSchema,
-  replaceOfferTiersSchema,
+  updateProductStrategySchema,
   rejectProductVersionSchema,
   productQuerySchema,
   simulateProductAmountSchema,
+  updateProductStatusSchema,
 } from './products.validation';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
@@ -83,33 +83,33 @@ export class ProductsController {
   }
 
   @Permissions('PRODUCT_UPDATE')
-  @Patch('product-versions/:versionId')
-  async updateProductVersion(
-    @Param('versionId') versionId: string,
+  @Patch('products/:productId/status')
+  async updateProductStatus(
+    @Param('productId') productId: string,
     @Body() body: unknown,
     @CurrentUser() actor: AuthenticatedUser,
     @Req() request: Request,
   ) {
-    const parsed = updateProductVersionSchema.safeParse(body);
+    const parsed = updateProductStatusSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({ error: { code: 'INVALID_REQUEST', message: parsed.error.errors.map(e => e.message).join('; ') } });
     }
-    return this.products.updateProductVersion(versionId, parsed.data, this.context(actor, request));
+    return this.products.updateProductStatus(productId, parsed.data.operationalStatus, this.context(actor, request));
   }
 
   @Permissions('PRODUCT_UPDATE')
-  @Put('product-versions/:versionId/tiers')
-  async replaceOfferTiers(
+  @Put('product-versions/:versionId/strategy')
+  async updateProductStrategy(
     @Param('versionId') versionId: string,
     @Body() body: unknown,
     @CurrentUser() actor: AuthenticatedUser,
     @Req() request: Request,
   ) {
-    const parsed = replaceOfferTiersSchema.safeParse(body);
+    const parsed = updateProductStrategySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({ error: { code: 'INVALID_REQUEST', message: parsed.error.errors.map(e => e.message).join('; ') } });
     }
-    return this.products.replaceOfferTiers(versionId, parsed.data, this.context(actor, request));
+    return this.products.updateProductStrategy(versionId, parsed.data, this.context(actor, request));
   }
 
   @Permissions('PRODUCT_SUBMIT')
@@ -190,15 +190,17 @@ export class ProductsController {
     const { calc, products } = this;
     const version: any = await this.products['prisma'].lenderProductVersion.findUnique({
       where: { id: versionId },
-      include: { offerTiers: true },
+      include: { multipliers: true, tenures: true },
     });
     if (!version) throw new BadRequestException({ error: { code: 'NOT_FOUND', message: 'Version not found.' } });
     
     return calc.simulate(
       parsed.data.completedLoans,
+      parsed.data.tenure,
       parsed.data.lenderApprovedAmount ?? null,
       version as any,
-      version.offerTiers
+      version.multipliers,
+      version.tenures.map((t: any) => t.tenure)
     );
   }
 

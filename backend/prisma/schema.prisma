@@ -420,14 +420,25 @@ model LenderProductVersion {
   productId           String
   versionNumber       Int
   status              ProductVersionStatus
-  minimumAmount       Decimal              @db.Decimal(12, 2)
-  firstLoanBaseAmount Decimal              @db.Decimal(12, 2)
-  maximumAmountCap    Decimal              @db.Decimal(12, 2)
-  repeatTierScope     RepeatTierScope
-  roundingMethod      AmountRoundingMethod
-  roundingUnit        Decimal?             @db.Decimal(12, 2)
-  effectiveFrom       DateTime?
-  version             Int                  @default(1)
+  minimumAmount             Decimal                   @db.Decimal(12, 2)
+  firstLoanBaseAmount       Decimal                   @db.Decimal(12, 2)
+  maximumAmountCap          Decimal                   @db.Decimal(12, 2)
+  repeatTierScope           RepeatTierScope           @default(SAME_LENDER)
+  roundingMethod            AmountRoundingMethod
+  roundingUnit              Decimal?                  @db.Decimal(12, 2)
+  interestMethod            InterestCalculationMethod
+  annualRoiPercent          Decimal                   @db.Decimal(7, 4)
+  processingFeePercent      Decimal                   @db.Decimal(7, 4)
+  processingFeeGstPercent   Decimal                   @db.Decimal(5, 2)
+  assessmentFeeAmount       Decimal                   @db.Decimal(12, 2)
+  assessmentFeeGstPercent   Decimal                   @db.Decimal(5, 2)
+  penalChargeAmount         Decimal                   @db.Decimal(12, 2)
+  bounceChargeAmount        Decimal                   @db.Decimal(12, 2)
+  emiDueDay                 Int
+  includeAssessmentFeeInApr Boolean                   @default(false)
+  tenureType                TenureType                @default(MONTHS)
+  effectiveFrom             DateTime?
+  version                   Int                       @default(1)
 
   createdById     String
   updatedById     String
@@ -444,8 +455,9 @@ model LenderProductVersion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  product     LenderProduct     @relation(fields: [productId], references: [id], onDelete: Restrict)
-  offerTiers  LenderOfferTier[]
+  product     LenderProduct           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  multipliers LenderOfferMultiplier[]
+  tenures     LenderProductTenure[]
   createdBy   User              @relation("ProductVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy   User              @relation("ProductVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
   submittedBy User?             @relation("ProductVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
@@ -458,18 +470,42 @@ model LenderProductVersion {
   @@index([status, updatedAt])
 }
 
-model LenderOfferTier {
-  id                 String               @id @default(cuid())
-  productVersionId   String
-  completedLoansFrom Int
-  completedLoansTo   Int?
-  multiplier         Decimal              @db.Decimal(8, 4)
-  tierCap            Decimal?             @db.Decimal(12, 2)
-  sortOrder          Int
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  productVersion     LenderProductVersion @relation(fields: [productVersionId], references: [id], onDelete: Cascade)
+enum InterestCalculationMethod {
+  REDUCING_BALANCE
+  FLAT_RATE
+}
 
+enum TenureType {
+  MONTHS
+  DAYS
+}
+
+model LenderOfferMultiplier {
+  id                    String               @id @default(cuid())
+  productVersionId      String
+  minimumCompletedLoans Int
+  multiplier            Decimal              @db.Decimal(8, 4)
+  sortOrder             Int
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  productVersion        LenderProductVersion @relation(fields: [productVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([productVersionId, minimumCompletedLoans])
+  @@unique([productVersionId, sortOrder])
+  @@index([productVersionId, sortOrder])
+}
+
+model LenderProductTenure {
+  id               String               @id @default(cuid())
+  productVersionId String
+  tenure           Int
+  sortOrder        Int
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  productVersion   LenderProductVersion @relation(fields: [productVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([productVersionId, tenure])
+  @@unique([productVersionId, sortOrder])
   @@index([productVersionId, sortOrder])
 }
 

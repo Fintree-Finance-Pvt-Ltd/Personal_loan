@@ -1,14 +1,13 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { ProductCalculationService, TierConfig, AmountConfig } from './product-calculation.service';
+import { ProductCalculationService, AmountConfig } from './product-calculation.service';
 import { Prisma, ProductOperationalStatus, ProductVersionStatus } from '@prisma/client';
 import { z } from 'zod';
 import {
   createProductSchema,
   updateProductIdentitySchema,
-  updateProductVersionSchema,
-  replaceOfferTiersSchema,
+  updateProductStrategySchema,
   rejectProductVersionSchema,
   productQuerySchema,
 } from './products.validation';
@@ -61,7 +60,7 @@ export class ProductsService {
     }
 
     this.calc.validateAmounts(input.strategy);
-    this.calc.validateTiers(input.strategy.tiers);
+    this.calc.validateMultipliers(input.strategy.multipliers);
 
     const result = await this.prisma.$transaction(async (tx: any) => {
       const product = await tx.lenderProduct.create({
@@ -83,22 +82,37 @@ export class ProductsService {
               repeatTierScope: input.strategy.repeatTierScope,
               roundingMethod: input.strategy.roundingMethod,
               roundingUnit: input.strategy.roundingUnit,
+              interestMethod: input.strategy.interestMethod,
+              annualRoiPercent: input.strategy.annualRoiPercent,
+              processingFeePercent: input.strategy.processingFeePercent,
+              processingFeeGstPercent: input.strategy.processingFeeGstPercent,
+              assessmentFeeAmount: input.strategy.assessmentFeeAmount,
+              assessmentFeeGstPercent: input.strategy.assessmentFeeGstPercent,
+              penalChargeAmount: input.strategy.penalChargeAmount,
+              bounceChargeAmount: input.strategy.bounceChargeAmount,
+              emiDueDay: input.strategy.emiDueDay,
+              includeAssessmentFeeInApr: input.strategy.includeAssessmentFeeInApr,
+              tenureType: input.strategy.tenureType,
               effectiveFrom: input.strategy.effectiveFrom,
               createdById: ctx.actorUserId,
               updatedById: ctx.actorUserId,
-              offerTiers: {
-                create: input.strategy.tiers.map((t, index) => ({
-                  completedLoansFrom: t.completedLoansFrom,
-                  completedLoansTo: t.completedLoansTo,
-                  multiplier: t.multiplier,
-                  tierCap: t.tierCap,
+              multipliers: {
+                create: input.strategy.multipliers.map((m: any, index: number) => ({
+                  minimumCompletedLoans: m.minimumCompletedLoans,
+                  multiplier: m.multiplier,
+                  sortOrder: index,
+                })),
+              },
+              tenures: {
+                create: input.strategy.tenures.map((t: number, index: number) => ({
+                  tenure: t,
                   sortOrder: index,
                 })),
               },
             },
           },
         },
-        include: { versions: { include: { offerTiers: true } } },
+        include: { versions: { include: { multipliers: true, tenures: true } } },
       });
       return product;
     });
@@ -188,7 +202,8 @@ export class ProductsService {
         versions: {
           orderBy: { versionNumber: 'desc' },
           include: {
-            offerTiers: { orderBy: { sortOrder: 'asc' } },
+            multipliers: { orderBy: { sortOrder: 'asc' } },
+            tenures: { orderBy: { sortOrder: 'asc' } },
             createdBy: { select: { id: true, name: true, email: true } },
             updatedBy: { select: { id: true, name: true, email: true } },
             submittedBy: { select: { id: true, name: true, email: true } },
@@ -219,51 +234,27 @@ export class ProductsService {
     return updated;
   }
 
-  async updateProductVersion(versionId: string, input: z.infer<typeof updateProductVersionSchema>, ctx: AuthContext) {
-    const version = await this.prisma.lenderProductVersion.findUnique({
-      where: { id: versionId },
-      include: { offerTiers: { orderBy: { sortOrder: 'asc' } }, product: true },
-    });
-    if (!version) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Version not found.' } });
+  async updateProductStatus(productId: string, status: ProductOperationalStatus, ctx: AuthContext) {
+    const product = await this.getProduct(productId);
+    if (product.operationalStatus === status) return product;
 
-    if (version.status !== ProductVersionStatus.DRAFT && version.status !== ProductVersionStatus.REJECTED) {
-      throw new BadRequestException({ error: { code: 'INVALID_STATE', message: 'Only DRAFT or REJECTED versions can be edited.' } });
-    }
-    if (version.version !== input.expectedVersion) {
-      throw new ConflictException({ error: { code: 'CONFLICT', message: 'The version has been modified since it was loaded. Please refresh.' } });
-    }
-
-    const { expectedVersion, ...updates } = input;
-    
-    // Simulate updated config
-    const mergedConfig: AmountConfig = {
-      minimumAmount: updates.minimumAmount ?? version.minimumAmount,
-      firstLoanBaseAmount: updates.firstLoanBaseAmount ?? version.firstLoanBaseAmount,
-      maximumAmountCap: updates.maximumAmountCap ?? version.maximumAmountCap,
-      roundingMethod: updates.roundingMethod ?? version.roundingMethod,
-      roundingUnit: updates.roundingUnit !== undefined ? updates.roundingUnit : version.roundingUnit,
-    };
-    this.calc.validateAmounts(mergedConfig);
-
-    const updated = await this.prisma.lenderProductVersion.update({
-      where: { id: versionId, version: input.expectedVersion },
+    const updated = await this.prisma.lenderProduct.update({
+      where: { id: productId },
       data: {
-        ...updates,
-        status: ProductVersionStatus.DRAFT,
-        rejectedById: null,
-        rejectedAt: null,
-        rejectionReason: null,
+        operationalStatus: status,
         updatedById: ctx.actorUserId,
-        version: { increment: 1 },
       },
     });
 
-    await this.auditLog('PRODUCT_VERSION_UPDATED', version.productId, 'SUCCESS', { versionId }, updates, ctx);
+    await this.auditLog('PRODUCT_STATUS_UPDATED', productId, 'SUCCESS', { operationalStatus: product.operationalStatus }, { operationalStatus: status }, ctx);
     return updated;
   }
 
-  async replaceOfferTiers(versionId: string, input: z.infer<typeof replaceOfferTiersSchema>, ctx: AuthContext) {
-    const version = await this.prisma.lenderProductVersion.findUnique({ where: { id: versionId } });
+  async updateProductStrategy(versionId: string, input: z.infer<typeof updateProductStrategySchema>, ctx: AuthContext) {
+    const version = await this.prisma.lenderProductVersion.findUnique({
+      where: { id: versionId },
+      include: { multipliers: true, tenures: true, product: true },
+    });
     if (!version) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Version not found.' } });
 
     if (version.status !== ProductVersionStatus.DRAFT && version.status !== ProductVersionStatus.REJECTED) {
@@ -273,41 +264,53 @@ export class ProductsService {
       throw new ConflictException({ error: { code: 'CONFLICT', message: 'The version has been modified since it was loaded. Please refresh.' } });
     }
 
-    this.calc.validateTiers(input.tiers);
+    const { expectedVersion, tenures, multipliers, ...updates } = input;
+    
+    // Validate amounts
+    this.calc.validateAmounts(updates);
+    this.calc.validateMultipliers(multipliers);
 
     const updated = await this.prisma.$transaction(async (tx: any) => {
-      await tx.lenderOfferTier.deleteMany({ where: { productVersionId: versionId } });
-      await tx.lenderProductVersion.update({
+      // delete existing relations
+      await tx.lenderOfferMultiplier.deleteMany({ where: { productVersionId: versionId } });
+      await tx.lenderProductTenure.deleteMany({ where: { productVersionId: versionId } });
+
+      return tx.lenderProductVersion.update({
         where: { id: versionId, version: input.expectedVersion },
         data: {
+          ...updates,
           status: ProductVersionStatus.DRAFT,
           rejectedById: null,
           rejectedAt: null,
           rejectionReason: null,
           updatedById: ctx.actorUserId,
           version: { increment: 1 },
-          offerTiers: {
-            create: input.tiers.map((t, index) => ({
-              completedLoansFrom: t.completedLoansFrom,
-              completedLoansTo: t.completedLoansTo,
-              multiplier: t.multiplier,
-              tierCap: t.tierCap,
+          multipliers: {
+            create: multipliers.map((m: any, index: number) => ({
+              minimumCompletedLoans: m.minimumCompletedLoans,
+              multiplier: m.multiplier,
+              sortOrder: index,
+            })),
+          },
+          tenures: {
+            create: tenures.map((t: number, index: number) => ({
+              tenure: t,
               sortOrder: index,
             })),
           },
         },
+        include: { multipliers: true, tenures: true },
       });
-      return tx.lenderProductVersion.findUnique({ where: { id: versionId }, include: { offerTiers: true } });
     });
 
-    await this.auditLog('PRODUCT_TIERS_REPLACED', version.productId, 'SUCCESS', { versionId }, input.tiers, ctx);
+    await this.auditLog('PRODUCT_STRATEGY_UPDATED', version.productId, 'SUCCESS', { versionId }, input, ctx);
     return updated;
   }
 
   async submitVersion(versionId: string, ctx: AuthContext) {
     const version = await this.prisma.lenderProductVersion.findUnique({
       where: { id: versionId },
-      include: { offerTiers: { orderBy: { sortOrder: 'asc' } } },
+      include: { multipliers: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!version) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Version not found.' } });
     if (version.status !== ProductVersionStatus.DRAFT) {
@@ -315,7 +318,7 @@ export class ProductsService {
     }
 
     this.calc.validateAmounts(version as any as AmountConfig);
-    this.calc.validateTiers(version.offerTiers);
+    this.calc.validateMultipliers(version.multipliers);
 
     const updated = await this.prisma.lenderProductVersion.update({
       where: { id: versionId, status: ProductVersionStatus.DRAFT },
@@ -429,7 +432,10 @@ export class ProductsService {
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },
-          include: { offerTiers: { orderBy: { sortOrder: 'asc' } } },
+          include: { 
+            multipliers: { orderBy: { sortOrder: 'asc' } },
+            tenures: { orderBy: { sortOrder: 'asc' } } 
+          },
         },
       },
     });
@@ -461,15 +467,30 @@ export class ProductsService {
         repeatTierScope: sourceVersion.repeatTierScope,
         roundingMethod: sourceVersion.roundingMethod,
         roundingUnit: sourceVersion.roundingUnit,
+        interestMethod: sourceVersion.interestMethod,
+        annualRoiPercent: sourceVersion.annualRoiPercent,
+        processingFeePercent: sourceVersion.processingFeePercent,
+        processingFeeGstPercent: sourceVersion.processingFeeGstPercent,
+        assessmentFeeAmount: sourceVersion.assessmentFeeAmount,
+        assessmentFeeGstPercent: sourceVersion.assessmentFeeGstPercent,
+        penalChargeAmount: sourceVersion.penalChargeAmount,
+        bounceChargeAmount: sourceVersion.bounceChargeAmount,
+        emiDueDay: sourceVersion.emiDueDay,
+        includeAssessmentFeeInApr: sourceVersion.includeAssessmentFeeInApr,
+        tenureType: sourceVersion.tenureType,
         effectiveFrom: sourceVersion.effectiveFrom,
         createdById: ctx.actorUserId,
         updatedById: ctx.actorUserId,
-        offerTiers: {
-          create: sourceVersion.offerTiers.map((t: any, index: number) => ({
-            completedLoansFrom: t.completedLoansFrom,
-            completedLoansTo: t.completedLoansTo,
-            multiplier: t.multiplier,
-            tierCap: t.tierCap,
+        multipliers: {
+          create: sourceVersion.multipliers.map((m: any, index: number) => ({
+            minimumCompletedLoans: m.minimumCompletedLoans,
+            multiplier: m.multiplier,
+            sortOrder: index,
+          })),
+        },
+        tenures: {
+          create: sourceVersion.tenures.map((t: any, index: number) => ({
+            tenure: t.tenure,
             sortOrder: index,
           })),
         },

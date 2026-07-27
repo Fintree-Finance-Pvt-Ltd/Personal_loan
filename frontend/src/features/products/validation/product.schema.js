@@ -10,14 +10,14 @@ export const moneyStringSchema = z.string()
   .regex(/^(0|[1-9]\d*)(\.\d{1,2})?$/, 'Must be a valid positive monetary amount with up to 2 decimal places')
   .refine(val => Number(val) >= 0, 'Cannot be negative');
 
-export const offerTierSchema = z.object({
-  completedLoansFrom: z.coerce.number().int().min(0, 'Must be at least 0'),
-  completedLoansTo: z.preprocess(
-    (v) => (v === '' || v === null || v === undefined) ? null : Number(v),
-    z.number().int().min(0).nullable().optional()
-  ),
+export const percentStringSchema = z.string()
+  .trim()
+  .regex(/^(0|[1-9]\d*)(\.\d{1,4})?$/, 'Must be a valid percentage')
+  .refine(val => Number(val) >= 0 && Number(val) <= 1000, 'Must be between 0 and 1000');
+
+export const multiplierSchema = z.object({
+  minimumCompletedLoans: z.coerce.number().int().min(0, 'Must be at least 0'),
   multiplier: decimalStringSchema,
-  tierCap: z.union([moneyStringSchema, z.literal('')]).transform(v => (v === '' || v === undefined) ? null : v).nullable().optional(),
 });
 
 export const productStrategySchema = z.object({
@@ -28,7 +28,24 @@ export const productStrategySchema = z.object({
   roundingMethod: z.enum(['NONE', 'FLOOR', 'NEAREST', 'CEIL']),
   roundingUnit: z.union([moneyStringSchema, z.literal('')]).transform(v => (v === '' || v === undefined) ? null : v).nullable().optional(),
   effectiveFrom: z.union([z.string(), z.literal('')]).transform(v => (v === '' || v === undefined) ? null : v).nullable().optional(),
-  tiers: z.array(offerTierSchema).min(1, 'At least one tier is required'),
+  
+  interestMethod: z.enum(['REDUCING_BALANCE', 'FLAT_RATE']),
+  annualRoiPercent: percentStringSchema,
+  processingFeePercent: percentStringSchema,
+  processingFeeGstPercent: percentStringSchema,
+  assessmentFeeAmount: moneyStringSchema,
+  assessmentFeeGstPercent: percentStringSchema,
+  penalChargeAmount: moneyStringSchema,
+  bounceChargeAmount: moneyStringSchema,
+  emiDueDay: z.coerce.number().int().min(1).max(31),
+  includeAssessmentFeeInApr: z.boolean().default(false),
+  
+  multipliers: z.array(multiplierSchema).min(1, 'At least one multiplier is required'),
+  tenureType: z.enum(['MONTHS', 'DAYS']).default('MONTHS'),
+  tenures: z.union([
+    z.string().transform(v => v.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n))),
+    z.array(z.number())
+  ]).refine(arr => arr.length > 0, 'At least one tenure is required'),
 });
 
 export const createProductSchema = z.object({
@@ -42,4 +59,8 @@ export const createProductSchema = z.object({
 export const updateProductIdentitySchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(120),
   description: z.string().trim().max(255).optional(),
+});
+
+export const updateProductStrategySchema = productStrategySchema.extend({
+  expectedVersion: z.number().int().min(1),
 });

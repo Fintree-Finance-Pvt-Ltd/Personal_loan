@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input, Textarea, Select, Button, Alert } from '../../../components/ui';
 import { createProductSchema } from '../validation/product.schema';
@@ -10,7 +10,6 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
   const [lenders, setLenders] = useState([]);
 
   useEffect(() => {
-    // Only approved lenders are allowed
     getLenders({ status: 'APPROVED', limit: 100 })
       .then(res => setLenders(res.items || []))
       .catch(() => {});
@@ -31,8 +30,23 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
         roundingMethod: 'FLOOR',
         roundingUnit: '500.00',
         effectiveFrom: '',
-        tiers: [
-          { completedLoansFrom: 0, completedLoansTo: 0, multiplier: '1.0000', tierCap: '' }
+        
+        interestMethod: 'REDUCING_BALANCE',
+        annualRoiPercent: '24.00',
+        processingFeePercent: '2.00',
+        processingFeeGstPercent: '18.00',
+        assessmentFeeAmount: '500.00',
+        assessmentFeeGstPercent: '18.00',
+        penalChargeAmount: '50.00',
+        bounceChargeAmount: '250.00',
+        emiDueDay: 5,
+        includeAssessmentFeeInApr: false, // Hidden but provided
+        
+        tenureType: 'MONTHS',
+        tenures: '3, 6, 9, 12',
+        
+        multipliers: [
+          { minimumCompletedLoans: 0, multiplier: '1.0000' }
         ]
       }
     }
@@ -40,10 +54,11 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'strategy.tiers'
+    name: 'strategy.multipliers'
   });
 
   const roundingMethod = watch('strategy.roundingMethod');
+  const tenureType = watch('strategy.tenureType');
 
   const getErrorMessages = (obj, prefix = '') => {
     if (!obj) return [];
@@ -60,8 +75,12 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
   };
   const errorList = getErrorMessages(errors);
 
+  const onValidSubmit = (data) => {
+    onSubmit(data);
+  };
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onValidSubmit)} className="space-y-6">
       {serverError && <Alert>{serverError}</Alert>}
       {errorList.length > 0 && (
         <Alert tone="error">
@@ -107,7 +126,40 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
           </Select>
           
           <Input label="Rounding Unit" placeholder="500.00" disabled={roundingMethod === 'NONE'} {...register('strategy.roundingUnit')} error={errors.strategy?.roundingUnit?.message} />
+        </div>
+        
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 mt-6">
+          <Select label="Interest Calculation" {...register('strategy.interestMethod')} error={errors.strategy?.interestMethod?.message}>
+            <option value="REDUCING_BALANCE">Reducing Balance</option>
+            <option value="FLAT_RATE">Flat Rate</option>
+          </Select>
+          <Input label="Annual ROI (%)" placeholder="24.00" {...register('strategy.annualRoiPercent')} error={errors.strategy?.annualRoiPercent?.message} />
+          <Input label="EMI Due Day" type="number" placeholder="5" {...register('strategy.emiDueDay')} error={errors.strategy?.emiDueDay?.message} />
+          
+          <Input label="Processing Fee (%)" placeholder="2.00" {...register('strategy.processingFeePercent')} error={errors.strategy?.processingFeePercent?.message} />
+          <Input label="PF GST (%)" placeholder="18.00" {...register('strategy.processingFeeGstPercent')} error={errors.strategy?.processingFeeGstPercent?.message} />
+          <div className="hidden sm:block"></div>
+          
+          <Input label="Assessment Fee (Fixed)" placeholder="500.00" {...register('strategy.assessmentFeeAmount')} error={errors.strategy?.assessmentFeeAmount?.message} />
+          <Input label="Assessment Fee GST (%)" placeholder="18.00" {...register('strategy.assessmentFeeGstPercent')} error={errors.strategy?.assessmentFeeGstPercent?.message} />
+          <div className="hidden sm:block"></div>
 
+          <Input label="Penal Charge (Per Day)" placeholder="50.00" {...register('strategy.penalChargeAmount')} error={errors.strategy?.penalChargeAmount?.message} />
+          <Input label="Bounce Charge" placeholder="250.00" {...register('strategy.bounceChargeAmount')} error={errors.strategy?.bounceChargeAmount?.message} />
+
+          <div className="sm:col-span-3 mt-2">
+            <div className="flex gap-4 mb-4">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input type="radio" value="MONTHS" {...register('strategy.tenureType')} /> Months
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input type="radio" value="DAYS" {...register('strategy.tenureType')} /> Days
+              </label>
+            </div>
+            <Input label={`Supported Tenures (comma-separated ${tenureType === 'DAYS' ? 'days' : 'months'})`} placeholder={tenureType === 'DAYS' ? '15, 30, 45' : '3, 6, 12'} {...register('strategy.tenures')} error={errors.strategy?.tenures?.message} />
+            <p className="text-xs text-slate-500 mt-1">E.g., "{tenureType === 'DAYS' ? '15, 30, 45' : '3, 6, 9, 12'}". These will be the only allowed terms.</p>
+          </div>
+          
           <div className="sm:col-span-3">
             <Input label="Effective From (Optional UTC DateTime)" placeholder="YYYY-MM-DDTHH:mm:ssZ" {...register('strategy.effectiveFrom')} error={errors.strategy?.effectiveFrom?.message} />
           </div>
@@ -115,20 +167,18 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
 
         <div className="mt-8">
           <div className="flex items-center justify-between mb-4">
-            <h4 className="text-md font-medium text-slate-900">Offer Tiers</h4>
-            <Button type="button" variant="secondary" size="sm" onClick={() => append({ completedLoansFrom: fields.length, completedLoansTo: '', multiplier: '1.2500', tierCap: '' })}>
-              <Plus className="mr-1 h-4 w-4" /> Add Tier
+            <h4 className="text-md font-medium text-slate-900">Offer Multipliers</h4>
+            <Button type="button" variant="secondary" size="sm" onClick={() => append({ minimumCompletedLoans: fields.length, multiplier: '1.2500' })}>
+              <Plus className="mr-1 h-4 w-4" /> Add Multiplier
             </Button>
           </div>
-          {errors.strategy?.tiers?.message && <Alert className="mb-4">{errors.strategy.tiers.message}</Alert>}
+          {errors.strategy?.multipliers?.message && <Alert className="mb-4">{errors.strategy.multipliers.message}</Alert>}
           
           <div className="space-y-4">
             {fields.map((field, index) => (
               <div key={field.id} className="flex flex-wrap items-start gap-4 p-4 border border-slate-100 rounded-xl bg-slate-50 relative">
-                <Input label="Loans From" type="number" className="w-24" {...register(`strategy.tiers.${index}.completedLoansFrom`)} error={errors.strategy?.tiers?.[index]?.completedLoansFrom?.message} />
-                <Input label="Loans To (Blank=∞)" type="number" className="w-24" {...register(`strategy.tiers.${index}.completedLoansTo`)} error={errors.strategy?.tiers?.[index]?.completedLoansTo?.message} />
-                <Input label="Multiplier" placeholder="1.2500" className="w-32" {...register(`strategy.tiers.${index}.multiplier`)} error={errors.strategy?.tiers?.[index]?.multiplier?.message} />
-                <Input label="Tier Cap (Opt)" placeholder="15000.00" className="w-32" {...register(`strategy.tiers.${index}.tierCap`)} error={errors.strategy?.tiers?.[index]?.tierCap?.message} />
+                <Input label="Min Completed Loans" type="number" className="w-40" {...register(`strategy.multipliers.${index}.minimumCompletedLoans`)} error={errors.strategy?.multipliers?.[index]?.minimumCompletedLoans?.message} />
+                <Input label="Multiplier" placeholder="1.2500" className="w-40" {...register(`strategy.multipliers.${index}.multiplier`)} error={errors.strategy?.multipliers?.[index]?.multiplier?.message} />
                 
                 {index > 0 && (
                   <button type="button" onClick={() => remove(index)} className="mt-8 text-slate-400 hover:text-red-600 transition-colors">

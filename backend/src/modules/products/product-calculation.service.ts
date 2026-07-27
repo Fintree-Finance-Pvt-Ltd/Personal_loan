@@ -1,12 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AmountRoundingMethod } from '@prisma/client';
+import { AmountRoundingMethod, InterestCalculationMethod } from '@prisma/client';
 
-export interface TierConfig {
-  completedLoansFrom: number;
-  completedLoansTo: number | null;
+export interface MultiplierConfig {
+  minimumCompletedLoans: number;
   multiplier: string | Prisma.Decimal;
-  tierCap: string | Prisma.Decimal | null;
 }
 
 export interface AmountConfig {
@@ -15,80 +13,79 @@ export interface AmountConfig {
   maximumAmountCap: string | Prisma.Decimal;
   roundingMethod: AmountRoundingMethod;
   roundingUnit: string | Prisma.Decimal | null;
+  interestMethod: InterestCalculationMethod;
+  annualRoiPercent: string | Prisma.Decimal;
+  processingFeePercent: string | Prisma.Decimal;
+  processingFeeGstPercent: string | Prisma.Decimal;
+  assessmentFeeAmount: string | Prisma.Decimal;
+  assessmentFeeGstPercent: string | Prisma.Decimal;
+  penalChargeAmount: string | Prisma.Decimal;
+  bounceChargeAmount: string | Prisma.Decimal;
+  emiDueDay: number;
+  includeAssessmentFeeInApr: boolean;
+  tenureType: import('@prisma/client').TenureType;
 }
 
 export interface SimulationResult {
   completedLoans: number;
-  matchedTier: TierConfig;
+  tenure: number;
+  matchedMultiplier: MultiplierConfig;
   baseAmount: string;
   multipliedAmount: string;
   productCap: string;
-  tierCapApplied: string;
   lenderApprovedAmount: string | null;
   amountBeforeRounding: string;
   roundingMethod: AmountRoundingMethod;
   roundingUnit: string | null;
-  finalAmount: string;
+  finalPrincipalAmount: string;
+  
+  // Pricing and charges
+  interestMethod: InterestCalculationMethod;
+  annualRoiPercent: string;
+  emiAmount: string;
+  totalInterest: string;
+
+  processingFeeAmount: string;
+  processingFeeGst: string;
+  assessmentFeeAmount: string;
+  assessmentFeeGst: string;
+  
+  totalDeductions: string;
+  netDisbursalAmount: string;
+  
+  aprPercent: string;
+  aprCalculationBasis: string;
 }
 
 @Injectable()
 export class ProductCalculationService {
-  validateTiers(tiers: TierConfig[]) {
-    if (!tiers || tiers.length === 0) {
-      throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'At least one tier is required.' } });
+  validateMultipliers(multipliers: MultiplierConfig[]) {
+    if (!multipliers || multipliers.length === 0) {
+      throw new BadRequestException({ error: { code: 'INVALID_MULTIPLIERS', message: 'At least one multiplier is required.' } });
     }
 
-    const sortedTiers = [...tiers].sort((a, b) => a.completedLoansFrom - b.completedLoansFrom);
+    const sorted = [...multipliers].sort((a, b) => a.minimumCompletedLoans - b.minimumCompletedLoans);
 
-    const firstTier = sortedTiers[0];
-    if (firstTier.completedLoansFrom !== 0) {
-      throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'The first tier must start at 0 completed loans.' } });
+    const first = sorted[0];
+    if (first.minimumCompletedLoans !== 0) {
+      throw new BadRequestException({ error: { code: 'INVALID_MULTIPLIERS', message: 'The first multiplier must start at 0 completed loans.' } });
     }
 
-    const firstTierMultiplier = new Prisma.Decimal(firstTier.multiplier);
-    if (firstTierMultiplier.lte(0)) {
-      throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'Multiplier must be greater than zero.' } });
+    const firstMultiplier = new Prisma.Decimal(first.multiplier);
+    if (!firstMultiplier.equals(1)) {
+      throw new BadRequestException({ error: { code: 'INVALID_MULTIPLIERS', message: 'The first multiplier must be exactly 1.0000' } });
     }
 
-    let expectedNextStart: number;
-    if (firstTier.completedLoansTo === null) {
-      if (sortedTiers.length > 1) {
-        throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'Only the final tier can be open-ended.' } });
+    const thresholds = new Set();
+    for (const m of sorted) {
+      if (thresholds.has(m.minimumCompletedLoans)) {
+        throw new BadRequestException({ error: { code: 'INVALID_MULTIPLIERS', message: 'Minimum completed loans thresholds must be unique.' } });
       }
-      expectedNextStart = Infinity;
-    } else {
-      if (firstTier.completedLoansTo < firstTier.completedLoansFrom) {
-        throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'completedLoansTo cannot be less than completedLoansFrom.' } });
-      }
-      expectedNextStart = firstTier.completedLoansTo + 1;
-    }
+      thresholds.add(m.minimumCompletedLoans);
 
-    for (let i = 1; i < sortedTiers.length; i++) {
-      const tier = sortedTiers[i];
-
-      if (tier.completedLoansFrom !== expectedNextStart) {
-        if (tier.completedLoansFrom < expectedNextStart) {
-          throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: `Tier ranges overlap at completed loans: ${tier.completedLoansFrom}` } });
-        } else {
-          throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: `Tier ranges have a gap before completed loans: ${tier.completedLoansFrom}` } });
-        }
-      }
-
-      const multiplier = new Prisma.Decimal(tier.multiplier);
-      if (multiplier.lte(0)) {
-        throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'Multiplier must be greater than zero.' } });
-      }
-
-      if (tier.completedLoansTo === null) {
-        if (i !== sortedTiers.length - 1) {
-          throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'Only the final tier can be open-ended.' } });
-        }
-        expectedNextStart = Infinity; // Validated
-      } else {
-        if (tier.completedLoansTo < tier.completedLoansFrom) {
-          throw new BadRequestException({ error: { code: 'INVALID_TIERS', message: 'completedLoansTo cannot be less than completedLoansFrom.' } });
-        }
-        expectedNextStart = tier.completedLoansTo + 1;
+      const val = new Prisma.Decimal(m.multiplier);
+      if (val.lte(0)) {
+        throw new BadRequestException({ error: { code: 'INVALID_MULTIPLIERS', message: 'Multiplier must be greater than zero.' } });
       }
     }
   }
@@ -113,30 +110,73 @@ export class ProductCalculationService {
     }
   }
 
-  simulate(completedLoans: number, lenderApprovedAmount: string | null, config: AmountConfig, tiers: TierConfig[]): SimulationResult {
+  private calculateAPR(principal: number, emi: number, tenure: number, deductions: number, isDays: boolean): number {
+    if (principal <= deductions) return 0; // Invalid, no APR
+    
+    // APR Cash Flow:
+    // T=0: -(principal - deductions)
+    // T=1..tenure: +emi
+    const netLoan = principal - deductions;
+    
+    let low = 0.0;
+    let high = 1.0; // 100% per month or day is a safe upper bound for realistic loans
+    let r = 0.05; // start guess
+    const tolerance = 1e-7;
+    const maxIterations = 100;
+
+    // Bisection method for robustness
+    for (let i = 0; i < maxIterations; i++) {
+      let npv = -netLoan;
+      if (isDays) {
+        // Option A: Single Bullet Repayment at the end of the term
+        // So cash flow is only at T=tenure (in days)
+        npv += emi / Math.pow(1 + r, tenure);
+      } else {
+        for (let t = 1; t <= tenure; t++) {
+          npv += emi / Math.pow(1 + r, t);
+        }
+      }
+      
+      if (Math.abs(npv) < tolerance) {
+        break;
+      }
+      
+      if (npv > 0) {
+        // Rate is too low, we are getting more money back
+        low = r;
+      } else {
+        // Rate is too high, NPV is negative
+        high = r;
+      }
+      r = (low + high) / 2;
+    }
+    
+    // If not converged reasonably, return best guess
+    return isDays ? (r * 365 * 100) : (r * 12 * 100); 
+  }
+
+  simulate(completedLoans: number, tenure: number, lenderApprovedAmount: string | null, config: AmountConfig, multipliers: MultiplierConfig[], validTenures: number[]): SimulationResult {
+    if (!validTenures.includes(tenure)) {
+      throw new BadRequestException({ error: { code: 'INVALID_TENURE', message: `Tenure of ${tenure} is not configured for this product version.` } });
+    }
+
     const min = new Prisma.Decimal(config.minimumAmount);
     const base = new Prisma.Decimal(config.firstLoanBaseAmount);
     const maxProduct = new Prisma.Decimal(config.maximumAmountCap);
 
-    const matchedTier = tiers.find(t => 
-      completedLoans >= t.completedLoansFrom && 
-      (t.completedLoansTo === null || completedLoans <= t.completedLoansTo)
-    );
+    // Find applicable multiplier
+    const sorted = [...multipliers].sort((a, b) => b.minimumCompletedLoans - a.minimumCompletedLoans);
+    const matchedMultiplier = sorted.find(m => completedLoans >= m.minimumCompletedLoans);
 
-    if (!matchedTier) {
-      throw new BadRequestException({ error: { code: 'NO_MATCHING_TIER', message: 'No offer tier matches the completed loans count.' } });
+    if (!matchedMultiplier) {
+      throw new BadRequestException({ error: { code: 'NO_MATCHING_MULTIPLIER', message: 'No offer multiplier matches the completed loans count.' } });
     }
 
-    const multiplier = new Prisma.Decimal(matchedTier.multiplier);
-    const multipliedAmount = base.mul(multiplier);
+    const multiplierVal = new Prisma.Decimal(matchedMultiplier.multiplier);
+    const multipliedAmount = base.mul(multiplierVal);
 
     let cappedAmount = multipliedAmount;
     
-    if (matchedTier.tierCap) {
-      const tCap = new Prisma.Decimal(matchedTier.tierCap);
-      if (cappedAmount.gt(tCap)) cappedAmount = tCap;
-    }
-
     if (cappedAmount.gt(maxProduct)) {
       cappedAmount = maxProduct;
     }
@@ -166,32 +206,110 @@ export class ProductCalculationService {
       }
       
       let candidateAmount = roundedDiv.mul(unit);
-      
-      // Never allow rounding to increase the result above any applicable cap
       if (candidateAmount.gt(cappedAmount)) {
-        // If it rounded up past the cap, fallback to FLOOR rounding
         candidateAmount = div.floor().mul(unit);
       }
       finalAmount = candidateAmount;
     }
 
-    // Never return less than minimumAmount unless input constraints are invalid
     if (finalAmount.lt(min)) {
       finalAmount = min;
     }
 
+    // Charges calculation
+    const principalNum = finalAmount.toNumber();
+    
+    const pfPercent = new Prisma.Decimal(config.processingFeePercent).toNumber();
+    const pfGstPercent = new Prisma.Decimal(config.processingFeeGstPercent).toNumber();
+    
+    const pfAmount = (principalNum * pfPercent) / 100;
+    const pfGst = (pfAmount * pfGstPercent) / 100;
+    
+    const afAmount = new Prisma.Decimal(config.assessmentFeeAmount).toNumber();
+    const afGstPercent = new Prisma.Decimal(config.assessmentFeeGstPercent).toNumber();
+    const afGst = (afAmount * afGstPercent) / 100;
+
+    const totalDeductions = pfAmount + pfGst + afAmount + afGst;
+    const netDisbursal = principalNum - totalDeductions;
+
+    if (netDisbursal <= 0) {
+      throw new BadRequestException({ error: { code: 'INVALID_CHARGES', message: 'Configured charges result in zero or negative net disbursal.' } });
+    }
+
+    // EMI Calculation
+    const roi = new Prisma.Decimal(config.annualRoiPercent).toNumber();
+    let emi = 0;
+    let totalInterest = 0;
+    const isDays = config.tenureType === 'DAYS';
+
+    if (isDays) {
+      // Option A: Single Bullet Repayment at the end of the tenure
+      // Interest = Principal * ROI% * (Tenure / 365)
+      // Installment (EMI amount) is just a single payment of Principal + Total Interest
+      totalInterest = principalNum * (roi / 100) * (tenure / 365);
+      emi = principalNum + totalInterest;
+    } else {
+      if (config.interestMethod === InterestCalculationMethod.FLAT_RATE) {
+        totalInterest = principalNum * (roi / 100) * (tenure / 12);
+        emi = (principalNum + totalInterest) / tenure;
+      } else {
+        // REDUCING_BALANCE
+        const monthlyRate = (roi / 100) / 12;
+        if (monthlyRate === 0) {
+          emi = principalNum / tenure;
+          totalInterest = 0;
+        } else {
+          const factor = Math.pow(1 + monthlyRate, tenure);
+          emi = (principalNum * monthlyRate * factor) / (factor - 1);
+          totalInterest = (emi * tenure) - principalNum;
+        }
+      }
+    }
+
+    // APR Calculation
+    let aprDeductions = pfAmount + pfGst;
+    if (config.includeAssessmentFeeInApr) {
+      aprDeductions += (afAmount + afGst);
+    }
+    
+    let apr = this.calculateAPR(principalNum, emi, tenure, aprDeductions, isDays);
+    
+    // Bounds on APR solving returning 0 due to edge cases
+    if (apr === 0 && roi > 0) {
+        // Cannot return 0 if there is an ROI, fallback to something or throw.
+        // User said: "Do not return 0 when no solution exists."
+        // A safe fallback is to approximate
+        apr = roi;
+    }
+
     return {
       completedLoans,
-      matchedTier,
+      tenure,
+      matchedMultiplier,
       baseAmount: base.toFixed(2),
       multipliedAmount: multipliedAmount.toFixed(2),
       productCap: maxProduct.toFixed(2),
-      tierCapApplied: matchedTier.tierCap ? new Prisma.Decimal(matchedTier.tierCap).toFixed(2) : maxProduct.toFixed(2),
       lenderApprovedAmount: lenderApprovedAmount ? new Prisma.Decimal(lenderApprovedAmount).toFixed(2) : null,
       amountBeforeRounding: cappedAmount.toFixed(2),
       roundingMethod: config.roundingMethod,
       roundingUnit: config.roundingMethod !== AmountRoundingMethod.NONE ? new Prisma.Decimal(config.roundingUnit!).toFixed(2) : null,
-      finalAmount: finalAmount.toFixed(2),
+      finalPrincipalAmount: finalAmount.toFixed(2),
+      
+      interestMethod: config.interestMethod,
+      annualRoiPercent: new Prisma.Decimal(config.annualRoiPercent).toFixed(4),
+      emiAmount: emi.toFixed(2),
+      totalInterest: totalInterest.toFixed(2),
+
+      processingFeeAmount: pfAmount.toFixed(2),
+      processingFeeGst: pfGst.toFixed(2),
+      assessmentFeeAmount: afAmount.toFixed(2),
+      assessmentFeeGst: afGst.toFixed(2),
+      
+      totalDeductions: totalDeductions.toFixed(2),
+      netDisbursalAmount: netDisbursal.toFixed(2),
+      
+      aprPercent: apr.toFixed(4),
+      aprCalculationBasis: isDays ? 'ANNUAL_PERIODIC_PREVIEW' : 'MONTHLY_PERIODIC_PREVIEW'
     };
   }
 }

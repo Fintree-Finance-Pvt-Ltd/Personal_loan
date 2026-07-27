@@ -50,6 +50,20 @@ export function ProductDetailsPage() {
     }
   };
 
+  const handleProductStatus = async (newStatus) => {
+    if (!window.confirm(`Are you sure you want to mark this product as ${newStatus}?`)) return;
+    setBusy(true); setSuccessMsg(''); setError('');
+    try {
+      await productsApi.updateProductStatus(productId, newStatus);
+      setSuccessMsg(`Product marked as ${newStatus}.`);
+      loadData();
+    } catch (err) {
+      setError(apiError(err, `Failed to update product status.`));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-16"><Spinner label="Loading product details" /></div>;
   if (error) return <Alert>{error}</Alert>;
   if (!data) return null;
@@ -60,11 +74,24 @@ export function ProductDetailsPage() {
         title={data.name}
         description={`Code: ${data.code} | Lender: ${data.lender.displayName}`}
         actions={
-          <PermissionGate permission="PRODUCT_VERSION_CREATE">
-            <Button disabled={busy || data.versions.some(v => v.status === 'DRAFT' || v.status === 'SUBMITTED')} onClick={() => handleAction('create-next')}>
-              + New Version
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-3">
+            <PermissionGate permission="PRODUCT_UPDATE">
+              {data.operationalStatus === 'INACTIVE' ? (
+                <Button variant="secondary" onClick={() => handleProductStatus('ACTIVE')} disabled={busy}>
+                  Activate Product
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={() => handleProductStatus('INACTIVE')} disabled={busy}>
+                  Deactivate Product
+                </Button>
+              )}
+            </PermissionGate>
+            <PermissionGate permission="PRODUCT_VERSION_CREATE">
+              <Button disabled={busy || data.versions.some(v => v.status === 'DRAFT' || v.status === 'SUBMITTED')} onClick={() => handleAction('create-next')}>
+                + New Version
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -141,26 +168,37 @@ export function ProductDetailsPage() {
                 <div className="flex justify-between"><dt className="text-slate-500">Effective From</dt><dd className="text-slate-900">{version.effectiveFrom ? new Date(version.effectiveFrom).toLocaleString() : 'Immediate'}</dd></div>
               </dl>
             </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between"><dt className="text-slate-500">Interest Calculation</dt><dd className="text-slate-900">{version.interestMethod}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Annual ROI (%)</dt><dd className="font-mono text-slate-900">{version.annualRoiPercent}%</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">EMI Due Day</dt><dd className="text-slate-900">{version.emiDueDay}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Supported Tenures</dt><dd className="text-slate-900">{version.tenures.map(t => t.tenure).join(', ')} {version.tenureType === 'DAYS' ? 'days' : 'months'}</dd></div>
+              </dl>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between"><dt className="text-slate-500">Processing Fee</dt><dd className="text-slate-900">{version.processingFeePercent}% + {version.processingFeeGstPercent}% GST</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Assessment Fee</dt><dd className="text-slate-900">{version.assessmentFeeAmount} + {version.assessmentFeeGstPercent}% GST</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Penal Charge</dt><dd className="text-slate-900">{version.penalChargeAmount}/day</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Bounce Charge</dt><dd className="text-slate-900">{version.bounceChargeAmount}</dd></div>
+              </dl>
+            </div>
 
             <div className="mt-6">
-              <h5 className="text-sm font-medium text-slate-700 mb-2">Offer Tiers</h5>
+              <h5 className="text-sm font-medium text-slate-700 mb-2">Offer Multipliers</h5>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left border border-slate-200">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      <th className="px-3 py-2">Loans From</th>
-                      <th className="px-3 py-2">Loans To</th>
+                      <th className="px-3 py-2">Min Completed Loans</th>
                       <th className="px-3 py-2">Multiplier</th>
-                      <th className="px-3 py-2">Tier Cap</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
-                    {version.offerTiers.map(t => (
-                      <tr key={t.id}>
-                        <td className="px-3 py-2">{t.completedLoansFrom}</td>
-                        <td className="px-3 py-2">{t.completedLoansTo === null ? '∞' : t.completedLoansTo}</td>
-                        <td className="px-3 py-2 font-mono">{t.multiplier}</td>
-                        <td className="px-3 py-2 font-mono">{t.tierCap || '-'}</td>
+                    {version.multipliers.map(m => (
+                      <tr key={m.id}>
+                        <td className="px-3 py-2">{m.minimumCompletedLoans}</td>
+                        <td className="px-3 py-2 font-mono">{m.multiplier}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -169,7 +207,7 @@ export function ProductDetailsPage() {
             </div>
 
             <PermissionGate permission="PRODUCT_READ">
-              <ProductSimulationPanel versionId={version.id} />
+              <ProductSimulationPanel versionId={version.id} tenures={version.tenures} tenureType={version.tenureType} />
             </PermissionGate>
 
             {version.rejectionReason && (
