@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -160,45 +161,127 @@ export class CustomerService {
 
   async updateBasicDetails(
     customerId: bigint,
-    data: {
-      fatherName: string;
-      residentialPincode: string;
-      email: string;
-      emailVerified?: boolean;
-    },
+    data: any,
   ) {
-    const customer =
-      await this.prisma.customer.update({
-        where: {
-          id: customerId,
-        },
+    const updateData: any = {
+      lastActivityAt: new Date(),
+    };
 
-        data: {
-          fatherName: data.fatherName.trim(),
-          residentialPincode:
-            data.residentialPincode.trim(),
-          email: data.email.trim().toLowerCase(),
+    if (data?.fatherName !== undefined && data?.fatherName !== null) {
+      updateData.fatherName = String(data.fatherName).trim();
+    }
 
-          emailVerified:
-            data.emailVerified ?? false,
+    if (data?.residentialPincode !== undefined && data?.residentialPincode !== null) {
+      updateData.residentialPincode = String(data.residentialPincode).trim();
+    }
 
-          emailVerifiedAt:
-            data.emailVerified === true
-              ? new Date()
-              : null,
+    if (data?.email !== undefined && data?.email !== null) {
+      updateData.email = String(data.email).trim().toLowerCase();
+    }
 
-          onboardingStatus:
-            data.emailVerified === true
-              ? CustomerOnboardingStatus.EMAIL_VERIFIED
-              : CustomerOnboardingStatus.BASIC_DETAILS_PENDING,
+    if (data?.emailVerified !== undefined) {
+      updateData.emailVerified = data.emailVerified;
+      if (data.emailVerified === true) {
+        updateData.emailVerifiedAt = new Date();
+        updateData.onboardingStatus = CustomerOnboardingStatus.EMAIL_VERIFIED;
+      }
+    }
 
-          lastActivityAt: new Date(),
-        },
-      });
+    const customer = await this.prisma.customer.update({
+      where: {
+        id: customerId,
+      },
+      data: updateData,
+    });
 
     return {
       success: true,
-      message: 'Customer details updated successfully.',
+      message: 'Customer basic details updated successfully.',
+      data: this.serializeCustomer(customer),
+    };
+  }
+
+  async updatePincode(
+    customerId: bigint,
+    data: {
+      pincode: string;
+      city?: string;
+      state?: string;
+    },
+  ) {
+    const trimmedPincode = String(data.pincode || '').trim();
+    if (!/^[1-9][0-9]{5}$/.test(trimmedPincode)) {
+      throw new BadRequestException('A valid 6-digit PIN code is required.');
+    }
+
+    const customer = await (this.prisma as any).customer.update({
+      where: {
+        id: customerId,
+      },
+      data: {
+        residentialPincode: trimmedPincode,
+        residentialCity: data.city ? String(data.city).trim() : null,
+        residentialState: data.state ? String(data.state).trim() : null,
+        lastActivityAt: new Date(),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Residential PIN code, city, and state saved successfully.',
+      data: this.serializeCustomer(customer),
+    };
+  }
+
+  async updateProfile(customerId: bigint, body: any) {
+    if (!body || typeof body !== 'object') {
+      throw new BadRequestException('Invalid profile data payload.');
+    }
+
+    const isSalaried = body.employmentType === 'SALARIED';
+    const isSelfEmployed = body.employmentType === 'SELF_EMPLOYED';
+
+    const updateData: any = {
+      residenceStatus: body.residenceStatus || null,
+      employmentType: body.employmentType || null,
+      monthlyIncome:
+        body.monthlyIncome !== undefined && body.monthlyIncome !== null && body.monthlyIncome !== ''
+          ? Number(body.monthlyIncome)
+          : null,
+      workPincode: body.workPincode ? String(body.workPincode).trim() : null,
+      kfsLanguage: body.kfsLanguage || 'English',
+
+      // Salaried fields
+      companyType: isSalaried ? body.companyType || null : null,
+      companyName: isSalaried && body.companyName ? String(body.companyName).trim() : null,
+      designation: isSalaried && body.designation ? String(body.designation).trim() : null,
+      employmentVintage: isSalaried && body.employmentVintage ? String(body.employmentVintage).trim() : null,
+      totalExperience: isSalaried && body.totalExperience ? String(body.totalExperience).trim() : null,
+      salaryMode: isSalaried && body.salaryMode ? String(body.salaryMode).trim() : null,
+
+      // Self-employed fields
+      businessName: isSelfEmployed && body.businessName ? String(body.businessName).trim() : null,
+      businessConstitution: isSelfEmployed ? body.businessConstitution || null : null,
+      businessVintage: isSelfEmployed && body.businessVintage ? String(body.businessVintage).trim() : null,
+      annualTurnover:
+        isSelfEmployed && body.annualTurnover !== undefined && body.annualTurnover !== null && body.annualTurnover !== ''
+          ? Number(body.annualTurnover)
+          : null,
+
+      profileCompletedAt: new Date(),
+      lastActivityAt: new Date(),
+    };
+
+    const customer = await (this.prisma as any).customer.update({
+      where: {
+        id: customerId,
+      },
+      data: updateData,
+    });
+
+    return {
+      success: true,
+      message: 'Profile details saved successfully.',
       data: this.serializeCustomer(customer),
     };
   }

@@ -23,6 +23,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LendersModule } from './modules/lenders/lenders.module';
 import { OtpModule } from './modules/otp/otp.module';
+import { CustomerModule } from './modules/customer/customer.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -46,6 +48,8 @@ import { OtpModule } from './modules/otp/otp.module';
     AdminDashboardModule,
     ExternalApiModule,
     OtpModule,
+    CustomerModule,
+    DocumentsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

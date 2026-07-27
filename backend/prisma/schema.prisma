@@ -449,6 +449,8 @@ model Customer {
   emailVerifiedAt DateTime? @map("email_verified_at") @db.DateTime(0)
 
   residentialPincode String?                  @map("residential_pincode") @db.VarChar(6)
+  residentialCity    String?                  @map("residential_city") @db.VarChar(100)
+  residentialState   String?                  @map("residential_state") @db.VarChar(100)
   workPincode        String?                  @map("work_pincode") @db.VarChar(6)
   residenceStatus    CustomerResidenceStatus? @map("residence_status")
 
@@ -462,6 +464,13 @@ model Customer {
 
   monthlyIncome  Decimal? @map("monthly_income") @db.Decimal(15, 2)
   annualTurnover Decimal? @map("annual_turnover") @db.Decimal(15, 2)
+
+  employmentVintage  String?   @map("employment_vintage") @db.VarChar(50)
+  totalExperience    String?   @map("total_experience") @db.VarChar(50)
+  salaryMode         String?   @map("salary_mode") @db.VarChar(50)
+  businessVintage    String?   @map("business_vintage") @db.VarChar(50)
+  kfsLanguage        String?   @default("English") @map("kfs_language") @db.VarChar(50)
+  profileCompletedAt DateTime? @map("profile_completed_at") @db.DateTime(0)
 
   accountStatus     CustomerAccountStatus     @default(ACTIVE) @map("account_status")
   onboardingStatus  CustomerOnboardingStatus  @default(MOBILE_VERIFIED) @map("onboarding_status")
@@ -478,6 +487,8 @@ model Customer {
   createdAt               DateTime                @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt               DateTime                @updatedAt @map("updated_at") @db.DateTime(0)
   kycVerificationStatuses KycVerificationStatus[]
+  plPaymentLinks          PlPaymentLink[]
+  documents               PlCustomerDocument[]
 
   @@index([email], map: "idx_customers_email")
   @@index([accountStatus], map: "idx_customers_account_status")
@@ -539,4 +550,127 @@ model KycVerificationStatus {
   aadhaarUniqueId        String? @map("aadhaarUniqueId") @db.VarChar(255)
 
   @@map("kyc_verification_status")
+}
+
+enum PlPaymentPurpose {
+  PROCESSING_FEE
+  OTHER
+}
+
+enum PlPaymentStatus {
+  CREATED
+  SENT
+  SUCCESS
+  FAILED
+  PROCESSING
+}
+
+enum SmsStatus {
+  NOT_SENT
+  SENT
+  FAILED
+}
+
+model PlPaymentLink {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationNumber String? @map("application_number") @db.VarChar(50)
+  customerName      String? @map("customer_name") @db.VarChar(160)
+  mobile            String? @db.VarChar(20)
+  email             String? @db.VarChar(160)
+
+  purpose PlPaymentPurpose @default(PROCESSING_FEE)
+  amount  Decimal          @db.Decimal(15, 2)
+  txnid   String           @unique @db.VarChar(120)
+
+  easebuzzId  String? @map("easebuzz_id") @db.VarChar(150)
+  paymentLink String? @map("payment_link") @db.Text
+
+  status    PlPaymentStatus @default(CREATED)
+  smsStatus SmsStatus       @default(NOT_SENT) @map("sms_status")
+
+  rawRequest         String? @map("raw_request") @db.LongText
+  rawCreateResponse  String? @map("raw_create_response") @db.LongText
+  rawWebhookResponse String? @map("raw_webhook_response") @db.LongText
+
+  paidAt DateTime? @map("paid_at") @db.DateTime(6)
+
+  createdBy BigInt? @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt? @map("updated_by") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@index([customerId], map: "idx_pl_payment_links_customer_id")
+  @@index([status], map: "idx_pl_payment_links_status")
+  @@map("pl_payment_links")
+}
+
+enum PlDocumentType {
+  CUSTOMER_LIVE_PHOTO
+  PAN_CARD
+  AADHAAR_CARD
+  BANK_STATEMENT
+  PAYSLIP
+  OTHER
+}
+
+enum PlDocumentStatus {
+  VERIFIED
+  PENDING
+  REJECTED
+  REPLACED
+  INACTIVE
+}
+
+model PlCustomerDocument {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationId BigInt? @map("application_id") @db.UnsignedBigInt
+
+  documentType  PlDocumentType   @default(CUSTOMER_LIVE_PHOTO) @map("document_type")
+  applicantType String           @default("BORROWER") @map("applicant_type") @db.VarChar(50)
+  status        PlDocumentStatus @default(VERIFIED)
+
+  fileName         String  @map("file_name") @db.VarChar(255)
+  originalFileName String? @map("original_file_name") @db.VarChar(255)
+  filePath         String  @map("file_path") @db.VarChar(500)
+  fileUrl          String  @map("file_url") @db.VarChar(500)
+  mimeType         String  @default("image/jpeg") @map("mime_type") @db.VarChar(100)
+  fileSize         Int     @map("file_size")
+  source           String  @default("PROFILE_DETAILS") @db.VarChar(50)
+
+  latitude         Decimal? @db.Decimal(10, 7)
+  longitude        Decimal? @db.Decimal(10, 7)
+  accuracy         Decimal? @db.Decimal(8, 2)
+  formattedAddress String?  @map("formatted_address") @db.Text
+  city             String?  @db.VarChar(100)
+  state            String?  @db.VarChar(100)
+  country          String?  @db.VarChar(100)
+  postalCode       String?  @map("postal_code") @db.VarChar(20)
+
+  capturedAt DateTime? @map("captured_at") @db.DateTime(6)
+  uploadedAt DateTime  @default(now()) @map("uploaded_at") @db.DateTime(6)
+
+  faceLivenessStatus                String?  @map("face_liveness_status") @db.VarChar(50)
+  faceLivenessScore                 Decimal? @map("face_liveness_score") @db.Decimal(5, 4)
+  faceLivenessProviderApplicationId String?  @map("face_liveness_provider_app_id") @db.VarChar(100)
+  metadataJson                      String?  @map("metadata_json") @db.LongText
+
+  createdBy BigInt? @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt? @map("updated_by") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@index([customerId], map: "idx_pl_customer_docs_customer_id")
+  @@index([documentType], map: "idx_pl_customer_docs_type")
+  @@index([status], map: "idx_pl_customer_docs_status")
+  @@map("pl_customer_documents")
 }
