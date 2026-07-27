@@ -19,10 +19,20 @@ export class ExternalApiController {
   @HttpCode(HttpStatus.OK)
   verifyPan(@Body() body: any) {
     return this.externalApiService.verifyPan({
-      customerId:
-        body?.customerId ||
-        body?.customer?.id,
+      customerId: body?.customerId || body?.customer?.id,
       panNumber: body?.panNumber,
+    });
+  }
+
+  @Public()
+  @Post('face-liveness')
+  @HttpCode(HttpStatus.OK)
+  checkFaceLiveness(@Body() body: any) {
+    return this.externalApiService.checkFaceLiveness({
+      customerId: body?.customerId || body?.customer?.id,
+      inputImage: body?.inputImage || body?.input_image,
+      clientRefNum: body?.clientRefNum || body?.client_ref_num,
+      allowDeepfake: body?.allowDeepfake || body?.allow_deepfake,
     });
   }
 }

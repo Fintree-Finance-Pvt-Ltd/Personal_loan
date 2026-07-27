@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   CustomerEligibilityStatus,
   CustomerOnboardingStatus,
+  KycStatus,
   OtpChannel,
   OtpPurpose,
   Prisma,
@@ -503,7 +504,7 @@ export class OtpService {
           },
         });
 
-        return transaction.customer.update({
+        const customer = await transaction.customer.update({
           where: {
             id: customerId,
           },
@@ -515,6 +516,26 @@ export class OtpService {
             lastActivityAt: now,
           },
         });
+
+        // Upsert KycVerificationStatus to record email verification
+        await transaction.kycVerificationStatus.upsert({
+          where: {
+            customerId,
+          },
+          create: {
+            customerId,
+            emailStatus: KycStatus.VERIFIED,
+            emailApiRequest: JSON.stringify({ email, verifiedAt: now.toISOString() }),
+            emailApiResponse: JSON.stringify({ status: 'VERIFIED', verifiedAt: now.toISOString() }),
+          },
+          update: {
+            emailStatus: KycStatus.VERIFIED,
+            emailApiRequest: JSON.stringify({ email, verifiedAt: now.toISOString() }),
+            emailApiResponse: JSON.stringify({ status: 'VERIFIED', verifiedAt: now.toISOString() }),
+          },
+        });
+
+        return customer;
       },
     );
 

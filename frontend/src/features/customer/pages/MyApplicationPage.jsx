@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
+  BadgeCheck,
   BriefcaseBusiness,
   Building2,
   Check,
@@ -14,11 +15,14 @@ import {
   LoaderCircle,
   Lock,
   MailCheck,
+  MapPin,
   Phone,
   ReceiptText,
   Save,
   ShieldCheck,
 } from 'lucide-react';
+import { usePincodeLookup } from '../hooks/usePincodeLookup';
+import { authApi } from '../../auth/authApi';
 
 const APPLICATION_STORAGE_KEY =
   'customerLoanApplication';
@@ -250,6 +254,10 @@ export default function MyApplicationPage() {
     isEmailVerifying,
     setIsEmailVerifying,
   ] = useState(false);
+
+  const [emailOtp, setEmailOtp] = useState('');
+  const [isEmailOtpSent, setIsEmailOtpSent] = useState(false);
+  const [developmentEmailOtp, setDevelopmentEmailOtp] = useState('');
 
   const [isBreRunning, setIsBreRunning] =
     useState(false);
@@ -651,7 +659,7 @@ export default function MyApplicationPage() {
     );
   };
 
-  const handleVerifyEmail = async () => {
+  const handleSendEmailOtp = async () => {
     if (
       !form.email.trim() ||
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
@@ -667,13 +675,98 @@ export default function MyApplicationPage() {
       return;
     }
 
+    if (!storedSession?.customerId) {
+      showMessage(
+        'Please complete mobile verification before verifying email.',
+        'error',
+      );
+      return;
+    }
+
+    setIsEmailVerifying(true);
+    setEmailOtp('');
+    setDevelopmentEmailOtp('');
+    clearMessage();
+
+    try {
+      const result = await authApi.sendEmailOtp({
+        customerId: storedSession.customerId,
+        email: form.email.trim(),
+      });
+
+      const alreadyVerified = result?.data?.alreadyVerified === true;
+
+      if (alreadyVerified) {
+        setEmailVerified(true);
+        setErrors((currentErrors) => ({
+          ...currentErrors,
+          email: '',
+        }));
+        updateStoredApplication({
+          form,
+          emailVerified: true,
+        });
+        showMessage('Email already verified.');
+        return;
+      }
+
+      const devOtp = result?.data?.developmentOtp;
+
+      if (devOtp) {
+        setDevelopmentEmailOtp(devOtp);
+      }
+
+      setIsEmailOtpSent(true);
+
+      showMessage(
+        'OTP sent to your email.',
+      );
+
+      setErrors((currentErrors) => ({
+        ...currentErrors,
+        email: '',
+      }));
+    } catch (error) {
+      console.error(
+        'Send email OTP failed:',
+        error,
+      );
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to send email OTP. Please try again.',
+        'error',
+      );
+    } finally {
+      setIsEmailVerifying(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    const otpValue = emailOtp.trim();
+
+    if (!/^[0-9]{6}$/.test(otpValue)) {
+      setErrors((currentErrors) => ({
+        ...currentErrors,
+        email: 'Enter a valid 6-digit OTP.',
+      }));
+      return;
+    }
+
     setIsEmailVerifying(true);
     clearMessage();
 
     try {
-      await delay(700);
+      await authApi.verifyEmailOtp({
+        customerId: storedSession.customerId,
+        email: form.email.trim(),
+        otp: otpValue,
+      });
 
       setEmailVerified(true);
+      setIsEmailOtpSent(false);
+      setEmailOtp('');
 
       setErrors((currentErrors) => ({
         ...currentErrors,
@@ -690,20 +783,22 @@ export default function MyApplicationPage() {
       );
     } catch (error) {
       console.error(
-        'Email verification failed:',
+        'Email OTP verification failed:',
         error,
       );
 
-      setEmailVerified(false);
-
       showMessage(
-        'Unable to verify email. Please try again.',
+        error instanceof Error
+          ? error.message
+          : 'Email verification failed.',
         'error',
       );
     } finally {
       setIsEmailVerifying(false);
     }
   };
+
+  const handleVerifyEmail = handleVerifyEmailOtp;
 
   const handleVerifyPan = async () => {
     const normalizedPan =
@@ -1442,7 +1537,7 @@ export default function MyApplicationPage() {
         />
       )}
 
-      {currentStep ===
+          {currentStep ===
         'basic_details' && (
         <BasicDetailsStep
           form={form}
@@ -1454,6 +1549,13 @@ export default function MyApplicationPage() {
           isEmailVerifying={
             isEmailVerifying
           }
+          isEmailOtpSent={
+            isEmailOtpSent
+          }
+          emailOtp={emailOtp}
+          developmentEmailOtp={
+            developmentEmailOtp
+          }
           panVerified={panVerified}
           isPanVerifying={
             isPanVerifying
@@ -1463,6 +1565,15 @@ export default function MyApplicationPage() {
           onChange={handleChange}
           onVerifyEmail={
             handleVerifyEmail
+          }
+          onSendEmailOtp={
+            handleSendEmailOtp
+          }
+          onVerifyEmailOtp={
+            handleVerifyEmailOtp
+          }
+          onEmailOtpChange={
+            setEmailOtp
           }
           onVerifyPan={
             handleVerifyPan
@@ -1699,16 +1810,29 @@ function BasicDetailsStep({
   mobileNumber,
   emailVerified,
   isEmailVerifying,
+  isEmailOtpSent,
+  emailOtp,
+  developmentEmailOtp,
   panVerified,
   isPanVerifying,
   isBreRunning,
   isSaving,
   onChange,
   onVerifyEmail,
+  onSendEmailOtp,
+  onVerifyEmailOtp,
+  onEmailOtpChange,
   onVerifyPan,
   onSaveDraft,
   onContinue,
 }) {
+  const {
+    city: pincodeCity,
+    state: pincodeState,
+    isLoading: isPincodeLoading,
+    error: pincodeError,
+  } = usePincodeLookup(panVerified ? form.pincode : '');
+
   return (
     <StepCard>
       <StepHeading
@@ -1960,6 +2084,41 @@ function BasicDetailsStep({
                 inputMode="numeric"
                 required
               />
+
+              {pincodeCity && pincodeState && (
+                <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <MapPin
+                    size={18}
+                    className="mt-0.5 shrink-0 text-emerald-700"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900">
+                      {pincodeCity}, {pincodeState}
+                    </p>
+                    <p className="mt-0.5 text-xs text-emerald-600">
+                      Location verified from PIN code
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {isPincodeLoading && (
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <LoaderCircle
+                    size={16}
+                    className="animate-spin text-slate-500"
+                  />
+                  <span className="text-xs text-slate-500">
+                    Looking up location...
+                  </span>
+                </div>
+              )}
+
+              {pincodeError && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+                  {pincodeError}
+                </div>
+              )}
             </div>
           </div>
 
@@ -2010,42 +2169,87 @@ function BasicDetailsStep({
                   className="min-w-0 flex-1 px-4 py-3 text-sm outline-none"
                 />
 
-                <button
-                  type="button"
-                  onClick={
-                    onVerifyEmail
-                  }
-                  disabled={
-                    isEmailVerifying ||
-                    emailVerified ||
-                    !form.email.trim()
-                  }
-                  className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${
-                    emailVerified
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-slate-200 text-blue-700 hover:bg-blue-50'
-                  } disabled:cursor-not-allowed disabled:opacity-60`}
-                >
-                  {isEmailVerifying ? (
-                    <>
-                      <LoaderCircle
-                        size={15}
-                        className="animate-spin"
-                      />
-                      Verifying
-                    </>
-                  ) : emailVerified ? (
-                    <>
-                      <MailCheck
-                        size={15}
-                      />
-                      Verified
-                    </>
-                  ) : (
-                    'Verify Email'
-                  )}
-                </button>
+                {!emailVerified && !isEmailOtpSent && (
+                  <button
+                    type="button"
+                    onClick={
+                      onSendEmailOtp
+                    }
+                    disabled={
+                      isEmailVerifying ||
+                      !form.email.trim()
+                    }
+                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-slate-200 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {isEmailVerifying ? (
+                      <>
+                        <LoaderCircle
+                          size={15}
+                          className="animate-spin"
+                        />
+                        Sending OTP
+                      </>
+                    ) : (
+                      'Send OTP'
+                    )}
+                  </button>
+                )}
+
+                {emailVerified && (
+                  <span
+                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-emerald-200 bg-emerald-50 text-emerald-700`}
+                  >
+                    <MailCheck size={15} />
+                    Verified
+                  </span>
+                )}
               </div>
+
+              {isEmailOtpSent && !emailVerified && (
+                <div className="mt-3">
+                  <div
+                    className={`flex overflow-hidden rounded-xl border bg-white ${
+                      errors.email
+                        ? 'border-red-400 ring-4 ring-red-50'
+                        : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
+                    }`}
+                  >
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={emailOtp}
+                      onChange={(event) =>
+                        onEmailOtpChange(
+                          event.target.value.replace(/\D/g, '').slice(0, 6)
+                        )
+                      }
+                      placeholder="Enter 6-digit OTP"
+                      className="min-w-0 flex-1 px-4 py-3 text-sm font-medium outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={onVerifyEmailOtp}
+                      disabled={isEmailVerifying || emailOtp.length !== 6}
+                      className="flex shrink-0 items-center gap-1.5 border-l border-slate-200 px-4 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isEmailVerifying ? (
+                        <>
+                          <LoaderCircle size={15} className="animate-spin" />
+                          Verifying
+                        </>
+                      ) : (
+                        'Verify OTP'
+                      )}
+                    </button>
+                  </div>
+                  {developmentEmailOtp && (
+                    <p className="mt-1.5 text-xs text-amber-600">
+                      Dev OTP: {developmentEmailOtp}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {errors.email && (
                 <p className="mt-1.5 text-xs text-red-600">
