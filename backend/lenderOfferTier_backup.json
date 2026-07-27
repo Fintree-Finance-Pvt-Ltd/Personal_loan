@@ -1,0 +1,46 @@
+[
+  {
+    "id": "cms07gd5z001ptsl4viria0sd",
+    "productVersionId": "cms07gd5z001otsl42z9koqlt",
+    "completedLoansFrom": 0,
+    "completedLoansTo": 0,
+    "multiplier": "1",
+    "tierCap": null,
+    "sortOrder": 0,
+    "createdAt": "2026-07-25T10:07:16.391Z",
+    "updatedAt": "2026-07-25T10:07:16.391Z"
+  },
+  {
+    "id": "cms07gd5z001qtsl4dtd55uxm",
+    "productVersionId": "cms07gd5z001otsl42z9koqlt",
+    "completedLoansFrom": 1,
+    "completedLoansTo": 10000,
+    "multiplier": "1.25",
+    "tierCap": null,
+    "sortOrder": 1,
+    "createdAt": "2026-07-25T10:07:16.391Z",
+    "updatedAt": "2026-07-25T10:07:16.391Z"
+  },
+  {
+    "id": "cms2tmri5000gtsjw3w83u1kk",
+    "productVersionId": "cms2tmri5000ftsjwrp3b994t",
+    "completedLoansFrom": 0,
+    "completedLoansTo": 8000,
+    "multiplier": "1",
+    "tierCap": null,
+    "sortOrder": 0,
+    "createdAt": "2026-07-27T06:03:38.811Z",
+    "updatedAt": "2026-07-27T06:03:38.811Z"
+  },
+  {
+    "id": "cms2tmri5000htsjwm9heyc2p",
+    "productVersionId": "cms2tmri5000ftsjwrp3b994t",
+    "completedLoansFrom": 8001,
+    "completedLoansTo": 10000,
+    "multiplier": "1.25",
+    "tierCap": "15000",
+    "sortOrder": 1,
+    "createdAt": "2026-07-27T06:03:38.811Z",
+    "updatedAt": "2026-07-27T06:03:38.811Z"
+  }
+]

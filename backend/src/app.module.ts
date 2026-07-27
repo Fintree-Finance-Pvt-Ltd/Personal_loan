@@ -22,6 +22,8 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LendersModule } from './modules/lenders/lenders.module';
+import { ProductsModule } from './modules/products/products.module';
+
 import { OtpModule } from './modules/otp/otp.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { DocumentsModule } from './modules/documents/documents.module';
@@ -45,6 +47,7 @@ import { DocumentsModule } from './modules/documents/documents.module';
     RolesModule,
     PermissionsModule,
     LendersModule,
+    ProductsModule,
     AdminDashboardModule,
     ExternalApiModule,
     OtpModule,
