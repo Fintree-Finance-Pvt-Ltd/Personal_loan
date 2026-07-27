@@ -23,6 +23,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LendersModule } from './modules/lenders/lenders.module';
 import { ProductsModule } from './modules/products/products.module';
+import { PlatformPoliciesModule } from './modules/platform-policies/platform-policies.module';
 
 import { OtpModule } from './modules/otp/otp.module';
 @Module({
@@ -46,6 +47,7 @@ import { OtpModule } from './modules/otp/otp.module';
     PermissionsModule,
     LendersModule,
     ProductsModule,
+    PlatformPoliciesModule,
     AdminDashboardModule,
     ExternalApiModule,
     OtpModule,
