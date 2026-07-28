@@ -96,6 +96,14 @@ export const getDigilockerStatus = async (lan) => {
   return extractApiData(response);
 };
 
+export const fetchDigilockerDetails = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/digilocker/fetch-details`, {
+    method: 'POST',
+    body: JSON.stringify(withCustomerId()),
+  });
+  return extractApiData(response);
+};
+
 export const saveAddress = async (lan, payload) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/address`, {
     method: 'PATCH',
@@ -171,3 +179,6 @@ export const getDisbursalStatus = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/disbursal/status?${customerIdQuery()}`, { method: 'GET' });
   return extractApiData(response);
 };
+
+
+

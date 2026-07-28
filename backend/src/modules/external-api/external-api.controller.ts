@@ -4,7 +4,9 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
+  Req,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { ExternalApiService } from './external-api.service';
@@ -150,5 +152,24 @@ handleEasebuzzPaymentSuccess(
     const identifier = body?.txnid || body?.customerId || body?.id;
     const status = body?.status || 'SUCCESS';
     return this.plPaymentsService.markPaymentAsPaid(identifier, status);
+  }
+
+  @Public()
+  @Post('customer/loans/:lan/bank-accounts/verify')
+  @HttpCode(HttpStatus.OK)
+  verifyCustomerBankAccount(
+    @Param('lan') lan: string,
+    @Body() body: any,
+    @Req() req: any,
+  ) {
+    return this.externalApiService.verifyCustomerBankAccount(
+      lan,
+      body,
+      req?.user,
+      {
+        ipAddress: req?.ip,
+        userAgent: req?.headers?.['user-agent'],
+      },
+    );
   }
 }
