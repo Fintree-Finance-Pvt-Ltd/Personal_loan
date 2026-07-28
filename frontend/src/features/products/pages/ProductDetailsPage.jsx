@@ -107,6 +107,17 @@ export function ProductDetailsPage() {
             <div className="grid grid-cols-3 gap-4"><dt className="text-slate-500 font-medium">Code</dt><dd className="col-span-2 text-slate-900 font-mono">{data.code}</dd></div>
             <div className="grid grid-cols-3 gap-4"><dt className="text-slate-500 font-medium">Description</dt><dd className="col-span-2 text-slate-900">{data.description || '-'}</dd></div>
             <div className="grid grid-cols-3 gap-4"><dt className="text-slate-500 font-medium">Created By</dt><dd className="col-span-2 text-slate-900">{data.createdBy.name}</dd></div>
+            {data.platformProduct && (
+              <div className="grid grid-cols-3 gap-4 mt-2 pt-2 border-t border-slate-100">
+                <dt className="text-slate-500 font-medium text-xs uppercase tracking-wider">Platform Product</dt>
+                <dd className="col-span-2">
+                  <div className="inline-flex items-center gap-1.5 rounded bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
+                    <span>{data.platformProduct.name}</span>
+                    <span className="text-brand-600/60 opacity-80">({data.platformProduct.code})</span>
+                  </div>
+                </dd>
+              </div>
+            )}
           </dl>
         </div>
 

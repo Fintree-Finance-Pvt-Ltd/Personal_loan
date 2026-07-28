@@ -90,7 +90,13 @@ export function ProductsPage() {
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3">
                       <p className="font-semibold text-slate-900">{item.name}</p>
-                      <p className="font-mono text-xs text-slate-400">{item.code}</p>
+                      <p className="font-mono text-xs text-slate-500 mb-1">{item.code}</p>
+                      {item.platformProduct && (
+                        <div className="mt-1 inline-flex items-center gap-1.5 rounded bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                          <span>{item.platformProduct.name}</span>
+                          <span className="text-brand-600/60 opacity-80">({item.platformProduct.code})</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3 hidden sm:table-cell">
                       <p className="text-slate-900">{item.lender.displayName}</p>

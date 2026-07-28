@@ -1,27 +1,43 @@
 import { useEffect, useState } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Input, Textarea, Select, Button, Alert } from '../../../components/ui';
+import { Input, Textarea, Select, Button, Alert, Badge } from '../../../components/ui';
 import { createProductSchema } from '../validation/product.schema';
 import { getLenders } from '../../lenders/api/lenders.api';
+import { platformProductsApi } from '../../platform-products/api/platform-products.api';
+import { productsApi } from '../api/products.api';
 import { Trash2, Plus } from 'lucide-react';
 
 export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
   const [lenders, setLenders] = useState([]);
+  const [platformProducts, setPlatformProducts] = useState([]);
+  const [mappedPlatformProductIds, setMappedPlatformProductIds] = useState(new Set());
+  
+  const [loadingLenders, setLoadingLenders] = useState(true);
+  const [loadingPlatformProducts, setLoadingPlatformProducts] = useState(true);
+  const [loadingMappings, setLoadingMappings] = useState(false);
 
   useEffect(() => {
-    getLenders({ status: 'APPROVED', limit: 100 })
+    const controller = new AbortController();
+    getLenders({ status: 'APPROVED', limit: 100 }, controller.signal)
       .then(res => setLenders(res.items || []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingLenders(false));
+      
+    platformProductsApi.listPlatformProducts({ status: 'ACTIVE' }, controller.signal)
+      .then(res => setPlatformProducts(res || []))
+      .catch(() => {})
+      .finally(() => setLoadingPlatformProducts(false));
+
+    return () => controller.abort();
   }, []);
 
-  const { register, handleSubmit, control, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, watch, setValue, formState: { errors } } = useForm({
     resolver: zodResolver(createProductSchema),
     defaultValues: {
-      name: '',
-      code: '',
-      description: '',
       lenderId: '',
+      platformProductId: '',
+      description: '',
       strategy: {
         minimumAmount: '5000.00',
         firstLoanBaseAmount: '10000.00',
@@ -40,7 +56,7 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
         penalChargeAmount: '50.00',
         bounceChargeAmount: '250.00',
         emiDueDay: 5,
-        includeAssessmentFeeInApr: false, // Hidden but provided
+        includeAssessmentFeeInApr: false,
         
         tenureType: 'MONTHS',
         tenures: '3, 6, 9, 12',
@@ -59,6 +75,34 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
 
   const roundingMethod = watch('strategy.roundingMethod');
   const tenureType = watch('strategy.tenureType');
+  const selectedLenderId = watch('lenderId');
+  const selectedPlatformProductId = watch('platformProductId');
+  
+  const selectedPlatformProductDetails = platformProducts.find(p => p.id === selectedPlatformProductId);
+
+  useEffect(() => {
+    if (!selectedLenderId) {
+      setMappedPlatformProductIds(new Set());
+      setValue('platformProductId', '');
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadingMappings(true);
+    
+    // Clear platform product selection when lender changes
+    setValue('platformProductId', '');
+    
+    productsApi.listProducts({ lenderId: selectedLenderId, limit: 100 }, controller.signal)
+      .then(res => {
+        const mapped = new Set((res.items || []).map(p => p.platformProductId));
+        setMappedPlatformProductIds(mapped);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMappings(false));
+      
+    return () => controller.abort();
+  }, [selectedLenderId, setValue]);
 
   const getErrorMessages = (obj, prefix = '') => {
     if (!obj) return [];
@@ -94,14 +138,71 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="text-lg font-medium text-slate-900 mb-4">Product Identity</h3>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Select label="Lender" {...register('lenderId')} error={errors.lenderId?.message}>
-            <option value="">Select an APPROVED lender</option>
+          
+          <Select 
+            label="1. Select Lender" 
+            {...register('lenderId')} 
+            error={errors.lenderId?.message}
+            disabled={loadingLenders}
+          >
+            <option value="">{loadingLenders ? 'Loading lenders...' : 'Select an APPROVED lender'}</option>
             {lenders.map(l => <option key={l.id} value={l.id}>{l.displayName} ({l.code})</option>)}
           </Select>
-          <Input label="Product Name" placeholder="e.g. Premium Loan" {...register('name')} error={errors.name?.message} />
-          <Input label="Product Code" placeholder="e.g. PREM-PL" {...register('code')} error={errors.code?.message} className="uppercase" />
+          
+          <Select 
+            label="2. Select Platform Product" 
+            {...register('platformProductId')} 
+            error={errors.platformProductId?.message}
+            disabled={!selectedLenderId || loadingPlatformProducts || loadingMappings}
+          >
+            <option value="">
+              {!selectedLenderId 
+                ? 'Select a lender first' 
+                : loadingMappings || loadingPlatformProducts 
+                  ? 'Loading catalog...' 
+                  : 'Select an ACTIVE platform product'}
+            </option>
+            {platformProducts.map(p => {
+              const isMapped = mappedPlatformProductIds.has(p.id);
+              return (
+                <option key={p.id} value={p.id} disabled={isMapped}>
+                  {p.name} ({p.code}) {isMapped ? ' - Already mapped' : ''}
+                </option>
+              );
+            })}
+          </Select>
+
+          {selectedPlatformProductDetails && (
+            <div className="sm:col-span-2 mt-2 rounded-xl bg-slate-50 p-4 border border-slate-200">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Selected Platform Product Details</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-slate-500 block">Name</span>
+                  <span className="font-semibold text-slate-900">{selectedPlatformProductDetails.name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Code</span>
+                  <span className="font-semibold text-slate-900">{selectedPlatformProductDetails.code}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Status</span>
+                  <Badge tone="success">{selectedPlatformProductDetails.status}</Badge>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Description</span>
+                  <span className="text-slate-700">{selectedPlatformProductDetails.description || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="sm:col-span-2">
-            <Textarea label="Description (Optional)" placeholder="Short description..." {...register('description')} error={errors.description?.message} />
+            <Textarea 
+              label="Lender-Specific Product Description (Optional)" 
+              placeholder="Short description... If left blank, it will inherit from the Platform Product." 
+              {...register('description')} 
+              error={errors.description?.message} 
+            />
           </div>
         </div>
       </div>

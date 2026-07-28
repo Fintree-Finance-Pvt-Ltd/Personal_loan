@@ -23,6 +23,8 @@ const roles = [
   ["FINANCE_CHECKER", "Finance Checker"],
   ["AUDITOR", "Auditor"],
   ["SUPPORT", "Support"],
+  ["MLM_MAKER", "MLM Maker"],
+  ["MLM_CHECKER", "MLM Checker"],
 ] as const;
 
 const permissions = [
@@ -63,6 +65,11 @@ const permissions = [
   ["LENDER_REJECT", "LENDER"],
   ["LENDER_ACTIVATE", "LENDER"],
   ["LENDER_DEACTIVATE", "LENDER"],
+  ["PLATFORM_PRODUCT_READ", "PRODUCT"],
+  ["PLATFORM_PRODUCT_CREATE", "PRODUCT"],
+  ["PLATFORM_PRODUCT_UPDATE", "PRODUCT"],
+  ["PLATFORM_PRODUCT_ACTIVATE", "PRODUCT"],
+  ["PLATFORM_PRODUCT_DEACTIVATE", "PRODUCT"],
   ["PRODUCT_READ", "PRODUCT"],
   ["PRODUCT_CREATE", "PRODUCT"],
   ["PRODUCT_UPDATE", "PRODUCT"],
@@ -71,6 +78,17 @@ const permissions = [
   ["PRODUCT_REJECT", "PRODUCT"],
   ["PRODUCT_VERSION_CREATE", "PRODUCT"],
   ["PRODUCT_ACTIVATE", "PRODUCT"],
+  ["MLM_READ", "MLM"],
+  ["MLM_CREATE", "MLM"],
+  ["MLM_UPDATE", "MLM"],
+  ["MLM_VERSION_CREATE", "MLM"],
+  ["MLM_SUBMIT", "MLM"],
+  ["MLM_APPROVE", "MLM"],
+  ["MLM_REJECT", "MLM"],
+  ["MLM_ACTIVATE", "MLM"],
+  ["MLM_SIMULATE", "MLM"],
+  ["MLM_CAPACITY_READ", "MLM"],
+  ["MLM_EXECUTE", "MLM"],
 ] as const;
 
 const ownSession = [
@@ -96,6 +114,7 @@ const grants: Record<string, string[]> = {
     'LENDER_CREATE',
     'LENDER_UPDATE',
     'LENDER_SUBMIT',
+    "PLATFORM_PRODUCT_READ",
     'PRODUCT_READ',
     'PRODUCT_CREATE',
     'PRODUCT_UPDATE',
@@ -110,6 +129,11 @@ const grants: Record<string, string[]> = {
     'LENDER_REJECT',
     'LENDER_ACTIVATE',
     'LENDER_DEACTIVATE',
+    "PLATFORM_PRODUCT_READ",
+    "PLATFORM_PRODUCT_CREATE",
+    "PLATFORM_PRODUCT_UPDATE",
+    "PLATFORM_PRODUCT_ACTIVATE",
+    "PLATFORM_PRODUCT_DEACTIVATE",
     'PRODUCT_READ',
     'PRODUCT_APPROVE',
     'PRODUCT_REJECT',
@@ -143,6 +167,25 @@ const grants: Record<string, string[]> = {
   FINANCE_CHECKER: [...ownSession, "PAYMENT_REFUND_APPROVE"],
   AUDITOR: [...ownSession, "LENDER_READ", "AUDIT_LOG_VIEW", "SECURITY_EVENT_VIEW", "PRODUCT_READ", "POLICY_READ"],
   SUPPORT: [...ownSession, "USER_READ", "LENDER_READ", "APPLICATION_VIEW_MASKED"],
+  MLM_MAKER: [
+    ...ownSession,
+    "MLM_READ",
+    "MLM_CREATE",
+    "MLM_UPDATE",
+    "MLM_VERSION_CREATE",
+    "MLM_SUBMIT",
+    "MLM_SIMULATE",
+    "MLM_CAPACITY_READ",
+  ],
+  MLM_CHECKER: [
+    ...ownSession,
+    "MLM_READ",
+    "MLM_APPROVE",
+    "MLM_REJECT",
+    "MLM_ACTIVATE",
+    "MLM_SIMULATE",
+    "MLM_CAPACITY_READ",
+  ],
 };
 
 async function main(): Promise<void> {

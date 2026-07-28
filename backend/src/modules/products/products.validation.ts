@@ -51,8 +51,9 @@ export const createProductStrategySchema = z.object({
 
 export const createProductSchema = z.object({
   lenderId: z.string().min(1, 'Lender ID is required'),
-  name: z.string().trim().min(1, 'Name is required').max(120),
-  code: z.string().trim().toUpperCase().min(1, 'Code is required').max(60),
+  platformProductId: z.string().min(1, 'Platform Product ID is required'),
+  name: z.string().trim().min(1).max(120).optional(),
+  code: z.string().trim().toUpperCase().min(1).max(60).optional(),
   description: z.string().trim().max(255).optional().transform(v => v || null),
   strategy: createProductStrategySchema,
 }).strict();

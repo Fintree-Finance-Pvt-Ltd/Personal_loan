@@ -62,13 +62,20 @@ export class ProductsService {
     this.calc.validateAmounts(input.strategy);
     this.calc.validateMultipliers(input.strategy.multipliers);
 
+    const platformProduct = await this.prisma.platformProduct.findUnique({ where: { id: input.platformProductId } });
+    if (!platformProduct) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Platform Product not found' } });
+    if (platformProduct.status !== 'ACTIVE') {
+      throw new BadRequestException({ error: { code: 'INVALID_STATE', message: 'Platform Product is not active' } });
+    }
+
     const result = await this.prisma.$transaction(async (tx: any) => {
       const product = await tx.lenderProduct.create({
         data: {
           lenderId: input.lenderId,
-          name: input.name,
-          code: input.code,
-          description: input.description,
+          platformProductId: input.platformProductId,
+          name: input.name || platformProduct.name,
+          code: input.code || platformProduct.code,
+          description: input.description || platformProduct.description,
           operationalStatus: ProductOperationalStatus.INACTIVE,
           createdById: ctx.actorUserId,
           updatedById: ctx.actorUserId,

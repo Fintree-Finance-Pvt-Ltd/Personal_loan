@@ -27,6 +27,13 @@ import CreatePlatformPolicyPage from './features/platform-policies/pages/CreateP
 import PlatformPolicyDetailsPage from './features/platform-policies/pages/PlatformPolicyDetailsPage';
 import EditPlatformPolicyVersionPage from './features/platform-policies/pages/EditPlatformPolicyVersionPage';
 
+// MLM
+import MlmPoliciesPage from './features/mlm/pages/MlmPoliciesPage';
+import CreateMlmPolicyPage from './features/mlm/pages/CreateMlmPolicyPage';
+import MlmPolicyDetailsPage from './features/mlm/pages/MlmPolicyDetailsPage';
+import EditMlmPolicyVersionPage from './features/mlm/pages/EditMlmPolicyVersionPage';
+import MlmDistributionDashboardPage from './features/mlm/pages/MlmDistributionDashboardPage';
+
 // Products
 import { ProductsPage } from './features/products/pages/ProductsPage';
 import { CreateProductPage } from './features/products/pages/CreateProductPage';
@@ -35,6 +42,11 @@ import { EditProductVersionPage } from './features/products/pages/EditProductVer
 
 // Permissions
 import { PermissionsPage } from './features/permissions/pages/PermissionsPage';
+
+// Platform Products
+import { PlatformProductsPage } from './features/platform-products/pages/PlatformProductsPage';
+import { CreatePlatformProductPage } from './features/platform-products/pages/CreatePlatformProductPage';
+import { EditPlatformProductPage } from './features/platform-products/pages/EditPlatformProductPage';
 
 // Roles
 import { RolesPage } from './features/roles/pages/RolesPage';
@@ -106,6 +118,32 @@ export default function App() {
             }
           />
 
+          {/* Platform Products */}
+          <Route
+            path="/admin-master/platform-products"
+            element={
+              <PermissionRoute permission="PLATFORM_PRODUCT_READ">
+                <PlatformProductsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/platform-products/new"
+            element={
+              <PermissionRoute permission="PLATFORM_PRODUCT_CREATE">
+                <CreatePlatformProductPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/platform-products/:platformProductId/edit"
+            element={
+              <PermissionRoute permission="PLATFORM_PRODUCT_UPDATE">
+                <EditPlatformProductPage />
+              </PermissionRoute>
+            }
+          />
+
           {/* Lenders */}
           <Route
             path="/admin-master/lenders"
@@ -136,6 +174,48 @@ export default function App() {
             element={
               <PermissionRoute permission="LENDER_UPDATE">
                 <EditLenderPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* MLM Routes */}
+          <Route
+            path="/admin-master/mlm-policies"
+            element={
+              <PermissionRoute permission="MLM_READ">
+                <MlmPoliciesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/mlm-policies/:policyId"
+            element={
+              <PermissionRoute permission="MLM_READ">
+                <MlmPolicyDetailsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/mlm-policies/create"
+            element={
+              <PermissionRoute permission="MLM_CREATE">
+                <CreateMlmPolicyPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/mlm-policy-versions/:versionId/edit"
+            element={
+              <PermissionRoute permission="MLM_UPDATE">
+                <EditMlmPolicyVersionPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/mlm-policy-versions/:versionId/distribution"
+            element={
+              <PermissionRoute permission="MLM_READ">
+                <MlmDistributionDashboardPage />
               </PermissionRoute>
             }
           />

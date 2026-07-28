@@ -28,6 +28,8 @@ import { PlatformPoliciesModule } from './modules/platform-policies/platform-pol
 import { OtpModule } from './modules/otp/otp.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { MlmModule } from './modules/mlm/mlm.module';
+import { PlatformProductsModule } from './modules/platform-products/platform-products.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -55,6 +57,8 @@ import { DocumentsModule } from './modules/documents/documents.module';
     OtpModule,
     CustomerModule,
     DocumentsModule,
+    MlmModule,
+    PlatformProductsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
