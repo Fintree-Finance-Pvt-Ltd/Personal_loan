@@ -85,6 +85,36 @@ model User {
   lendersApproved   Lender[]        @relation("LenderApprovedBy")
   lendersRejected   Lender[]        @relation("LenderRejectedBy")
 
+  platformProductsCreated PlatformProduct[] @relation("PlatformProductCreatedBy")
+  platformProductsUpdated PlatformProduct[] @relation("PlatformProductUpdatedBy")
+
+  productsCreated          LenderProduct[]        @relation("ProductCreatedBy")
+  productsUpdated          LenderProduct[]        @relation("ProductUpdatedBy")
+  productVersionsCreated   LenderProductVersion[] @relation("ProductVersionCreatedBy")
+  productVersionsUpdated   LenderProductVersion[] @relation("ProductVersionUpdatedBy")
+  productVersionsSubmitted LenderProductVersion[] @relation("ProductVersionSubmittedBy")
+  productVersionsApproved  LenderProductVersion[] @relation("ProductVersionApprovedBy")
+  productVersionsRejected  LenderProductVersion[] @relation("ProductVersionRejectedBy")
+  productVersionsActivated LenderProductVersion[] @relation("ProductVersionActivatedBy")
+
+  platformPoliciesCreated         PlatformPolicy[]        @relation("PlatformPolicyCreatedBy")
+  platformPoliciesUpdated         PlatformPolicy[]        @relation("PlatformPolicyUpdatedBy")
+  platformPolicyVersionsCreated   PlatformPolicyVersion[] @relation("PlatformPolicyVersionCreatedBy")
+  platformPolicyVersionsUpdated   PlatformPolicyVersion[] @relation("PlatformPolicyVersionUpdatedBy")
+  platformPolicyVersionsSubmitted PlatformPolicyVersion[] @relation("PlatformPolicyVersionSubmittedBy")
+  platformPolicyVersionsApproved  PlatformPolicyVersion[] @relation("PlatformPolicyVersionApprovedBy")
+  platformPolicyVersionsRejected  PlatformPolicyVersion[] @relation("PlatformPolicyVersionRejectedBy")
+  platformPolicyVersionsActivated PlatformPolicyVersion[] @relation("PlatformPolicyVersionActivatedBy")
+  mlmPoliciesCreated              MlmPolicy[]             @relation("MlmPolicyCreatedBy")
+  mlmPoliciesUpdated              MlmPolicy[]             @relation("MlmPolicyUpdatedBy")
+
+  mlmPolicyVersionsCreated   MlmPolicyVersion[] @relation("MlmPolicyVersionCreatedBy")
+  mlmPolicyVersionsUpdated   MlmPolicyVersion[] @relation("MlmPolicyVersionUpdatedBy")
+  mlmPolicyVersionsSubmitted MlmPolicyVersion[] @relation("MlmPolicyVersionSubmittedBy")
+  mlmPolicyVersionsApproved  MlmPolicyVersion[] @relation("MlmPolicyVersionApprovedBy")
+  mlmPolicyVersionsRejected  MlmPolicyVersion[] @relation("MlmPolicyVersionRejectedBy")
+  mlmPolicyVersionsActivated MlmPolicyVersion[] @relation("MlmPolicyVersionActivatedBy")
+
   @@index([status])
   @@index([lockedUntil])
 }
@@ -282,6 +312,11 @@ model Lender {
 
   rejectedBy User? @relation("LenderRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
 
+  products               LenderProduct[]
+  mlmAllocationRoutes    MlmAllocationRoute[]
+  mlmCapacityUsages      MlmCapacityUsage[]
+  mlmAllocationDecisions MlmAllocationDecision[]
+
   @@index([approvalStatus])
   @@index([operationalStatus])
   @@index([integrationHealth])
@@ -294,4 +329,1276 @@ model Lender {
   @@index([operationalStatus, updatedAt])
   @@index([createdAt])
   @@index([updatedAt])
+}
+
+enum ProductOperationalStatus {
+  INACTIVE
+  ACTIVE
+}
+
+enum ProductVersionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  ACTIVE
+  SUPERSEDED
+}
+
+enum RepeatTierScope {
+  SAME_LENDER
+  PLATFORM_WIDE
+}
+
+enum AmountRoundingMethod {
+  NONE
+  FLOOR
+  NEAREST
+  CEIL
+}
+
+enum CustomerAccountStatus {
+  ACTIVE
+  BLOCKED
+  INACTIVE
+}
+
+enum CustomerOnboardingStatus {
+  MOBILE_VERIFIED
+  BASIC_DETAILS_PENDING
+  PAN_VERIFIED
+  EMAIL_VERIFIED
+  PLATFORM_BRE_PENDING
+  PLATFORM_ELIGIBLE
+  PLATFORM_INELIGIBLE
+  APPLICATION_IN_PROGRESS
+  APPLICATION_SUBMITTED
+  LENDER_APPROVED
+  LENDER_REJECTED
+  DISBURSED
+}
+
+enum CustomerEligibilityStatus {
+  NOT_CHECKED
+  ELIGIBLE
+  INELIGIBLE
+}
+
+enum CustomerGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum CustomerResidenceStatus {
+  RENTED
+  OWNED
+  FAMILY_OWNED
+  COMPANY_PROVIDED
+}
+
+enum CustomerEmploymentType {
+  SALARIED
+  SELF_EMPLOYED
+}
+
+enum CustomerCompanyType {
+  PRIVATE_LIMITED
+  PUBLIC_LIMITED
+  PARTNERSHIP
+  GOVERNMENT
+  OTHER
+}
+
+enum CustomerBusinessConstitution {
+  PROPRIETORSHIP
+  PARTNERSHIP
+  LLP
+  PRIVATE_LIMITED
+  OTHER
+}
+
+model LenderProduct {
+  id                String                   @id @default(cuid())
+  lenderId          String
+  platformProductId String
+  name              String                   @db.VarChar(120)
+  code              String                   @db.VarChar(60)
+  description       String?                  @db.VarChar(255)
+  operationalStatus ProductOperationalStatus @default(INACTIVE)
+
+  createdById String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lender                 Lender                  @relation(fields: [lenderId], references: [id], onDelete: Restrict)
+  platformProduct        PlatformProduct        @relation(fields: [platformProductId], references: [id], onDelete: Restrict)
+  createdBy              User                    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy              User                    @relation("ProductUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  versions               LenderProductVersion[]
+  mlmAllocationRoutes    MlmAllocationRoute[]
+  mlmCapacityUsages      MlmCapacityUsage[]
+  mlmAllocationDecisions MlmAllocationDecision[]
+
+  @@unique([lenderId, code])
+  
+  @@index([platformProductId, operationalStatus])
+  @@index([lenderId, operationalStatus])
+}
+
+model LenderProductVersion {
+  id                        String                    @id @default(cuid())
+  productId                 String
+  versionNumber             Int
+  status                    ProductVersionStatus
+  minimumAmount             Decimal                   @db.Decimal(12, 2)
+  firstLoanBaseAmount       Decimal                   @db.Decimal(12, 2)
+  maximumAmountCap          Decimal                   @db.Decimal(12, 2)
+  repeatTierScope           RepeatTierScope           @default(SAME_LENDER)
+  roundingMethod            AmountRoundingMethod
+  roundingUnit              Decimal?                  @db.Decimal(12, 2)
+  interestMethod            InterestCalculationMethod
+  annualRoiPercent          Decimal                   @db.Decimal(7, 4)
+  processingFeePercent      Decimal                   @db.Decimal(7, 4)
+  processingFeeGstPercent   Decimal                   @db.Decimal(5, 2)
+  assessmentFeeAmount       Decimal                   @db.Decimal(12, 2)
+  assessmentFeeGstPercent   Decimal                   @db.Decimal(5, 2)
+  penalChargeAmount         Decimal                   @db.Decimal(12, 2)
+  bounceChargeAmount        Decimal                   @db.Decimal(12, 2)
+  emiDueDay                 Int
+  includeAssessmentFeeInApr Boolean                   @default(false)
+  tenureType                TenureType                @default(MONTHS)
+  effectiveFrom             DateTime?
+  version                   Int                       @default(1)
+
+  createdById     String
+  updatedById     String
+  submittedById   String?
+  approvedById    String?
+  rejectedById    String?
+  activatedById   String?
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  activatedAt     DateTime?
+  rejectionReason String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product     LenderProduct           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  multipliers LenderOfferMultiplier[]
+  tenures     LenderProductTenure[]
+  createdBy   User                    @relation("ProductVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User                    @relation("ProductVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  submittedBy User?                   @relation("ProductVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  approvedBy  User?                   @relation("ProductVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy  User?                   @relation("ProductVersionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  activatedBy User?                   @relation("ProductVersionActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
+
+  @@unique([productId, versionNumber])
+  @@index([productId, status])
+  @@index([status, updatedAt])
+}
+
+enum InterestCalculationMethod {
+  REDUCING_BALANCE
+  FLAT_RATE
+}
+
+enum TenureType {
+  MONTHS
+  DAYS
+}
+
+model LenderOfferMultiplier {
+  id                    String               @id @default(cuid())
+  productVersionId      String
+  minimumCompletedLoans Int
+  multiplier            Decimal              @db.Decimal(8, 4)
+  sortOrder             Int
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  productVersion        LenderProductVersion @relation(fields: [productVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([productVersionId, minimumCompletedLoans])
+  @@unique([productVersionId, sortOrder])
+  @@index([productVersionId, sortOrder])
+}
+
+model LenderProductTenure {
+  id               String               @id @default(cuid())
+  productVersionId String
+  tenure           Int
+  sortOrder        Int
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  productVersion   LenderProductVersion @relation(fields: [productVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([productVersionId, tenure])
+  @@unique([productVersionId, sortOrder])
+  @@index([productVersionId, sortOrder])
+}
+
+enum OtpPurpose {
+  MOBILE_VERIFICATION
+  EMAIL_VERIFICATION
+  LOGIN
+  PASSWORD_RESET
+  PAYMENT_VERIFICATION
+}
+
+enum OtpChannel {
+  SMS
+  EMAIL
+}
+
+model OtpSession {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt?   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  mobileNumber String? @map("mobile_number") @db.VarChar(15)
+  emailId      String? @map("email_id") @db.VarChar(255)
+
+  purpose OtpPurpose @default(MOBILE_VERIFICATION)
+  channel OtpChannel
+
+  otpHash String @map("otp_hash") @db.VarChar(255)
+
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at") @db.DateTime(0)
+
+  attempts    Int @default(0) @db.UnsignedInt
+  maxAttempts Int @default(5) @map("max_attempts") @db.UnsignedInt
+
+  expiresAt  DateTime @map("expires_at") @db.DateTime(0)
+  lastSentAt DateTime @map("last_sent_at") @db.DateTime(0)
+
+  resendCount Int @default(0) @map("resend_count") @db.UnsignedInt
+
+  consentGiven Boolean   @default(false) @map("consent_given")
+  consentText  String?   @map("consent_text") @db.Text
+  consentAt    DateTime? @map("consent_at") @db.DateTime(0)
+
+  invalidatedAt DateTime? @map("invalidated_at") @db.DateTime(0)
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([customerId], map: "idx_otp_sessions_customer_id")
+  @@index([mobileNumber], map: "idx_otp_sessions_mobile_number")
+  @@index([emailId], map: "idx_otp_sessions_email_id")
+  @@index([verified], map: "idx_otp_sessions_verified")
+  @@index([expiresAt], map: "idx_otp_sessions_expires_at")
+  @@index([purpose], map: "idx_otp_sessions_purpose")
+  @@index([createdAt], map: "idx_otp_sessions_created_at")
+  @@index([mobileNumber, purpose, createdAt], map: "idx_otp_mobile_purpose_created")
+  @@index([emailId, purpose, createdAt], map: "idx_otp_email_purpose_created")
+  @@map("otp_sessions")
+}
+
+model Customer {
+  id           BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  customerCode String @unique @map("customer_code") @db.VarChar(30)
+
+  countryCode      String       @default("+91") @map("country_code") @db.VarChar(5)
+  mobileNumber     String       @unique @map("mobile_number") @db.VarChar(15)
+  otpSessions      OtpSession[]
+  mobileVerified   Boolean      @default(false) @map("mobile_verified")
+  mobileVerifiedAt DateTime?    @map("mobile_verified_at") @db.DateTime(0)
+
+  fullName   String? @map("full_name") @db.VarChar(150)
+  firstName  String? @map("first_name") @db.VarChar(60)
+  middleName String? @map("middle_name") @db.VarChar(60)
+  lastName   String? @map("last_name") @db.VarChar(60)
+  fatherName String? @map("father_name") @db.VarChar(150)
+
+  panNumber                String?   @unique @map("pan_number") @db.VarChar(10)
+  panVerified              Boolean   @default(false) @map("pan_verified")
+  panVerifiedAt            DateTime? @map("pan_verified_at") @db.DateTime(0)
+  panProviderApplicationId String?   @map("pan_provider_application_id") @db.VarChar(100)
+  panHolderType            String?   @map("pan_holder_type") @db.VarChar(100)
+
+  dateOfBirth DateTime?       @map("date_of_birth") @db.Date
+  gender      CustomerGender?
+
+  email           String?   @db.VarChar(255)
+  emailVerified   Boolean   @default(false) @map("email_verified")
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.DateTime(0)
+
+  residentialPincode String?                  @map("residential_pincode") @db.VarChar(6)
+  residentialCity    String?                  @map("residential_city") @db.VarChar(100)
+  residentialState   String?                  @map("residential_state") @db.VarChar(100)
+  workPincode        String?                  @map("work_pincode") @db.VarChar(6)
+  residenceStatus    CustomerResidenceStatus? @map("residence_status")
+
+  employmentType CustomerEmploymentType? @map("employment_type")
+  companyType    CustomerCompanyType?    @map("company_type")
+  companyName    String?                 @map("company_name") @db.VarChar(200)
+  designation    String?                 @db.VarChar(150)
+
+  businessName         String?                       @map("business_name") @db.VarChar(200)
+  businessConstitution CustomerBusinessConstitution? @map("business_constitution")
+
+  monthlyIncome  Decimal? @map("monthly_income") @db.Decimal(15, 2)
+  annualTurnover Decimal? @map("annual_turnover") @db.Decimal(15, 2)
+
+  employmentVintage  String?   @map("employment_vintage") @db.VarChar(50)
+  totalExperience    String?   @map("total_experience") @db.VarChar(50)
+  salaryMode         String?   @map("salary_mode") @db.VarChar(50)
+  businessVintage    String?   @map("business_vintage") @db.VarChar(50)
+  kfsLanguage        String?   @default("English") @map("kfs_language") @db.VarChar(50)
+  profileCompletedAt DateTime? @map("profile_completed_at") @db.DateTime(0)
+
+  accountStatus     CustomerAccountStatus     @default(ACTIVE) @map("account_status")
+  onboardingStatus  CustomerOnboardingStatus  @default(MOBILE_VERIFIED) @map("onboarding_status")
+  eligibilityStatus CustomerEligibilityStatus @default(NOT_CHECKED) @map("eligibility_status")
+
+  eligibilityReason    String?   @map("eligibility_reason") @db.VarChar(500)
+  eligibilityCheckedAt DateTime? @map("eligibility_checked_at") @db.DateTime(0)
+
+  latestApplicationId BigInt? @map("latest_application_id") @db.UnsignedBigInt
+
+  lastLoginAt    DateTime? @map("last_login_at") @db.DateTime(0)
+  lastActivityAt DateTime? @map("last_activity_at") @db.DateTime(0)
+
+  createdAt               DateTime                @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt               DateTime                @updatedAt @map("updated_at") @db.DateTime(0)
+  kycVerificationStatuses KycVerificationStatus[]
+  plPaymentLinks          PlPaymentLink[]
+  documents               PlCustomerDocument[]
+  applications            PlApplication[]
+  loans                   PlLoan[]
+
+  @@index([email], map: "idx_customers_email")
+  @@index([accountStatus], map: "idx_customers_account_status")
+  @@index([onboardingStatus], map: "idx_customers_onboarding_status")
+  @@index([eligibilityStatus], map: "idx_customers_eligibility_status")
+  @@index([createdAt], map: "idx_customers_created_at")
+  @@map("customers")
+}
+
+enum KycStatus {
+  PENDING
+  INITIATED
+  VERIFIED
+  FAILED
+}
+
+model KycVerificationStatus {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @unique(map: "uk_kyc_verification_status_customer_id") @map("customerId") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  panStatus     KycStatus @default(PENDING) @map("panStatus")
+  gstStatus     KycStatus @default(PENDING) @map("gstStatus")
+  aadhaarStatus KycStatus @default(PENDING) @map("aadhaarStatus")
+  bureauStatus  KycStatus @default(PENDING) @map("bureauStatus")
+  mobileStatus  KycStatus @default(PENDING) @map("mobileStatus")
+  emailStatus   KycStatus @default(PENDING) @map("emailStatus")
+
+  mobileApiRequest  String? @map("mobileApiRequest") @db.LongText
+  mobileApiResponse String? @map("mobileApiResponse") @db.LongText
+  emailApiRequest   String? @map("emailApiRequest") @db.LongText
+  emailApiResponse  String? @map("emailApiResponse") @db.LongText
+
+  aadhaarTransactionId String?   @map("aadhaarTransactionId") @db.VarChar(255)
+  aadhaarName          String?   @map("aadhaarName") @db.VarChar(255)
+  aadhaarMaskedNumber  String?   @map("aadhaarMaskedNumber") @db.VarChar(255)
+  aadhaarDob           DateTime? @map("aadhaarDob") @db.Date
+  aadhaarAddress       String?   @map("aadhaarAddress") @db.Text
+
+  firstName  String? @map("firstName") @db.VarChar(255)
+  middleName String? @map("middleName") @db.VarChar(255)
+  lastName   String? @map("lastName") @db.VarChar(255)
+
+  bureauApiRequest  String? @map("bureauApiRequest") @db.LongText
+  bureauApiResponse String? @map("bureauApiResponse") @db.LongText
+
+  updatedAt      DateTime @default(now()) @updatedAt @map("updatedAt") @db.DateTime(6)
+  isPdfGenerated Boolean  @default(false) @map("is_pdf_generated")
+
+  panApiRequest  String? @map("panApiRequest") @db.LongText
+  panApiResponse String? @map("panApiResponse") @db.LongText
+  gstApiRequest  String? @map("gstApiRequest") @db.LongText
+  gstApiResponse String? @map("gstApiResponse") @db.LongText
+
+  aadhaarApiRequest      String? @map("aadhaarApiRequest") @db.LongText
+  aadhaarApiResponse     String? @map("aadhaarApiResponse") @db.LongText
+  aadhaarWebhookResponse String? @map("aadhaarWebhookResponse") @db.LongText
+  aadhaarUniqueId        String? @map("aadhaarUniqueId") @db.VarChar(255)
+
+  @@map("kyc_verification_status")
+}
+
+enum PlatformPolicyOperationalStatus {
+  INACTIVE
+  ACTIVE
+}
+
+enum PlatformPolicyVersionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  ACTIVE
+  SUPERSEDED
+}
+
+enum PolicyRuleCategory {
+  IDENTITY
+  DEMOGRAPHIC
+  GEOGRAPHY
+  INCOME
+  EMPLOYMENT
+  EXPOSURE
+  PERFORMANCE
+  FRAUD
+  COOLDOWN
+}
+
+enum PolicyRuleValueType {
+  BOOLEAN
+  INTEGER
+  DECIMAL
+  STRING
+  STRING_ARRAY
+}
+
+enum PolicyRuleOperator {
+  EQUALS
+  NOT_EQUALS
+  GREATER_THAN
+  GREATER_THAN_OR_EQUAL
+  LESS_THAN
+  LESS_THAN_OR_EQUAL
+  IN
+  NOT_IN
+  IS_TRUE
+  IS_FALSE
+}
+
+enum PolicyDecisionOutcome {
+  PASS
+  FAIL
+  REFER
+}
+
+model PlatformPolicy {
+  id                String                          @id @default(cuid())
+  name              String                          @db.VarChar(150)
+  code              String                          @unique @db.VarChar(60)
+  description       String?                         @db.VarChar(500)
+  operationalStatus PlatformPolicyOperationalStatus @default(INACTIVE)
+
+  createdById String
+  updatedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User @relation("PlatformPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  updatedBy User @relation("PlatformPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  versions PlatformPolicyVersion[]
+
+  @@index([operationalStatus, updatedAt])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+model PlatformPolicyVersion {
+  id            String                      @id @default(cuid())
+  policyId      String
+  versionNumber Int
+  status        PlatformPolicyVersionStatus @default(DRAFT)
+
+  effectiveFrom DateTime?
+  version       Int       @default(1)
+
+  createdById   String
+  updatedById   String
+  submittedById String?
+  approvedById  String?
+  rejectedById  String?
+  activatedById String?
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  activatedAt     DateTime?
+  rejectionReason String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policy PlatformPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+
+  rules PlatformPolicyRule[]
+
+  createdBy User @relation("PlatformPolicyVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  updatedBy User @relation("PlatformPolicyVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  submittedBy User? @relation("PlatformPolicyVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+
+  approvedBy User? @relation("PlatformPolicyVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  rejectedBy User? @relation("PlatformPolicyVersionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+
+  activatedBy User? @relation("PlatformPolicyVersionActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
+
+  @@unique([policyId, versionNumber])
+  @@index([policyId, status])
+  @@index([status, updatedAt])
+  @@index([submittedById])
+  @@index([approvedById])
+}
+
+model PlatformPolicyRule {
+  id              String @id @default(cuid())
+  policyVersionId String
+
+  ruleCode  String              @db.VarChar(80)
+  ruleName  String              @db.VarChar(150)
+  category  PolicyRuleCategory
+  inputKey  String              @db.VarChar(100)
+  valueType PolicyRuleValueType
+  operator  PolicyRuleOperator
+
+  expectedValue Json?
+
+  failureOutcome  PolicyDecisionOutcome
+  reasonCode      String                @db.VarChar(100)
+  customerMessage String                @db.VarChar(300)
+  internalMessage String?               @db.VarChar(500)
+
+  priority  Int
+  isActive  Boolean @default(true)
+  sortOrder Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policyVersion PlatformPolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([policyVersionId, ruleCode])
+  @@unique([policyVersionId, sortOrder])
+  @@index([policyVersionId, priority])
+  @@index([ruleCode])
+}
+
+enum PlPaymentPurpose {
+  PROCESSING_FEE
+  OTHER
+}
+
+enum PlPaymentStatus {
+  CREATED
+  SENT
+  SUCCESS
+  FAILED
+  PROCESSING
+}
+
+enum SmsStatus {
+  NOT_SENT
+  SENT
+  FAILED
+}
+
+model PlPaymentLink {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationNumber String? @map("application_number") @db.VarChar(50)
+  customerName      String? @map("customer_name") @db.VarChar(160)
+  mobile            String? @db.VarChar(20)
+  email             String? @db.VarChar(160)
+
+  purpose PlPaymentPurpose @default(PROCESSING_FEE)
+  amount  Decimal          @db.Decimal(15, 2)
+  txnid   String           @unique @db.VarChar(120)
+
+  easebuzzId  String? @map("easebuzz_id") @db.VarChar(150)
+  paymentLink String? @map("payment_link") @db.Text
+
+  status    PlPaymentStatus @default(CREATED)
+  smsStatus SmsStatus       @default(NOT_SENT) @map("sms_status")
+
+  rawRequest         String? @map("raw_request") @db.LongText
+  rawCreateResponse  String? @map("raw_create_response") @db.LongText
+  rawWebhookResponse String? @map("raw_webhook_response") @db.LongText
+
+  paidAt DateTime? @map("paid_at") @db.DateTime(6)
+
+  createdBy BigInt? @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt? @map("updated_by") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@index([customerId], map: "idx_pl_payment_links_customer_id")
+  @@index([status], map: "idx_pl_payment_links_status")
+  @@map("pl_payment_links")
+}
+
+enum PlDocumentType {
+  CUSTOMER_LIVE_PHOTO
+  PAN_CARD
+  AADHAAR_CARD
+  BANK_STATEMENT
+  PAYSLIP
+  OTHER
+}
+
+enum PlDocumentStatus {
+  VERIFIED
+  PENDING
+  REJECTED
+  REPLACED
+  INACTIVE
+}
+
+model PlCustomerDocument {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationId BigInt? @map("application_id") @db.UnsignedBigInt
+
+  documentType  PlDocumentType   @default(CUSTOMER_LIVE_PHOTO) @map("document_type")
+  applicantType String           @default("BORROWER") @map("applicant_type") @db.VarChar(50)
+  status        PlDocumentStatus @default(VERIFIED)
+
+  fileName         String  @map("file_name") @db.VarChar(255)
+  originalFileName String? @map("original_file_name") @db.VarChar(255)
+  filePath         String  @map("file_path") @db.VarChar(500)
+  fileUrl          String  @map("file_url") @db.VarChar(500)
+  mimeType         String  @default("image/jpeg") @map("mime_type") @db.VarChar(100)
+  fileSize         Int     @map("file_size")
+  source           String  @default("PROFILE_DETAILS") @db.VarChar(50)
+
+  latitude         Decimal? @db.Decimal(10, 7)
+  longitude        Decimal? @db.Decimal(10, 7)
+  accuracy         Decimal? @db.Decimal(8, 2)
+  formattedAddress String?  @map("formatted_address") @db.Text
+  city             String?  @db.VarChar(100)
+  state            String?  @db.VarChar(100)
+  country          String?  @db.VarChar(100)
+  postalCode       String?  @map("postal_code") @db.VarChar(20)
+
+  capturedAt DateTime? @map("captured_at") @db.DateTime(6)
+  uploadedAt DateTime  @default(now()) @map("uploaded_at") @db.DateTime(6)
+
+  faceLivenessStatus                String?  @map("face_liveness_status") @db.VarChar(50)
+  faceLivenessScore                 Decimal? @map("face_liveness_score") @db.Decimal(5, 4)
+  faceLivenessProviderApplicationId String?  @map("face_liveness_provider_app_id") @db.VarChar(100)
+  metadataJson                      String?  @map("metadata_json") @db.LongText
+
+  createdBy BigInt? @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt? @map("updated_by") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@index([customerId], map: "idx_pl_customer_docs_customer_id")
+  @@index([documentType], map: "idx_pl_customer_docs_type")
+  @@index([status], map: "idx_pl_customer_docs_status")
+  @@map("pl_customer_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Post-Approval Journey Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PlApplicationStatus {
+  DRAFT
+  SUBMITTED
+  LENDER_REVIEW
+  LENDER_APPROVED
+  LENDER_REJECTED
+}
+
+enum PlLoanStatus {
+  LENDER_APPROVED
+  OFFER_ACCEPTED
+  KYC_IN_PROGRESS
+  ADDRESS_CONFIRMED
+  BANK_VERIFIED
+  KFS_ACCEPTED
+  MANDATE_COMPLETED
+  ESIGN_COMPLETED
+  READY_FOR_DISBURSAL
+  DISBURSAL_PROCESSING
+  DISBURSED
+  FAILED
+  CANCELLED
+}
+
+model PlApplication {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationNumber String              @unique @map("application_number") @db.VarChar(50)
+  status            PlApplicationStatus @default(DRAFT)
+  lenderCode        String?             @map("lender_code") @db.VarChar(30)
+
+  submittedAt          DateTime? @map("submitted_at") @db.DateTime(0)
+  lenderDecisionAt     DateTime? @map("lender_decision_at") @db.DateTime(0)
+  lenderDecisionReason String?   @map("lender_decision_reason") @db.VarChar(500)
+  approvedAmount       Decimal?  @map("approved_amount") @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  loans PlLoan[]
+
+  @@index([customerId], map: "idx_pl_applications_customer_id")
+  @@index([status], map: "idx_pl_applications_status")
+  @@map("pl_applications")
+}
+
+model PlLoan {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  lan String @unique @db.VarChar(30)
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationId BigInt        @map("application_id") @db.UnsignedBigInt
+  application   PlApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  lenderCode String @map("lender_code") @db.VarChar(30)
+
+  status      PlLoanStatus @default(LENDER_APPROVED)
+  currentStep String       @default("APPROVAL_SUMMARY") @map("current_step") @db.VarChar(50)
+
+  approvedAmount   Decimal  @map("approved_amount") @db.Decimal(15, 2)
+  lenderApprovedAt DateTime @map("lender_approved_at") @db.DateTime(0)
+
+  // ── Offer ──────────────────────────────────────────────────────────────
+  offerStatus            String?   @map("offer_status") @db.VarChar(30)
+  offerAllowedTenures    String?   @map("offer_allowed_tenures") @db.VarChar(200)
+  offerValidUntil        DateTime? @map("offer_valid_until") @db.DateTime(0)
+  acceptedTenureDays     Int?      @map("accepted_tenure_days")
+  acceptedAt             DateTime? @map("offer_accepted_at") @db.DateTime(0)
+  acceptedInterestRate   Decimal?  @map("accepted_interest_rate") @db.Decimal(7, 4)
+  acceptedProcessingFee  Decimal?  @map("accepted_processing_fee") @db.Decimal(15, 2)
+  acceptedEmiAmount      Decimal?  @map("accepted_emi_amount") @db.Decimal(15, 2)
+  acceptedTotalRepayment Decimal?  @map("accepted_total_repayment") @db.Decimal(15, 2)
+
+  // ── DigiLocker / Aadhaar KYC ──────────────────────────────────────────
+  digilockerStatus      String?   @map("digilocker_status") @db.VarChar(30)
+  digilockerSessionId   String?   @map("digilocker_session_id") @db.VarChar(255)
+  digilockerReference   String?   @map("digilocker_reference") @db.VarChar(255)
+  aadhaarMaskedNumber   String?   @map("aadhaar_masked_number") @db.VarChar(20)
+  aadhaarLastFour       String?   @map("aadhaar_last_four") @db.VarChar(4)
+  aadhaarVerifiedName   String?   @map("aadhaar_verified_name") @db.VarChar(200)
+  aadhaarDateOfBirth    DateTime? @map("aadhaar_date_of_birth") @db.Date
+  aadhaarGender         String?   @map("aadhaar_gender") @db.VarChar(10)
+  aadhaarCareOf         String?   @map("aadhaar_care_of") @db.VarChar(200)
+  aadhaarAddrLine1      String?   @map("aadhaar_addr_line1") @db.VarChar(500)
+  aadhaarAddrLine2      String?   @map("aadhaar_addr_line2") @db.VarChar(500)
+  aadhaarLandmark       String?   @map("aadhaar_landmark") @db.VarChar(200)
+  aadhaarLocality       String?   @map("aadhaar_locality") @db.VarChar(200)
+  aadhaarDistrict       String?   @map("aadhaar_district") @db.VarChar(100)
+  aadhaarCity           String?   @map("aadhaar_city") @db.VarChar(100)
+  aadhaarState          String?   @map("aadhaar_state") @db.VarChar(100)
+  aadhaarCountry        String?   @default("India") @map("aadhaar_country") @db.VarChar(50)
+  aadhaarPincode        String?   @map("aadhaar_pincode") @db.VarChar(6)
+  aadhaarFormattedAddr  String?   @map("aadhaar_formatted_addr") @db.Text
+  digilockerVerifiedAt  DateTime? @map("digilocker_verified_at") @db.DateTime(0)
+  digilockerConsentAt   DateTime? @map("digilocker_consent_at") @db.DateTime(0)
+  digilockerRawResponse String?   @map("digilocker_raw_response") @db.LongText
+
+  // ── Address Confirmation ──────────────────────────────────────────────
+  addressConfirmed          Boolean   @default(false) @map("address_confirmed")
+  addressSameAsPermanent    Boolean?  @map("address_same_as_permanent")
+  currentAddrLine1          String?   @map("current_addr_line1") @db.VarChar(500)
+  currentAddrLine2          String?   @map("current_addr_line2") @db.VarChar(500)
+  currentAddrLandmark       String?   @map("current_addr_landmark") @db.VarChar(200)
+  currentAddrLocality       String?   @map("current_addr_locality") @db.VarChar(200)
+  currentAddrDistrict       String?   @map("current_addr_district") @db.VarChar(100)
+  currentAddrCity           String?   @map("current_addr_city") @db.VarChar(100)
+  currentAddrState          String?   @map("current_addr_state") @db.VarChar(100)
+  currentAddrCountry        String?   @default("India") @map("current_addr_country") @db.VarChar(50)
+  currentAddrPincode        String?   @map("current_addr_pincode") @db.VarChar(6)
+  currentAddrResidenceSince String?   @map("current_addr_residence_since") @db.VarChar(20)
+  currentAddrProofType      String?   @map("current_addr_proof_type") @db.VarChar(50)
+  currentAddrDocumentId     String?   @map("current_addr_document_id") @db.VarChar(100)
+  addressConfirmedAt        DateTime? @map("address_confirmed_at") @db.DateTime(0)
+
+  // ── Bank Verification ─────────────────────────────────────────────────
+  bankVerified          Boolean   @default(false) @map("bank_verified")
+  bankAccountHolderName String?   @map("bank_account_holder_name") @db.VarChar(200)
+  bankAccountType       String?   @map("bank_account_type") @db.VarChar(30)
+  bankAccountMasked     String?   @map("bank_account_masked") @db.VarChar(30)
+  bankIfsc              String?   @map("bank_ifsc") @db.VarChar(11)
+  bankName              String?   @map("bank_name") @db.VarChar(100)
+  bankProviderReference String?   @map("bank_provider_reference") @db.VarChar(255)
+  bankNameMatchScore    Decimal?  @map("bank_name_match_score") @db.Decimal(5, 2)
+  bankVerifiedAt        DateTime? @map("bank_verified_at") @db.DateTime(0)
+
+  // ── KFS ───────────────────────────────────────────────────────────────
+  kfsAccepted    Boolean   @default(false) @map("kfs_accepted")
+  kfsVersion     String?   @map("kfs_version") @db.VarChar(20)
+  kfsDocumentId  String?   @map("kfs_document_id") @db.VarChar(100)
+  kfsGeneratedAt DateTime? @map("kfs_generated_at") @db.DateTime(0)
+  kfsViewedAt    DateTime? @map("kfs_viewed_at") @db.DateTime(0)
+  kfsAcceptedAt  DateTime? @map("kfs_accepted_at") @db.DateTime(0)
+  kfsConsentText String?   @map("kfs_consent_text") @db.Text
+  kfsIpAddress   String?   @map("kfs_ip_address") @db.VarChar(45)
+  kfsUserAgent   String?   @map("kfs_user_agent") @db.VarChar(500)
+
+  // ── eMandate ──────────────────────────────────────────────────────────
+  mandateCompleted   Boolean   @default(false) @map("mandate_completed")
+  mandateStatus      String?   @map("mandate_status") @db.VarChar(30)
+  mandateProviderRef String?   @map("mandate_provider_ref") @db.VarChar(255)
+  mandateInitiatedAt DateTime? @map("mandate_initiated_at") @db.DateTime(0)
+  mandateCompletedAt DateTime? @map("mandate_completed_at") @db.DateTime(0)
+
+  // ── eSign ─────────────────────────────────────────────────────────────
+  esignCompleted     Boolean   @default(false) @map("esign_completed")
+  esignStatus        String?   @map("esign_status") @db.VarChar(30)
+  esignProviderRef   String?   @map("esign_provider_ref") @db.VarChar(255)
+  esignDocumentTypes String?   @map("esign_document_types") @db.VarChar(500)
+  esignInitiatedAt   DateTime? @map("esign_initiated_at") @db.DateTime(0)
+  esignCompletedAt   DateTime? @map("esign_completed_at") @db.DateTime(0)
+
+  // ── Disbursal ─────────────────────────────────────────────────────────
+  disbursalStatus      String?   @map("disbursal_status") @db.VarChar(30)
+  disbursalProviderRef String?   @map("disbursal_provider_ref") @db.VarChar(255)
+  disbursalAmount      Decimal?  @map("disbursal_amount") @db.Decimal(15, 2)
+  disbursalRequestedAt DateTime? @map("disbursal_requested_at") @db.DateTime(0)
+  disbursalCompletedAt DateTime? @map("disbursal_completed_at") @db.DateTime(0)
+  disbursalUtr         String?   @map("disbursal_utr") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  auditEvents      PlLoanAuditEvent[]
+  bankVerification PlBankVerification?
+
+  @@index([customerId], map: "idx_pl_loans_customer_id")
+  @@index([applicationId], map: "idx_pl_loans_application_id")
+  @@index([status], map: "idx_pl_loans_status")
+  @@index([lenderCode], map: "idx_pl_loans_lender_code")
+  @@map("pl_loans")
+}
+
+model PlLoanAuditEvent {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  lan           String @db.VarChar(30)
+  customerId    BigInt @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt @map("application_id") @db.UnsignedBigInt
+
+  eventType String  @map("event_type") @db.VarChar(80)
+  metadata  Json?   @db.Json
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  @@index([loanId], map: "idx_pl_loan_audit_loan_id")
+  @@index([eventType, createdAt], map: "idx_pl_loan_audit_event_type")
+  @@index([customerId], map: "idx_pl_loan_audit_customer_id")
+  @@map("pl_loan_audit_events")
+}
+
+enum MlmPolicyOperationalStatus {
+  INACTIVE
+  ACTIVE
+}
+
+enum MlmPolicyVersionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  ACTIVE
+  SUPERSEDED
+}
+
+enum MlmAllocationMethod {
+  WEIGHTED_FAIR_SHARE
+  PRIORITY_FALLBACK
+}
+
+enum MlmDistributionBasis {
+  APPLICATION_COUNT
+  ALLOCATED_AMOUNT
+}
+
+enum MlmCustomerSegment {
+  ALL
+  NEW
+  REPEAT
+}
+
+enum MlmCapacityPeriod {
+  DAILY
+  MONTHLY
+}
+
+enum MlmAllocationDecisionStatus {
+  PENDING
+  ASSIGNED
+  NO_ELIGIBLE_ROUTE
+}
+
+enum MlmAllocationAttemptOutcome {
+  ASSIGNED
+  NO_ELIGIBLE_ROUTE
+  REJECTED_BY_PLATFORM_POLICY
+  ERROR
+}
+
+model MlmPolicy {
+  id                String                     @id @default(cuid())
+  platformProductId String
+  name              String                     @db.VarChar(150)
+  code              String                     @unique @db.VarChar(60)
+  description       String?                    @db.VarChar(500)
+  scopeCode         String                     @default("PLATFORM_DEFAULT") @db.VarChar(60)
+  operationalStatus MlmPolicyOperationalStatus @default(INACTIVE)
+
+  createdById String
+  updatedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy       User             @relation("MlmPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy       User             @relation("MlmPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  platformProduct PlatformProduct @relation(fields: [platformProductId], references: [id], onDelete: Restrict)
+
+  versions  MlmPolicyVersion[]
+  decisions MlmAllocationDecision[]
+
+  @@index([scopeCode, operationalStatus])
+  @@index([operationalStatus, updatedAt])
+  @@index([platformProductId, operationalStatus])
+  @@index([scopeCode, platformProductId, operationalStatus])
+}
+
+model MlmPolicyVersion {
+  id            String                 @id @default(cuid())
+  policyId      String
+  versionNumber Int
+  status        MlmPolicyVersionStatus @default(DRAFT)
+
+  allocationMethod  MlmAllocationMethod
+  distributionBasis MlmDistributionBasis?
+  effectiveFrom     DateTime?
+  version           Int                   @default(1)
+
+  createdById   String
+  updatedById   String
+  submittedById String?
+  approvedById  String?
+  rejectedById  String?
+  activatedById String?
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  activatedAt     DateTime?
+  rejectionReason String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policy MlmPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+
+  routes    MlmAllocationRoute[]
+  routeStates MlmAllocationRouteState[]
+  decisions MlmAllocationDecision[]
+  attempts  MlmAllocationAttempt[]
+
+  createdBy   User  @relation("MlmPolicyVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User  @relation("MlmPolicyVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  submittedBy User? @relation("MlmPolicyVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  approvedBy  User? @relation("MlmPolicyVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy  User? @relation("MlmPolicyVersionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  activatedBy User? @relation("MlmPolicyVersionActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
+
+  @@unique([policyId, versionNumber])
+  @@index([policyId, status])
+  @@index([status, updatedAt])
+}
+
+model MlmAllocationRoute {
+  id                 String @id @default(cuid())
+  mlmPolicyVersionId String
+
+  lenderId  String
+  productId String
+
+  customerSegment MlmCustomerSegment @default(ALL)
+
+  allocationWeightPercent Decimal? @db.Decimal(7, 4)
+  priority                Int
+
+  minimumTicketAmount Decimal? @db.Decimal(12, 2)
+  maximumTicketAmount Decimal? @db.Decimal(12, 2)
+
+  capacityPeriod          MlmCapacityPeriod
+  maximumApplicationCount Int?
+  maximumAllocatedAmount  Decimal?          @db.Decimal(16, 2)
+
+  isActive  Boolean @default(true)
+  sortOrder Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policyVersion MlmPolicyVersion @relation(fields: [mlmPolicyVersionId], references: [id], onDelete: Cascade)
+  lender        Lender           @relation(fields: [lenderId], references: [id], onDelete: Restrict)
+  product       LenderProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  decisions MlmAllocationDecision[]
+  routeState MlmAllocationRouteState?
+
+  @@unique([mlmPolicyVersionId, lenderId, productId, customerSegment])
+  @@unique([mlmPolicyVersionId, sortOrder])
+  @@index([mlmPolicyVersionId, isActive])
+  @@index([lenderId, productId])
+  @@index([customerSegment])
+}
+
+model MlmCapacityUsage {
+  id String @id @default(cuid())
+
+  lenderId       String
+  productId      String
+  capacityPeriod MlmCapacityPeriod
+
+  periodKey   String   @db.VarChar(20)
+  periodStart DateTime
+  periodEnd   DateTime
+
+  allocatedApplicationCount Int     @default(0)
+  allocatedAmount           Decimal @default(0) @db.Decimal(16, 2)
+
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lender  Lender        @relation(fields: [lenderId], references: [id], onDelete: Restrict)
+  product LenderProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([lenderId, productId, capacityPeriod, periodKey])
+  @@index([periodStart, periodEnd])
+  @@index([lenderId, productId])
+}
+
+model MlmAllocationDecision {
+  id                   String @id @default(cuid())
+  applicationReference String @unique @db.VarChar(100)
+
+  policyId        String?
+  policyVersionId String?
+  routeId         String?
+
+  lenderId          String?
+  platformProductId String?
+  productId         String?
+  productVersionId  String?
+
+  platformPolicyVersionId     String?
+  platformEvaluationReference String?
+
+  requestedAmount         Decimal               @db.Decimal(12, 2)
+  customerSegment         MlmCustomerSegment
+  platformDecisionOutcome PolicyDecisionOutcome
+
+  status            MlmAllocationDecisionStatus @default(PENDING)
+  allocationMethod  MlmAllocationMethod?
+  distributionBasis MlmDistributionBasis?
+
+  selectedWeightPercent Decimal? @db.Decimal(7, 4)
+  selectedPriority      Int?
+
+  capacityPeriod    MlmCapacityPeriod?
+  capacityPeriodKey String?            @db.VarChar(20)
+
+  attemptCount       Int     @default(0)
+  decisionReasonCode String? @db.VarChar(100)
+  decisionSnapshot   Json?
+
+  assignedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  policy          MlmPolicy?          @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  policyVersion   MlmPolicyVersion?   @relation(fields: [policyVersionId], references: [id], onDelete: SetNull)
+  route           MlmAllocationRoute? @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  lender          Lender?             @relation(fields: [lenderId], references: [id], onDelete: SetNull)
+  platformProduct PlatformProduct?    @relation(fields: [platformProductId], references: [id], onDelete: SetNull)
+  product         LenderProduct?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  attempts MlmAllocationAttempt[]
+
+  @@index([status, createdAt])
+  @@index([lenderId, productId])
+  @@index([policyVersionId])
+}
+
+model MlmAllocationAttempt {
+  id              String  @id @default(cuid())
+  decisionId      String
+  policyVersionId String?
+
+  attemptNumber Int
+  outcome       MlmAllocationAttemptOutcome
+
+  requestedAmount  Decimal @db.Decimal(12, 2)
+  candidateResults Json
+  selectedRouteId  String?
+  reasonCode       String? @db.VarChar(100)
+
+  createdAt DateTime @default(now())
+
+  decision      MlmAllocationDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  policyVersion MlmPolicyVersion?     @relation(fields: [policyVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([decisionId, attemptNumber])
+  @@index([decisionId, createdAt])
+}
+
+enum PlatformProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model PlatformProduct {
+  id          String                @id @default(cuid())
+  name        String                @db.VarChar(150)
+  code        String                @unique @db.VarChar(60)
+  description String?               @db.VarChar(500)
+  status      PlatformProductStatus @default(ACTIVE)
+
+  createdById String
+  updatedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User @relation("PlatformProductCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User @relation("PlatformProductUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  lenderProducts LenderProduct[]
+  mlmPolicies    MlmPolicy[]
+  mlmDecisions   MlmAllocationDecision[]
+
+  @@index([status, name])
+}
+
+model MlmAllocationRouteState {
+  id String @id @default(cuid())
+
+  mlmPolicyVersionId String
+  routeId String @unique
+
+  currentWeight Decimal @db.Decimal(12, 4) @default(0)
+  allocatedApplicationCount Int @default(0)
+  allocatedAmount Decimal @default(0) @db.Decimal(16, 2)
+  lastAllocatedAt DateTime?
+
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policyVersion MlmPolicyVersion @relation(fields: [mlmPolicyVersionId], references: [id], onDelete: Cascade)
+  route MlmAllocationRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@index([mlmPolicyVersionId])
+}
+enum PlBankVerificationStatus {
+  INITIATED
+  VERIFIED
+  FAILED
+  NAME_MISMATCH
+  PROVIDER_ERROR
+}
+
+enum PlBankAccountType {
+  SAVINGS
+  CURRENT
+}
+
+model PlBankVerification {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @unique(map: "uk_pl_bank_verification_loan_id") @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  customerId    BigInt @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt @map("application_id") @db.UnsignedBigInt
+
+  lan String @unique @db.VarChar(30)
+
+  accountHolderName String            @map("account_holder_name") @db.VarChar(200)
+  accountType       PlBankAccountType @map("account_type")
+
+  accountNumberEncrypted   String @map("account_number_encrypted") @db.Text
+  accountNumberMasked      String @map("account_number_masked") @db.VarChar(30)
+  accountNumberFingerprint String @map("account_number_fingerprint") @db.Char(64)
+
+  ifscCode   String  @map("ifsc_code") @db.VarChar(11)
+  bankName   String? @map("bank_name") @db.VarChar(150)
+  branchName String? @map("branch_name") @db.VarChar(150)
+
+  provider          String  @default("DIGIO") @db.VarChar(30)
+  providerReference String? @unique(map: "uk_pl_bank_provider_ref") @map("provider_reference") @db.VarChar(255)
+
+  providerVerified        Boolean @default(false) @map("provider_verified")
+  providerBeneficiaryName String? @map("provider_beneficiary_name") @db.VarChar(200)
+  providerBankName        String? @map("provider_bank_name") @db.VarChar(150)
+  providerBranchName      String? @map("provider_branch_name") @db.VarChar(150)
+
+  fuzzyMatchScore    Decimal? @map("fuzzy_match_score") @db.Decimal(5, 2)
+  nameMatchThreshold Decimal? @map("name_match_threshold") @db.Decimal(5, 2)
+  nameMatched        Boolean  @default(false) @map("name_matched")
+
+  verificationAmount Decimal?                 @map("verification_amount") @db.Decimal(5, 2)
+  status             PlBankVerificationStatus @default(INITIATED)
+
+  verifiedAt DateTime? @map("verified_at") @db.DateTime(0)
+
+  failureCode   String? @map("failure_code") @db.VarChar(100)
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  rawResponse String? @map("raw_response") @db.LongText
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([customerId], map: "idx_pl_bank_verification_customer")
+  @@index([applicationId], map: "idx_pl_bank_verification_application")
+  @@index([status], map: "idx_pl_bank_verification_status")
+  @@index([accountNumberFingerprint], map: "idx_pl_bank_verification_fingerprint")
+  @@map("pl_bank_verifications")
 }

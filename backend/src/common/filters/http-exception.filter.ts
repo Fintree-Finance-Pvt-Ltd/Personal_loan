@@ -35,7 +35,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       typeof structured.error === 'object' && structured.error
         ? (structured.error as Record<string, unknown>)
         : undefined;
-    const validationMessage = Array.isArray(structured.message) ? structured.message.join('; ') : undefined;
+    const validationMessage = Array.isArray(structured.message) ? structured.message.join('; ') : 
+                              (typeof structured.message === 'string' ? structured.message : undefined);
     const message =
       (typeof explicitError?.message === 'string' && explicitError.message) ||
       validationMessage ||

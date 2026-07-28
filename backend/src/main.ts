@@ -3,6 +3,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
+import * as express from 'express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { Logger } from "@nestjs/common";
 
@@ -14,18 +16,23 @@ async function bootstrap(): Promise<void> {
   
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const config = app.get(ConfigService);
-   const logger = new Logger("UserService");
+  const logger = new Logger("UserService");
   app.useLogger(logger);
-  app.use(helmet());
+  app.use(cookieParser());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    }),
+  );
   app.use(json({ limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
   app.use(urlencoded({ extended: false, limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
-  app.use(cookieParser());
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
   app.enableCors({
-    origin: [config.getOrThrow<string>('FRONTEND_URL')],
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin'],
     exposedHeaders: ['X-Request-ID'],
   });
   const adapter = app.getHttpAdapter().getInstance();

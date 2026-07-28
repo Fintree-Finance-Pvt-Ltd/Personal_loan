@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 
-export function Button({ variant = 'primary', className = '', children, ...props }) {
+export function Button({ as: Component = 'button', variant = 'primary', className = '', children, ...props }) {
   const styles =
     variant === 'danger'
       ? 'bg-red-700 text-white hover:bg-red-800'
@@ -8,12 +8,12 @@ export function Button({ variant = 'primary', className = '', children, ...props
         ? 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
         : 'bg-brand-600 text-white hover:bg-brand-700';
   return (
-    <button
+    <Component
       className={`inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
       {...props}
     >
       {children}
-    </button>
+    </Component>
   );
 }
 
@@ -30,6 +30,44 @@ export function Input({ label, error, id: providedId, ...props }) {
         aria-describedby={error ? `${id}-error` : undefined}
         {...props}
       />
+      {error && <span id={`${id}-error`} className="mt-1.5 block text-sm text-red-700">{error}</span>}
+    </label>
+  );
+}
+
+export function Textarea({ label, error, id: providedId, ...props }) {
+  const generatedId = useId();
+  const id = providedId || generatedId;
+  return (
+    <label className="block text-sm font-medium text-slate-700" htmlFor={id}>
+      {label}
+      <textarea
+        id={id}
+        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-600"
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
+        {...props}
+      />
+      {error && <span id={`${id}-error`} className="mt-1.5 block text-sm text-red-700">{error}</span>}
+    </label>
+  );
+}
+
+export function Select({ label, error, id: providedId, children, ...props }) {
+  const generatedId = useId();
+  const id = providedId || generatedId;
+  return (
+    <label className="block text-sm font-medium text-slate-700" htmlFor={id}>
+      {label}
+      <select
+        id={id}
+        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 shadow-sm focus:border-brand-600"
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
+        {...props}
+      >
+        {children}
+      </select>
       {error && <span id={`${id}-error`} className="mt-1.5 block text-sm text-red-700">{error}</span>}
     </label>
   );

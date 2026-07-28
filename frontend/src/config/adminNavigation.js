@@ -14,10 +14,40 @@ export const ADMIN_NAVIGATION = [
     group: 'Configuration',
     items: [
       {
+        label: 'Platform Products',
+        shortLabel: 'PP',
+        path: '/admin-master/platform-products',
+        permission: 'PLATFORM_PRODUCT_READ',
+      },
+      {
         label: 'Lender management',
         shortLabel: 'LM',
         path: '/admin-master/lenders',
         permission: 'LENDER_READ',
+      },
+      {
+        label: 'Product & offer strategy',
+        shortLabel: 'PO',
+        path: '/admin-master/products',
+        permission: 'PRODUCT_READ',
+      },
+      {
+        label: 'Platform policies (BRE)',
+        shortLabel: 'PP',
+        path: '/admin-master/platform-policies',
+        permission: 'POLICY_READ',
+      },
+      {
+        label: 'Multi-Lender Allocation (MLM)',
+        shortLabel: 'ML',
+        path: '/admin-master/mlm-policies',
+        permission: 'MLM_READ',
+      },
+      {
+        label: 'Capacity Dashboard',
+        shortLabel: 'CD',
+        path: '/admin-master/mlm-capacities',
+        permission: 'MLM_CAPACITY_READ',
       },
     ],
   },
