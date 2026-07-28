@@ -52,8 +52,18 @@ export class ProductsService {
       throw new BadRequestException({ error: { code: 'INVALID_STATE', message: 'Product can only be created for APPROVED lenders.' } });
     }
 
+    const platformProduct = await this.prisma.platformProduct.findUnique({ where: { id: input.platformProductId } });
+    if (!platformProduct) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Platform Product not found' } });
+    if (platformProduct.status !== 'ACTIVE') {
+      throw new BadRequestException({ error: { code: 'INVALID_STATE', message: 'Platform Product is not active' } });
+    }
+
+    const finalCode = input.code || platformProduct.code;
+    const finalName = input.name || platformProduct.name;
+    const finalDescription = input.description || platformProduct.description;
+
     const existingCode = await this.prisma.lenderProduct.findUnique({
-      where: { lenderId_code: { lenderId: input.lenderId, code: input.code } },
+      where: { lenderId_code: { lenderId: input.lenderId, code: finalCode } },
     });
     if (existingCode) {
       throw new ConflictException({ error: { code: 'CONFLICT', message: 'Product code must be unique within the lender.' } });
@@ -62,20 +72,16 @@ export class ProductsService {
     this.calc.validateAmounts(input.strategy);
     this.calc.validateMultipliers(input.strategy.multipliers);
 
-    const platformProduct = await this.prisma.platformProduct.findUnique({ where: { id: input.platformProductId } });
-    if (!platformProduct) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Platform Product not found' } });
-    if (platformProduct.status !== 'ACTIVE') {
-      throw new BadRequestException({ error: { code: 'INVALID_STATE', message: 'Platform Product is not active' } });
-    }
+
 
     const result = await this.prisma.$transaction(async (tx: any) => {
       const product = await tx.lenderProduct.create({
         data: {
           lenderId: input.lenderId,
           platformProductId: input.platformProductId,
-          name: input.name || platformProduct.name,
-          code: input.code || platformProduct.code,
-          description: input.description || platformProduct.description,
+          name: finalName,
+          code: finalCode,
+          description: finalDescription,
           operationalStatus: ProductOperationalStatus.INACTIVE,
           createdById: ctx.actorUserId,
           updatedById: ctx.actorUserId,

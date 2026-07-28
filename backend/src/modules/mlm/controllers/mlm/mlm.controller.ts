@@ -63,7 +63,7 @@ export class MlmController {
     }
     const eligibleLenderProducts = await this.mlmService.getEligibleLenderProducts(platformProductId);
     return {
-      methods: ['SMOOTH_WEIGHTED_ROUND_ROBIN'],
+      methods: ['WEIGHTED_FAIR_SHARE'],
       lenderProducts: eligibleLenderProducts,
     };
   }

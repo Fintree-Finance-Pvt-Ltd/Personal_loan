@@ -58,8 +58,8 @@ export class PlatformProductsController {
 
     const ctx = {
       actorUserId: actor.userId,
-      actorRoleCodes: actor.roles,
-      requestId: req.id as string,
+      actorRoleCodes: actor.roleCodes,
+      requestId: (req as any).id as string,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -84,8 +84,8 @@ export class PlatformProductsController {
 
     const ctx = {
       actorUserId: actor.userId,
-      actorRoleCodes: actor.roles,
-      requestId: req.id as string,
+      actorRoleCodes: actor.roleCodes,
+      requestId: (req as any).id as string,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -104,8 +104,8 @@ export class PlatformProductsController {
   ) {
     const ctx = {
       actorUserId: actor.userId,
-      actorRoleCodes: actor.roles,
-      requestId: req.id as string,
+      actorRoleCodes: actor.roleCodes,
+      requestId: (req as any).id as string,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -123,8 +123,8 @@ export class PlatformProductsController {
   ) {
     const ctx = {
       actorUserId: actor.userId,
-      actorRoleCodes: actor.roles,
-      requestId: req.id as string,
+      actorRoleCodes: actor.roleCodes,
+      requestId: (req as any).id as string,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     };

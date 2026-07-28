@@ -5,8 +5,8 @@ export const mlmApi = {
     const res = await api.get('/admin/mlm-policies');
     return res.data.data;
   },
-  getPolicyDetails: async (policyId) => {
-    const res = await api.get(`/admin/mlm-policies/${policyId}`);
+  getPolicyDetails: async (policyId, params = {}) => {
+    const res = await api.get(`/admin/mlm-policies/${policyId}`, { params });
     return res.data.data;
   },
   createPolicy: async (data) => {

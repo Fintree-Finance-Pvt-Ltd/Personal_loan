@@ -17,11 +17,11 @@ export default function MlmPolicyDetailsPage() {
   const handleCreateDraft = async () => {
     try {
       await mlmApi.createPolicyVersion(policyId, {
-        allocationMethod: 'SMOOTH_WEIGHTED_ROUND_ROBIN'
+        allocationMethod: 'WEIGHTED_FAIR_SHARE'
       });
       loadPolicy();
     } catch (err) {
-      alert('Could not create draft: ' + err.response?.data?.message);
+      alert('Could not create draft: ' + (err.response?.data?.error?.message || err.message));
     }
   };
 
@@ -32,7 +32,7 @@ export default function MlmPolicyDetailsPage() {
       if (action === 'activate') await mlmApi.activatePolicyVersion(versionId);
       loadPolicy();
     } catch (err) {
-      alert('Action failed: ' + err.response?.data?.message);
+      alert('Action failed: ' + (err.response?.data?.error?.message || err.message));
     }
   };
 
@@ -71,7 +71,7 @@ export default function MlmPolicyDetailsPage() {
                 <td className="px-6 py-4 text-right space-x-2">
                   {version.status === 'DRAFT' && (
                     <>
-                      <Link to={`/admin-master/mlm-policy-versions/${version.id}/edit`} className="text-blue-600 hover:underline">Edit Routes</Link>
+                      <Link to={`/admin-master/mlm-policy-versions/${version.id}/edit?policyId=${policy.id}`} className="text-blue-600 hover:underline">Edit Routes</Link>
                       <button onClick={() => handleAction('submit', version.id)} className="text-green-600 hover:underline ml-2">Submit</button>
                     </>
                   )}

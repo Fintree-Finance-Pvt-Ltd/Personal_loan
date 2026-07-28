@@ -1,26 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { mlmApi } from '../api/mlm.api';
 import { getLenders } from '../../lenders/api/lenders.api';
 import { productsApi } from '../../products/api/products.api';
 
 export default function EditMlmPolicyVersionPage() {
-  const { versionId, policyId } = useParams();
+  const { versionId } = useParams();
+  const [searchParams] = useSearchParams();
+  const policyId = searchParams.get('policyId');
   const navigate = useNavigate();
   const [routes, setRoutes] = useState([]);
   const [lenders, setLenders] = useState([]);
   const [products, setProducts] = useState([]);
+  const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadDependencies = async () => {
       try {
-        const [lendersData, productsData] = await Promise.all([
-          getLenders({ limit: 100 }),
-          productsApi.listProducts({ limit: 100 })
+        const [lendersData, productsData, policyData] = await Promise.all([
+          getLenders({ limit: 100, _t: Date.now() }),
+          productsApi.listProducts({ limit: 100, _t: Date.now() }),
+          policyId ? mlmApi.getPolicyDetails(policyId, { _t: Date.now() }) : Promise.resolve(null)
         ]);
         setLenders(lendersData.items || lendersData || []);
         setProducts(productsData.items || productsData || []);
+        setPolicy(policyData);
+        if (policyData && policyData.versions) {
+          const version = policyData.versions.find(v => v.id === versionId);
+          if (version && version.routes && version.routes.length > 0) {
+            const loadedRoutes = version.routes.map((r, i) => ({
+              lenderId: r.lenderId,
+              productId: r.productId,
+              allocationPercentage: r.allocationWeightPercent ? String(r.allocationWeightPercent) : '',
+              sortOrder: r.sortOrder || r.priority || (i + 1),
+              isActive: r.isActive !== false
+            }));
+            setRoutes(loadedRoutes);
+          }
+        }
       } catch (err) {
         console.error('Failed to load lenders/products', err);
       } finally {
@@ -90,8 +108,8 @@ export default function EditMlmPolicyVersionPage() {
       await mlmApi.updatePolicyVersionRoutes(versionId, { routes: mappedRoutes });
       navigate(-1);
     } catch (err) {
-      const msg = err.response?.data?.message || err.message;
-      const errors = err.response?.data?.errors;
+      const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+      const errors = err.response?.data?.error?.details || err.response?.data?.errors;
       alert(`Failed to save routes: ${msg}\n${errors ? JSON.stringify(errors, null, 2) : ''}`);
     }
   };
@@ -114,7 +132,10 @@ export default function EditMlmPolicyVersionPage() {
 
       <div className="space-y-4">
         {routes.map((route, idx) => {
-          const availableProducts = products.filter(p => p.lenderId === route.lenderId || (p.lender && p.lender.id === route.lenderId)); console.log("products:", products, "availableProducts:", availableProducts);
+          const availableProducts = products.filter(p => 
+            (p.lenderId === route.lenderId || (p.lender && p.lender.id === route.lenderId)) &&
+            (!policy || !policy.platformProductId || !p.platformProductId || p.platformProductId === policy.platformProductId)
+          );
           return (
             <div key={idx} className="bg-white p-4 rounded shadow border grid grid-cols-6 gap-4 items-end">
               <div className="col-span-2">
@@ -157,6 +178,16 @@ export default function EditMlmPolicyVersionPage() {
           );
         })}
         {routes.length === 0 && <div className="text-center p-8 bg-gray-50 border rounded text-gray-500">No routes configured yet. Add one above.</div>}
+      </div>
+      <div className="mt-8 p-4 bg-gray-100 rounded text-xs overflow-auto">
+        <pre>
+          {JSON.stringify({
+            policyPlatformProductId: policy?.platformProductId,
+            routes,
+            availableProductsRoute0: routes[0] ? products.filter(p => (p.lenderId === routes[0].lenderId || (p.lender && p.lender.id === routes[0].lenderId)) && (policy && p.platformProductId === policy.platformProductId)).map(p => p.id) : [],
+            products: products.map(p => ({ id: p.id, lenderId: p.lenderId, platformProductId: p.platformProductId }))
+          }, null, 2)}
+        </pre>
       </div>
     </div>
   );

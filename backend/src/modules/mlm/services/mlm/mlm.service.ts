@@ -42,19 +42,14 @@ export class MlmService {
         lender: {
           operationalStatus: 'ACTIVE'
         },
-        productStrategyPolicies: {
+        versions: {
           some: {
-            operationalStatus: 'ACTIVE',
-            versions: {
-              some: {
-                status: 'ACTIVE'
-              }
-            }
+            status: 'ACTIVE'
           }
         }
       },
       include: {
-        lender: { select: { id: true, name: true, displayName: true } }
+        lender: { select: { id: true, displayName: true, legalName: true, code: true } }
       }
     });
   }
