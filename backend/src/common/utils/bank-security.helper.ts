@@ -1,0 +1,73 @@
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'crypto';
+
+const ALGORITHM = 'aes-256-gcm';
+const DEFAULT_ENCRYPTION_KEY = 'plp_default_bank_enc_key_32_bytes_long_secret_key!';
+const DEFAULT_HMAC_KEY = 'plp_default_bank_hmac_key_32_bytes_long_secret_key!';
+
+function getEncryptionKey(): Buffer {
+  const rawKey = process.env.BANK_ACCOUNT_ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY;
+  return Buffer.from(rawKey.padEnd(32, '0').slice(0, 32), 'utf-8');
+}
+
+function getHmacKey(): Buffer {
+  const rawKey = process.env.BANK_ACCOUNT_HMAC_KEY || DEFAULT_HMAC_KEY;
+  return Buffer.from(rawKey.padEnd(32, '0').slice(0, 32), 'utf-8');
+}
+
+export function encryptBankAccountNumber(accountNumber: string): string {
+  const cleanAcc = String(accountNumber || '').replace(/\D/g, '');
+  if (!cleanAcc) {
+    throw new Error('Account number is empty or invalid.');
+  }
+
+  const iv = randomBytes(12); // 96-bit IV for AES-GCM
+  const cipher = createCipheriv(ALGORITHM, getEncryptionKey(), iv);
+
+  let encrypted = cipher.update(cleanAcc, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  const authTag = cipher.getAuthTag().toString('hex');
+  const ivHex = iv.toString('hex');
+
+  return `${ivHex}:${authTag}:${encrypted}`;
+}
+
+export function decryptBankAccountNumber(encryptedString: string): string {
+  const parts = String(encryptedString || '').split(':');
+  if (parts.length !== 3) {
+    throw new Error('Invalid encrypted bank account string format.');
+  }
+
+  const [ivHex, authTagHex, encryptedHex] = parts;
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+
+  const decipher = createDecipheriv(ALGORITHM, getEncryptionKey(), iv);
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return decrypted;
+}
+
+export function createBankAccountFingerprint(accountNumber: string): string {
+  const cleanAcc = String(accountNumber || '').replace(/\D/g, '');
+  return createHmac('sha256', getHmacKey())
+    .update(cleanAcc)
+    .digest('hex');
+}
+
+export function maskBankAccountNumber(accountNumber: string): string {
+  const cleanAcc = String(accountNumber || '').replace(/\D/g, '');
+  if (cleanAcc.length < 4) {
+    return 'XXXXXXXX';
+  }
+  return `XXXXXXXX${cleanAcc.slice(-4)}`;
+}
+
+export function maskIfscForAudit(ifsc: string): string {
+  const clean = String(ifsc || '').trim().toUpperCase();
+  if (clean.length < 4) return 'XXXX';
+  return `${clean.slice(0, 4)}XXXX${clean.slice(-2)}`;
+}
