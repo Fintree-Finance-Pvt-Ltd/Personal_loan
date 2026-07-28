@@ -15,10 +15,20 @@ import {
   CustomerGender,
   CustomerOnboardingStatus,
   KycStatus,
+  PlBankVerificationStatus,
+  PlBankAccountType,
+  PlLoanStatus,
 } from '@prisma/client';
 import { AxiosError, AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { DigioBankService } from './integrations/digio-bank.service';
+import {
+  encryptBankAccountNumber,
+  createBankAccountFingerprint,
+  maskBankAccountNumber,
+  maskIfscForAudit,
+} from '../../common/utils/bank-security.helper';
 import {
   FinanalyzPanResponse,
   NormalizedPanVerificationData,
@@ -46,6 +56,7 @@ export class ExternalApiService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly digioBankService: DigioBankService,
   ) {
     // PAN API Setup
     this.panApiUrl = this.configService.getOrThrow<string>('PAN_API_URL');
@@ -853,6 +864,345 @@ export class ExternalApiService {
           postalCode: '',
           latitude: lat,
           longitude: lon,
+        },
+      };
+    }
+  }
+
+  private async ensureBankVerificationTable() {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS \`pl_bank_verifications\` (
+          \`id\` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          \`loan_id\` BIGINT UNSIGNED NOT NULL,
+          \`customer_id\` BIGINT UNSIGNED NOT NULL,
+          \`application_id\` BIGINT UNSIGNED NOT NULL,
+          \`lan\` VARCHAR(30) NOT NULL,
+          \`account_holder_name\` VARCHAR(200) NOT NULL,
+          \`account_type\` ENUM('SAVINGS', 'CURRENT') NOT NULL,
+          \`account_number_encrypted\` TEXT NOT NULL,
+          \`account_number_masked\` VARCHAR(30) NOT NULL,
+          \`account_number_fingerprint\` CHAR(64) NOT NULL,
+          \`ifsc_code\` VARCHAR(11) NOT NULL,
+          \`bank_name\` VARCHAR(150) NULL,
+          \`branch_name\` VARCHAR(150) NULL,
+          \`provider\` VARCHAR(30) NOT NULL DEFAULT 'DIGIO',
+          \`provider_reference\` VARCHAR(255) NULL,
+          \`provider_verified\` TINYINT(1) NOT NULL DEFAULT 0,
+          \`provider_beneficiary_name\` VARCHAR(200) NULL,
+          \`provider_bank_name\` VARCHAR(150) NULL,
+          \`provider_branch_name\` VARCHAR(150) NULL,
+          \`fuzzy_match_score\` DECIMAL(5, 2) NULL,
+          \`name_match_threshold\` DECIMAL(5, 2) NULL,
+          \`name_matched\` TINYINT(1) NOT NULL DEFAULT 0,
+          \`verification_amount\` DECIMAL(5, 2) NULL,
+          \`status\` ENUM('INITIATED', 'VERIFIED', 'FAILED', 'NAME_MISMATCH', 'PROVIDER_ERROR') NOT NULL DEFAULT 'INITIATED',
+          \`verified_at\` DATETIME(0) NULL,
+          \`failure_code\` VARCHAR(100) NULL,
+          \`failure_reason\` VARCHAR(500) NULL,
+          \`raw_response\` LONGTEXT NULL,
+          \`ip_address\` VARCHAR(45) NULL,
+          \`user_agent\` VARCHAR(500) NULL,
+          \`created_at\` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          UNIQUE KEY \`uk_pl_bank_verification_loan_id\` (\`loan_id\`),
+          UNIQUE KEY \`uk_pl_bank_verification_lan\` (\`lan\`),
+          UNIQUE KEY \`uk_pl_bank_provider_ref\` (\`provider_reference\`),
+          KEY \`idx_pl_bank_verification_customer\` (\`customer_id\`),
+          KEY \`idx_pl_bank_verification_application\` (\`application_id\`),
+          KEY \`idx_pl_bank_verification_status\` (\`status\`),
+          KEY \`idx_pl_bank_verification_fingerprint\` (\`account_number_fingerprint\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+    } catch (e: any) {
+      this.logger.warn(`Auto table creation check warning: ${e?.message || e}`);
+    }
+  }
+
+  async verifyCustomerBankAccount(
+    lanInput: string,
+    body: any,
+    authenticatedUser: any,
+    metadata?: any,
+  ) {
+    await this.ensureBankVerificationTable();
+
+    const lan = String(lanInput || '').trim().toUpperCase();
+    if (!lan) {
+      throw new BadRequestException('LAN is required.');
+    }
+
+    const loan = await this.prisma.plLoan.findUnique({
+      where: { lan },
+      include: { customer: true, application: true, bankVerification: true },
+    });
+
+    if (!loan) {
+      throw new NotFoundException(`Loan ${lan} not found.`);
+    }
+
+    if (authenticatedUser?.customerId && String(loan.customerId) !== String(authenticatedUser.customerId)) {
+      throw new BadRequestException('Loan does not belong to this customer.');
+    }
+
+    // Validate request payload
+    const accountHolderName = String(body?.accountHolderName || '').trim();
+    const accountNumber = String(body?.accountNumber || '').replace(/\D/g, '');
+    const confirmAccountNumber = String(body?.confirmAccountNumber || '').replace(/\D/g, '');
+    const ifscCode = String(body?.ifscCode || '').trim().toUpperCase();
+    const bankName = String(body?.bankName || '').trim();
+    const branchName = String(body?.branchName || '').trim();
+    const rawAccountType = String(body?.accountType || '').trim().toUpperCase();
+
+    if (!accountHolderName || !/^[a-zA-Z][a-zA-Z .'-]{1,149}$/.test(accountHolderName)) {
+      throw new BadRequestException('Please enter a valid account holder name.');
+    }
+
+    if (!accountNumber || accountNumber.length < 9 || accountNumber.length > 20) {
+      throw new BadRequestException('Account number must contain 9 to 20 digits.');
+    }
+
+    if (!confirmAccountNumber) {
+      throw new BadRequestException('Please confirm the bank account number.');
+    }
+
+    if (accountNumber !== confirmAccountNumber) {
+      throw new BadRequestException('Account number and confirm account number do not match.');
+    }
+
+    if (!ifscCode || !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+      throw new BadRequestException('Please enter a valid 11-character IFSC code.');
+    }
+
+    if (!bankName) {
+      throw new BadRequestException('Please enter the bank name.');
+    }
+
+    if (!branchName) {
+      throw new BadRequestException('Please enter the branch name.');
+    }
+
+    if (!['SAVINGS', 'CURRENT'].includes(rawAccountType)) {
+      throw new BadRequestException('Account type must be SAVINGS or CURRENT.');
+    }
+
+    const accountType = rawAccountType as PlBankAccountType;
+
+    // Security helpers
+    const accountNumberEncrypted = encryptBankAccountNumber(accountNumber);
+    const accountNumberFingerprint = createBankAccountFingerprint(accountNumber);
+    const accountNumberMasked = maskBankAccountNumber(accountNumber);
+
+    // Call Digio Penny Drop API
+    const digioRes = await this.digioBankService.verifyBankAccount({
+      accountNo: accountNumber,
+      ifsc: ifscCode,
+      name: accountHolderName,
+    });
+
+    // Compute Name Matching Score
+    let fuzzyMatchScore = digioRes.fuzzyMatchScore;
+    if (fuzzyMatchScore === null || fuzzyMatchScore === undefined) {
+      const customerFullName = loan.customer?.fullName || accountHolderName;
+      const providerName = digioRes.beneficiaryNameWithBank || accountHolderName;
+
+      fuzzyMatchScore = await this.digioBankService.fuzzyMatch({
+        sourceText: customerFullName,
+        targetText: providerName,
+      });
+    }
+
+    const nameMatchThreshold = Number(this.configService.get('DIGIO_BANK_NAME_MATCH_THRESHOLD') || '75');
+    const nameMatched = Boolean(digioRes.verified && (fuzzyMatchScore >= nameMatchThreshold));
+
+    let status: PlBankVerificationStatus;
+    if (digioRes.verified) {
+      status = nameMatched ? PlBankVerificationStatus.VERIFIED : PlBankVerificationStatus.NAME_MISMATCH;
+    } else {
+      status = PlBankVerificationStatus.FAILED;
+    }
+
+    const providerVerified = digioRes.verified;
+    const providerBeneficiaryName = digioRes.beneficiaryNameWithBank;
+    const providerBankName = digioRes.bankName;
+    const providerBranchName = digioRes.branchName;
+    const providerReference = digioRes.providerReference;
+    const verifiedAt = digioRes.verifiedAt;
+    const rawResponseStr = JSON.stringify(digioRes.rawResponse || {});
+
+    const ipAddress = metadata?.ipAddress || null;
+    const userAgent = metadata?.userAgent || null;
+
+    // Execute Prisma Transaction
+    const bankVerification = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.plBankVerification.upsert({
+        where: { loanId: loan.id },
+        create: {
+          loanId: loan.id,
+          customerId: loan.customerId,
+          applicationId: loan.applicationId,
+          lan: loan.lan,
+
+          accountHolderName,
+          accountType,
+
+          accountNumberEncrypted,
+          accountNumberMasked,
+          accountNumberFingerprint,
+
+          ifscCode,
+          bankName,
+          branchName,
+
+          provider: 'DIGIO',
+          providerReference,
+
+          providerVerified,
+          providerBeneficiaryName,
+          providerBankName,
+          providerBranchName,
+
+          fuzzyMatchScore,
+          nameMatchThreshold,
+          nameMatched,
+
+          verificationAmount: 1.00,
+          status,
+          verifiedAt,
+
+          rawResponse: rawResponseStr,
+          ipAddress,
+          userAgent,
+        },
+        update: {
+          accountHolderName,
+          accountType,
+
+          accountNumberEncrypted,
+          accountNumberMasked,
+          accountNumberFingerprint,
+
+          ifscCode,
+          bankName,
+          branchName,
+
+          providerReference,
+
+          providerVerified,
+          providerBeneficiaryName,
+          providerBankName,
+          providerBranchName,
+
+          fuzzyMatchScore,
+          nameMatchThreshold,
+          nameMatched,
+
+          verificationAmount: 1.00,
+          status,
+          verifiedAt,
+
+          rawResponse: rawResponseStr,
+          ipAddress,
+          userAgent,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (status === PlBankVerificationStatus.VERIFIED) {
+        await tx.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            bankVerified: true,
+            bankAccountHolderName: providerBeneficiaryName || accountHolderName,
+            bankAccountType: accountType,
+            bankAccountMasked: accountNumberMasked,
+            bankIfsc: ifscCode,
+            bankName: providerBankName || bankName,
+            bankProviderReference: providerReference,
+            bankNameMatchScore: fuzzyMatchScore,
+            bankVerifiedAt: verifiedAt || new Date(),
+            status: PlLoanStatus.KYC_IN_PROGRESS,
+            currentStep: 'KFS_ACCEPTANCE',
+          },
+        });
+      } else {
+        await tx.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            bankVerified: false,
+            currentStep: 'BANK_VERIFICATION',
+          },
+        });
+      }
+
+      await tx.plLoanAuditEvent.create({
+        data: {
+          loanId: loan.id,
+          lan: loan.lan,
+          customerId: loan.customerId,
+          applicationId: loan.applicationId,
+
+          eventType:
+            status === PlBankVerificationStatus.VERIFIED
+              ? 'BANK_VERIFIED'
+              : status === PlBankVerificationStatus.NAME_MISMATCH
+              ? 'BANK_NAME_MISMATCH'
+              : 'BANK_VERIFICATION_FAILED',
+
+          metadata: {
+            provider: 'DIGIO',
+            providerReference,
+            maskedAccountNumber: accountNumberMasked,
+            ifsc: maskIfscForAudit(ifscCode),
+            fuzzyMatchScore,
+            nameMatchThreshold,
+            status,
+          },
+
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      return record;
+    });
+
+    if (status === PlBankVerificationStatus.VERIFIED) {
+      return {
+        success: true,
+        message: 'Bank account verified successfully.',
+        data: {
+          status: 'VERIFIED',
+          providerReference,
+          accountHolderName,
+          beneficiaryNameWithBank: providerBeneficiaryName,
+          maskedAccountNumber: accountNumberMasked,
+          ifscCode,
+          bankName,
+          branchName,
+          accountType,
+          fuzzyMatchScore,
+          verifiedAt,
+        },
+      };
+    } else if (status === PlBankVerificationStatus.NAME_MISMATCH) {
+      return {
+        success: false,
+        message: 'The bank account holder name does not sufficiently match your verified identity.',
+        data: {
+          status: 'NAME_MISMATCH',
+          maskedAccountNumber: accountNumberMasked,
+          fuzzyMatchScore,
+        },
+      };
+    } else {
+      return {
+        success: false,
+        message: 'Bank account verification failed. Please check your account details and retry.',
+        data: {
+          status: 'FAILED',
+          maskedAccountNumber: accountNumberMasked,
         },
       };
     }

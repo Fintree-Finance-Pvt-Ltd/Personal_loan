@@ -1191,7 +1191,8 @@ model PlLoan {
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
-  auditEvents PlLoanAuditEvent[]
+  auditEvents      PlLoanAuditEvent[]
+  bankVerification PlBankVerification?
 
   @@index([customerId], map: "idx_pl_loans_customer_id")
   @@index([applicationId], map: "idx_pl_loans_application_id")
@@ -1531,4 +1532,73 @@ model MlmAllocationRouteState {
   route MlmAllocationRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
 
   @@index([mlmPolicyVersionId])
+}
+enum PlBankVerificationStatus {
+  INITIATED
+  VERIFIED
+  FAILED
+  NAME_MISMATCH
+  PROVIDER_ERROR
+}
+
+enum PlBankAccountType {
+  SAVINGS
+  CURRENT
+}
+
+model PlBankVerification {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @unique(map: "uk_pl_bank_verification_loan_id") @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  customerId    BigInt @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt @map("application_id") @db.UnsignedBigInt
+
+  lan String @unique @db.VarChar(30)
+
+  accountHolderName String            @map("account_holder_name") @db.VarChar(200)
+  accountType       PlBankAccountType @map("account_type")
+
+  accountNumberEncrypted   String @map("account_number_encrypted") @db.Text
+  accountNumberMasked      String @map("account_number_masked") @db.VarChar(30)
+  accountNumberFingerprint String @map("account_number_fingerprint") @db.Char(64)
+
+  ifscCode   String  @map("ifsc_code") @db.VarChar(11)
+  bankName   String? @map("bank_name") @db.VarChar(150)
+  branchName String? @map("branch_name") @db.VarChar(150)
+
+  provider          String  @default("DIGIO") @db.VarChar(30)
+  providerReference String? @unique(map: "uk_pl_bank_provider_ref") @map("provider_reference") @db.VarChar(255)
+
+  providerVerified        Boolean @default(false) @map("provider_verified")
+  providerBeneficiaryName String? @map("provider_beneficiary_name") @db.VarChar(200)
+  providerBankName        String? @map("provider_bank_name") @db.VarChar(150)
+  providerBranchName      String? @map("provider_branch_name") @db.VarChar(150)
+
+  fuzzyMatchScore    Decimal? @map("fuzzy_match_score") @db.Decimal(5, 2)
+  nameMatchThreshold Decimal? @map("name_match_threshold") @db.Decimal(5, 2)
+  nameMatched        Boolean  @default(false) @map("name_matched")
+
+  verificationAmount Decimal?                 @map("verification_amount") @db.Decimal(5, 2)
+  status             PlBankVerificationStatus @default(INITIATED)
+
+  verifiedAt DateTime? @map("verified_at") @db.DateTime(0)
+
+  failureCode   String? @map("failure_code") @db.VarChar(100)
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  rawResponse String? @map("raw_response") @db.LongText
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([customerId], map: "idx_pl_bank_verification_customer")
+  @@index([applicationId], map: "idx_pl_bank_verification_application")
+  @@index([status], map: "idx_pl_bank_verification_status")
+  @@index([accountNumberFingerprint], map: "idx_pl_bank_verification_fingerprint")
+  @@map("pl_bank_verifications")
 }

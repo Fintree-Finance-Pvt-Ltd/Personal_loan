@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Req } from '@nestjs/common';
 import { LoanService } from './loan.service';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -59,6 +59,15 @@ export class LoanController {
   }
 
   @Public()
+  @Post(':lan/digilocker/fetch-details')
+  fetchDigilockerDetails(
+    @Param('lan') lan: string,
+    @Body() body: { customerId: string },
+  ) {
+    return this.loanService.fetchDigilockerDetails(lan, BigInt(body.customerId));
+  }
+
+  @Public()
   @Patch(':lan/address')
   saveAddress(
     @Param('lan') lan: string,
@@ -73,9 +82,13 @@ export class LoanController {
   verifyBankAccount(
     @Param('lan') lan: string,
     @Body() body: { customerId: string; [key: string]: any },
+    @Req() req: any,
   ) {
     const { customerId, ...rest } = body;
-    return this.loanService.verifyBankAccount(lan, BigInt(customerId), rest);
+    return this.loanService.verifyBankAccount(lan, BigInt(customerId || '0'), body, {
+      ipAddress: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   @Public()
@@ -84,7 +97,7 @@ export class LoanController {
     @Param('lan') lan: string,
     @Body() body: { customerId: string },
   ) {
-    return this.loanService.generateKfs(lan, BigInt(body.customerId));
+    return this.loanService.generateKfs(lan, BigInt(body?.customerId || '0'));
   }
 
   @Public()
@@ -99,8 +112,8 @@ export class LoanController {
     @Param('lan') lan: string,
     @Body() body: { customerId: string; [key: string]: any },
   ) {
-    const { customerId, ...rest } = body;
-    return this.loanService.acceptKfs(lan, BigInt(customerId), rest);
+    const { customerId, ...rest } = body || {};
+    return this.loanService.acceptKfs(lan, BigInt(customerId || '0'), rest);
   }
 
   @Public()
@@ -109,13 +122,16 @@ export class LoanController {
     @Param('lan') lan: string,
     @Body() body: { customerId: string },
   ) {
-    return this.loanService.initiateMandate(lan, BigInt(body.customerId));
+    return this.loanService.initiateMandate(lan, BigInt(body?.customerId || '0'));
   }
 
   @Public()
   @Get(':lan/mandate/status')
-  getMandateStatus(@Param('lan') lan: string) {
-    return { status: 'NOT_STARTED' };
+  getMandateStatus(
+    @Param('lan') lan: string,
+    @Query('customerId') customerId: string,
+  ) {
+    return this.loanService.getMandateStatus(lan, BigInt(customerId || '0'));
   }
 
   @Public()
@@ -124,7 +140,7 @@ export class LoanController {
     @Param('lan') lan: string,
     @Body() body: { customerId: string },
   ) {
-    return this.loanService.initiateEsign(lan, BigInt(body.customerId));
+    return this.loanService.initiateEsign(lan, BigInt(body?.customerId || '0'));
   }
 
   @Public()
@@ -139,7 +155,7 @@ export class LoanController {
     @Param('lan') lan: string,
     @Body() body: { customerId: string },
   ) {
-    return this.loanService.requestDisbursal(lan, BigInt(body.customerId));
+    return this.loanService.requestDisbursal(lan, BigInt(body?.customerId || '0'));
   }
 
   @Public()

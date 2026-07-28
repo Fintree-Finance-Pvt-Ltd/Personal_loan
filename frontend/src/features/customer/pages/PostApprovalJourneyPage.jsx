@@ -15,12 +15,15 @@ import {
   PenLine,
   Landmark,
   ChevronRight,
+  X,
 } from 'lucide-react';
 
 import {
   getPostApprovalJourney,
   acceptLoanOffer,
   initiateDigilocker,
+  getDigilockerStatus,
+  fetchDigilockerDetails,
   saveAddress,
   verifyBankAccount,
   acceptKfs,
@@ -28,6 +31,7 @@ import {
   initiateEsign,
   requestDisbursal,
 } from '../postApprovalApi';
+import { loadDigitapSdk } from '../utils/loadDigitapSdk';
 
 function getCustomerSession() {
   try {
@@ -153,29 +157,26 @@ export default function PostApprovalJourneyPage() {
             return (
               <div
                 key={step.id}
-                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors ${
-                  isDone
+                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors ${isDone
                     ? 'border-emerald-500 bg-emerald-50'
                     : isActive
-                    ? 'border-emerald-600 bg-emerald-50'
-                    : 'border-transparent bg-white'
-                }`}
+                      ? 'border-emerald-600 bg-emerald-50'
+                      : 'border-transparent bg-white'
+                  }`}
               >
                 <div
-                  className={`grid h-8 w-8 place-items-center rounded-full ${
-                    isDone
+                  className={`grid h-8 w-8 place-items-center rounded-full ${isDone
                       ? 'bg-emerald-500 text-white'
                       : isActive
-                      ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400'
-                      : 'bg-slate-100 text-slate-400'
-                  }`}
+                        ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400'
+                        : 'bg-slate-100 text-slate-400'
+                    }`}
                 >
                   {isDone ? <CheckCircle2 size={16} /> : <Icon size={15} />}
                 </div>
                 <p
-                  className={`text-[11px] font-semibold leading-tight ${
-                    isDone ? 'text-emerald-700' : isActive ? 'text-emerald-800' : 'text-slate-400'
-                  }`}
+                  className={`text-[11px] font-semibold leading-tight ${isDone ? 'text-emerald-700' : isActive ? 'text-emerald-800' : 'text-slate-400'
+                    }`}
                 >
                   {step.label}
                 </p>
@@ -191,7 +192,7 @@ export default function PostApprovalJourneyPage() {
           <ApprovalSummaryStep data={data} onNext={fetchJourney} />
         )}
         {currentStep === 'DIGILOCKER_KYC' && (
-          <DigiLockerStep lan={normalizedLan} onNext={fetchJourney} />
+          <DigiLockerStep lan={normalizedLan} customer={data?.customer} onNext={fetchJourney} />
         )}
         {currentStep === 'ADDRESS_CONFIRMATION' && (
           <AddressConfirmationStep lan={normalizedLan} data={data} onNext={fetchJourney} />
@@ -200,7 +201,11 @@ export default function PostApprovalJourneyPage() {
           <BankVerificationStep lan={normalizedLan} onNext={fetchJourney} />
         )}
         {currentStep === 'KFS_ACCEPTANCE' && (
-          <KfsStep lan={normalizedLan} onNext={fetchJourney} />
+          <KfsStep
+            lan={normalizedLan}
+            data={data}
+            onNext={fetchJourney}
+          />
         )}
         {currentStep === 'EMANDATE' && (
           <MandateStep lan={normalizedLan} onNext={fetchJourney} />
@@ -235,14 +240,14 @@ function StepCard({ title, subtitle, icon: Icon, children }) {
   );
 }
 
-function ActionButton({ onClick, disabled, loading, children, variant = 'primary' }) {
-  const base = 'inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold shadow transition disabled:opacity-50';
+function ActionButton({ onClick, disabled, loading, children, variant = 'primary', type = 'button' }) {
+  const base = 'inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold shadow transition disabled:opacity-50 cursor-pointer';
   const styles = {
     primary: 'bg-emerald-600 text-white hover:bg-emerald-700',
     blue: 'bg-blue-600 text-white hover:bg-blue-700',
   };
   return (
-    <button type="button" onClick={onClick} disabled={disabled || loading} className={`${base} ${styles[variant]}`}>
+    <button type={type} onClick={onClick} disabled={disabled || loading} className={`${base} ${styles[variant] || styles.primary}`}>
       {loading ? <LoaderCircle size={16} className="animate-spin" /> : null}
       {children}
       {!loading && <ArrowRight size={16} />}
@@ -308,11 +313,10 @@ function ApprovalSummaryStep({ data, onNext }) {
               key={t}
               type="button"
               onClick={() => setSelectedTenure(t)}
-              className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${
-                selectedTenure === t
+              className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
                   ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
                   : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
-              }`}
+                }`}
             >
               {t} Days
             </button>
@@ -331,15 +335,93 @@ function ApprovalSummaryStep({ data, onNext }) {
 
 function DigiLockerStep({ lan, onNext }) {
   const [isLoading, setIsLoading] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [activeKycUrl, setActiveKycUrl] = useState(null);
+  const [isVerifyingInPopup, setIsVerifyingInPopup] = useState(false);
+
+  const startPolling = (transactionId) => {
+    const startTime = Date.now();
+    const interval = setInterval(async () => {
+      try {
+        if (Date.now() - startTime > 300000) { // 5 minutes max
+          clearInterval(interval);
+          setIsVerifyingInPopup(false);
+          setActiveKycUrl(null);
+          setErrorMsg('Verification timed out. Please try again.');
+          return;
+        }
+
+        const res = await getDigilockerStatus(lan);
+        if (res?.status === 'VERIFIED') {
+          clearInterval(interval);
+          setIsVerifyingInPopup(false);
+          setActiveKycUrl(null);
+          onNext(); // Proceed to next step
+        } else if (res?.status === 'FAILED') {
+          clearInterval(interval);
+          setIsVerifyingInPopup(false);
+          setActiveKycUrl(null);
+          setErrorMsg('Aadhaar verification failed. Please try again.');
+        }
+      } catch (e) {
+        // Ignore polling errors
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  };
+
+  const openPopupUrl = (url) => {
+    const width = 650;
+    const height = 750;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    const popup = window.open(
+      url,
+      'DigitapDigiLocker',
+      `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no,location=no,status=no,scrollbars=yes,resizable=yes`
+    );
+
+    if (popup) {
+      popup.focus();
+    }
+  };
 
   const handleInitiate = async () => {
+    if (!consent) {
+      setErrorMsg('Please check the consent box to proceed.');
+      return;
+    }
+
+    setErrorMsg('');
     setIsLoading(true);
     try {
-      await initiateDigilocker(lan);
-      alert('DigiLocker integration is pending. Simulating success for now.');
-      onNext();
+      // 1. Call backend to generate URL
+      const responseData = await initiateDigilocker(lan);
+
+      if (responseData.status === 'VERIFIED') {
+        onNext();
+        return;
+      }
+
+      const targetUrl = responseData?.kycUrl || responseData?.url;
+
+      if (!targetUrl) {
+        throw new Error('DigiLocker verification URL was not generated.');
+      }
+
+      // 2. Open popup window (bypasses government X-Frame-Options restriction)
+      setActiveKycUrl(targetUrl);
+      setIsVerifyingInPopup(true);
+      openPopupUrl(targetUrl);
+
+      // 3. Start backend polling
+      startPolling(responseData.transactionId);
+
     } catch (err) {
-      alert(err.message || 'Failed to initiate DigiLocker');
+      setErrorMsg(err.message || 'Failed to initiate DigiLocker');
     } finally {
       setIsLoading(false);
     }
@@ -354,9 +436,54 @@ function DigiLockerStep({ lan, onNext }) {
           <li>Active DigiLocker account (or you can create one)</li>
         </ul>
       </div>
-      <ActionButton onClick={handleInitiate} loading={isLoading} variant="blue">
-        Start Aadhaar KYC
-      </ActionButton>
+
+      <div className="mb-6 flex items-start gap-3">
+        <input
+          type="checkbox"
+          id="consent"
+          checked={consent}
+          onChange={(e) => {
+            setConsent(e.target.checked);
+            setErrorMsg('');
+          }}
+          className="mt-1 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+        />
+        <label htmlFor="consent" className="text-sm text-slate-700 cursor-pointer">
+          I consent to securely fetch and process my Aadhaar information through DigiLocker for identity verification and loan processing.
+        </label>
+      </div>
+
+      {errorMsg && (
+        <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          {errorMsg}
+        </div>
+      )}
+
+      {isVerifyingInPopup ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 mb-4">
+          <div className="flex items-center gap-3">
+            <LoaderCircle className="h-6 w-6 animate-spin text-amber-600" />
+            <div>
+              <p className="font-bold text-base">DigiLocker Verification in Progress</p>
+              <p className="text-xs text-amber-700 mt-0.5">Please complete your DigiLocker login in the window that opened.</p>
+            </div>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              type="button"
+              onClick={() => activeKycUrl && openPopupUrl(activeKycUrl)}
+              className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 transition"
+            >
+              Re-open Verification Window
+            </button>
+          </div>
+        </div>
+      ) : (
+        <ActionButton onClick={handleInitiate} loading={isLoading} disabled={!consent} variant="blue">
+          Verify Aadhaar
+        </ActionButton>
+      )}
     </StepCard>
   );
 }
@@ -407,61 +534,596 @@ function AddressConfirmationStep({ lan, data, onNext }) {
 }
 
 function BankVerificationStep({ lan, onNext }) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    accountHolderName: '',
+    accountNumber: '',
+    confirmAccountNumber: '',
+    ifscCode: '',
+    bankName: '',
+    branchName: '',
+    accountType: 'SAVINGS',
+  });
 
-  const handleVerify = async () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    let val = value;
+
+    if (name === 'accountNumber' || name === 'confirmAccountNumber') {
+      val = value.replace(/\D/g, '').slice(0, 20);
+    } else if (name === 'ifscCode') {
+      val = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11);
+    }
+
+    setFormData((prev) => {
+      const updated = { ...prev, [name]: val };
+
+      // Auto-populate bank name based on IFSC prefix if empty
+      if (name === 'ifscCode' && val.length >= 4) {
+        const prefix = val.slice(0, 4);
+        if (!prev.bankName) {
+          const knownBanks = {
+            HDFC: 'HDFC Bank',
+            SBIN: 'State Bank of India',
+            ICIC: 'ICICI Bank',
+            UTIB: 'Axis Bank',
+            KKBK: 'Kotak Mahindra Bank',
+            PUNB: 'Punjab National Bank',
+            BARB: 'Bank of Baroda',
+            INDB: 'IndusInd Bank',
+            YESB: 'Yes Bank',
+            IDFB: 'IDFC FIRST Bank',
+          };
+          if (knownBanks[prefix]) {
+            updated.bankName = knownBanks[prefix];
+          }
+        }
+      }
+      return updated;
+    });
+
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: '' }));
+    }
+    setErrorMsg('');
+  };
+
+  const validate = () => {
+    const errors = {};
+    const holder = formData.accountHolderName.trim();
+    const acc = formData.accountNumber.trim();
+    const confirm = formData.confirmAccountNumber.trim();
+    const ifsc = formData.ifscCode.trim().toUpperCase();
+    const bank = formData.bankName.trim();
+    const branch = formData.branchName.trim();
+
+    if (!holder) {
+      errors.accountHolderName = 'Account holder name is required.';
+    } else if (!/^[a-zA-Z][a-zA-Z .'-]{1,149}$/.test(holder)) {
+      errors.accountHolderName = 'Enter a valid name (letters and spaces only).';
+    }
+
+    if (!acc) {
+      errors.accountNumber = 'Account number is required.';
+    } else if (!/^\d{9,20}$/.test(acc)) {
+      errors.accountNumber = 'Account number must contain 9 to 20 digits.';
+    }
+
+    if (!confirm) {
+      errors.confirmAccountNumber = 'Please confirm your account number.';
+    } else if (acc !== confirm) {
+      errors.confirmAccountNumber = 'Account numbers do not match.';
+    }
+
+    if (!ifsc) {
+      errors.ifscCode = 'IFSC code is required.';
+    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
+      errors.ifscCode = 'Enter a valid 11-character IFSC code (e.g. HDFC0001234).';
+    }
+
+    if (!bank) {
+      errors.bankName = 'Bank name is required.';
+    }
+
+    if (!branch) {
+      errors.branchName = 'Branch name is required.';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleVerify = async (e) => {
+    if (e) e.preventDefault();
+    if (!validate()) return;
+
     setIsLoading(true);
+    setErrorMsg('');
+
     try {
-      await verifyBankAccount(lan, {});
-      alert('Bank verification integration is pending. Simulating success for now.');
-      onNext();
+      const payload = {
+        accountHolderName: formData.accountHolderName.trim(),
+        accountNumber: formData.accountNumber.trim(),
+        confirmAccountNumber: formData.confirmAccountNumber.trim(),
+        ifscCode: formData.ifscCode.trim().toUpperCase(),
+        bankName: formData.bankName.trim(),
+        branchName: formData.branchName.trim(),
+        accountType: formData.accountType,
+      };
+
+      const res = await verifyBankAccount(lan, payload);
+
+      const status = String(res?.status || res?.data?.status || '').toUpperCase();
+
+      if (status && !['VERIFIED', 'SUCCESS'].includes(status)) {
+        throw new Error(res?.message || 'Bank verification could not be completed.');
+      }
+
+      await onNext();
     } catch (err) {
-      alert(err.message || 'Failed to verify bank account');
+      setErrorMsg(err?.message || 'Bank account verification failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const inputClass = (fieldName) =>
+    `w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:ring-4 disabled:bg-slate-100 disabled:cursor-not-allowed ${fieldErrors[fieldName]
+      ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
+      : 'border-slate-200 focus:border-blue-500 focus:ring-blue-100'
+    }`;
+
   return (
-    <StepCard title="Bank Account Verification" subtitle="Verify your bank account for loan disbursal." icon={Building2}>
-      <div className="mb-6 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
-        Your bank account will be verified via penny drop or account validation service.
+    <StepCard
+      title="Bank Account Verification"
+      subtitle="Enter the bank account details where your loan will be disbursed."
+      icon={Landmark}
+    >
+      {/* Penny Drop Info Card */}
+      <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5">
+        <div className="flex items-start gap-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
+            <Building2 className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900">
+              Instant ₹1.00 Penny Drop Verification
+            </h4>
+            <p className="mt-1 text-xs text-blue-700 leading-relaxed">
+              We will deposit ₹1.00 into your account to verify your name and ownership. Please ensure the account belongs to the applicant.
+            </p>
+          </div>
+        </div>
       </div>
-      <ActionButton onClick={handleVerify} loading={isLoading} variant="blue">
-        Verify Bank Account
-      </ActionButton>
+
+      {errorMsg && (
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4 text-xs font-medium text-red-800 animate-in fade-in duration-200">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+          <div className="flex-1 leading-relaxed">{errorMsg}</div>
+        </div>
+      )}
+
+      <form onSubmit={handleVerify} className="space-y-5">
+        {/* Account Holder Name */}
+        <div>
+          <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+            Account Holder Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="accountHolderName"
+            name="accountHolderName"
+            type="text"
+            placeholder="e.g. VISHAL YADAV (as per bank records)"
+            value={formData.accountHolderName}
+            onChange={handleChange}
+            disabled={isLoading}
+            className={inputClass('accountHolderName')}
+          />
+          {fieldErrors.accountHolderName && (
+            <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.accountHolderName}</p>
+          )}
+        </div>
+
+        {/* Account Number & Confirm Account Number */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label htmlFor="accountNumber" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              Bank Account Number <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="accountNumber"
+              name="accountNumber"
+              type="password"
+              inputMode="numeric"
+              placeholder="Enter 9–20 digit account number"
+              value={formData.accountNumber}
+              onChange={handleChange}
+              disabled={isLoading}
+              className={inputClass('accountNumber')}
+            />
+            {fieldErrors.accountNumber && (
+              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.accountNumber}</p>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="confirmAccountNumber" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              Confirm Account Number <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="confirmAccountNumber"
+              name="confirmAccountNumber"
+              type="text"
+              inputMode="numeric"
+              placeholder="Re-enter account number"
+              value={formData.confirmAccountNumber}
+              onChange={handleChange}
+              onPaste={(e) => e.preventDefault()}
+              disabled={isLoading}
+              className={inputClass('confirmAccountNumber')}
+            />
+            {fieldErrors.confirmAccountNumber && (
+              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.confirmAccountNumber}</p>
+            )}
+          </div>
+        </div>
+
+        {/* IFSC Code & Account Type */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label htmlFor="ifscCode" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              IFSC Code <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="ifscCode"
+              name="ifscCode"
+              type="text"
+              placeholder="e.g. HDFC0001234"
+              value={formData.ifscCode}
+              onChange={handleChange}
+              disabled={isLoading}
+              className={`${inputClass('ifscCode')} uppercase tracking-wider font-mono`}
+            />
+            {fieldErrors.ifscCode && (
+              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.ifscCode}</p>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="accountType" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              Account Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="accountType"
+              name="accountType"
+              value={formData.accountType}
+              onChange={handleChange}
+              disabled={isLoading}
+              className={inputClass('accountType')}
+            >
+              <option value="SAVINGS">Savings Account</option>
+              <option value="CURRENT">Current Account</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Bank Name & Branch Name */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label htmlFor="bankName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              Bank Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="bankName"
+              name="bankName"
+              type="text"
+              placeholder="e.g. HDFC Bank Ltd"
+              value={formData.bankName}
+              onChange={handleChange}
+              disabled={isLoading}
+              className={inputClass('bankName')}
+            />
+            {fieldErrors.bankName && (
+              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.bankName}</p>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="branchName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              Branch Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="branchName"
+              name="branchName"
+              type="text"
+              placeholder="e.g. Andheri West"
+              value={formData.branchName}
+              onChange={handleChange}
+              disabled={isLoading}
+              className={inputClass('branchName')}
+            />
+            {fieldErrors.branchName && (
+              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.branchName}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Security Assurance Notice */}
+        <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <BadgeCheck className="h-4 w-4 text-emerald-600" />
+            <span>256-bit AES Encrypted Storage</span>
+          </div>
+          <span className="font-semibold text-slate-700">PCI-DSS Compliant</span>
+        </div>
+
+        <div className="mt-8 flex justify-end pt-2">
+          <ActionButton type="submit" onClick={handleVerify} loading={isLoading} variant="blue">
+            Verify Bank Account
+          </ActionButton>
+        </div>
+      </form>
     </StepCard>
   );
 }
 
-function KfsStep({ lan, onNext }) {
+function KfsStep({ lan, data, onNext }) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isAccepted, setIsAccepted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const kfs = data?.kfs || {};
+  const loan = data?.loan || {};
+  const offer = data?.offer || {};
+  const lender = data?.lender || {};
+
+  const formatCurrency = (value) => {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ''
+    ) {
+      return '—';
+    }
+
+    return Number(value).toLocaleString('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    });
+  };
+
+  const formatDate = (value) => {
+    if (!value) {
+      return '—';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return '—';
+    }
+
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const loanAmount =
+    kfs?.loanAmount ??
+    offer?.approvedAmount ??
+    loan?.approvedAmount;
+
+  const tenureDays =
+    kfs?.tenureDays ??
+    offer?.acceptedTenureDays ??
+    loan?.acceptedTenureDays;
+
+  const netDisbursalAmount =
+    kfs?.netDisbursalAmount ??
+    offer?.netDisbursalAmount ??
+    loan?.netDisbursalAmount;
+
+  const totalRepaymentAmount =
+    kfs?.totalRepaymentAmount ??
+    offer?.totalRepaymentAmount ??
+    loan?.acceptedTotalRepayment;
+
+  const dueDate =
+    kfs?.dueDate ??
+    offer?.dueDate ??
+    loan?.dueDate;
+
+  const kfsDocumentUrl =
+    kfs?.documentUrl ||
+    kfs?.fileUrl ||
+    kfs?.previewUrl ||
+    null;
+
+  const handleViewKfs = () => {
+    setErrorMsg('');
+
+    if (!kfsDocumentUrl) {
+      setErrorMsg(
+        'The Key Fact Statement document is not available yet.',
+      );
+      return;
+    }
+
+    window.open(
+      kfsDocumentUrl,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  };
 
   const handleAccept = async () => {
+    if (!isAccepted) {
+      setErrorMsg(
+        'Please read and accept the Key Fact Statement before continuing.',
+      );
+      return;
+    }
+
     setIsLoading(true);
+    setErrorMsg('');
+
     try {
-      await acceptKfs(lan, {});
-      onNext();
+      await acceptKfs(lan, {
+        accepted: true,
+        consentText:
+          'I have read and accept the KFS, charges, repayment obligation and penal charge terms.',
+      });
+
+      await onNext();
     } catch (err) {
-      alert(err.message || 'Failed to accept KFS');
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'Failed to accept KFS.',
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
+  const detailItems = [
+    {
+      label: 'Loan amount',
+      value: formatCurrency(loanAmount),
+    },
+    {
+      label: 'Tenure',
+      value: tenureDays
+        ? `${tenureDays} days`
+        : '—',
+    },
+    {
+      label: 'Net disbursal',
+      value: formatCurrency(
+        netDisbursalAmount,
+      ),
+    },
+    {
+      label: 'Total repayment',
+      value: formatCurrency(
+        totalRepaymentAmount,
+      ),
+    },
+    {
+      label: 'Due date',
+      value: formatDate(dueDate),
+    },
+  ];
+
   return (
-    <StepCard title="Key Fact Statement (KFS)" subtitle="Review and accept the loan terms and conditions." icon={FileText}>
-      <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-        <p className="text-sm text-slate-600 leading-relaxed">
-          The Key Fact Statement outlines the important terms of your loan — including the interest rate, processing fees, EMI amount, and repayment schedule. Please review before accepting.
-        </p>
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="p-6 sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600">
+              <FileText size={26} />
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-extrabold text-slate-950">
+                Key Fact Statement
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Personal Loan
+                {' · '}
+                {lender?.name ||
+                  lender?.displayName ||
+                  'Fintree Finance Private Limited'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleViewKfs}
+            className="inline-flex items-center justify-center rounded-xl border border-blue-600 px-5 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-50"
+          >
+            View KFS
+          </button>
+        </div>
+
+        <div className="mt-7 overflow-hidden rounded-2xl border border-slate-200">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3">
+            {detailItems.map((item, index) => (
+              <div
+                key={item.label}
+                className={`min-h-[108px] p-5 ${index !== detailItems.length - 1
+                    ? 'border-b border-slate-200'
+                    : ''
+                  } sm:border-b ${index % 2 !== 1
+                    ? 'sm:border-r'
+                    : ''
+                  } lg:border-b lg:border-r ${index === 2 ||
+                    index === 4
+                    ? 'lg:border-r-0'
+                    : ''
+                  } ${index >= 3
+                    ? 'lg:border-b-0'
+                    : ''
+                  }`}
+              >
+                <p className="text-sm font-medium text-slate-500">
+                  {item.label}
+                </p>
+
+                <p className="mt-2 text-xl font-extrabold text-slate-950">
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <label className="mt-7 flex cursor-pointer items-start gap-4 rounded-2xl border border-slate-200 p-5 transition hover:bg-slate-50">
+          <input
+            type="checkbox"
+            checked={isAccepted}
+            onChange={(event) => {
+              setIsAccepted(
+                event.target.checked,
+              );
+              setErrorMsg('');
+            }}
+            disabled={isLoading}
+            className="mt-0.5 h-6 w-6 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          />
+
+          <span className="text-sm font-semibold leading-6 text-slate-800">
+            I have read and accept the KFS, charges, repayment
+            obligation and penal charge terms.
+          </span>
+        </label>
+
+        {errorMsg && (
+          <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <div className="mt-7 flex justify-end">
+          <ActionButton
+            onClick={handleAccept}
+            loading={isLoading}
+            disabled={!isAccepted}
+          >
+            Accept KFS & Continue
+          </ActionButton>
+        </div>
       </div>
-      <div className="flex justify-end">
-        <ActionButton onClick={handleAccept} loading={isLoading}>
-          Accept KFS & Continue
-        </ActionButton>
-      </div>
-    </StepCard>
+    </div>
   );
 }
 

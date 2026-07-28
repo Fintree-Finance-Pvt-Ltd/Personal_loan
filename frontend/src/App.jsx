@@ -11,6 +11,7 @@ import CustomerDashboard from './features/customer/pages/CustomerDashboard';
 import CustomerPlaceholderPage from './features/customer/pages/CustomerPlaceholderPage';
 import MyApplicationPage from './features/customer/pages/MyApplicationPage';
 import PostApprovalJourneyPage from './features/customer/pages/PostApprovalJourneyPage';
+import DigiLockerCallbackPage from './features/customer/pages/DigiLockerCallbackPage';
 
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
@@ -67,8 +68,9 @@ import { EditUserPage } from './features/users/pages/EditUserPage';
 export default function App() {
   return (
     <Routes>
-      {/* Public customer login */}
+      {/* Public customer login & DigiLocker callback */}
       <Route path="/customer/login" element={<CustomerSignIn />} />
+      <Route path="/customer/digilocker/callback" element={<DigiLockerCallbackPage />} />
 
       {/* Customer layout routes */}
       <Route element={<CustomerLayout />}>
