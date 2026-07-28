@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
@@ -62,5 +63,23 @@ export class CustomerController {
     @Body() body: any,
   ) {
     return this.customerService.updateBasicDetails(BigInt(id), body);
+  }
+
+  @Public()
+  @Post(':id/submit-application')
+  async submitApplication(
+    @Param('id', new ParseIntPipe()) id: number,
+    @Body() body: any,
+  ) {
+    return this.customerService.submitApplication(BigInt(id), body);
+  }
+
+  @Public()
+  @Post(':id/simulate-lender-approval')
+  async simulateLenderApproval(
+    @Param('id', new ParseIntPipe()) id: number,
+    @Body() body: any,
+  ) {
+    return this.customerService.simulateLenderApproval(BigInt(id), body);
   }
 }

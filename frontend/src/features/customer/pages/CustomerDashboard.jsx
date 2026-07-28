@@ -97,8 +97,15 @@ export default function CustomerDashboard() {
 
   const feeDetails = null;
 
+  const hasLan = !!backendCustomer?.latestLan;
+  const isApproved = backendCustomer?.onboardingStatus === 'LENDER_APPROVED';
+
   const handleApplicationButton = () => {
-    navigate('/customer/application');
+    if (isApproved && hasLan) {
+      navigate(`/customer/loan/${backendCustomer.latestLan}/post-approval`);
+    } else {
+      navigate('/customer/application');
+    }
   };
 
   if (isLoadingCustomer) {
@@ -143,11 +150,13 @@ export default function CustomerDashboard() {
     );
   }
 
-  const buttonLabel = applicationSubmitted
-    ? 'View Application'
-    : hasBackendProgress
-      ? 'Continue Application'
-      : 'Start Application';
+  const buttonLabel = (isApproved && hasLan)
+    ? 'Continue Approved Loan Journey'
+    : applicationSubmitted
+      ? 'View Application'
+      : hasBackendProgress
+        ? 'Continue Application'
+        : 'Start Application';
 
   return (
     <div className="mx-auto max-w-7xl">
