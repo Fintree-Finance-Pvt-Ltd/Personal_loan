@@ -185,6 +185,19 @@ export async function updateBasicDetails(customerId, basicDetails) {
   return result?.data?.data || result?.data || result;
 }
 
+export async function submitCustomerApplication(customerId, payload = {}) {
+  if (!customerId) throw new Error('Customer ID is required.');
+
+  const result = await apiRequest(`/customer/${encodeURIComponent(String(customerId))}/submit-application`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  return result?.data?.data || result?.data || result;
+}
+
+
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
@@ -192,6 +205,7 @@ export const customerApi = {
   getCustomerById,
   updateBasicDetails,
   updateCustomerProfile,
+  submitCustomerApplication,
   reverseGeocode,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,

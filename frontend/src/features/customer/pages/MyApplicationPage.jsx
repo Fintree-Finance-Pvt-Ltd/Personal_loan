@@ -34,6 +34,7 @@ import {
   getCustomerById,
   updateBasicDetails,
   updateCustomerProfile,
+  submitCustomerApplication,
   reverseGeocode,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,
@@ -284,7 +285,12 @@ function deriveCustomerWorkflow(customer) {
     'APPROVED',
   ].includes(normalizedStatus);
 
-  const assessmentFeePaid = false;
+  const assessmentFeePaid = Boolean(
+    customer.assessmentFeePaid ||
+    customer.latestPayment?.status === 'SUCCESS' ||
+    customer.latestPaymentStatus === 'SUCCESS' ||
+    (Array.isArray(customer.plPaymentLinks) && customer.plPaymentLinks.some((p) => p.status === 'SUCCESS')),
+  );
 
   const applicationSubmitted = Boolean(
     customer.latestApplicationId,
@@ -419,6 +425,8 @@ export default function MyApplicationPage() {
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
   const [applicationNumber, setApplicationNumber] = useState('');
   const [savedPhotoDocument, setSavedPhotoDocument] = useState(null);
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  const [submissionData, setSubmissionData] = useState(null);
 
   const mobileNumber =
     customer?.mobileNumber ||
@@ -444,6 +452,9 @@ export default function MyApplicationPage() {
       setPanVerified(wf.panVerified);
       setBrePassed(wf.eligibilityPassed);
       setFeePaid(wf.assessmentFeePaid);
+      if (wf.assessmentFeePaid) {
+        setLenderConsent(true);
+      }
       setApplicationSubmitted(wf.applicationSubmitted);
 
       if (customerData.latestApplicationId) {
@@ -1646,53 +1657,28 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const generatedApplicationNumber = `PL-${new Date()
-        .toISOString()
-        .slice(2, 10)
-        .replaceAll('-', '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const res = await submitCustomerApplication(customerId);
+      const appNum = res?.applicationNumber || `PL-APP-${Date.now()}`;
 
-      // TODO: Replace simulation with real backend Application Submit API endpoint when available
-      await delay(1400);
-
-      setApplicationNumber(generatedApplicationNumber);
+      setApplicationNumber(appNum);
+      setSubmissionData(res);
       setApplicationSubmitted(true);
+      setShowSubmissionModal(true);
 
-      showMessage('Application submitted successfully.');
+      fetchCustomer();
+      showMessage('Application submitted successfully for final approval.');
     } catch (submissionError) {
-      console.error(
-        'Application submission failed:',
-        submissionError,
-      );
-      showMessage(
-        'Unable to submit the application. Please try again.',
-        'error',
-      );
+      console.error('Application submission failed:', submissionError);
+      const msg = typeof submissionError === 'string'
+        ? submissionError
+        : submissionError?.message || 'Unable to submit the application. Please try again.';
+      showMessage(msg, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleStartNewApplication = () => {
-    setForm(INITIAL_FORM);
-    setCurrentStep('basic_details');
-    setErrors({});
-    setMessage('');
-    setEmailVerified(false);
-    setPanVerified(false);
-    setPanVerification(null);
-    setBrePassed(false);
-    setLenderConsent(false);
-    setFeePaid(false);
-    setApplicationSubmitted(false);
-    setApplicationNumber('');
 
-    fetchCustomer();
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth',
-    });
-  };
 
   if (!customerId) {
     return null;
@@ -1846,31 +1832,16 @@ export default function MyApplicationPage() {
         />
       )}
 
-      {currentStep ===
-        'submit_application' && (
+      {currentStep === 'submit_application' && (
         <SubmitApplicationStep
           form={form}
+          customer={customer}
           mobileNumber={mobileNumber}
-          applicationSubmitted={
-            applicationSubmitted
-          }
-          applicationNumber={
-            applicationNumber
-          }
-          isSubmitting={
-            isSubmitting
-          }
-          onBack={() =>
-            goToStep(
-              'profile_details',
-            )
-          }
-          onSubmit={
-            handleSubmitApplication
-          }
-          onStartNew={
-            handleStartNewApplication
-          }
+          applicationSubmitted={applicationSubmitted}
+          applicationNumber={applicationNumber}
+          isSubmitting={isSubmitting}
+          onBack={() => goToStep('profile_details')}
+          onSubmit={handleSubmitApplication}
         />
       )}
     </div>
@@ -3756,85 +3727,68 @@ function ProfileDetailsStep({
 
 function SubmitApplicationStep({
   form,
+  customer,
   mobileNumber,
   applicationSubmitted,
   applicationNumber,
   isSubmitting,
   onBack,
   onSubmit,
-  onStartNew,
 }) {
-  if (applicationSubmitted) {
+  const navigate = useNavigate();
+
+  const status = customer?.onboardingStatus || 'APPLICATION_SUBMITTED';
+  const isApproved = status === 'LENDER_APPROVED';
+  const isRejected = status === 'LENDER_REJECTED';
+  const hasLan = !!customer?.latestLan;
+  const isSubmittedState = applicationSubmitted || status === 'APPLICATION_SUBMITTED' || isApproved || isRejected;
+  if (isSubmittedState) {
     return (
-      <div className="rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-sm sm:p-10">
-        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-emerald-700">
-          <CheckCircle2 size={42} />
-        </div>
-
-        <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
-          Application submitted
-        </p>
-
-        <h2 className="mt-3 text-3xl font-bold text-slate-900">
-          Your application has
-          been submitted
-        </h2>
-
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
-          Your application has
-          been sent to Fintree
-          Finance for lender
-          assessment.
-        </p>
-
-        <div className="mx-auto mt-8 grid max-w-2xl gap-4 text-left sm:grid-cols-3">
-          <SuccessDetail
-            label="Application Number"
-            value={
-              applicationNumber
-            }
-          />
-
-          <SuccessDetail
-            label="Lender"
-            value="Fintree Finance"
-          />
-
-          <SuccessDetail
-            label="Current Status"
-            value="Submitted to lender"
-          />
-        </div>
-
-        <div className="mx-auto mt-6 max-w-2xl rounded-2xl border border-blue-100 bg-blue-50 p-4 text-left">
-          <div className="flex items-start gap-3">
-            <Clock3
-              size={21}
-              className="mt-0.5 shrink-0 text-blue-700"
-            />
-
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className={`rounded-3xl p-6 text-white shadow-xl ${isApproved ? 'bg-gradient-to-r from-emerald-900 via-slate-900 to-slate-950 border border-emerald-500/30' : isRejected ? 'bg-gradient-to-r from-red-900 via-slate-900 to-slate-950 border border-red-500/30' : 'bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-950 border border-amber-500/30'}`}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-bold text-blue-900">
-                What happens next?
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-blue-800">
-                The lender will run
-                its own eligibility
-                and credit checks.
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${isApproved ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : isRejected ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}`}>
+                  <span className={`h-2 w-2 rounded-full ${isApproved ? 'bg-emerald-400' : isRejected ? 'bg-red-400' : 'bg-amber-400 animate-ping'}`}></span>
+                  {isApproved ? 'FINAL APPROVAL GRANTED' : isRejected ? 'APPLICATION REJECTED' : 'UNDER FINAL APPROVAL'}
+                </span>
+              </div>
+              <h2 className="mt-3 text-2xl font-black text-white tracking-tight">
+                {isApproved ? 'Congratulations! Loan Final Approval Received' : isRejected ? 'Application Declined' : 'Application Submitted for Final Review'}
+              </h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                {isApproved
+                  ? 'Fintree Finance has approved your loan application. You can now continue your post-approval journey.'
+                  : isRejected 
+                  ? 'Unfortunately, your application did not meet the lender criteria at this time.'
+                  : 'Your loan application is currently under final evaluation by our credit underwriting team. Once final approval comes, the next flow will start automatically.'}
               </p>
             </div>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onStartNew}
-          className="mt-8 rounded-xl border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Start New Dummy
-          Application
-        </button>
+        {isApproved && hasLan && (
+          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Continue to Disbursal</h3>
+            <p className="text-sm text-slate-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
+            <button
+              onClick={() => navigate(`/customer/loan/${customer.latestLan}/post-approval`)}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-bold text-white shadow hover:bg-emerald-700"
+            >
+              Continue Approved Loan Journey
+              <ArrowRight size={18} />
+            </button>
+          </div>
+        )}
+
+        {isApproved && !hasLan && (
+          <div className="rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-sm">
+            <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-emerald-600 mb-4" />
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Generating Loan Account...</h3>
+            <p className="text-sm text-slate-600">Please wait while we set up your loan account.</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -4062,6 +4016,8 @@ function SubmitApplicationStep({
     </StepCard>
   );
 }
+
+
 
 function ReviewSection({
   icon: Icon,

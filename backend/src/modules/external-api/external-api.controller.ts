@@ -129,19 +129,26 @@ handleEasebuzzPaymentSuccess(
     );
 }
 
-@Public()
-@Post('easebuzz-payment-failure')
-@HttpCode(HttpStatus.OK)
-handleEasebuzzPaymentFailure(
-  @Body() body: any,
-  @Headers() headers: any,
-) {
-  return this.plPaymentsService
-    .handleEasebuzzWebhook(
-      body,
-      headers,
-    );
-}
+  @Public()
+  @Post('easebuzz-payment-failure')
+  @HttpCode(HttpStatus.OK)
+  handleEasebuzzPaymentFailure(
+    @Body() body: any,
+    @Headers() headers: any,
+  ) {
+    return this.plPaymentsService
+      .handleEasebuzzWebhook(
+        body,
+        headers,
+      );
+  }
 
- 
+  @Public()
+  @Post('easebuzz-payment-manual-paid')
+  @HttpCode(HttpStatus.OK)
+  markPaymentAsPaid(@Body() body: any) {
+    const identifier = body?.txnid || body?.customerId || body?.id;
+    const status = body?.status || 'SUCCESS';
+    return this.plPaymentsService.markPaymentAsPaid(identifier, status);
+  }
 }

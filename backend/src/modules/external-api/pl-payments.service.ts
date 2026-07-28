@@ -1677,10 +1677,44 @@ export class PlPaymentsService {
       );
     } catch {
       return JSON.stringify({
-        message:
-          'Unable to serialize data.',
+        message: 'Unable to serialize data.',
       });
     }
+  }
+
+  async markPaymentAsPaid(txnidOrCustomerId: string | number, status: PlPaymentStatus = 'SUCCESS') {
+    const searchTxn = String(txnidOrCustomerId).trim();
+
+    const existingPayment = await (this.prisma as any).plPaymentLink.findFirst({
+      where: {
+        OR: [
+          { txnid: searchTxn },
+          ...( /^\d+$/.test(searchTxn) ? [{ customerId: BigInt(searchTxn) }] : [] ),
+        ],
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!existingPayment) {
+      throw new NotFoundException(`No payment transaction found for '${searchTxn}'.`);
+    }
+
+    const updatedPayment = await (this.prisma as any).plPaymentLink.update({
+      where: { id: existingPayment.id },
+      data: {
+        status: status,
+        paidAt: status === 'SUCCESS' ? new Date() : existingPayment.paidAt,
+        updatedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Payment transaction ${updatedPayment.txnid} manually updated to status ${status}.`);
+
+    return {
+      success: true,
+      message: `Payment status updated to ${status} for transaction ${updatedPayment.txnid}.`,
+      data: this.serializePayment(updatedPayment, updatedPayment.applicationNumber),
+    };
   }
 
   private toIsoString(

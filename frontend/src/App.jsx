@@ -10,6 +10,7 @@ import CustomerSignIn from './features/auth/pages/CustomerSignIn';
 import CustomerDashboard from './features/customer/pages/CustomerDashboard';
 import CustomerPlaceholderPage from './features/customer/pages/CustomerPlaceholderPage';
 import MyApplicationPage from './features/customer/pages/MyApplicationPage';
+import PostApprovalJourneyPage from './features/customer/pages/PostApprovalJourneyPage';
 
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
@@ -61,6 +62,7 @@ export default function App() {
       <Route element={<CustomerLayout />}>
         <Route path="/customer/dashboard" element={<CustomerDashboard />} />
         <Route path="/customer/application" element={<MyApplicationPage />} />
+        <Route path="/customer/loan/:lan/post-approval" element={<PostApprovalJourneyPage />} />
         <Route
           path="/customer/loan-details"
           element={

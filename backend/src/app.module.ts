@@ -15,6 +15,7 @@ import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module';
 import { ExternalApiModule } from './modules/external-api/external-api.module';
+import { LoanModule } from './modules/loan/loan.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -52,6 +53,7 @@ import { DocumentsModule } from './modules/documents/documents.module';
     PlatformPoliciesModule,
     AdminDashboardModule,
     ExternalApiModule,
+    LoanModule,
     OtpModule,
     CustomerModule,
     DocumentsModule,

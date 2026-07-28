@@ -44,9 +44,13 @@ export default function CustomerHeader({
 
   const mobileNumber = storedSession?.mobileNumber || '';
 
-  const pageInformation =
-    pageTitles[location.pathname] ||
-    pageTitles['/customer/dashboard'];
+  const pageInformation = (() => {
+    if (pageTitles[location.pathname]) return pageTitles[location.pathname];
+    if (location.pathname.startsWith('/customer/loan/') && location.pathname.endsWith('/post-approval')) {
+      return { title: 'Loan Journey', subtitle: 'Complete the steps to get your loan disbursed.' };
+    }
+    return pageTitles['/customer/dashboard'];
+  })();
 
   const maskedMobile = mobileNumber
     ? `+91 ${mobileNumber.slice(0, 2)}XXXX${mobileNumber.slice(-4)}`
