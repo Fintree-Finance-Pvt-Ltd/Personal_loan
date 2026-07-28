@@ -94,6 +94,15 @@ model User {
   productVersionsRejected  LenderProductVersion[] @relation("ProductVersionRejectedBy")
   productVersionsActivated LenderProductVersion[] @relation("ProductVersionActivatedBy")
 
+  platformPoliciesCreated         PlatformPolicy[]        @relation("PlatformPolicyCreatedBy")
+  platformPoliciesUpdated         PlatformPolicy[]        @relation("PlatformPolicyUpdatedBy")
+  platformPolicyVersionsCreated   PlatformPolicyVersion[] @relation("PlatformPolicyVersionCreatedBy")
+  platformPolicyVersionsUpdated   PlatformPolicyVersion[] @relation("PlatformPolicyVersionUpdatedBy")
+  platformPolicyVersionsSubmitted PlatformPolicyVersion[] @relation("PlatformPolicyVersionSubmittedBy")
+  platformPolicyVersionsApproved  PlatformPolicyVersion[] @relation("PlatformPolicyVersionApprovedBy")
+  platformPolicyVersionsRejected  PlatformPolicyVersion[] @relation("PlatformPolicyVersionRejectedBy")
+  platformPolicyVersionsActivated PlatformPolicyVersion[] @relation("PlatformPolicyVersionActivatedBy")
+
   @@index([status])
   @@index([lockedUntil])
 }
@@ -416,10 +425,10 @@ model LenderProduct {
 }
 
 model LenderProductVersion {
-  id                  String               @id @default(cuid())
-  productId           String
-  versionNumber       Int
-  status              ProductVersionStatus
+  id                        String                    @id @default(cuid())
+  productId                 String
+  versionNumber             Int
+  status                    ProductVersionStatus
   minimumAmount             Decimal                   @db.Decimal(12, 2)
   firstLoanBaseAmount       Decimal                   @db.Decimal(12, 2)
   maximumAmountCap          Decimal                   @db.Decimal(12, 2)
@@ -458,12 +467,12 @@ model LenderProductVersion {
   product     LenderProduct           @relation(fields: [productId], references: [id], onDelete: Restrict)
   multipliers LenderOfferMultiplier[]
   tenures     LenderProductTenure[]
-  createdBy   User              @relation("ProductVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy   User              @relation("ProductVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
-  submittedBy User?             @relation("ProductVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  approvedBy  User?             @relation("ProductVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  rejectedBy  User?             @relation("ProductVersionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
-  activatedBy User?             @relation("ProductVersionActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
+  createdBy   User                    @relation("ProductVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User                    @relation("ProductVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  submittedBy User?                   @relation("ProductVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  approvedBy  User?                   @relation("ProductVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy  User?                   @relation("ProductVersionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  activatedBy User?                   @relation("ProductVersionActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
 
   @@unique([productId, versionNumber])
   @@index([productId, status])
@@ -706,6 +715,163 @@ model KycVerificationStatus {
   @@map("kyc_verification_status")
 }
 
+enum PlatformPolicyOperationalStatus {
+  INACTIVE
+  ACTIVE
+}
+
+enum PlatformPolicyVersionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  ACTIVE
+  SUPERSEDED
+}
+
+enum PolicyRuleCategory {
+  IDENTITY
+  DEMOGRAPHIC
+  GEOGRAPHY
+  INCOME
+  EMPLOYMENT
+  EXPOSURE
+  PERFORMANCE
+  FRAUD
+  COOLDOWN
+}
+
+enum PolicyRuleValueType {
+  BOOLEAN
+  INTEGER
+  DECIMAL
+  STRING
+  STRING_ARRAY
+}
+
+enum PolicyRuleOperator {
+  EQUALS
+  NOT_EQUALS
+  GREATER_THAN
+  GREATER_THAN_OR_EQUAL
+  LESS_THAN
+  LESS_THAN_OR_EQUAL
+  IN
+  NOT_IN
+  IS_TRUE
+  IS_FALSE
+}
+
+enum PolicyDecisionOutcome {
+  PASS
+  FAIL
+  REFER
+}
+
+model PlatformPolicy {
+  id                String                          @id @default(cuid())
+  name              String                          @db.VarChar(150)
+  code              String                          @unique @db.VarChar(60)
+  description       String?                         @db.VarChar(500)
+  operationalStatus PlatformPolicyOperationalStatus @default(INACTIVE)
+
+  createdById String
+  updatedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User @relation("PlatformPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  updatedBy User @relation("PlatformPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  versions PlatformPolicyVersion[]
+
+  @@index([operationalStatus, updatedAt])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+model PlatformPolicyVersion {
+  id            String                      @id @default(cuid())
+  policyId      String
+  versionNumber Int
+  status        PlatformPolicyVersionStatus @default(DRAFT)
+
+  effectiveFrom DateTime?
+  version       Int       @default(1)
+
+  createdById   String
+  updatedById   String
+  submittedById String?
+  approvedById  String?
+  rejectedById  String?
+  activatedById String?
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  activatedAt     DateTime?
+  rejectionReason String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policy PlatformPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+
+  rules PlatformPolicyRule[]
+
+  createdBy User @relation("PlatformPolicyVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  updatedBy User @relation("PlatformPolicyVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  submittedBy User? @relation("PlatformPolicyVersionSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+
+  approvedBy User? @relation("PlatformPolicyVersionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  rejectedBy User? @relation("PlatformPolicyVersionRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+
+  activatedBy User? @relation("PlatformPolicyVersionActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
+
+  @@unique([policyId, versionNumber])
+  @@index([policyId, status])
+  @@index([status, updatedAt])
+  @@index([submittedById])
+  @@index([approvedById])
+}
+
+model PlatformPolicyRule {
+  id              String @id @default(cuid())
+  policyVersionId String
+
+  ruleCode  String              @db.VarChar(80)
+  ruleName  String              @db.VarChar(150)
+  category  PolicyRuleCategory
+  inputKey  String              @db.VarChar(100)
+  valueType PolicyRuleValueType
+  operator  PolicyRuleOperator
+
+  expectedValue Json?
+
+  failureOutcome  PolicyDecisionOutcome
+  reasonCode      String                @db.VarChar(100)
+  customerMessage String                @db.VarChar(300)
+  internalMessage String?               @db.VarChar(500)
+
+  priority  Int
+  isActive  Boolean @default(true)
+  sortOrder Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policyVersion PlatformPolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([policyVersionId, ruleCode])
+  @@unique([policyVersionId, sortOrder])
+  @@index([policyVersionId, priority])
+  @@index([ruleCode])
+}
 enum PlPaymentPurpose {
   PROCESSING_FEE
   OTHER

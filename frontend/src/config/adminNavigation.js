@@ -25,6 +25,12 @@ export const ADMIN_NAVIGATION = [
         path: '/admin-master/products',
         permission: 'PRODUCT_READ',
       },
+      {
+        label: 'Platform policies (BRE)',
+        shortLabel: 'PP',
+        path: '/admin-master/platform-policies',
+        permission: 'POLICY_READ',
+      },
     ],
   },
   {

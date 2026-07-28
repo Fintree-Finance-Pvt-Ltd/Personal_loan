@@ -22,6 +22,11 @@ import { CreateLenderPage } from './features/lenders/pages/CreateLenderPage';
 import { LenderDetailsPage } from './features/lenders/pages/LenderDetailsPage';
 import { EditLenderPage } from './features/lenders/pages/EditLenderPage';
 
+import PlatformPoliciesPage from './features/platform-policies/pages/PlatformPoliciesPage';
+import CreatePlatformPolicyPage from './features/platform-policies/pages/CreatePlatformPolicyPage';
+import PlatformPolicyDetailsPage from './features/platform-policies/pages/PlatformPolicyDetailsPage';
+import EditPlatformPolicyVersionPage from './features/platform-policies/pages/EditPlatformPolicyVersionPage';
+
 // Products
 import { ProductsPage } from './features/products/pages/ProductsPage';
 import { CreateProductPage } from './features/products/pages/CreateProductPage';
@@ -168,6 +173,28 @@ export default function App() {
               </PermissionRoute>
             }
           />
+
+          {/* Platform Policies */}
+          <Route path="/admin-master/platform-policies" element={
+            <PermissionRoute permission="POLICY_READ">
+              <PlatformPoliciesPage />
+            </PermissionRoute>
+          } />
+          <Route path="/admin-master/platform-policies/new" element={
+            <PermissionRoute permission="POLICY_CREATE">
+              <CreatePlatformPolicyPage />
+            </PermissionRoute>
+          } />
+          <Route path="/admin-master/platform-policies/:policyId" element={
+            <PermissionRoute permission="POLICY_READ">
+              <PlatformPolicyDetailsPage />
+            </PermissionRoute>
+          } />
+          <Route path="/admin-master/platform-policies/:policyId/versions/:versionId/edit" element={
+            <PermissionRoute permission="POLICY_UPDATE">
+              <EditPlatformPolicyVersionPage />
+            </PermissionRoute>
+          } />
 
           {/* Permissions */}
           <Route
