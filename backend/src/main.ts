@@ -18,16 +18,20 @@ async function bootstrap(): Promise<void> {
   const config = app.get(ConfigService);
    const logger = new Logger("UserService");
   app.useLogger(logger);
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    }),
+  );
   app.use(json({ limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
   app.use(urlencoded({ extended: false, limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
   app.enableCors({
-    origin: [config.getOrThrow<string>('FRONTEND_URL')],
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin'],
     exposedHeaders: ['X-Request-ID'],
   });
   const adapter = app.getHttpAdapter().getInstance();
