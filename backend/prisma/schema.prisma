@@ -641,6 +641,8 @@ model Customer {
   kycVerificationStatuses KycVerificationStatus[]
   plPaymentLinks          PlPaymentLink[]
   documents               PlCustomerDocument[]
+  applications            PlApplication[]
+  loans                   PlLoan[]
 
   @@index([email], map: "idx_customers_email")
   @@index([accountStatus], map: "idx_customers_account_status")
@@ -825,4 +827,208 @@ model PlCustomerDocument {
   @@index([documentType], map: "idx_pl_customer_docs_type")
   @@index([status], map: "idx_pl_customer_docs_status")
   @@map("pl_customer_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Post-Approval Journey Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PlApplicationStatus {
+  DRAFT
+  SUBMITTED
+  LENDER_REVIEW
+  LENDER_APPROVED
+  LENDER_REJECTED
+}
+
+enum PlLoanStatus {
+  LENDER_APPROVED
+  OFFER_ACCEPTED
+  KYC_IN_PROGRESS
+  ADDRESS_CONFIRMED
+  BANK_VERIFIED
+  KFS_ACCEPTED
+  MANDATE_COMPLETED
+  ESIGN_COMPLETED
+  READY_FOR_DISBURSAL
+  DISBURSAL_PROCESSING
+  DISBURSED
+  FAILED
+  CANCELLED
+}
+
+model PlApplication {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationNumber String              @unique @map("application_number") @db.VarChar(50)
+  status            PlApplicationStatus @default(DRAFT)
+  lenderCode        String?             @map("lender_code") @db.VarChar(30)
+
+  submittedAt         DateTime? @map("submitted_at") @db.DateTime(0)
+  lenderDecisionAt    DateTime? @map("lender_decision_at") @db.DateTime(0)
+  lenderDecisionReason String?  @map("lender_decision_reason") @db.VarChar(500)
+  approvedAmount       Decimal? @map("approved_amount") @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  loans PlLoan[]
+
+  @@index([customerId], map: "idx_pl_applications_customer_id")
+  @@index([status], map: "idx_pl_applications_status")
+  @@map("pl_applications")
+}
+
+model PlLoan {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  lan String @unique @db.VarChar(30)
+
+  customerId BigInt   @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  applicationId BigInt        @map("application_id") @db.UnsignedBigInt
+  application   PlApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  lenderCode String @map("lender_code") @db.VarChar(30)
+
+  status       PlLoanStatus @default(LENDER_APPROVED)
+  currentStep  String       @default("APPROVAL_SUMMARY") @map("current_step") @db.VarChar(50)
+
+  approvedAmount    Decimal  @map("approved_amount") @db.Decimal(15, 2)
+  lenderApprovedAt  DateTime @map("lender_approved_at") @db.DateTime(0)
+
+  // ── Offer ──────────────────────────────────────────────────────────────
+  offerStatus         String?  @map("offer_status") @db.VarChar(30)
+  offerAllowedTenures String?  @map("offer_allowed_tenures") @db.VarChar(200)
+  offerValidUntil     DateTime? @map("offer_valid_until") @db.DateTime(0)
+  acceptedTenureDays  Int?     @map("accepted_tenure_days")
+  acceptedAt          DateTime? @map("offer_accepted_at") @db.DateTime(0)
+  acceptedInterestRate Decimal? @map("accepted_interest_rate") @db.Decimal(7, 4)
+  acceptedProcessingFee Decimal? @map("accepted_processing_fee") @db.Decimal(15, 2)
+  acceptedEmiAmount    Decimal? @map("accepted_emi_amount") @db.Decimal(15, 2)
+  acceptedTotalRepayment Decimal? @map("accepted_total_repayment") @db.Decimal(15, 2)
+
+  // ── DigiLocker / Aadhaar KYC ──────────────────────────────────────────
+  digilockerStatus       String?   @map("digilocker_status") @db.VarChar(30)
+  digilockerSessionId    String?   @map("digilocker_session_id") @db.VarChar(255)
+  digilockerReference    String?   @map("digilocker_reference") @db.VarChar(255)
+  aadhaarMaskedNumber    String?   @map("aadhaar_masked_number") @db.VarChar(20)
+  aadhaarLastFour        String?   @map("aadhaar_last_four") @db.VarChar(4)
+  aadhaarVerifiedName    String?   @map("aadhaar_verified_name") @db.VarChar(200)
+  aadhaarDateOfBirth     DateTime? @map("aadhaar_date_of_birth") @db.Date
+  aadhaarGender          String?   @map("aadhaar_gender") @db.VarChar(10)
+  aadhaarCareOf          String?   @map("aadhaar_care_of") @db.VarChar(200)
+  aadhaarAddrLine1       String?   @map("aadhaar_addr_line1") @db.VarChar(500)
+  aadhaarAddrLine2       String?   @map("aadhaar_addr_line2") @db.VarChar(500)
+  aadhaarLandmark        String?   @map("aadhaar_landmark") @db.VarChar(200)
+  aadhaarLocality        String?   @map("aadhaar_locality") @db.VarChar(200)
+  aadhaarDistrict        String?   @map("aadhaar_district") @db.VarChar(100)
+  aadhaarCity            String?   @map("aadhaar_city") @db.VarChar(100)
+  aadhaarState           String?   @map("aadhaar_state") @db.VarChar(100)
+  aadhaarCountry         String?   @default("India") @map("aadhaar_country") @db.VarChar(50)
+  aadhaarPincode         String?   @map("aadhaar_pincode") @db.VarChar(6)
+  aadhaarFormattedAddr   String?   @map("aadhaar_formatted_addr") @db.Text
+  digilockerVerifiedAt   DateTime? @map("digilocker_verified_at") @db.DateTime(0)
+  digilockerConsentAt    DateTime? @map("digilocker_consent_at") @db.DateTime(0)
+  digilockerRawResponse  String?   @map("digilocker_raw_response") @db.LongText
+
+  // ── Address Confirmation ──────────────────────────────────────────────
+  addressConfirmed        Boolean   @default(false) @map("address_confirmed")
+  addressSameAsPermanent  Boolean?  @map("address_same_as_permanent")
+  currentAddrLine1        String?   @map("current_addr_line1") @db.VarChar(500)
+  currentAddrLine2        String?   @map("current_addr_line2") @db.VarChar(500)
+  currentAddrLandmark     String?   @map("current_addr_landmark") @db.VarChar(200)
+  currentAddrLocality     String?   @map("current_addr_locality") @db.VarChar(200)
+  currentAddrDistrict     String?   @map("current_addr_district") @db.VarChar(100)
+  currentAddrCity         String?   @map("current_addr_city") @db.VarChar(100)
+  currentAddrState        String?   @map("current_addr_state") @db.VarChar(100)
+  currentAddrCountry      String?   @default("India") @map("current_addr_country") @db.VarChar(50)
+  currentAddrPincode      String?   @map("current_addr_pincode") @db.VarChar(6)
+  currentAddrResidenceSince String? @map("current_addr_residence_since") @db.VarChar(20)
+  currentAddrProofType    String?   @map("current_addr_proof_type") @db.VarChar(50)
+  currentAddrDocumentId   String?   @map("current_addr_document_id") @db.VarChar(100)
+  addressConfirmedAt      DateTime? @map("address_confirmed_at") @db.DateTime(0)
+
+  // ── Bank Verification ─────────────────────────────────────────────────
+  bankVerified            Boolean  @default(false) @map("bank_verified")
+  bankAccountHolderName   String?  @map("bank_account_holder_name") @db.VarChar(200)
+  bankAccountType         String?  @map("bank_account_type") @db.VarChar(30)
+  bankAccountMasked       String?  @map("bank_account_masked") @db.VarChar(30)
+  bankIfsc                String?  @map("bank_ifsc") @db.VarChar(11)
+  bankName                String?  @map("bank_name") @db.VarChar(100)
+  bankProviderReference   String?  @map("bank_provider_reference") @db.VarChar(255)
+  bankNameMatchScore      Decimal? @map("bank_name_match_score") @db.Decimal(5, 2)
+  bankVerifiedAt          DateTime? @map("bank_verified_at") @db.DateTime(0)
+
+  // ── KFS ───────────────────────────────────────────────────────────────
+  kfsAccepted        Boolean   @default(false) @map("kfs_accepted")
+  kfsVersion         String?   @map("kfs_version") @db.VarChar(20)
+  kfsDocumentId      String?   @map("kfs_document_id") @db.VarChar(100)
+  kfsGeneratedAt     DateTime? @map("kfs_generated_at") @db.DateTime(0)
+  kfsViewedAt        DateTime? @map("kfs_viewed_at") @db.DateTime(0)
+  kfsAcceptedAt      DateTime? @map("kfs_accepted_at") @db.DateTime(0)
+  kfsConsentText     String?   @map("kfs_consent_text") @db.Text
+  kfsIpAddress       String?   @map("kfs_ip_address") @db.VarChar(45)
+  kfsUserAgent       String?   @map("kfs_user_agent") @db.VarChar(500)
+
+  // ── eMandate ──────────────────────────────────────────────────────────
+  mandateCompleted      Boolean   @default(false) @map("mandate_completed")
+  mandateStatus         String?   @map("mandate_status") @db.VarChar(30)
+  mandateProviderRef    String?   @map("mandate_provider_ref") @db.VarChar(255)
+  mandateInitiatedAt    DateTime? @map("mandate_initiated_at") @db.DateTime(0)
+  mandateCompletedAt    DateTime? @map("mandate_completed_at") @db.DateTime(0)
+
+  // ── eSign ─────────────────────────────────────────────────────────────
+  esignCompleted        Boolean   @default(false) @map("esign_completed")
+  esignStatus           String?   @map("esign_status") @db.VarChar(30)
+  esignProviderRef      String?   @map("esign_provider_ref") @db.VarChar(255)
+  esignDocumentTypes    String?   @map("esign_document_types") @db.VarChar(500)
+  esignInitiatedAt      DateTime? @map("esign_initiated_at") @db.DateTime(0)
+  esignCompletedAt      DateTime? @map("esign_completed_at") @db.DateTime(0)
+
+  // ── Disbursal ─────────────────────────────────────────────────────────
+  disbursalStatus       String?   @map("disbursal_status") @db.VarChar(30)
+  disbursalProviderRef  String?   @map("disbursal_provider_ref") @db.VarChar(255)
+  disbursalAmount       Decimal?  @map("disbursal_amount") @db.Decimal(15, 2)
+  disbursalRequestedAt  DateTime? @map("disbursal_requested_at") @db.DateTime(0)
+  disbursalCompletedAt  DateTime? @map("disbursal_completed_at") @db.DateTime(0)
+  disbursalUtr          String?   @map("disbursal_utr") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  auditEvents PlLoanAuditEvent[]
+
+  @@index([customerId], map: "idx_pl_loans_customer_id")
+  @@index([applicationId], map: "idx_pl_loans_application_id")
+  @@index([status], map: "idx_pl_loans_status")
+  @@index([lenderCode], map: "idx_pl_loans_lender_code")
+  @@map("pl_loans")
+}
+
+model PlLoanAuditEvent {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  lan           String  @db.VarChar(30)
+  customerId    BigInt  @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt  @map("application_id") @db.UnsignedBigInt
+
+  eventType String  @map("event_type") @db.VarChar(80)
+  metadata  Json?   @db.Json
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  @@index([loanId], map: "idx_pl_loan_audit_loan_id")
+  @@index([eventType, createdAt], map: "idx_pl_loan_audit_event_type")
+  @@index([customerId], map: "idx_pl_loan_audit_customer_id")
+  @@map("pl_loan_audit_events")
 }
