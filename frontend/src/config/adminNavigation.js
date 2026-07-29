@@ -44,6 +44,12 @@ export const ADMIN_NAVIGATION = [
         permission: 'MLM_READ',
       },
       {
+        label: 'Distribution Dashboard',
+        shortLabel: 'DD',
+        path: '/admin-master/mlm-distribution',
+        permission: 'MLM_READ',
+      },
+      {
         label: 'Capacity Dashboard',
         shortLabel: 'CD',
         path: '/admin-master/mlm-capacities',

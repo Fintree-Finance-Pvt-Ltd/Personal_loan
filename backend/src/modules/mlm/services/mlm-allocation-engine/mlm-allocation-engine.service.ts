@@ -8,7 +8,7 @@ import {
   MlmAllocationDecisionStatus,
   MlmAllocationAttemptOutcome,
 } from '@prisma/client';
-import { ExecuteMlmAllocationDto, SimulationResult, CandidateResult } from '../../mlm.types';
+import { ExecuteMlmAllocationDto, SimulationResult, CandidateResult, SimulateMlmPolicyVersionDto } from '../../mlm.types';
 
 @Injectable()
 export class MlmAllocationEngineService {
@@ -20,46 +20,83 @@ export class MlmAllocationEngineService {
   ) {}
 
   async simulate(
-    dto: ExecuteMlmAllocationDto,
+    dto: SimulateMlmPolicyVersionDto,
     policyVersion: MlmPolicyVersion & { routes: (MlmAllocationRoute & { routeState: any })[] },
   ) {
-    const candidateResults: CandidateResult[] = [];
     const amount = new Prisma.Decimal(dto.requestedAmount);
+    
+    // Set up initial state
     const swrrRoutes: SwrrRoute[] = [];
-
-    // Constraint [21]: Simulation must reuse the same SWRR logic and perform absolutely zero writes.
+    const excludedRoutes = [];
+    
     for (const route of policyVersion.routes) {
-      if (!route.isActive) continue;
-
-      let isEligible = true;
-      let reason = '';
-
-      candidateResults.push({
-        routeId: route.id,
-        lenderId: route.lenderId,
-        productId: route.productId,
-        isEligible,
-        rejectionReason: reason || undefined,
-        allocationPercentage: route.allocationWeightPercent?.toString() || '0',
-        currentWeight: route.routeState?.currentWeight?.toString() || '0',
-      });
+      if (!route.isActive) {
+        excludedRoutes.push({
+           routeId: route.id,
+           lenderId: route.lenderId,
+           productId: route.productId,
+           reason: 'ROUTE_INACTIVE'
+        });
+        continue;
+      }
+      
+      // Readiness check
+      // Ideally we'd check lender active status here if we joined it, but simulation is purely algorithmic based on weights right now.
 
       swrrRoutes.push({
         id: route.id,
         allocationPercentage: route.allocationWeightPercent || new Prisma.Decimal(0),
-        currentWeight: route.routeState?.currentWeight || new Prisma.Decimal(0),
-        isEligible,
+        currentWeight: dto.startFromZero ? new Prisma.Decimal(0) : (route.routeState?.currentWeight || new Prisma.Decimal(0)),
+        isEligible: true, // For simulation purposes, assume all active routes are eligible unless filters applied
       });
     }
 
-    const { selectedRouteId } = this.swrrService.selectNext(swrrRoutes);
+    const sequence = [];
+    const summaryMap = new Map<string, { count: number, totalAmount: Prisma.Decimal, targetPercentage: Prisma.Decimal }>();
+    
+    for (const r of swrrRoutes) {
+      summaryMap.set(r.id, { count: 0, totalAmount: new Prisma.Decimal(0), targetPercentage: r.allocationPercentage });
+    }
+
+    for (let i = 0; i < dto.previewCount; i++) {
+       const { selectedRouteId, updatedRoutes } = this.swrrService.selectNext(swrrRoutes);
+       if (selectedRouteId) {
+          sequence.push(selectedRouteId);
+          // Update the swrrRoutes for the next iteration (this is in-memory only)
+          for (let j = 0; j < swrrRoutes.length; j++) {
+             const updated = updatedRoutes.find(ur => ur.id === swrrRoutes[j].id);
+             if (updated) {
+                 swrrRoutes[j].currentWeight = updated.currentWeight;
+             }
+          }
+          
+          const summary = summaryMap.get(selectedRouteId);
+          if (summary) {
+             summary.count++;
+             summary.totalAmount = summary.totalAmount.add(amount);
+          }
+       } else {
+          sequence.push(null);
+       }
+    }
+
+    const projectedSummary = Array.from(summaryMap.entries()).map(([routeId, data]) => {
+        const actualPercentage = dto.previewCount > 0 ? (data.count / dto.previewCount) * 100 : 0;
+        return {
+           routeId,
+           count: data.count,
+           totalAmount: data.totalAmount.toNumber(),
+           targetPercentage: data.targetPercentage.toNumber(),
+           actualPercentage: Number(actualPercentage.toFixed(2)),
+           variancePercentage: Number((actualPercentage - data.targetPercentage.toNumber()).toFixed(2))
+        };
+    });
 
     return {
-      candidateResults,
-      selectedRouteId,
-      
-      decisionReasonCode: selectedRouteId ? 'ASSIGNED' : 'NO_ELIGIBLE_ROUTE',
-    } as SimulationResult;
+      sequence,
+      projectedSummary,
+      excludedRoutes
+    };
   }
 
   async execute(

@@ -40,8 +40,22 @@ export const rejectMlmPolicyVersionSchema = z.object({
 });
 
 export const simulateMlmPolicyVersionSchema = z.object({
-  requestedAmount: z.number().positive(),
-  platformDecisionOutcome: z.string().optional(),
+  requestedAmount: z.union([z.number(), z.string()]).transform(Number).refine(val => val > 0, 'Must be positive').refine(val => /^\d+(\.\d{1,2})?$/.test(val.toString()), 'Maximum two decimal places'),
+  previewCount: z.number().int().min(1).max(100).default(20),
+  startFromZero: z.boolean().default(false),
+});
+
+export const mlmDistributionQuerySchema = z.object({
+  platformProductId: z.string().optional(),
+  policyId: z.string().optional(),
+  versionId: z.string().optional(),
+  lenderId: z.string().optional(),
+  readiness: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+}).refine(data => data.platformProductId || data.policyId || data.versionId, {
+  message: "platformProductId is required unless policyId or versionId uniquely resolves it.",
+  path: ["platformProductId"]
 });
 
 export const executeMlmAllocationSchema = z.object({

@@ -7,6 +7,7 @@ import {
   rejectMlmPolicyVersionSchema,
   simulateMlmPolicyVersionSchema,
   executeMlmAllocationSchema,
+  mlmDistributionQuerySchema,
 } from './mlm.validation';
 
 export type CreateMlmPolicyDto = z.infer<typeof createMlmPolicySchema>;
@@ -16,6 +17,7 @@ export type UpdateMlmAllocationRoutesDto = z.infer<typeof updateMlmAllocationRou
 export type RejectMlmPolicyVersionDto = z.infer<typeof rejectMlmPolicyVersionSchema>;
 export type SimulateMlmPolicyVersionDto = z.infer<typeof simulateMlmPolicyVersionSchema>;
 export type ExecuteMlmAllocationDto = z.infer<typeof executeMlmAllocationSchema>;
+export type MlmDistributionQueryDto = z.infer<typeof mlmDistributionQuerySchema>;
 
 export interface CandidateResult {
   routeId?: string;

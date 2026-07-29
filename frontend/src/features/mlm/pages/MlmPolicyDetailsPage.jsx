@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { mlmApi } from '../api/mlm.api';
+import MlmSimulationPanel from '../components/MlmSimulationPanel';
 
 export default function MlmPolicyDetailsPage() {
   const { policyId } = useParams();
   const [policy, setPolicy] = useState(null);
+  const [simulatingVersionId, setSimulatingVersionId] = useState(null);
 
   const loadPolicy = () => {
     mlmApi.getPolicyDetails(policyId).then(setPolicy).catch(console.error);
@@ -81,8 +83,9 @@ export default function MlmPolicyDetailsPage() {
                   {version.status === 'APPROVED' && (
                     <button onClick={() => handleAction('activate', version.id)} className="text-green-600 hover:underline ml-2 font-bold">Activate</button>
                   )}
+                  <button onClick={() => setSimulatingVersionId(version.id)} className="text-orange-600 hover:underline ml-2">Simulate</button>
                   {version.status === 'ACTIVE' && (
-                    <Link to={`/admin-master/mlm-policy-versions/${version.id}/distribution`} className="text-blue-600 hover:underline font-bold ml-2">Dashboard</Link>
+                    <Link to={`/admin-master/mlm-policy-versions/distribution?versionId=${version.id}`} className="text-blue-600 hover:underline font-bold ml-2">Dashboard</Link>
                   )}
                 </td>
               </tr>
@@ -90,6 +93,13 @@ export default function MlmPolicyDetailsPage() {
           </tbody>
         </table>
       </div>
+      
+      {simulatingVersionId && (
+        <MlmSimulationPanel 
+          versionId={simulatingVersionId} 
+          onClose={() => setSimulatingVersionId(null)} 
+        />
+      )}
     </div>
   );
 }

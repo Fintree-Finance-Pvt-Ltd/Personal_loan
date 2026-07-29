@@ -117,8 +117,8 @@ export class DocumentsService {
             \`customer_id\`, \`application_id\`, \`document_type\`, \`applicant_type\`, \`status\`,
             \`file_name\`, \`original_file_name\`, \`file_path\`, \`file_url\`, \`mime_type\`, \`file_size\`, \`source\`,
             \`latitude\`, \`longitude\`, \`accuracy\`, \`formatted_address\`, \`city\`, \`state\`, \`country\`, \`postal_code\`,
-            \`captured_at\`, \`face_liveness_status\`, \`face_liveness_score\`, \`face_liveness_provider_app_id\`, \`metadata_json\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            \`captured_at\`, \`face_liveness_status\`, \`face_liveness_score\`, \`face_liveness_provider_app_id\`, \`metadata_json\`, \`created_at\`, \`updated_at\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
           customerId,
           appId,
           'CUSTOMER_LIVE_PHOTO',
