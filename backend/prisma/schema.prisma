@@ -1193,12 +1193,120 @@ model PlLoan {
 
   auditEvents      PlLoanAuditEvent[]
   bankVerification PlBankVerification?
+  mandates         PlLoanMandate[]
 
   @@index([customerId], map: "idx_pl_loans_customer_id")
   @@index([applicationId], map: "idx_pl_loans_application_id")
   @@index([status], map: "idx_pl_loans_status")
   @@index([lenderCode], map: "idx_pl_loans_lender_code")
   @@map("pl_loans")
+}
+
+enum PlMandateProvider {
+  EASEBUZZ
+}
+
+enum PlMandateType {
+  ENACH
+  UPI
+  SI
+}
+
+enum PlMandateStatus {
+  CREATED
+  ACCESS_KEY_GENERATING
+  ACCESS_KEY_GENERATED
+  INITIATED
+  REQUESTED
+  AUTHORIZED
+  FAILED
+  REJECTED
+  CANCELLED
+  USER_CANCELLED
+  EXPIRED
+  REVOKED
+  PAUSED
+  COMPLETED
+  DROPPED
+  BOUNCED
+  UNKNOWN
+}
+
+enum PlMandateAttemptStatus {
+  STARTED
+  PROVIDER_REQUESTED
+  PROVIDER_RESPONDED
+  REDIRECTED
+  CALLBACK_RECEIVED
+  WEBHOOK_RECEIVED
+  VERIFIED
+  FAILED
+}
+
+model PlLoanMandate {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  customerId    String  @map("customer_id")
+  applicationId String? @map("application_id")
+
+  lan String @db.VarChar(30)
+
+  provider    PlMandateProvider @default(EASEBUZZ)
+  mandateType PlMandateType     @map("mandate_type")
+
+  merchantTransactionId String    @unique(map: "uk_pl_loan_mandate_transaction") @map("merchant_transaction_id") @db.VarChar(40)
+  providerMandateId     String?   @unique(map: "uk_pl_loan_mandate_provider_id") @map("provider_mandate_id") @db.VarChar(255)
+
+  accessKey          String?   @map("access_key") @db.VarChar(500)
+  accessKeyExpiresAt DateTime? @map("access_key_expires_at") @db.DateTime(0)
+  portalUrl          String?   @map("portal_url") @db.Text
+
+  status            PlMandateStatus @default(CREATED)
+  providerStatus    String?         @map("provider_status") @db.VarChar(100)
+  providerSubStatus String?         @map("provider_sub_status") @db.VarChar(100)
+
+  amount     Decimal @db.Decimal(15, 2)
+  amountRule String  @default("MAX") @map("amount_rule") @db.VarChar(20)
+  frequency  String  @default("monthly") @db.VarChar(30)
+
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+
+  accountNumberMasked String? @map("account_number_masked") @db.VarChar(30)
+  ifscMasked          String? @map("ifsc_masked") @db.VarChar(20)
+  accountType         String? @map("account_type") @db.VarChar(20)
+  accountHolderName   String? @map("account_holder_name") @db.VarChar(150)
+
+  umrn                String? @db.VarChar(255)
+  bankReferenceNumber String? @map("bank_reference_number") @db.VarChar(255)
+  tpvValidationStatus String? @map("tpv_validation_status") @db.VarChar(50)
+
+  authorizedAt        DateTime? @map("authorized_at") @db.DateTime(0)
+  failedAt            DateTime? @map("failed_at") @db.DateTime(0)
+  expiresAt           DateTime? @map("expires_at") @db.DateTime(0)
+  lastStatusCheckedAt DateTime? @map("last_status_checked_at") @db.DateTime(0)
+
+  providerRequestJson  String? @map("provider_request_json") @db.LongText
+  providerResponseJson String? @map("provider_response_json") @db.LongText
+  callbackResponseJson String? @map("callback_response_json") @db.LongText
+  webhookResponseJson  String? @map("webhook_response_json") @db.LongText
+
+  failureCode   String? @map("failure_code") @db.VarChar(100)
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  initiationCount Int @default(1) @map("initiation_count")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([loanId, status], map: "idx_pl_mandate_loan_status")
+  @@index([customerId], map: "idx_pl_mandate_customer")
+  @@index([lan], map: "idx_pl_mandate_lan")
+  @@index([providerMandateId], map: "idx_pl_mandate_provider")
+  @@map("pl_loan_mandates")
 }
 
 model PlLoanAuditEvent {
