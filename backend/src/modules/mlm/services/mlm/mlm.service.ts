@@ -10,6 +10,7 @@ import {
   RejectMlmPolicyVersionDto,
   SimulateMlmPolicyVersionDto,
   ExecuteMlmAllocationDto,
+  MlmDistributionQueryDto,
 } from '../../mlm.types';
 import {
   MlmPolicyVersionStatus,
@@ -284,16 +285,8 @@ export class MlmService {
      }
   }
 
-  async simulate(policyVersionId: string, execDto: ExecuteMlmAllocationDto) {
-    const version = await this.prisma.mlmPolicyVersion.findUnique({
-      where: { id: policyVersionId },
-      include: { routes: { include: { routeState: true } } },
-    });
-    if (!version) throw new NotFoundException('Version not found');
-
-    return this.engine.simulate(execDto, version as any);
-  }
-
+  // Method removed due to signature conflict and no usage
+  
   async submitVersion(versionId: string, userId: string) {
     const version = await this.prisma.mlmPolicyVersion.findUnique({
       where: { id: versionId },
@@ -462,6 +455,15 @@ export class MlmService {
         },
       });
 
+      // Ensure the parent policy itself is also marked as ACTIVE
+      await tx.mlmPolicy.update({
+        where: { id: version.policyId },
+        data: {
+          operationalStatus: MlmPolicyOperationalStatus.ACTIVE,
+          updatedById: userId,
+        }
+      });
+
       for (const route of version.routes) {
          if (route.isActive) {
            await tx.mlmAllocationRouteState.create({
@@ -500,14 +502,7 @@ export class MlmService {
     });
     if (!version) throw new NotFoundException('Version not found');
 
-    const execDto: ExecuteMlmAllocationDto = {
-      applicationReference: 'SIMULATION_' + Date.now(),
-      requestedAmount: dto.requestedAmount,
-      platformDecisionOutcome: dto.platformDecisionOutcome || 'APPROVED',
-      platformProductId: (version as any).policy?.platformProductId || 'UNKNOWN',
-    };
-
-    return this.engine.simulate(execDto, version);
+    return this.engine.simulate(dto, version);
   }
 
   async listDecisions(limit = 50, offset = 0) {
@@ -524,22 +519,126 @@ export class MlmService {
     });
   }
   
-  async getDistributionDashboard(versionId: string) {
-     const version = await this.prisma.mlmPolicyVersion.findUnique({
-        where: { id: versionId },
-        include: { routes: { include: { routeState: true, lender: true, product: true } } }
-     });
-     if (!version) throw new NotFoundException('Version not found');
-     return version.routes.map(r => ({
+  async getDistributionDashboard(query: MlmDistributionQueryDto) {
+    let versionId = query.versionId;
+
+    if (!versionId) {
+      if (!query.platformProductId && !query.policyId) {
+        throw new BadRequestException('platformProductId or policyId is required to resolve active version');
+      }
+      
+      let policy;
+      if (query.policyId) {
+        policy = await this.prisma.mlmPolicy.findUnique({
+          where: { id: query.policyId },
+          include: { versions: { where: { status: MlmPolicyVersionStatus.ACTIVE } } },
+        });
+      } else if (query.platformProductId) {
+        policy = await this.prisma.mlmPolicy.findFirst({
+          where: { platformProductId: query.platformProductId, operationalStatus: MlmPolicyOperationalStatus.ACTIVE },
+          include: { versions: { where: { status: MlmPolicyVersionStatus.ACTIVE } } },
+        });
+      }
+
+      if (!policy || policy.versions.length === 0) {
+        throw new NotFoundException('No active MLM policy version found for the given criteria.');
+      }
+      versionId = policy.versions[0].id;
+    }
+
+    const version = await this.prisma.mlmPolicyVersion.findUnique({
+      where: { id: versionId },
+      include: {
+        policy: true,
+        routes: {
+          include: {
+            routeState: true,
+            lender: true,
+            product: {
+              include: { lender: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!version) throw new NotFoundException('Version not found');
+
+    const totalAllocatedAmount = version.routes.reduce((sum, r) => sum.add(r.routeState?.allocatedAmount || new Prisma.Decimal(0)), new Prisma.Decimal(0));
+    const totalAllocatedCount = version.routes.reduce((sum, r) => sum + (r.routeState?.allocatedApplicationCount || 0), 0);
+    const activeRoutesCount = version.routes.filter((r) => r.isActive).length;
+    const inactiveRoutesCount = version.routes.filter((r) => !r.isActive).length;
+    const totalTargetPercentage = version.routes.filter(r => r.isActive).reduce((sum, r) => sum.add(r.allocationWeightPercent || new Prisma.Decimal(0)), new Prisma.Decimal(0));
+
+    const distribution = version.routes.map((r) => {
+      let readiness: 'READY' | 'NOT_READY_LENDER' | 'NOT_READY_PRODUCT' | 'NOT_READY_STRATEGY' = 'READY';
+      if (!r.lender || r.lender.operationalStatus !== 'ACTIVE') {
+        readiness = 'NOT_READY_LENDER';
+      } else if (!r.product || r.product.operationalStatus !== 'ACTIVE') {
+        readiness = 'NOT_READY_PRODUCT';
+      }
+      // Note: Strategy readiness check would go here if strategies were linked to products in this scope.
+
+      const targetPercentage = r.allocationWeightPercent ? r.allocationWeightPercent : new Prisma.Decimal(0);
+      let actualApplicationPercentage = new Prisma.Decimal(0);
+      if (totalAllocatedCount > 0 && r.routeState) {
+        actualApplicationPercentage = new Prisma.Decimal(r.routeState.allocatedApplicationCount).dividedBy(totalAllocatedCount).times(100);
+      }
+
+      const variancePercentage = actualApplicationPercentage.minus(targetPercentage);
+
+      return {
         routeId: r.id,
-        lenderName: (r.lender as any)?.displayName || (r.lender as any)?.name,
-        productName: r.product.name,
+        lenderName: (r.lender as any)?.displayName || (r.lender as any)?.name || 'Unknown',
+        lenderId: r.lenderId,
+        productName: r.product?.name || 'Unknown',
+        productId: r.productId,
         isActive: r.isActive,
-        allocationPercentage: r.allocationWeightPercent ? r.allocationWeightPercent.toNumber() : 0,
+        readiness,
+        targetPercentage: targetPercentage.toNumber(),
+        actualApplicationPercentage: actualApplicationPercentage.toNumber(),
+        variancePercentage: variancePercentage.toNumber(),
         currentWeight: r.routeState ? r.routeState.currentWeight.toNumber() : 0,
         allocatedAmount: r.routeState ? r.routeState.allocatedAmount.toNumber() : 0,
-        allocatedApplicationCount: r.routeState ? r.routeState.allocatedApplicationCount : 0
-     }));
+        allocatedApplicationCount: r.routeState ? r.routeState.allocatedApplicationCount : 0,
+      };
+    });
+
+    let filtered = distribution;
+    if (query.lenderId) {
+      filtered = filtered.filter(d => d.lenderId === query.lenderId);
+    }
+    if (query.readiness) {
+      filtered = filtered.filter(d => d.readiness === query.readiness);
+    }
+
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    const total = filtered.length;
+    const paginated = filtered.slice((page - 1) * limit, page * limit);
+
+    return {
+      summary: {
+        totalTargetPercentage: totalTargetPercentage.toNumber(),
+        totalAllocatedAmount: totalAllocatedAmount.toNumber(),
+        totalAllocatedCount,
+        activeRoutesCount,
+        inactiveRoutesCount,
+      },
+      policyContext: {
+        platformProductId: version.policy.platformProductId,
+        policyId: version.policyId,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        status: version.status,
+      },
+      distribution: paginated,
+      pagination: {
+        page,
+        limit,
+        total,
+      },
+    };
   }
 
   async getActiveMlmPolicyVersion(scopeCode: string, platformProductId: string, asOf: Date = new Date()) {

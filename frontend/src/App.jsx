@@ -216,7 +216,7 @@ export default function App() {
             }
           />
           <Route
-            path="/admin-master/mlm-policy-versions/:versionId/distribution"
+            path="/admin-master/mlm-distribution"
             element={
               <PermissionRoute permission="MLM_READ">
                 <MlmDistributionDashboardPage />
