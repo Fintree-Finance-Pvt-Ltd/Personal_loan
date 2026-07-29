@@ -27,9 +27,13 @@ export default function MlmDistributionDashboardPage() {
       // Default to first active product if no filters applied and no versionId
       if (!filters.platformProductId && !filters.versionId && prods.length > 0) {
         handleFilterChange('platformProductId', prods[0].id);
+      } else if (prods.length === 0 || !filters.platformProductId) {
+        // If there are no products, or we don't have one selected, stop loading
+        setLoading(false);
       }
     } catch (err) {
       console.error('Failed to load platform products', err);
+      setLoading(false);
     }
   };
 
