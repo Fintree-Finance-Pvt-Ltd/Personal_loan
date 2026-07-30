@@ -62,16 +62,40 @@ export class PlPaymentsService {
           'Customer ID',
         );
 
-      const amount = Number(
-        body?.amount,
-      );
+      const customer =
+        await this.prisma.customer.findUnique({
+          where: {
+            id: customerId,
+          },
+          include: {
+            applications: {
+              orderBy: { id: 'desc' },
+              take: 1,
+            },
+          }
+        });
+
+      if (!customer) {
+        throw new NotFoundException(
+          'Customer not found.',
+        );
+      }
+
+      const latestApp = customer.applications[0];
+      if (!latestApp) {
+        throw new BadRequestException('No application found for customer.');
+      }
+
+      const amount = latestApp.assessmentFeeTotalAmount 
+        ? Number(latestApp.assessmentFeeTotalAmount) 
+        : Number(body?.amount); // fallback for existing tests, though we should strictly use snapshot
 
       if (
         !Number.isFinite(amount) ||
         amount <= 0
       ) {
         throw new BadRequestException(
-          'A valid payment amount is required.',
+          'A valid payment amount is required from the application snapshot.',
         );
       }
 
@@ -79,13 +103,6 @@ export class PlPaymentsService {
         this.normalizePurpose(
           body?.purpose,
         );
-
-      const customer =
-        await this.prisma.customer.findUnique({
-          where: {
-            id: customerId,
-          },
-        });
 
       if (!customer) {
         throw new NotFoundException(

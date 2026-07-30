@@ -61,8 +61,12 @@ export class PolicyEvaluationService {
 
       const passed = this.evaluateRuleCondition(rule, actualInputVal);
       
-      const outcome = passed ? PolicyDecisionOutcome.PASS : rule.failureOutcome;
+      let outcome = passed ? PolicyDecisionOutcome.PASS : rule.failureOutcome;
       
+      if (outcome === 'REFER') {
+        throw new Error(`PLATFORM_POLICY_REFER_NOT_ALLOWED: Rule ${rule.ruleCode} returned REFER which is no longer supported.`);
+      }
+
       ruleResults.push({
         ruleCode: rule.ruleCode,
         ruleName: rule.ruleName,
@@ -74,16 +78,8 @@ export class PolicyEvaluationService {
       });
 
       if (!passed) {
-        // FAIL > REFER > PASS priority
-        if (finalOutcome !== PolicyDecisionOutcome.FAIL) {
-          finalOutcome = outcome as PolicyDecisionOutcome;
-        }
+        finalOutcome = PolicyDecisionOutcome.FAIL;
       }
-    }
-
-    // If we have a missing input, final outcome is POLICY_INPUT_MISSING
-    if (finalOutcome === 'POLICY_INPUT_MISSING' || finalOutcome === PolicyDecisionOutcome.FAIL) {
-      // Retain the outcome
     }
 
     return {

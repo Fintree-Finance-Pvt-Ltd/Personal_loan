@@ -55,6 +55,7 @@ function extractApiMessage(
 ) {
   const message =
     result?.message ||
+    result?.error?.message ||
     result?.error ||
     result?.data?.message;
 
@@ -63,6 +64,10 @@ function extractApiMessage(
   }
 
   if (typeof message === 'string') {
+    // Humanize generic rate limit message
+    if (result?.error?.code === 'RATE_LIMITED' || result?.statusCode === 429) {
+      return 'Too many requests. Please wait a moment before trying again.';
+    }
     return message;
   }
 

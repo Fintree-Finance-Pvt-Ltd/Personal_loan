@@ -106,8 +106,8 @@ describe('PlatformPoliciesService', () => {
     });
   });
 
-  describe('Transaction Rollback Support', () => {
-    it('should ensure updateVersionRules enforces mandatory rules within transaction', async () => {
+  describe('Transaction Rollback Support & Validation', () => {
+    it('should reject if a mandatory rule is missing entirely', async () => {
       jest.spyOn(prisma.platformPolicyVersion, 'findUnique').mockResolvedValue({
         id: 'v1', status: 'DRAFT', version: 1
       } as any);
@@ -118,6 +118,65 @@ describe('PlatformPoliciesService', () => {
       ])).rejects.toThrow(BadRequestException);
       
       expect(prisma.platformPolicyRule.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should accept if a mandatory rule is present but inactive', async () => {
+      jest.spyOn(prisma.platformPolicyVersion, 'findUnique').mockResolvedValue({
+        id: 'v1', status: 'DRAFT', version: 1
+      } as any);
+      jest.spyOn(prisma.platformPolicyRule, 'createMany').mockResolvedValue({ count: 5 } as any);
+      jest.spyOn(prisma.platformPolicyVersion, 'update').mockResolvedValue({ id: 'v1' } as any);
+
+      // Provide all mandatory rules, but make some inactive
+      const mandatoryRules = Object.values(POLICY_RULE_CATALOG)
+        .filter(r => r.isMandatory)
+        .map(r => ({
+          ruleCode: r.ruleCode,
+          isActive: !r.canBeDisabled, // true for NO_FRAUD_FLAG, false for others
+          operator: r.supportedOperators[0],
+          failureOutcome: 'FAIL',
+        }));
+
+      await expect(service.updateVersionRules('user1', 'v1', 1, mandatoryRules)).resolves.toBeDefined();
+    });
+    it('should reject if a rule with canBeDisabled=false is inactive', async () => {
+      jest.spyOn(prisma.platformPolicyVersion, 'findUnique').mockResolvedValue({
+        id: 'v1', status: 'DRAFT', version: 1
+      } as any);
+
+      // We include all mandatory rules to pass the first check
+      const mandatoryRules = Object.values(POLICY_RULE_CATALOG)
+        .filter(r => r.isMandatory)
+        .map(r => ({
+          ruleCode: r.ruleCode,
+          isActive: r.ruleCode === 'NO_FRAUD_FLAG' ? false : true, 
+          operator: r.supportedOperators[0],
+          failureOutcome: 'FAIL',
+        }));
+        
+      // Temporarily mock the catalog for this test
+      const originalFlag = POLICY_RULE_CATALOG.NO_FRAUD_FLAG.canBeDisabled;
+      POLICY_RULE_CATALOG.NO_FRAUD_FLAG.canBeDisabled = false;
+
+      await expect(service.updateVersionRules('user1', 'v1', 1, mandatoryRules))
+        .rejects.toThrow(BadRequestException);
+        
+      POLICY_RULE_CATALOG.NO_FRAUD_FLAG.canBeDisabled = originalFlag;
+      expect(prisma.platformPolicyRule.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject submitVersion when an active rule has no registered production-capable resolver', async () => {
+      jest.spyOn(service as any, 'enforceMandatoryRules').mockImplementation(() => {});
+      jest.spyOn(prisma.platformPolicyVersion, 'findUnique').mockResolvedValue({
+        id: 'v1', status: 'DRAFT', version: 1,
+        rules: [
+          { ruleCode: 'MINIMUM_EMPLOYMENT_MONTHS', isActive: true, failureOutcome: 'FAIL' },
+          { ruleCode: 'PAN_VERIFIED', isActive: true, failureOutcome: 'FAIL' }
+        ]
+      } as any);
+
+      await expect(service.submitVersion('user1', 'v1', 1))
+        .rejects.toThrow(/Cannot submit\/approve\/activate with active rules lacking production resolvers: MINIMUM_EMPLOYMENT_MONTHS/);
     });
   });
 });

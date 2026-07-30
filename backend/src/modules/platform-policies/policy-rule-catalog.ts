@@ -8,6 +8,7 @@ export interface CatalogRuleDef {
   valueType: PolicyRuleValueType;
   supportedOperators: PolicyRuleOperator[];
   isMandatory: boolean;
+  canBeDisabled: boolean;
   description: string;
 }
 
@@ -20,6 +21,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'BOOLEAN',
     supportedOperators: ['IS_TRUE', 'EQUALS'],
     isMandatory: true,
+    canBeDisabled: true,
     description: 'Ensures the borrower PAN is verified.',
   },
   MINIMUM_AGE: {
@@ -30,6 +32,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'INTEGER',
     supportedOperators: ['GREATER_THAN_OR_EQUAL', 'GREATER_THAN'],
     isMandatory: true,
+    canBeDisabled: true,
     description: 'Minimum age of the applicant in completed calendar years.',
   },
   MAXIMUM_AGE: {
@@ -40,6 +43,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'INTEGER',
     supportedOperators: ['LESS_THAN_OR_EQUAL', 'LESS_THAN'],
     isMandatory: true,
+    canBeDisabled: true,
     description: 'Maximum age of the applicant in completed calendar years.',
   },
   PIN_SERVICEABLE: {
@@ -50,6 +54,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'STRING_ARRAY', 
     supportedOperators: ['IN'],
     isMandatory: true,
+    canBeDisabled: true,
     description: 'Checks if the residential pincode is serviceable.',
   },
   MINIMUM_MONTHLY_INCOME: {
@@ -60,6 +65,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'DECIMAL',
     supportedOperators: ['GREATER_THAN_OR_EQUAL'],
     isMandatory: false,
+    canBeDisabled: true,
     description: 'Minimum declared monthly income of the applicant.',
   },
   MINIMUM_EMPLOYMENT_MONTHS: {
@@ -70,6 +76,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'INTEGER',
     supportedOperators: ['GREATER_THAN_OR_EQUAL'],
     isMandatory: false,
+    canBeDisabled: true,
     description: 'Minimum number of months the applicant has been employed.',
   },
   NO_ACTIVE_APPLICATION: {
@@ -80,6 +87,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'BOOLEAN',
     supportedOperators: ['IS_FALSE', 'EQUALS'],
     isMandatory: true,
+    canBeDisabled: true,
     description: 'Ensures the applicant does not have an active platform application.',
   },
   NO_FRAUD_FLAG: {
@@ -90,6 +98,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'BOOLEAN',
     supportedOperators: ['IS_FALSE', 'EQUALS'],
     isMandatory: true,
+    canBeDisabled: true,
     description: 'Ensures the applicant is not flagged for fraud on the platform.',
   },
   MAXIMUM_ACTIVE_LOANS: {
@@ -100,6 +109,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'INTEGER',
     supportedOperators: ['LESS_THAN_OR_EQUAL'],
     isMandatory: false,
+    canBeDisabled: true,
     description: 'Maximum number of active loans allowed for the applicant.',
   },
   MAXIMUM_OVERDUE_AMOUNT: {
@@ -110,6 +120,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'DECIMAL',
     supportedOperators: ['LESS_THAN_OR_EQUAL'],
     isMandatory: false,
+    canBeDisabled: true,
     description: 'Maximum permitted overdue amount on platform loans.',
   },
   COOLING_OFF_DAYS: {
@@ -120,6 +131,7 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     valueType: 'INTEGER',
     supportedOperators: ['GREATER_THAN_OR_EQUAL'],
     isMandatory: false,
+    canBeDisabled: true,
     description: 'Days since last application rejection.',
   }
 };

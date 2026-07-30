@@ -143,6 +143,14 @@ export class MlmAllocationEngineService {
     return false;
   }
 
+  async executeWithTx(
+    tx: Prisma.TransactionClient,
+    dto: ExecuteMlmAllocationDto,
+    policyVersion: MlmPolicyVersion & { routes: (MlmAllocationRoute & { routeState: any })[] },
+  ) {
+    return this.executeInternal(tx, dto, policyVersion);
+  }
+
   private async executeInternal(
     tx: Prisma.TransactionClient,
     dto: ExecuteMlmAllocationDto,
@@ -168,7 +176,7 @@ export class MlmAllocationEngineService {
     
     // Constraint [14]: Require Platform BRE PASS. FAIL and REFER must not modify SWRR state.
     // Constraint [8]: BRE FAIL and REFER must create/reuse safe decision evidence and append a PLATFORM_POLICY_NOT_PASSED attempt, but must not change any SWRR state.
-    const isPlatformPassed = dto.platformDecisionOutcome === 'APPROVED'; // Assuming 'APPROVED' maps to PASS from BRE
+    const isPlatformPassed = dto.platformDecisionOutcome === 'PASS';
 
     // Constraint [7]: Lock route-state rows in deterministic sortOrder/routeId order.
     // Re-read weights and recompute eligibility and SWRR only after locking.

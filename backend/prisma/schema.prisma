@@ -793,9 +793,11 @@ enum PolicyDecisionOutcome {
 
 model PlatformPolicy {
   id                String                          @id @default(cuid())
+  platformProductId String                          @default("PL_DEFAULT")
   name              String                          @db.VarChar(150)
   code              String                          @unique @db.VarChar(60)
   description       String?                         @db.VarChar(500)
+  scopeCode         String                          @default("PLATFORM_DEFAULT") @db.VarChar(60)
   operationalStatus PlatformPolicyOperationalStatus @default(INACTIVE)
 
   createdById String
@@ -811,6 +813,8 @@ model PlatformPolicy {
   versions PlatformPolicyVersion[]
 
   @@index([operationalStatus, updatedAt])
+  @@index([platformProductId, operationalStatus])
+  @@index([scopeCode, platformProductId, operationalStatus])
   @@index([createdById])
   @@index([updatedById])
 }
@@ -1026,6 +1030,9 @@ model PlCustomerDocument {
 enum PlApplicationStatus {
   DRAFT
   SUBMITTED
+  PLATFORM_REJECTED
+  ALLOCATION_PENDING
+  LENDER_ALLOCATED
   LENDER_REVIEW
   LENDER_APPROVED
   LENDER_REJECTED
@@ -1061,6 +1068,25 @@ model PlApplication {
   lenderDecisionAt     DateTime? @map("lender_decision_at") @db.DateTime(0)
   lenderDecisionReason String?   @map("lender_decision_reason") @db.VarChar(500)
   approvedAmount       Decimal?  @map("approved_amount") @db.Decimal(15, 2)
+
+  // ── BRE & Allocation Snapshots ──────────────────────────────────────────
+  platformDecisionOutcome     String?   @map("platform_decision_outcome") @db.VarChar(30)
+  platformEvaluationReference String?   @map("platform_evaluation_reference") @db.VarChar(100)
+  platformPolicyVersionId     String?   @map("platform_policy_version_id") @db.VarChar(50)
+
+  mlmAllocationDecisionId  String?   @map("mlm_allocation_decision_id") @db.VarChar(50)
+  mlmPolicyId              String?   @map("mlm_policy_id") @db.VarChar(50)
+  mlmPolicyVersionId       String?   @map("mlm_policy_version_id") @db.VarChar(50)
+  lenderId                 String?   @map("lender_id") @db.VarChar(50)
+  lenderProductId          String?   @map("lender_product_id") @db.VarChar(50)
+  productStrategyVersionId String?   @map("product_strategy_version_id") @db.VarChar(50)
+  allocatedAt              DateTime? @map("allocated_at") @db.DateTime(0)
+
+  assessmentFeeBaseAmount  Decimal?  @map("assessment_fee_base_amount") @db.Decimal(15, 2)
+  assessmentFeeGstRate     Decimal?  @map("assessment_fee_gst_rate") @db.Decimal(5, 2)
+  assessmentFeeGstAmount   Decimal?  @map("assessment_fee_gst_amount") @db.Decimal(15, 2)
+  assessmentFeeTotalAmount Decimal?  @map("assessment_fee_total_amount") @db.Decimal(15, 2)
+  assessmentFeeCurrency    String?   @default("INR") @map("assessment_fee_currency") @db.VarChar(10)
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)

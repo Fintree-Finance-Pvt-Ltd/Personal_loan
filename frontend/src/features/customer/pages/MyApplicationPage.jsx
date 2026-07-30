@@ -293,12 +293,14 @@ function deriveCustomerWorkflow(customer) {
   );
 
   const applicationSubmitted = Boolean(
-    customer.latestApplicationId,
+    ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(customer.onboardingStatus)
   );
 
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
     currentStep = 'basic_details';
+  } else if (eligibilityCompleted && !eligibilityPassed) {
+    currentStep = 'rejection_screen';
   } else if (!eligibilityCompleted || !eligibilityPassed) {
     currentStep = 'basic_details';
   } else if (!assessmentFeePaid) {
@@ -1311,11 +1313,39 @@ export default function MyApplicationPage() {
         });
       }
 
-      await delay(800);
+      const res = await fetch(`/api/customer/${customerId}/run-eligibility`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const result = await res.json();
 
+      if (!result.success) {
+        // ERROR state
+        const errorMsg = result.error?.message || result.message;
+        console.error('Eligibility technical error:', errorMsg);
+        showMessage(errorMsg || 'Unable to complete the eligibility check. Please try again.', 'error');
+        setBrePassed(false);
+        return;
+      }
+
+      if (result.data.outcome === 'FAIL') {
+        // FAIL state
+        setBrePassed(false);
+        setCurrentStep('rejection_screen'); // or however rejection is handled
+        showMessage('We are unable to proceed with your application based on our platform policy.', 'error');
+        // Refresh customer to get persistent rejection status
+        await fetchCustomer();
+        return;
+      }
+
+      // PASS state
       setBrePassed(true);
       setCurrentStep('assessment_fee');
       setErrors({});
+      
+      // Refresh customer profile to load allocated lender and fee snapshot
+      await fetchCustomer();
 
       showMessage(
         'Eligibility check passed. An eligible lender has been assigned.',
@@ -1368,10 +1398,6 @@ export default function MyApplicationPage() {
         },
         body: JSON.stringify({
           customerId: String(customerId),
-          amount: 234.82,
-          baseAmount: 199,
-          gstAmount: 35.82,
-          gstRate: 18,
           purpose: 'PROCESSING_FEE',
         }),
       });
@@ -1795,6 +1821,7 @@ export default function MyApplicationPage() {
 
       {currentStep === 'assessment_fee' && (
         <AssessmentFeeStep
+          customer={customer}
           lenderConsent={lenderConsent}
           feePaid={feePaid}
           isFeeProcessing={isFeeProcessing}
@@ -1805,6 +1832,32 @@ export default function MyApplicationPage() {
           onPay={handlePayClick}
           onContinue={handleProceedToProfile}
         />
+      )}
+
+      {currentStep === 'rejection_screen' && (
+        <StepCard>
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-red-100 text-red-600 mb-6">
+                <AlertCircle size={32} />
+             </div>
+             <h2 className="text-2xl font-bold text-slate-900 mb-3">Application Unsuccessful</h2>
+             <p className="text-slate-600 max-w-md mx-auto mb-8">
+                Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
+                {customer?.eligibilityReason && customer.eligibilityReason !== 'Platform policy rejection' && (
+                  <span className="block mt-4 p-3 bg-red-50 text-sm text-red-700 rounded border border-red-100 font-medium text-left">
+                    {customer.eligibilityReason}
+                  </span>
+                )}
+             </p>
+             <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition"
+             >
+                Return to Home
+             </button>
+          </div>
+        </StepCard>
       )}
 
       {currentStep ===
@@ -2531,6 +2584,7 @@ function BasicDetailsStep({
 }
 
 function AssessmentFeeStep({
+  customer,
   lenderConsent,
   feePaid,
   isFeeProcessing,
@@ -2541,6 +2595,12 @@ function AssessmentFeeStep({
   onPay,
   onContinue,
 }) {
+  const lenderName = customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner';
+  const baseFee = customer?.assessmentFee?.baseAmount || 0;
+  const gstFee = customer?.assessmentFee?.gstAmount || 0;
+  const totalFee = customer?.assessmentFee?.totalAmount || 0;
+  const gstRate = customer?.assessmentFee?.gstRate || 18;
+
   return (
     <StepCard>
       <StepHeading
@@ -2554,18 +2614,18 @@ function AssessmentFeeStep({
         <section className="rounded-3xl border border-slate-200 p-6">
           <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-700">
             <BadgeCheck size={17} />
-            Proposed lending partner
+            Allocated lending partner
           </p>
 
           <div className="mt-5 flex flex-col justify-between gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-center">
             <div className="flex items-center gap-4">
               <div className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-600 font-bold text-white">
-                FF
+                {lenderName.substring(0, 2).toUpperCase()}
               </div>
 
               <div>
                 <h3 className="font-bold text-slate-900">
-                  Fintree Finance Private Limited
+                  {lenderName}
                 </h3>
 
                 <p className="mt-1 text-xs text-slate-500">
@@ -2605,7 +2665,7 @@ function AssessmentFeeStep({
 
             <span className="text-xs leading-5 text-slate-700">
               I consent to share my application data with{' '}
-              <strong>Fintree Finance</strong> for eligibility assessment and final decision.
+              <strong>{lenderName}</strong> for eligibility assessment and final decision.
             </span>
           </label>
 
@@ -2623,12 +2683,12 @@ function AssessmentFeeStep({
             <div className="mt-6 space-y-4">
               <FeeRow
                 label="Base fee"
-                amount="₹199.00"
+                amount={`₹${baseFee.toFixed(2)}`}
               />
 
               <FeeRow
-                label="GST at 18%"
-                amount="₹35.82"
+                label={`GST at ${gstRate}%`}
+                amount={`₹${gstFee.toFixed(2)}`}
               />
 
               <div className="flex items-center justify-between border-t border-slate-800 pt-5">
@@ -2637,7 +2697,7 @@ function AssessmentFeeStep({
                 </span>
 
                 <strong className="text-2xl">
-                  ₹234.82
+                  {`₹${totalFee.toFixed(2)}`}
                 </strong>
               </div>
             </div>
@@ -2689,7 +2749,7 @@ function AssessmentFeeStep({
                   </>
                 ) : (
                   <>
-                    Pay ₹234.82
+                    Pay ₹{totalFee.toFixed(2)}
                     <ArrowRight
                       size={17}
                     />

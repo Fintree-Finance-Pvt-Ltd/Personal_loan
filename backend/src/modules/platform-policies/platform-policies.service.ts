@@ -4,6 +4,15 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { POLICY_RULE_CATALOG } from './policy-rule-catalog';
 import { PlatformPolicyVersionStatus, PlatformPolicyOperationalStatus } from '@prisma/client';
 
+const PRODUCTION_RESOLVERS = [
+  'PAN_VERIFIED',
+  'MINIMUM_AGE',
+  'MAXIMUM_AGE',
+  'PIN_SERVICEABLE',
+  'MINIMUM_MONTHLY_INCOME',
+  'NO_ACTIVE_APPLICATION'
+];
+
 @Injectable()
 export class PlatformPoliciesService {
   constructor(
@@ -56,11 +65,27 @@ export class PlatformPoliciesService {
       .filter(r => r.isMandatory)
       .map(r => r.ruleCode);
       
-    const activeRuleCodes = rules.filter(r => r.isActive).map(r => r.ruleCode);
+    const allRuleCodes = rules.map(r => r.ruleCode);
 
-    const missing = mandatoryCodes.filter(code => !activeRuleCodes.includes(code));
+    const missing = mandatoryCodes.filter(code => !allRuleCodes.includes(code));
     if (missing.length > 0) {
-      throw new BadRequestException(`Missing mandatory active rules: ${missing.join(', ')}`);
+      throw new BadRequestException(`Missing mandatory rules: ${missing.join(', ')}`);
+    }
+  }
+
+  private enforceProductionResolvers(rules: any[]) {
+    const activeRules = rules.filter(r => r.isActive);
+    const unsupported = activeRules.filter(r => !PRODUCTION_RESOLVERS.includes(r.ruleCode));
+    if (unsupported.length > 0) {
+      const codes = unsupported.map(r => r.ruleCode).join(', ');
+      throw new BadRequestException(`Cannot submit/approve/activate with active rules lacking production resolvers: ${codes}`);
+    }
+  }
+
+  private enforceNoReferRules(rules: any[]) {
+    const referRules = rules.filter(r => r.failureOutcome === 'REFER' || r.outcome === 'REFER');
+    if (referRules.length > 0) {
+      throw new BadRequestException('PLATFORM_POLICY_REFER_NOT_ALLOWED');
     }
   }
 
@@ -216,6 +241,9 @@ export class PlatformPoliciesService {
       const formattedRules = rulesPayload.map((r) => {
         const catDef = POLICY_RULE_CATALOG[r.ruleCode];
         if (!catDef) throw new BadRequestException(`Unknown rule code: ${r.ruleCode}`);
+        if (!catDef.canBeDisabled && !r.isActive) {
+          throw new BadRequestException(`Rule ${r.ruleCode} cannot be disabled`);
+        }
         return {
           ...r,
           ruleName: catDef.ruleName,
@@ -285,6 +313,8 @@ export class PlatformPoliciesService {
       if (version.status !== 'DRAFT') throw new ConflictException('Only DRAFT versions can be submitted');
 
       this.enforceMandatoryRules(version.rules);
+      this.enforceNoReferRules(version.rules);
+      this.enforceProductionResolvers(version.rules);
 
       const updated = await tx.platformPolicyVersion.update({
         where: { id: versionId, version: expectedVersion },
@@ -316,6 +346,12 @@ export class PlatformPoliciesService {
       if (!version) throw new NotFoundException('Version not found');
       if (version.version !== expectedVersion) throw new ConflictException('POLICY_VERSION_CONFLICT');
       if (version.status !== 'SUBMITTED') throw new ConflictException('Only SUBMITTED versions can be approved');
+
+      const fullVersion = await tx.platformPolicyVersion.findUnique({ where: { id: versionId }, include: { rules: true } });
+      if (fullVersion && fullVersion.rules) {
+        this.enforceNoReferRules(fullVersion.rules);
+        this.enforceProductionResolvers(fullVersion.rules);
+      }
 
       const makerId = version.submittedById || version.createdById;
       if (userId === makerId) {
@@ -389,6 +425,12 @@ export class PlatformPoliciesService {
       if (!version) throw new NotFoundException('Version not found');
       if (version.version !== expectedVersion) throw new ConflictException('POLICY_VERSION_CONFLICT');
       if (version.status !== 'APPROVED') throw new ConflictException('Only APPROVED versions can be activated');
+
+      const fullVersion = await tx.platformPolicyVersion.findUnique({ where: { id: versionId }, include: { rules: true } });
+      if (fullVersion && fullVersion.rules) {
+        this.enforceNoReferRules(fullVersion.rules);
+        this.enforceProductionResolvers(fullVersion.rules);
+      }
 
       const effectiveFrom = effectiveFromStr ? new Date(effectiveFromStr) : new Date();
       if (effectiveFrom > new Date()) {

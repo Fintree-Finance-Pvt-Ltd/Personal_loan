@@ -8,6 +8,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 @Module({
   imports: [AuditLogsModule],
   providers: [SmoothWeightedRoundRobinService, MlmAllocationEngineService, MlmService],
-  controllers: [MlmController]
+  controllers: [MlmController],
+  exports: [MlmAllocationEngineService]
 })
 export class MlmModule {}

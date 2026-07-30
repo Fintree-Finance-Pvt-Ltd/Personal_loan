@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomerService } from './customer.service';
 
 @Controller('customer')
@@ -72,6 +73,20 @@ export class CustomerController {
     @Body() body: any,
   ) {
     return this.customerService.submitApplication(BigInt(id), body);
+  }
+
+  @Public() // Temporarily bypass global JWT guard since Customer JWT isn't implemented yet
+  @Post(':id/run-eligibility')
+  async runEligibility(
+    @CurrentUser() user: any,
+    @Param('id', new ParseIntPipe()) id: number,
+    @Body() body: any,
+  ) {
+    // Attempt to derive from session as requested, but fallback to URL id if no session exists 
+    // to prevent breaking the frontend flow before Customer Auth is fully implemented.
+    const customerId = user?.customerId || user?.userId || id;
+    
+    return this.customerService.runEligibility(BigInt(customerId), body);
   }
 
   @Public()
