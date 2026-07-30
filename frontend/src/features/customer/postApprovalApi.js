@@ -141,10 +141,10 @@ export const acceptKfs = async (lan, payload) => {
   return extractApiData(response);
 };
 
-export const initiateMandate = async (lan) => {
+export const initiateMandate = async (lan, forceNew = false) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/initiate`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify(withCustomerId({ forceNew })),
   });
   return extractApiData(response);
 };
@@ -154,8 +154,16 @@ export const getMandateStatus = async (lan) => {
   return extractApiData(response);
 };
 
+export const refreshMandateStatus = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/refresh-status`, {
+    method: 'POST',
+    body: JSON.stringify(withCustomerId()),
+  });
+  return extractApiData(response);
+};
+
 export const initiateEsign = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/esign/initiate`, {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/prepare`, {
     method: 'POST',
     body: JSON.stringify(withCustomerId()),
   });
@@ -163,7 +171,44 @@ export const initiateEsign = async (lan) => {
 };
 
 export const getEsignStatus = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/esign/status?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/status?${customerIdQuery()}`, { method: 'GET' });
+  return extractApiData(response);
+};
+
+export const prepareElectronicSign = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/prepare`, {
+    method: 'POST',
+    body: JSON.stringify(withCustomerId()),
+  });
+  return extractApiData(response);
+};
+
+export const markDocumentViewed = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/document/viewed`, {
+    method: 'POST',
+    body: JSON.stringify(withCustomerId()),
+  });
+  return extractApiData(response);
+};
+
+export const sendSigningOtp = async (lan, consentAccepted) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/otp/send`, {
+    method: 'POST',
+    body: JSON.stringify(withCustomerId({ consentAccepted })),
+  });
+  return extractApiData(response);
+};
+
+export const verifySigningOtp = async (lan, otpSessionId, otp) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/otp/verify`, {
+    method: 'POST',
+    body: JSON.stringify(withCustomerId({ otpSessionId, otp })),
+  });
+  return extractApiData(response);
+};
+
+export const getElectronicSignStatus = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/status?${customerIdQuery()}`, { method: 'GET' });
   return extractApiData(response);
 };
 

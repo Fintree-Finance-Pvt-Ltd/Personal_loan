@@ -77,4 +77,21 @@ export class WebhooksController {
       };
     }
   }
+
+  @Public()
+  @Post('easebuzz/mandate')
+  @HttpCode(HttpStatus.OK)
+  async handleEasebuzzMandateWebhook(@Body() payload: any, @Req() req: Request) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string) || 'UNKNOWN_IP';
+    const userAgent = req.headers['user-agent'] || '';
+
+    this.logger.log(`Received Easebuzz mandate webhook [IP: ${clientIp}]`);
+
+    try {
+      return await this.webhooksService.processEasebuzzMandateWebhook(payload, clientIp, userAgent);
+    } catch (error: any) {
+      this.logger.error(`Easebuzz mandate webhook error: ${error?.message || error}`);
+      return { status: 'Ignored', acknowledged: true, processed: false };
+    }
+  }
 }

@@ -12,6 +12,7 @@ import CustomerPlaceholderPage from './features/customer/pages/CustomerPlacehold
 import MyApplicationPage from './features/customer/pages/MyApplicationPage';
 import PostApprovalJourneyPage from './features/customer/pages/PostApprovalJourneyPage';
 import DigiLockerCallbackPage from './features/customer/pages/DigiLockerCallbackPage';
+import MandateResultPage from './features/customer/pages/MandateResultPage';
 
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
@@ -71,6 +72,7 @@ export default function App() {
       {/* Public customer login & DigiLocker callback */}
       <Route path="/customer/login" element={<CustomerSignIn />} />
       <Route path="/customer/digilocker/callback" element={<DigiLockerCallbackPage />} />
+      <Route path="/customer/mandate/result" element={<MandateResultPage />} />
 
       {/* Customer layout routes */}
       <Route element={<CustomerLayout />}>
