@@ -36,7 +36,10 @@ async function bootstrap(): Promise<void> {
     exposedHeaders: ['X-Request-ID'],
   });
   const adapter = app.getHttpAdapter().getInstance();
-  adapter.set('trust proxy', config.getOrThrow<boolean>('TRUST_PROXY'));
+  const trustProxy = config.get<boolean>('TRUST_PROXY');
+  if (trustProxy) {
+    adapter.set('trust proxy', 1);
+  }
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

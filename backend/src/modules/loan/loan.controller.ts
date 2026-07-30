@@ -18,7 +18,7 @@ export class LoanController {
     @Param('lan') lan: string,
     @Query('customerId') customerId: string,
   ) {
-    return this.loanService.getPostApprovalJourney(lan, BigInt(customerId));
+    return this.loanService.getPostApprovalJourney(lan, BigInt(customerId || '0'));
   }
 
   @Public()
@@ -27,7 +27,7 @@ export class LoanController {
     @Param('lan') lan: string,
     @Query('customerId') customerId: string,
   ) {
-    const journey = await this.loanService.getPostApprovalJourney(lan, BigInt(customerId));
+    const journey = await this.loanService.getPostApprovalJourney(lan, BigInt(customerId || '0'));
     return journey.offer;
   }
 
@@ -120,9 +120,9 @@ export class LoanController {
   @Post(':lan/mandate/initiate')
   initiateMandate(
     @Param('lan') lan: string,
-    @Body() body: { customerId: string },
+    @Body() body: { customerId?: string; forceNew?: boolean },
   ) {
-    return this.loanService.initiateMandate(lan, BigInt(body?.customerId || '0'));
+    return this.loanService.initiateMandate(lan, BigInt(body?.customerId || '0'), Boolean(body?.forceNew));
   }
 
   @Public()
@@ -132,6 +132,15 @@ export class LoanController {
     @Query('customerId') customerId: string,
   ) {
     return this.loanService.getMandateStatus(lan, BigInt(customerId || '0'));
+  }
+
+  @Public()
+  @Post(':lan/mandate/refresh-status')
+  refreshMandateStatus(
+    @Param('lan') lan: string,
+    @Body() body: { customerId: string },
+  ) {
+    return this.loanService.refreshMandateStatus(lan, BigInt(body?.customerId || '0'));
   }
 
   @Public()

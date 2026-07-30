@@ -1,13 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, BadGatewayException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { PlApplicationStatus, PlLoanStatus, PlDocumentType, PlDocumentStatus, Prisma } from '@prisma/client';
+import { PlApplicationStatus, PlLoanStatus, PlDocumentType, PlDocumentStatus, PlMandateStatus, PlMandateType, PlMandateProvider, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ExternalApiService } from '../external-api/external-api.service';
+import { EasebuzzAutocollectService } from '../../integrations/easebuzz-autocollect.service';
+import { decryptBankAccountNumber } from '../../common/utils/bank-security.helper';
 import { normalizeDigitapDetails, sanitizeDigitapPayload, normalizeDigitapStatus } from './digilocker-normalizer';
 
 @Injectable()
@@ -19,6 +22,8 @@ export class LoanService {
     private readonly auditLogs: AuditLogsService,
     private readonly digitapService: DigitapDigilockerService,
     private readonly externalApiService: ExternalApiService,
+    private readonly easebuzzAutocollectService: EasebuzzAutocollectService,
+    private readonly configService: ConfigService,
   ) { }
 
   private generateLan(): string {
@@ -33,21 +38,25 @@ export class LoanService {
       where.customerId = customerId;
     }
 
+    const includeOptions = {
+      application: true,
+      customer: true,
+      bankVerification: true,
+      mandates: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 5,
+      },
+    };
+
     let loan = await this.prisma.plLoan.findFirst({
       where,
-      include: {
-        application: true,
-        customer: true,
-      },
+      include: includeOptions,
     });
 
     if (!loan && customerId && customerId > 0n) {
       loan = await this.prisma.plLoan.findFirst({
         where: { lan },
-        include: {
-          application: true,
-          customer: true,
-        },
+        include: includeOptions,
       });
     }
 
@@ -123,11 +132,21 @@ export class LoanService {
     if (loan.disbursalStatus === 'PROCESSING' || loan.status === PlLoanStatus.DISBURSAL_PROCESSING) {
       return 'DISBURSAL_PROCESSING';
     }
-    if (loan.status === PlLoanStatus.READY_FOR_DISBURSAL) {
+    if (
+      loan.status === PlLoanStatus.READY_FOR_DISBURSAL ||
+      loan.currentStep === 'READY_FOR_DISBURSAL' ||
+      (loan.acceptedTenureDays &&
+        loan.digilockerStatus === 'VERIFIED' &&
+        loan.addressConfirmed &&
+        loan.bankVerified &&
+        loan.kfsAccepted &&
+        loan.mandateCompleted &&
+        loan.esignCompleted)
+    ) {
       return 'READY_FOR_DISBURSAL';
     }
     if (loan.esignCompleted) {
-      return 'ESIGN'; // or READY_FOR_DISBURSAL depending on auto-transition
+      return 'READY_FOR_DISBURSAL';
     }
     if (loan.mandateCompleted) {
       return 'ESIGN';
@@ -205,19 +224,44 @@ export class LoanService {
       };
     }
 
+    const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
+    const processingFee = loan.acceptedProcessingFee ? Number(loan.acceptedProcessingFee) : Math.round(approvedAmount * 0.02);
+    const netDisbursalAmount = approvedAmount - processingFee;
+    const totalRepaymentAmount = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
+    let dueDate = null;
+    if (loan.acceptedTenureDays) {
+      const d = new Date();
+      d.setDate(d.getDate() + loan.acceptedTenureDays);
+      dueDate = d.toISOString();
+    }
+
+    const kfs = {
+      lan: loan.lan,
+      loanAmount: approvedAmount,
+      tenureDays: loan.acceptedTenureDays,
+      netDisbursalAmount,
+      totalRepaymentAmount,
+      dueDate,
+      kfsAccepted: loan.kfsAccepted,
+      kfsAcceptedAt: loan.kfsAcceptedAt,
+      documentUrl: loan.kfsDocumentId || null,
+    };
+
     return {
       loan: {
         id: loan.id.toString(),
         lan: loan.lan,
         status: loan.status,
-        applicationId: loan.applicationId.toString(),
-        applicationNumber: loan.application.applicationNumber,
-        approvedAmount: loan.approvedAmount ? Number(loan.approvedAmount) : null,
+        applicationId: loan.applicationId ? loan.applicationId.toString() : null,
+        applicationNumber: loan.application?.applicationNumber,
+        approvedAmount: approvedAmount,
         approvedAt: loan.lenderApprovedAt,
+        disbursalRequestedAt: loan.disbursalRequestedAt,
+        disbursalCompletedAt: loan.disbursalCompletedAt,
       },
       customer: {
-        customerCode: loan.customer.customerCode,
-        fullName: loan.customer.fullName,
+        customerCode: loan.customer?.customerCode,
+        fullName: loan.customer?.fullName,
       },
       lender: {
         code: loan.lenderCode,
@@ -225,7 +269,7 @@ export class LoanService {
       },
       offer: {
         offerStatus: loan.offerStatus,
-        approvedAmount: loan.approvedAmount ? Number(loan.approvedAmount) : null,
+        approvedAmount: approvedAmount,
         allowedTenures: (() => {
           try {
             return loan.offerAllowedTenures ? JSON.parse(loan.offerAllowedTenures) : [30, 45, 60, 90];
@@ -236,9 +280,9 @@ export class LoanService {
         validUntil: loan.offerValidUntil,
         acceptedTenureDays: loan.acceptedTenureDays,
         acceptedInterestRate: loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : null,
-        acceptedProcessingFee: loan.acceptedProcessingFee ? Number(loan.acceptedProcessingFee) : null,
+        acceptedProcessingFee: processingFee,
         acceptedEmiAmount: loan.acceptedEmiAmount ? Number(loan.acceptedEmiAmount) : null,
-        acceptedTotalRepayment: loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : null,
+        acceptedTotalRepayment: totalRepaymentAmount,
       },
       digilocker: {
         status: loan.digilockerStatus || 'NOT_STARTED',
@@ -254,6 +298,45 @@ export class LoanService {
         accountMasked: loan.bankAccountMasked,
         ifsc: loan.bankIfsc,
         bankName: loan.bankName,
+        verifiedAt: loan.bankVerifiedAt,
+      },
+      kfs,
+      mandate: (() => {
+        const latestMandate = (loan as any).mandates?.[0];
+        const isMandateAuth = loan.mandateCompleted || latestMandate?.status === 'AUTHORIZED' || latestMandate?.status === 'COMPLETED';
+
+        let safePortalUrl = isMandateAuth ? null : (latestMandate?.portalUrl || null);
+        if (safePortalUrl && safePortalUrl.includes('testpay.easebuzz.in')) {
+          safePortalUrl = safePortalUrl.replace('testpay.easebuzz.in', 'pay.easebuzz.in');
+        }
+
+        const parseDateString = (d: any) => {
+          if (!d) return null;
+          const dt = new Date(d);
+          return !isNaN(dt.getTime()) ? dt.toISOString().split('T')[0] : null;
+        };
+
+        return {
+          status: latestMandate?.status || (loan.mandateCompleted ? 'AUTHORIZED' : 'NOT_STARTED'),
+          completed: Boolean(isMandateAuth),
+          mandateType: latestMandate?.mandateType || 'ENACH',
+          amount: latestMandate?.amount ? Number(latestMandate.amount) : totalRepaymentAmount,
+          frequency: latestMandate?.frequency || 'monthly',
+          startDate: parseDateString(latestMandate?.startDate),
+          endDate: parseDateString(latestMandate?.endDate),
+          maskedAccountNumber: latestMandate?.accountNumberMasked || loan.bankAccountMasked || null,
+          bankName: loan.bankName || null,
+          mandateId: latestMandate?.providerMandateId || loan.mandateProviderRef || null,
+          umrnMasked: latestMandate?.umrn ? `***${String(latestMandate.umrn).slice(-4)}` : null,
+          authorizedAt: latestMandate?.authorizedAt || loan.mandateCompletedAt || null,
+          portalUrl: safePortalUrl,
+          transactionId: latestMandate?.merchantTransactionId || null,
+        };
+      })(),
+      esign: {
+        completed: loan.esignCompleted,
+        status: loan.esignStatus,
+        completedAt: loan.esignCompletedAt,
       },
       workflow: {
         lenderApproved: loan.status !== PlLoanStatus.FAILED && loan.status !== PlLoanStatus.CANCELLED,
@@ -262,9 +345,22 @@ export class LoanService {
         addressConfirmed: loan.addressConfirmed,
         bankVerified: loan.bankVerified,
         kfsAccepted: loan.kfsAccepted,
-        mandateCompleted: loan.mandateCompleted,
+        mandateCompleted: Boolean(
+          loan.mandateCompleted ||
+          (loan as any).mandates?.[0]?.status === 'AUTHORIZED' ||
+          (loan as any).mandates?.[0]?.status === 'COMPLETED'
+        ),
         esignCompleted: loan.esignCompleted,
         readyForDisbursal:
+          Boolean(
+            loan.acceptedTenureDays &&
+            loan.digilockerStatus === 'VERIFIED' &&
+            loan.addressConfirmed &&
+            loan.bankVerified &&
+            loan.kfsAccepted &&
+            loan.mandateCompleted &&
+            loan.esignCompleted
+          ) ||
           loan.status === PlLoanStatus.READY_FOR_DISBURSAL ||
           loan.status === PlLoanStatus.DISBURSAL_PROCESSING ||
           loan.status === PlLoanStatus.DISBURSED,
@@ -972,6 +1068,10 @@ export class LoanService {
   async acceptKfs(lan: string, customerId: bigint, payload: any) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
 
+    if (!loan.bankVerified) {
+      throw new BadRequestException('Please verify bank account before accepting Key Fact Statement (KFS).');
+    }
+
     const updatedLoan = await this.prisma.plLoan.update({
       where: { id: loan.id },
       data: {
@@ -1008,55 +1108,540 @@ export class LoanService {
     };
   }
 
-  async initiateMandate(lan: string, customerId: bigint) {
+  private resolveMandateConfiguration(loan: any) {
+    const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
+    const acceptedTotalRepayment = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
+
+    const amount = Math.max(acceptedTotalRepayment, approvedAmount, 100);
+    const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
+    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly';
+    const mandateType = (this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH') as PlMandateType;
+
+    const startDateObj = new Date();
+    startDateObj.setDate(startDateObj.getDate() + 1);
+    const startDate = startDateObj.toISOString().split('T')[0];
+
+    const endDateObj = new Date(startDateObj);
+    const tenureDays = loan.acceptedTenureDays || 365;
+    endDateObj.setDate(endDateObj.getDate() + tenureDays + 30);
+    const endDate = endDateObj.toISOString().split('T')[0];
+
+    return {
+      mandateType,
+      amount,
+      amountRule,
+      frequency,
+      startDate,
+      endDate,
+      paymentModes: mandateType === 'UPI' ? ['UPIAD'] : ['EN'],
+    };
+  }
+
+  private generateUniqueTransactionId(lan: string): string {
+    const suffix = String(lan || '').slice(-6).replace(/[^a-zA-Z0-9]/g, '');
+    const rand = randomBytes(3).toString('hex').toUpperCase();
+    const timestamp = Date.now().toString().slice(-6);
+    const txId = `PLM_${suffix}_${timestamp}_${rand}`;
+    return txId.slice(0, 40);
+  }
+
+  private normalizeEasebuzzMandateStatus(rawStatus: string): PlMandateStatus {
+    const s = String(rawStatus || '').trim().toLowerCase();
+    if (s === 'authorized' || s === 'completed' || s === 'success') return PlMandateStatus.AUTHORIZED;
+    if (s === 'initiated') return PlMandateStatus.INITIATED;
+    if (s === 'requested') return PlMandateStatus.REQUESTED;
+    if (s === 'created') return PlMandateStatus.CREATED;
+    if (s === 'failed') return PlMandateStatus.FAILED;
+    if (s === 'rejected') return PlMandateStatus.REJECTED;
+    if (s === 'cancelled' || s === 'cancelling') return PlMandateStatus.CANCELLED;
+    if (s === 'user_cancelled') return PlMandateStatus.USER_CANCELLED;
+    if (s === 'expired') return PlMandateStatus.EXPIRED;
+    if (s === 'revoked') return PlMandateStatus.REVOKED;
+    if (s === 'paused') return PlMandateStatus.PAUSED;
+    if (s === 'dropped') return PlMandateStatus.DROPPED;
+    if (s === 'bounced') return PlMandateStatus.BOUNCED;
+    return PlMandateStatus.UNKNOWN;
+  }
+
+  async initiateMandate(lan: string, customerId: bigint, forceNew: boolean = false, metadata?: { ipAddress?: string; userAgent?: string }) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
 
-    const updatedLoan = await this.prisma.plLoan.update({
-      where: { id: loan.id },
+    // Validate step prerequisites
+    if (!loan.acceptedTenureDays) {
+      throw new BadRequestException('Please accept loan offer before setting up e-Mandate.');
+    }
+    if (loan.digilockerStatus !== 'VERIFIED') {
+      throw new BadRequestException('Please complete Aadhaar KYC verification before setting up e-Mandate.');
+    }
+    if (!loan.addressConfirmed) {
+      throw new BadRequestException('Please confirm your residential address before setting up e-Mandate.');
+    }
+    if (!loan.bankVerified) {
+      throw new BadRequestException('Please verify your bank account before setting up e-Mandate.');
+    }
+    if (!loan.kfsAccepted) {
+      throw new BadRequestException('Please accept Key Fact Statement (KFS) before setting up e-Mandate.');
+    }
+
+    // Check if mandate is already authorized
+    const latestMandate = (loan as any).mandates?.[0];
+    if (loan.mandateCompleted || latestMandate?.status === 'AUTHORIZED' || latestMandate?.status === 'COMPLETED') {
+      return {
+        success: true,
+        message: 'e-Mandate is already authorized.',
+        data: {
+          status: 'AUTHORIZED',
+          completed: true,
+          transactionId: latestMandate?.merchantTransactionId || loan.mandateProviderRef || `PLM_${loan.lan}`,
+          mandateType: latestMandate?.mandateType || 'ENACH',
+          portalUrl: null,
+          amount: latestMandate?.amount ? Number(latestMandate.amount).toFixed(2) : Number(loan.approvedAmount).toFixed(2),
+          frequency: latestMandate?.frequency || 'monthly',
+          startDate: latestMandate?.startDate ? new Date(latestMandate.startDate).toISOString().split('T')[0] : null,
+          endDate: latestMandate?.endDate ? new Date(latestMandate.endDate).toISOString().split('T')[0] : null,
+          pollAfterSeconds: 5,
+        },
+      };
+    }
+
+    // Check for existing usable active mandate attempt (within last 1 hour), unless forceNew is requested
+    if (
+      !forceNew &&
+      latestMandate &&
+      ['ACCESS_KEY_GENERATED', 'INITIATED', 'REQUESTED', 'CREATED'].includes(latestMandate.status) &&
+      latestMandate.portalUrl &&
+      latestMandate.createdAt &&
+      (Date.now() - new Date(latestMandate.createdAt).getTime() < 3600000)
+    ) {
+      let resumedPortalUrl = latestMandate.portalUrl;
+      if (resumedPortalUrl && resumedPortalUrl.includes('testpay.easebuzz.in')) {
+        resumedPortalUrl = resumedPortalUrl.replace('testpay.easebuzz.in', 'pay.easebuzz.in');
+      }
+
+      return {
+        success: true,
+        message: 'Resuming active mandate authorization session.',
+        data: {
+          status: latestMandate.status,
+          completed: false,
+          transactionId: latestMandate.merchantTransactionId,
+          mandateType: latestMandate.mandateType,
+          accessKey: latestMandate.accessKey,
+          portalUrl: resumedPortalUrl,
+          amount: Number(latestMandate.amount).toFixed(2),
+          frequency: latestMandate.frequency,
+          startDate: new Date(latestMandate.startDate).toISOString().split('T')[0],
+          endDate: new Date(latestMandate.endDate).toISOString().split('T')[0],
+          pollAfterSeconds: 5,
+          bank: {
+            accountHolderName: latestMandate.accountHolderName || loan.bankVerification?.providerBeneficiaryName || loan.bankVerification?.accountHolderName || '—',
+            maskedAccountNumber: latestMandate.accountNumberMasked || loan.bankAccountMasked || loan.bankVerification?.accountNumberMasked || '—',
+            ifscCode: latestMandate.ifscMasked || loan.bankIfsc || loan.bankVerification?.ifscCode || '—',
+            bankName: loan.bankName || loan.bankVerification?.bankName || '—',
+            accountType: latestMandate.accountType || loan.bankAccountType || 'SAVINGS',
+          },
+        },
+      };
+    }
+
+    // Directly fetch bank details from pl_bank_verifications table
+    let bankVerification = loan.bankVerification;
+    if (!bankVerification) {
+      bankVerification = await this.prisma.plBankVerification.findFirst({
+        where: { loanId: loan.id },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    let decryptedAccountNumber: string | undefined = undefined;
+    if (bankVerification?.accountNumberEncrypted) {
+      try {
+        decryptedAccountNumber = decryptBankAccountNumber(bankVerification.accountNumberEncrypted);
+      } catch (e) {
+        this.logger.warn(`Could not decrypt stored bank account number from pl_bank_verifications: ${(e as any)?.message}`);
+      }
+    }
+
+    if (!decryptedAccountNumber && bankVerification?.accountNumberMasked) {
+      decryptedAccountNumber = bankVerification.accountNumberMasked;
+    }
+    if (!decryptedAccountNumber && loan.bankAccountMasked) {
+      decryptedAccountNumber = loan.bankAccountMasked;
+    }
+
+    const config = this.resolveMandateConfiguration(loan);
+    const transactionId = this.generateUniqueTransactionId(loan.lan);
+
+    const successUrl = this.configService.get<string>('EASEBUZZ_MANDATE_SUCCESS_URL') || `${this.configService.get('FRONTEND_URL')}/customer/mandate/result`;
+    const failureUrl = this.configService.get<string>('EASEBUZZ_MANDATE_FAILURE_URL') || `${this.configService.get('FRONTEND_URL')}/customer/mandate/result`;
+
+    const email = loan.customer?.email || 'customer@fintreefinance.com';
+    const phone = loan.customer?.mobileNumber || '9876543210';
+
+    const bankAccHolder = bankVerification?.providerBeneficiaryName || bankVerification?.accountHolderName || loan.bankAccountHolderName || loan.customer?.fullName || undefined;
+    const bankIfsc = bankVerification?.ifscCode || loan.bankIfsc || undefined;
+    const bankType = bankVerification?.accountType || loan.bankAccountType || 'SAVINGS';
+
+    // Call Easebuzz Autocollect to generate access key
+    const accessKeyRes = await this.easebuzzAutocollectService.generateAccessKey({
+      transactionId,
+      amount: config.amount,
+      successUrl,
+      failureUrl,
+      email,
+      phone,
+      startDate: config.startDate,
+      endDate: config.endDate,
+      frequency: config.frequency,
+      amountRule: config.amountRule,
+      paymentModes: config.paymentModes,
+      accountNumber: decryptedAccountNumber,
+      ifscCode: bankIfsc,
+      accountHolderName: bankAccHolder,
+      accountType: bankType,
+      subMerchantId: this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SUB_MERCHANT_ID') || undefined,
+      udf1: loan.lan,
+      udf2: loan.id.toString(),
+      udf3: loan.customerId.toString(),
+    });
+
+    const portalUrl = accessKeyRes.portalUrl;
+
+    // Create PlLoanMandate attempt in DB
+    const newMandate = await this.prisma.plLoanMandate.create({
       data: {
-        mandateCompleted: true,
-        mandateCompletedAt: new Date(),
-        mandateInitiatedAt: loan.mandateInitiatedAt || new Date(),
-        mandateStatus: 'SUCCESS',
-        currentStep: 'ESIGN',
+        loanId: loan.id,
+        customerId: loan.customerId.toString(),
+        applicationId: loan.applicationId ? loan.applicationId.toString() : null,
+        lan: loan.lan,
+        provider: PlMandateProvider.EASEBUZZ,
+        mandateType: config.mandateType,
+        merchantTransactionId: transactionId,
+        accessKey: accessKeyRes.accessKey,
+        portalUrl: portalUrl,
+        status: PlMandateStatus.ACCESS_KEY_GENERATED,
+        amount: new Prisma.Decimal(config.amount),
+        amountRule: config.amountRule,
+        frequency: config.frequency,
+        startDate: new Date(config.startDate),
+        endDate: new Date(config.endDate),
+        accountNumberMasked: loan.bankAccountMasked || loan.bankVerification?.accountNumberMasked || null,
+        ifscMasked: bankIfsc || null,
+        accountType: bankType,
+        accountHolderName: bankAccHolder || null,
+        providerRequestJson: JSON.stringify(accessKeyRes.rawResponse || {}),
+        initiationCount: (latestMandate?.initiationCount || 0) + 1,
       },
     });
 
-    this.auditLogs
-      .record({
-        actorUserId: null,
-        module: 'LOAN',
-        action: 'EMANDATE_COMPLETED',
-        entityType: 'PlLoan',
-        entityId: loan.id.toString(),
-        outcome: 'SUCCESS',
-        requestId: randomBytes(16).toString('hex'),
-      })
-      .catch(() => {});
+    await this.prisma.plLoan.update({
+      where: { id: loan.id },
+      data: {
+        mandateInitiatedAt: new Date(),
+        mandateStatus: 'ACCESS_KEY_GENERATED',
+        mandateProviderRef: transactionId,
+      },
+    });
+
+    this.auditLogs.record({
+      actorUserId: null,
+      module: 'LOAN',
+      action: 'EASEBUZZ_ACCESS_KEY_GENERATED',
+      entityType: 'PlLoanMandate',
+      entityId: newMandate.id.toString(),
+      outcome: 'SUCCESS',
+      newValue: { lan: loan.lan, transactionId, status: 'ACCESS_KEY_GENERATED' },
+      requestId: randomBytes(16).toString('hex'),
+    }).catch(() => {});
+
+    // Generate Mandate Creation form payload with AES-256-CBC encrypted fields and SHA-512 Authorization hash
+    let mandateRegistrationRes: any = null;
+    if (decryptedAccountNumber && bankIfsc) {
+      try {
+        mandateRegistrationRes = await this.easebuzzAutocollectService.createMandateRegistration({
+          accessKey: accessKeyRes.accessKey,
+          accountNumber: decryptedAccountNumber,
+          accountHolderName: bankAccHolder || 'ACCOUNT HOLDER',
+          ifscCode: bankIfsc,
+          accountType: bankType,
+        });
+      } catch (err: any) {
+        this.logger.warn(`Mandate creation payload generation warning: ${err?.message}`);
+      }
+    }
 
     return {
       success: true,
-      message: 'e-Mandate set up successfully',
-      nextStep: 'ESIGN',
-      loan: {
-        lan: updatedLoan.lan,
-        mandateCompleted: updatedLoan.mandateCompleted,
-        currentStep: 'ESIGN',
+      message: 'Mandate authorization initiated successfully.',
+      data: {
+        status: 'ACCESS_KEY_GENERATED',
+        transactionId: newMandate.merchantTransactionId,
+        mandateType: newMandate.mandateType,
+        accessKey: newMandate.accessKey,
+        portalUrl: newMandate.portalUrl,
+        amount: Number(newMandate.amount).toFixed(2),
+        frequency: newMandate.frequency,
+        startDate: newMandate.startDate.toISOString().split('T')[0],
+        endDate: newMandate.endDate.toISOString().split('T')[0],
+        pollAfterSeconds: Number(this.configService.get('EASEBUZZ_MANDATE_POLL_INTERVAL_SECONDS') || '5'),
+        bank: {
+          accountHolderName: bankAccHolder || '—',
+          maskedAccountNumber: loan.bankAccountMasked || loan.bankVerification?.accountNumberMasked || '—',
+          ifscCode: bankIfsc || '—',
+          bankName: loan.bankName || loan.bankVerification?.bankName || '—',
+          accountType: bankType,
+        },
+        mandateForm: mandateRegistrationRes?.mandateForm || null,
       },
     };
   }
 
   async getMandateStatus(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
+    const activeMandate = (loan as any).mandates?.[0];
+
+    const isAuthorized = loan.mandateCompleted || activeMandate?.status === 'AUTHORIZED' || activeMandate?.status === 'COMPLETED';
+
+    if (!activeMandate) {
+      return {
+        success: true,
+        data: {
+          status: isAuthorized ? 'AUTHORIZED' : 'NOT_STARTED',
+          completed: Boolean(isAuthorized),
+          transactionId: loan.mandateProviderRef || null,
+          mandateId: loan.mandateProviderRef || null,
+          mandateType: 'ENACH',
+          amount: loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment).toFixed(2) : Number(loan.approvedAmount).toFixed(2),
+          frequency: 'monthly',
+          umrn: null,
+          tpvValidationStatus: null,
+          authorizedAt: loan.mandateCompletedAt || null,
+          lastCheckedAt: new Date().toISOString(),
+        },
+      };
+    }
+
     return {
       success: true,
-      status: loan.mandateStatus || (loan.mandateCompleted ? 'SUCCESS' : 'NOT_STARTED'),
-      mandateCompleted: loan.mandateCompleted,
+      data: {
+        status: activeMandate.status,
+        completed: Boolean(isAuthorized),
+        transactionId: activeMandate.merchantTransactionId,
+        mandateId: activeMandate.providerMandateId || null,
+        mandateType: activeMandate.mandateType,
+        amount: Number(activeMandate.amount).toFixed(2),
+        frequency: activeMandate.frequency,
+        startDate: activeMandate.startDate ? new Date(activeMandate.startDate).toISOString().split('T')[0] : null,
+        endDate: activeMandate.endDate ? new Date(activeMandate.endDate).toISOString().split('T')[0] : null,
+        umrn: activeMandate.umrn ? `***${String(activeMandate.umrn).slice(-4)}` : null,
+        tpvValidationStatus: activeMandate.tpvValidationStatus || null,
+        authorizedAt: activeMandate.authorizedAt || null,
+        failedAt: activeMandate.failedAt || null,
+        failureReason: activeMandate.failureReason || null,
+        lastCheckedAt: activeMandate.lastStatusCheckedAt || activeMandate.updatedAt,
+      },
     };
+  }
+
+  async refreshMandateStatus(lan: string, customerId: bigint) {
+    const loan = await this.findLoanByLanAndCustomer(lan, customerId);
+    const activeMandate = (loan as any).mandates?.[0];
+
+    if (!activeMandate) {
+      return this.getMandateStatus(lan, customerId);
+    }
+
+    // Rate-limit provider retrieve calls (at most once every 10 seconds per mandate)
+    const lastChecked = activeMandate.lastStatusCheckedAt ? new Date(activeMandate.lastStatusCheckedAt).getTime() : 0;
+    if (Date.now() - lastChecked < 10000 && activeMandate.status !== 'AUTHORIZED') {
+      return this.getMandateStatus(lan, customerId);
+    }
+
+    try {
+      const providerRes = await this.easebuzzAutocollectService.retrieveMandate(activeMandate.merchantTransactionId);
+      const resData = providerRes.data;
+
+      const rawStatus = resData?.status || resData?.mandate_status || resData?.model?.status || '';
+      const normalizedStatus = this.normalizeEasebuzzMandateStatus(rawStatus);
+
+      const providerMandateId = resData?.provider_mandate_id || resData?.mandate_id || resData?.id || null;
+      const umrn = resData?.umrn || resData?.bank_reference_number || null;
+      const failureReason = resData?.failure_reason || resData?.error_desc || null;
+
+      // Do not downgrade an AUTHORIZED mandate to FAILED
+      if (activeMandate.status === 'AUTHORIZED' || activeMandate.status === 'COMPLETED') {
+        await this.prisma.plLoanMandate.update({
+          where: { id: activeMandate.id },
+          data: { lastStatusCheckedAt: new Date() },
+        });
+        return this.getMandateStatus(lan, customerId);
+      }
+
+      if (normalizedStatus === PlMandateStatus.AUTHORIZED || normalizedStatus === PlMandateStatus.COMPLETED) {
+        await this.prisma.$transaction([
+          this.prisma.plLoanMandate.update({
+            where: { id: activeMandate.id },
+            data: {
+              status: PlMandateStatus.AUTHORIZED,
+              providerStatus: String(rawStatus),
+              providerMandateId: providerMandateId ? String(providerMandateId) : activeMandate.providerMandateId,
+              umrn: umrn ? String(umrn) : activeMandate.umrn,
+              authorizedAt: activeMandate.authorizedAt || new Date(),
+              lastStatusCheckedAt: new Date(),
+              providerResponseJson: JSON.stringify(providerRes.sanitizedResponse || {}),
+            },
+          }),
+          this.prisma.plLoan.update({
+            where: { id: loan.id },
+            data: {
+              mandateCompleted: true,
+              mandateCompletedAt: new Date(),
+              mandateStatus: 'AUTHORIZED',
+              mandateProviderRef: providerMandateId ? String(providerMandateId) : activeMandate.merchantTransactionId,
+              currentStep: 'ESIGN',
+            },
+          }),
+        ]);
+
+        this.auditLogs.record({
+          actorUserId: null,
+          module: 'LOAN',
+          action: 'EASEBUZZ_MANDATE_AUTHORIZED',
+          entityType: 'PlLoanMandate',
+          entityId: activeMandate.id.toString(),
+          outcome: 'SUCCESS',
+          newValue: { lan: loan.lan, transactionId: activeMandate.merchantTransactionId, status: 'AUTHORIZED' },
+          requestId: randomBytes(16).toString('hex'),
+        }).catch(() => {});
+      } else if (([PlMandateStatus.FAILED, PlMandateStatus.REJECTED, PlMandateStatus.CANCELLED, PlMandateStatus.USER_CANCELLED, PlMandateStatus.EXPIRED] as PlMandateStatus[]).includes(normalizedStatus)) {
+        await this.prisma.plLoanMandate.update({
+          where: { id: activeMandate.id },
+          data: {
+            status: normalizedStatus,
+            providerStatus: String(rawStatus),
+            failureReason: failureReason ? String(failureReason).slice(0, 500) : 'Mandate authorization failed',
+            failedAt: new Date(),
+            lastStatusCheckedAt: new Date(),
+            providerResponseJson: JSON.stringify(providerRes.sanitizedResponse || {}),
+          },
+        });
+      } else {
+        await this.prisma.plLoanMandate.update({
+          where: { id: activeMandate.id },
+          data: {
+            providerStatus: String(rawStatus),
+            lastStatusCheckedAt: new Date(),
+          },
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Refresh mandate status check failed for LAN ${lan}: ${err?.message}`);
+    }
+
+    return this.getMandateStatus(lan, customerId);
+  }
+
+  async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const sanitized = this.easebuzzAutocollectService.sanitizeEasebuzzMandatePayload(payload);
+    const txId = payload?.transaction_id || payload?.merchant_transaction_id || payload?.udf1_tx_id || payload?.data?.transaction_id;
+    const providerMandateId = payload?.mandate_id || payload?.provider_mandate_id || payload?.data?.mandate_id;
+    const rawStatus = payload?.status || payload?.mandate_status || payload?.data?.status || '';
+
+    const maskedTxId = txId ? `...${String(txId).slice(-8)}` : 'UNKNOWN';
+    this.logger.log(`Received Easebuzz mandate webhook [TxID: ${maskedTxId}, Status: ${rawStatus}]`);
+
+    if (!txId) {
+      return { success: false, message: 'Missing transaction_id in webhook payload' };
+    }
+
+    const mandate = await this.prisma.plLoanMandate.findFirst({
+      where: {
+        OR: [
+          { merchantTransactionId: String(txId) },
+          { lan: String(txId) },
+          ...(providerMandateId ? [{ providerMandateId: String(providerMandateId) }] : []),
+        ],
+      },
+      include: { loan: true },
+    });
+
+    if (!mandate) {
+      this.logger.warn(`No local mandate found for webhook TxID ${maskedTxId}`);
+      return { success: true, acknowledged: true, processed: false, reason: 'MANDATE_NOT_FOUND' };
+    }
+
+    const normalizedStatus = this.normalizeEasebuzzMandateStatus(rawStatus);
+
+    // Prevent downgrading an already AUTHORIZED mandate
+    if (mandate.status === PlMandateStatus.AUTHORIZED || mandate.status === PlMandateStatus.COMPLETED) {
+      this.logger.log(`Mandate ${maskedTxId} is already AUTHORIZED. Ignoring webhook status change.`);
+      return { success: true, acknowledged: true, processed: true, note: 'ALREADY_AUTHORIZED' };
+    }
+
+    const umrn = payload?.umrn || payload?.bank_reference_number || null;
+    const failureReason = payload?.failure_reason || payload?.error_desc || null;
+
+    if (normalizedStatus === PlMandateStatus.AUTHORIZED || normalizedStatus === PlMandateStatus.COMPLETED) {
+      await this.prisma.$transaction([
+        this.prisma.plLoanMandate.update({
+          where: { id: mandate.id },
+          data: {
+            status: PlMandateStatus.AUTHORIZED,
+            providerStatus: String(rawStatus),
+            providerMandateId: providerMandateId ? String(providerMandateId) : mandate.providerMandateId,
+            umrn: umrn ? String(umrn) : mandate.umrn,
+            authorizedAt: mandate.authorizedAt || new Date(),
+            lastStatusCheckedAt: new Date(),
+            webhookResponseJson: JSON.stringify(sanitized || {}),
+          },
+        }),
+        this.prisma.plLoan.update({
+          where: { id: mandate.loanId },
+          data: {
+            mandateCompleted: true,
+            mandateCompletedAt: new Date(),
+            mandateStatus: 'AUTHORIZED',
+            mandateProviderRef: providerMandateId ? String(providerMandateId) : mandate.merchantTransactionId,
+            currentStep: 'ESIGN',
+          },
+        }),
+      ]);
+
+      this.auditLogs.record({
+        actorUserId: null,
+        module: 'LOAN',
+        action: 'EASEBUZZ_MANDATE_AUTHORIZED',
+        entityType: 'PlLoanMandate',
+        entityId: mandate.id.toString(),
+        outcome: 'SUCCESS',
+        newValue: { lan: mandate.lan, transactionId: mandate.merchantTransactionId, status: 'AUTHORIZED' },
+        ipAddress: metadata?.ipAddress,
+        userAgent: metadata?.userAgent,
+        requestId: randomBytes(16).toString('hex'),
+      }).catch(() => {});
+    } else {
+      await this.prisma.plLoanMandate.update({
+        where: { id: mandate.id },
+        data: {
+          status: normalizedStatus,
+          providerStatus: String(rawStatus),
+          failureReason: failureReason ? String(failureReason).slice(0, 500) : null,
+          failedAt: ([PlMandateStatus.FAILED, PlMandateStatus.REJECTED, PlMandateStatus.CANCELLED] as PlMandateStatus[]).includes(normalizedStatus) ? new Date() : undefined,
+          lastStatusCheckedAt: new Date(),
+          webhookResponseJson: JSON.stringify(sanitized || {}),
+        },
+      });
+    }
+
+    return { success: true, acknowledged: true, processed: true };
   }
 
   async initiateEsign(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
+
+    if (!loan.mandateCompleted) {
+      throw new BadRequestException('Please complete e-Mandate setup before e-Signing loan agreement.');
+    }
 
     const updatedLoan = await this.prisma.plLoan.update({
       where: { id: loan.id },
@@ -1095,6 +1680,21 @@ export class LoanService {
 
   async requestDisbursal(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
+
+    const missingSteps: string[] = [];
+    if (!loan.acceptedTenureDays) missingSteps.push('Offer Acceptance');
+    if (loan.digilockerStatus !== 'VERIFIED') missingSteps.push('DigiLocker KYC');
+    if (!loan.addressConfirmed) missingSteps.push('Address Confirmation');
+    if (!loan.bankVerified) missingSteps.push('Bank Account Verification');
+    if (!loan.kfsAccepted) missingSteps.push('KFS Acceptance');
+    if (!loan.mandateCompleted) missingSteps.push('e-Mandate Setup');
+    if (!loan.esignCompleted) missingSteps.push('e-Sign Agreement');
+
+    if (missingSteps.length > 0) {
+      throw new BadRequestException(
+        `Cannot request disbursal. Pending steps: ${missingSteps.join(', ')}. All steps must be completed in DB before requesting disbursal.`
+      );
+    }
 
     const updatedLoan = await this.prisma.plLoan.update({
       where: { id: loan.id },

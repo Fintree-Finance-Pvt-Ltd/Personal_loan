@@ -1206,6 +1206,11 @@ model PlLoan {
   esignInitiatedAt   DateTime? @map("esign_initiated_at") @db.DateTime(0)
   esignCompletedAt   DateTime? @map("esign_completed_at") @db.DateTime(0)
 
+  electronicSignStatus        PlElectronicSignStatus?       @map("electronic_sign_status")
+  electronicSignReference     String?                       @map("electronic_sign_reference") @db.VarChar(120)
+  electronicSignedAt          DateTime?                     @map("electronic_signed_at") @db.DateTime(0)
+  acceptedAgreementDocumentId BigInt?                       @map("accepted_agreement_document_id") @db.UnsignedBigInt
+
   // ── Disbursal ─────────────────────────────────────────────────────────
   disbursalStatus      String?   @map("disbursal_status") @db.VarChar(30)
   disbursalProviderRef String?   @map("disbursal_provider_ref") @db.VarChar(255)
@@ -1217,9 +1222,10 @@ model PlLoan {
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
-  auditEvents      PlLoanAuditEvent[]
-  bankVerification PlBankVerification?
-  mandates         PlLoanMandate[]
+  auditEvents                PlLoanAuditEvent[]
+  bankVerification           PlBankVerification?
+  mandates                   PlLoanMandate[]
+  electronicSignTransactions PlElectronicSignTransaction[]
 
   @@index([customerId], map: "idx_pl_loans_customer_id")
   @@index([applicationId], map: "idx_pl_loans_application_id")
@@ -1735,4 +1741,96 @@ model PlBankVerification {
   @@index([status], map: "idx_pl_bank_verification_status")
   @@index([accountNumberFingerprint], map: "idx_pl_bank_verification_fingerprint")
   @@map("pl_bank_verifications")
+}
+
+enum PlElectronicSignStatus {
+  CREATED
+  DOCUMENT_READY
+  DOCUMENT_VIEWED
+  OTP_SENT
+  OTP_VERIFIED
+  SIGNING
+  SIGNED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum PlElectronicSignDocumentType {
+  LOAN_AGREEMENT
+  SANCTION_LETTER
+  KFS_ACKNOWLEDGEMENT
+  OTHER
+}
+
+model PlElectronicSignTransaction {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  customerId    BigInt @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt @map("application_id") @db.UnsignedBigInt
+
+  lan String @db.VarChar(30)
+
+  documentType    PlElectronicSignDocumentType @map("document_type")
+  documentVersion String                       @map("document_version") @db.VarChar(50)
+
+  originalDocumentPath String  @map("original_document_path") @db.VarChar(500)
+  originalDocumentHash String  @map("original_document_hash") @db.Char(64)
+  originalDocumentSize BigInt? @map("original_document_size") @db.UnsignedBigInt
+
+  acceptedDocumentPath String? @map("accepted_document_path") @db.VarChar(500)
+  acceptedDocumentHash String? @map("accepted_document_hash") @db.Char(64)
+  acceptedDocumentSize BigInt? @map("accepted_document_size") @db.UnsignedBigInt
+
+  auditCertificatePath String? @map("audit_certificate_path") @db.VarChar(500)
+  auditCertificateHash String? @map("audit_certificate_hash") @db.Char(64)
+
+  otpSessionId String? @unique @map("otp_session_id") @db.VarChar(120)
+  otpHash      String? @map("otp_hash") @db.VarChar(255)
+
+  otpExpiresAt  DateTime? @map("otp_expires_at") @db.DateTime(0)
+  otpSentAt     DateTime? @map("otp_sent_at") @db.DateTime(0)
+  otpVerifiedAt DateTime? @map("otp_verified_at") @db.DateTime(0)
+
+  otpFailedAttempts Int @default(0) @map("otp_failed_attempts")
+  otpResendCount     Int @default(0) @map("otp_resend_count")
+
+  signerName           String @map("signer_name") @db.VarChar(200)
+  verifiedMobileMasked String @map("verified_mobile_masked") @db.VarChar(20)
+
+  consentText    String    @map("consent_text") @db.LongText
+  consentVersion String    @map("consent_version") @db.VarChar(50)
+  consentedAt    DateTime? @map("consented_at") @db.DateTime(0)
+
+  documentViewedAt DateTime? @map("document_viewed_at") @db.DateTime(0)
+
+  ipAddress              String? @map("ip_address") @db.VarChar(45)
+  forwardedFor           String? @map("forwarded_for") @db.VarChar(1000)
+  userAgent              String? @map("user_agent") @db.VarChar(1000)
+  requestId              String? @map("request_id") @db.VarChar(120)
+  authenticatedSessionId String? @map("authenticated_session_id") @db.VarChar(120)
+
+  signedPageNumber Int? @map("signed_page_number")
+
+  signedAt DateTime? @map("signed_at") @db.DateTime(0)
+
+  status PlElectronicSignStatus @default(CREATED)
+
+  failureCode   String? @map("failure_code") @db.VarChar(100)
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  evidenceJson String? @map("evidence_json") @db.LongText
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@unique([loanId, documentType, documentVersion], map: "uk_pl_esign_loan_document_version")
+  @@index([customerId], map: "idx_pl_esign_customer")
+  @@index([applicationId], map: "idx_pl_esign_application")
+  @@index([status], map: "idx_pl_esign_status")
+  @@index([lan], map: "idx_pl_esign_lan")
+  @@map("pl_electronic_sign_transactions")
 }

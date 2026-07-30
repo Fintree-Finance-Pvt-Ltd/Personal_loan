@@ -43,4 +43,8 @@ export class WebhooksService {
 
     return result;
   }
+
+  async processEasebuzzMandateWebhook(payload: any, ipAddress: string, userAgent: string) {
+    return this.loanService.handleEasebuzzMandateWebhook(payload, { ipAddress, userAgent });
+  }
 }
