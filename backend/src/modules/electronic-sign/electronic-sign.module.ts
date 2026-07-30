@@ -9,9 +9,10 @@ import { SigningEvidenceService } from './services/signing-evidence.service';
 import { SigningIpService } from './services/signing-ip.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SmsService } from '../otp/sms/sms.service';
+import { LoanAgreementModule } from '../loan-agreement/loan-agreement.module';
 
 @Module({
-  imports: [AuditLogsModule],
+  imports: [AuditLogsModule, LoanAgreementModule],
   controllers: [ElectronicSignController],
   providers: [
     ElectronicSignService,

@@ -33,6 +33,7 @@ import { MlmModule } from './modules/mlm/mlm.module';
 import { PlatformProductsModule } from './modules/platform-products/platform-products.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ElectronicSignModule } from './modules/electronic-sign/electronic-sign.module';
+import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { ElectronicSignModule } from './modules/electronic-sign/electronic-sign.
     PlatformProductsModule,
     WebhooksModule,
     ElectronicSignModule,
+    LoanAgreementModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

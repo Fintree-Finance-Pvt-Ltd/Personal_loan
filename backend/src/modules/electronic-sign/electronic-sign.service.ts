@@ -165,10 +165,37 @@ export class ElectronicSignService {
    * 2. Mark Document Viewed
    */
   async markDocumentViewed(lan: string, customerId: bigint) {
-    const tx = await this.prisma.plElectronicSignTransaction.findFirst({
+    let tx = await this.prisma.plElectronicSignTransaction.findFirst({
       where: { lan, customerId },
       orderBy: { createdAt: 'desc' },
     });
+
+    if (!tx) {
+      const loan = await this.prisma.plLoan.findFirst({
+        where: { lan, customerId },
+        include: { customer: true },
+      });
+
+      if (loan) {
+        await this.prepareDocument({
+          loanId: loan.id,
+          customerId: loan.customerId,
+          applicationId: loan.applicationId,
+          lan: loan.lan,
+          documentType: 'LOAN_AGREEMENT',
+          documentVersion: 'v1',
+          signerName: loan.customer?.fullName || 'Borrower',
+          verifiedMobileNumber: loan.customer?.mobileNumber || '9876543210',
+          consentText: '',
+          consentVersion: '1.0',
+        });
+
+        tx = await this.prisma.plElectronicSignTransaction.findFirst({
+          where: { lan, customerId },
+          orderBy: { createdAt: 'desc' },
+        });
+      }
+    }
 
     if (!tx) {
       throw new NotFoundException('Electronic sign transaction not found.');

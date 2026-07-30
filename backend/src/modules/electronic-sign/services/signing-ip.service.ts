@@ -164,19 +164,23 @@ export class SigningIpService {
     const isPrivate = this.isPrivateIp(clientIp);
     const isPublic = this.isPublicIp(clientIp);
 
-    // Environment Flags
-    const requirePublic =
-      this.configService.get<boolean>('ELECTRONIC_SIGN_REQUIRE_PUBLIC_IP') ??
-      (process.env.NODE_ENV === 'production');
+    // Read environment flags directly from ConfigService / process.env
+    const allowLoopbackRaw = this.configService.get<string | boolean>('ELECTRONIC_SIGN_ALLOW_LOOPBACK_IP');
+    const allowLoopback = allowLoopbackRaw === true || allowLoopbackRaw === 'true';
 
-    const nodeEnv = process.env.NODE_ENV || 'development';
+    const requirePublicRaw = this.configService.get<string | boolean>('ELECTRONIC_SIGN_REQUIRE_PUBLIC_IP');
+    const requirePublic = requirePublicRaw === true || requirePublicRaw === 'true';
+
+    const nodeEnv = (process.env.NODE_ENV || 'development').toLowerCase();
+    const appEnv = (process.env.APP_ENV || process.env.STAGE || '').toUpperCase();
 
     let environment: 'LOCAL' | 'UAT' | 'PRODUCTION' = 'LOCAL';
-    if (nodeEnv === 'production') {
-      const appEnv = (process.env.APP_ENV || process.env.STAGE || 'UAT').toUpperCase();
-      environment = appEnv.includes('PROD') ? 'PRODUCTION' : 'UAT';
-    } else if (requirePublic) {
+    if (appEnv.includes('PROD')) {
+      environment = 'PRODUCTION';
+    } else if (requirePublic || appEnv.includes('UAT')) {
       environment = 'UAT';
+    } else {
+      environment = 'LOCAL';
     }
 
     // Safe Diagnostic Log
@@ -187,12 +191,22 @@ export class SigningIpService {
       forwardedForPresent: Boolean(forwardedForStr),
       environment,
       isPublic,
+      isLoopback,
     });
 
-    // UAT / Production Enforcement
+    // Enforcement based strictly on environment flags
     if (requirePublic && !isPublic) {
       this.logger.warn(
         `Rejected non-public IP (${clientIp}) in ${environment} environment during eSign OTP verification.`,
+      );
+      throw new ServiceUnavailableException(
+        'Unable to capture a valid public signing IP address. Please try again.',
+      );
+    }
+
+    if (!allowLoopback && isLoopback) {
+      this.logger.warn(
+        `Rejected loopback IP (${clientIp}) in ${environment} environment during eSign OTP verification.`,
       );
       throw new ServiceUnavailableException(
         'Unable to capture a valid public signing IP address. Please try again.',
