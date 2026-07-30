@@ -6,6 +6,7 @@ import { PdfStampService } from './services/pdf-stamp.service';
 import { SigningStorageService } from './services/signing-storage.service';
 import { OtpSignService } from './services/otp-sign.service';
 import { SigningEvidenceService } from './services/signing-evidence.service';
+import { SigningIpService } from './services/signing-ip.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SmsService } from '../otp/sms/sms.service';
 
@@ -19,8 +20,9 @@ import { SmsService } from '../otp/sms/sms.service';
     SigningStorageService,
     OtpSignService,
     SigningEvidenceService,
+    SigningIpService,
     SmsService,
   ],
-  exports: [ElectronicSignService],
+  exports: [ElectronicSignService, SigningIpService],
 })
 export class ElectronicSignModule {}

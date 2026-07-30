@@ -24,6 +24,13 @@ export interface VerifyOtpAndAcceptInput {
   userAgent?: string;
   requestId?: string;
   authenticatedSessionId?: string;
+  socketIp?: string;
+  xRealIp?: string;
+  proxyHopCount?: number;
+  ipEnvironment?: string;
+  isLoopback?: boolean;
+  isPrivateIp?: boolean;
+  isPublicIp?: boolean;
 }
 
 export interface StampOptions {
@@ -32,4 +39,6 @@ export interface StampOptions {
   ipAddress?: string;
   lan: string;
   reference: string;
+  environment?: string;
+  showEnvLabel?: boolean;
 }

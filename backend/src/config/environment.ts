@@ -33,6 +33,10 @@ const schema = z
     SEED_SUPERADMIN_PASSWORD: z.string().optional().default(''),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     REQUEST_BODY_LIMIT: z.string().regex(/^\d+(kb|mb)$/i).default('100kb'),
+    ELECTRONIC_SIGN_ALLOW_LOOPBACK_IP: booleanString.default('true'),
+    ELECTRONIC_SIGN_REQUIRE_PUBLIC_IP: booleanString.default('false'),
+    ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL: booleanString.default('true'),
+    ELECTRONIC_SIGN_TIMEZONE: z.string().default('Asia/Kolkata'),
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV !== 'production') return;

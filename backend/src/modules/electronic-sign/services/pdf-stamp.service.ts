@@ -3,6 +3,9 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { StampOptions } from '../types/electronic-sign.types';
 import { ELECTRONIC_SIGN_LEGAL_STATEMENT } from '../constants/electronic-sign.constants';
 
+export const IP_DISCLAIMER_STATEMENT =
+  'IP Address represents the public network address observed by the server during OTP verification. It may represent a mobile carrier, broadband connection, VPN, proxy or shared NAT gateway.';
+
 @Injectable()
 export class PdfStampService {
   private readonly logger = new Logger(PdfStampService.name);
@@ -25,8 +28,36 @@ export class PdfStampService {
     const { width: pageWidth } = lastPage.getSize();
 
     // 1. Draw Visible Stamp on Last Page
-    const stampWidth = 220;
-    const stampHeight = 85;
+    const showEnvLabel =
+      options.showEnvLabel ??
+      (process.env.ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL === 'true' ||
+        process.env.NODE_ENV !== 'production');
+
+    const dateFormatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: process.env.ELECTRONIC_SIGN_TIMEZONE || 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).format(options.signedAt);
+
+    const lines = [
+      `By: ${options.signerName.slice(0, 26)}`,
+      `Date: ${dateFormatted} IST`,
+      `IP: ${options.ipAddress || '127.0.0.1'}`,
+    ];
+
+    if (showEnvLabel) {
+      lines.push('Environment: LOCAL DEVELOPMENT');
+    }
+
+    lines.push(`Ref: ${options.reference.slice(0, 24)}`);
+
+    const stampWidth = 230;
+    const stampHeight = showEnvLabel ? 95 : 85;
     const marginX = 28;
     const marginY = 28;
     const xPos = Math.max(10, pageWidth - stampWidth - marginX);
@@ -51,26 +82,6 @@ export class PdfStampService {
       font: helveticaBold,
       color: rgb(0.05, 0.25, 0.65),
     });
-
-    // Formatting date in IST
-    const dateFormatted = new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    }).format(options.signedAt);
-
-    // Stamp Lines
-    const lines = [
-      `By: ${options.signerName.slice(0, 26)}`,
-      `Date: ${dateFormatted} IST`,
-      `IP: ${options.ipAddress || '127.0.0.1'}`,
-      `Ref: ${options.reference.slice(0, 24)}`,
-    ];
 
     let currentY = yPos + stampHeight - 28;
     for (const line of lines) {
@@ -151,9 +162,9 @@ export class PdfStampService {
     drawField('Application Ref', String(evidenceData.applicationId));
     drawField('Document Type', evidenceData.documentType);
     drawField('Document Version', evidenceData.documentVersion);
-    evY -= 8;
+    evY -= 6;
 
-    drawSectionHeader('2. ACCEPTANCE EVIDENCE & METADATA');
+    drawSectionHeader('2. ACCEPTANCE EVIDENCE & NETWORK METADATA');
     drawField('Signing Transaction Ref', evidenceData.transactionReference);
     drawField('Original Document SHA-256', evidenceData.originalDocumentHash);
     drawField('Consent Version', evidenceData.consentVersion);
@@ -161,16 +172,31 @@ export class PdfStampService {
     drawField('OTP Sent At', evidenceData.otpSentAt || '—');
     drawField('OTP Verified At', evidenceData.otpVerifiedAt || '—');
     drawField('Accepted Timestamp', evidenceData.signedAt);
-    drawField('IP Address', evidenceData.ipAddress);
+    drawField('Environment', evidenceData.ipEnvironment || (showEnvLabel ? 'LOCAL DEVELOPMENT' : 'UAT/PRODUCTION'));
+    drawField('IP Address (Resolved Client IP)', evidenceData.ipAddress);
     drawField('Forwarded IP Chain', evidenceData.forwardedFor || 'None');
     drawField('User Agent', evidenceData.userAgent);
     drawField('Request ID', evidenceData.requestId || '—');
     drawField('Authenticated Session ID', evidenceData.authenticatedSessionId || '—');
     drawField('Stamp Placement', `Page ${lastPageNumber} of ${lastPageNumber + 1}`);
-    evY -= 12;
+    evY -= 6;
 
-    drawSectionHeader('3. CONSENT STATEMENT');
-    const consentLines = this.wrapText(evidenceData.consentText, 90);
+    drawSectionHeader('3. NETWORK IP DISCLAIMER');
+    const ipDiscLines = this.wrapText(IP_DISCLAIMER_STATEMENT, 92);
+    for (const ipLine of ipDiscLines) {
+      evidencePage.drawText(ipLine, {
+        x: 45,
+        y: evY,
+        size: 7.5,
+        font: helveticaFont,
+        color: rgb(0.2, 0.25, 0.35),
+      });
+      evY -= 10;
+    }
+    evY -= 6;
+
+    drawSectionHeader('4. CONSENT STATEMENT');
+    const consentLines = this.wrapText(evidenceData.consentText, 92);
     for (const cLine of consentLines) {
       evidencePage.drawText(cLine, {
         x: 45,
@@ -181,10 +207,10 @@ export class PdfStampService {
       });
       evY -= 10;
     }
-    evY -= 10;
+    evY -= 6;
 
-    drawSectionHeader('4. LEGAL & COMPLIANCE STATEMENT');
-    const legalLines = this.wrapText(ELECTRONIC_SIGN_LEGAL_STATEMENT, 90);
+    drawSectionHeader('5. LEGAL & COMPLIANCE STATEMENT');
+    const legalLines = this.wrapText(ELECTRONIC_SIGN_LEGAL_STATEMENT, 92);
     for (const lLine of legalLines) {
       evidencePage.drawText(lLine, {
         x: 45,
@@ -245,7 +271,8 @@ export class PdfStampService {
     addLine('Document Version', evidenceData.documentVersion);
     addLine('Original PDF Hash', evidenceData.originalDocumentHash);
     addLine('Accepted PDF Hash', evidenceData.acceptedDocumentHash);
-    addLine('IP Address', evidenceData.ipAddress);
+    addLine('Environment', evidenceData.ipEnvironment || 'LOCAL DEVELOPMENT');
+    addLine('IP Address (Resolved Client IP)', evidenceData.ipAddress);
     addLine('Forwarded IPs', evidenceData.forwardedFor || 'None');
     addLine('User Agent', evidenceData.userAgent);
     addLine('Session ID', evidenceData.authenticatedSessionId || '—');
@@ -256,8 +283,17 @@ export class PdfStampService {
     addLine('Signed Timestamp', evidenceData.signedAt);
     y -= 10;
 
+    page.drawText('IP Network Disclaimer:', { x: 45, y, size: 9, font: fontBold, color: rgb(0.05, 0.2, 0.5) });
+    y -= 13;
+    const discLines = this.wrapText(IP_DISCLAIMER_STATEMENT, 90);
+    for (const dLine of discLines) {
+      page.drawText(dLine, { x: 45, y, size: 8, font, color: rgb(0.2, 0.2, 0.2) });
+      y -= 11;
+    }
+    y -= 8;
+
     page.drawText('Legal Statement:', { x: 45, y, size: 9, font: fontBold, color: rgb(0.05, 0.2, 0.5) });
-    y -= 14;
+    y -= 13;
 
     const legalLines = this.wrapText(ELECTRONIC_SIGN_LEGAL_STATEMENT, 90);
     for (const line of legalLines) {

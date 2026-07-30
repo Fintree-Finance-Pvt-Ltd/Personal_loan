@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ElectronicSignService } from './electronic-sign.service';
-import { extractClientIp } from './helpers/ip-address.helper';
+import { SigningIpService } from './services/signing-ip.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
@@ -23,6 +23,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 export class ElectronicSignController {
   constructor(
     private readonly electronicSignService: ElectronicSignService,
+    private readonly signingIpService: SigningIpService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -154,7 +155,10 @@ export class ElectronicSignController {
     @Req() req: Request,
   ) {
     const customerId = await this.resolveCustomerId(lan, req, body?.customerId || queryCustId);
-    const { ipAddress, forwardedFor } = extractClientIp(req);
+
+    // Capture & validate signing IP from request BEFORE processing OTP
+    const ipEvidence = this.signingIpService.capture(req);
+
     const userAgent = req.headers['user-agent'] || '';
     const requestId = (req.headers['x-request-id'] as string) || '';
     const authenticatedSessionId = (req.headers['x-session-id'] as string) || '';
@@ -164,8 +168,15 @@ export class ElectronicSignController {
       otpSessionId: body?.otpSessionId,
       otp: body?.otp,
       authenticatedCustomerId: customerId,
-      ipAddress,
-      forwardedFor,
+      ipAddress: ipEvidence.clientIp,
+      forwardedFor: ipEvidence.forwardedFor || '',
+      socketIp: ipEvidence.socketIp || '',
+      xRealIp: ipEvidence.xRealIp || '',
+      proxyHopCount: ipEvidence.proxyHopCount,
+      ipEnvironment: ipEvidence.environment,
+      isLoopback: ipEvidence.isLoopback,
+      isPrivateIp: ipEvidence.isPrivate,
+      isPublicIp: ipEvidence.isPublic,
       userAgent,
       requestId,
       authenticatedSessionId,

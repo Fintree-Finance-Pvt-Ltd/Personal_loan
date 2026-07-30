@@ -371,6 +371,7 @@ export class ElectronicSignService {
     const transactionRef = `ESIGN_${tx.lan}_${tx.id}_${now.getTime().toString().slice(-6)}`;
 
     // Prepare Evidence Metadata
+    const showEnvLabel = process.env.ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL === 'true';
     const evidenceData = {
       signerName: tx.signerName,
       verifiedMobileMasked: tx.verifiedMobileMasked,
@@ -388,6 +389,13 @@ export class ElectronicSignService {
       signedAt: now.toISOString(),
       ipAddress: input.ipAddress || '127.0.0.1',
       forwardedFor: input.forwardedFor || '',
+      socketIp: input.socketIp || '',
+      xRealIp: input.xRealIp || '',
+      proxyHopCount: input.proxyHopCount || 0,
+      ipEnvironment: input.ipEnvironment || (showEnvLabel ? 'LOCAL DEVELOPMENT' : 'UAT/PRODUCTION'),
+      isLoopback: input.isLoopback ?? true,
+      isPrivate: input.isPrivateIp ?? true,
+      isPublic: input.isPublicIp ?? false,
       userAgent: input.userAgent || '',
       requestId: input.requestId || '',
       authenticatedSessionId: input.authenticatedSessionId || '',
@@ -402,6 +410,8 @@ export class ElectronicSignService {
         ipAddress: input.ipAddress,
         lan: tx.lan,
         reference: transactionRef,
+        environment: evidenceData.ipEnvironment,
+        showEnvLabel,
       },
       evidenceData,
     );
