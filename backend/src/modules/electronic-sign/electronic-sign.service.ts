@@ -239,7 +239,23 @@ export class ElectronicSignService {
     }
 
     // Verify document hash integrity before sending OTP
-    const currentBuffer = this.signingStorageService.readBuffer(tx.originalDocumentPath);
+    let currentBuffer: Buffer;
+    try {
+      currentBuffer = this.signingStorageService.readBuffer(tx.originalDocumentPath);
+    } catch {
+      // If file is missing on local disk (cross-environment DB record), regenerate PDF & sync path
+      currentBuffer = await this.agreementDocumentService.generateLoanAgreementPdf(tx.loan);
+      const filename = generateStorageFilename(tx.lan, tx.documentVersion, 'original');
+      const newPath = this.signingStorageService.saveBuffer(filename, currentBuffer);
+      const newHash = calculateSha256(currentBuffer);
+      await this.prisma.plElectronicSignTransaction.update({
+        where: { id: tx.id },
+        data: { originalDocumentPath: newPath, originalDocumentHash: newHash },
+      });
+      tx.originalDocumentPath = newPath;
+      tx.originalDocumentHash = newHash;
+    }
+
     const currentHash = calculateSha256(currentBuffer);
     if (currentHash !== tx.originalDocumentHash) {
       throw new BadRequestException('The agreement document has changed. Please regenerate the agreement.');
@@ -530,13 +546,27 @@ export class ElectronicSignService {
     const tx = await this.prisma.plElectronicSignTransaction.findFirst({
       where: { lan, customerId },
       orderBy: { createdAt: 'desc' },
+      include: { loan: { include: { customer: true } } },
     });
 
     if (!tx || !tx.originalDocumentPath) {
       throw new NotFoundException('Original agreement document not found.');
     }
 
-    const buffer = this.signingStorageService.readBuffer(tx.originalDocumentPath);
+    let buffer: Buffer;
+    try {
+      buffer = this.signingStorageService.readBuffer(tx.originalDocumentPath);
+    } catch {
+      buffer = await this.agreementDocumentService.generateLoanAgreementPdf(tx.loan);
+      const filename = generateStorageFilename(tx.lan, tx.documentVersion, 'original');
+      const newPath = this.signingStorageService.saveBuffer(filename, buffer);
+      const newHash = calculateSha256(buffer);
+      await this.prisma.plElectronicSignTransaction.update({
+        where: { id: tx.id },
+        data: { originalDocumentPath: newPath, originalDocumentHash: newHash },
+      });
+    }
+
     return { buffer, filename: `Agreement_${lan}_Original.pdf` };
   }
 

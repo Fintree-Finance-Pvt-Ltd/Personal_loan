@@ -33,11 +33,43 @@ export class SigningStorageService {
     return fullPath;
   }
 
+  findFileInUploads(filename: string): string | null {
+    if (!filename) return null;
+    const cleanName = path.basename(filename);
+
+    const searchDir = (dir: string): string | null => {
+      if (!fs.existsSync(dir)) return null;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          const res = searchDir(full);
+          if (res) return res;
+        } else if (entry.isFile() && entry.name === cleanName) {
+          return full;
+        }
+      }
+      return null;
+    };
+
+    return searchDir(this.baseDir);
+  }
+
   readBuffer(filePath: string): Buffer {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`Document file not found at path: ${filePath}`);
+    if (filePath && fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath);
     }
-    return fs.readFileSync(filePath);
+
+    // Fallback: Resolve cross-environment path by searching local uploads directory by filename
+    if (filePath) {
+      const resolvedLocal = this.findFileInUploads(filePath);
+      if (resolvedLocal && fs.existsSync(resolvedLocal)) {
+        return fs.readFileSync(resolvedLocal);
+      }
+    }
+
+    throw new Error(`Document file not found at path: ${filePath}`);
   }
 
   deleteFile(filePath: string): void {
