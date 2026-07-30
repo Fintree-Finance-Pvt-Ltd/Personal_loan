@@ -216,6 +216,50 @@ export async function submitCustomerApplication(customerId, payload = {}) {
 
 
 
+function getCustomerSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem('customerSession') || 'null');
+  } catch {
+    return null;
+  }
+}
+
+export async function initiateCustomerAadhaarKyc(customerCode) {
+  const session = getCustomerSession();
+  const customerId = session?.customerId;
+  const result = await apiRequest('/customer/aadhaar-kyc/digilocker/initiate', {
+    method: 'POST',
+    body: JSON.stringify({
+      customerId,
+      customerCode,
+      consentGiven: true,
+    }),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
+export async function getCustomerAadhaarKycStatus() {
+  const session = getCustomerSession();
+  const customerId = session?.customerId;
+  const query = customerId ? `?customerId=${encodeURIComponent(String(customerId))}` : '';
+  const result = await apiRequest(`/customer/aadhaar-kyc/digilocker/status${query}`, {
+    method: 'GET',
+  });
+  return result?.data?.data || result?.data || result;
+}
+
+export async function refreshCustomerAadhaarKycStatus() {
+  const session = getCustomerSession();
+  const customerId = session?.customerId;
+  const result = await apiRequest('/customer/aadhaar-kyc/digilocker/refresh', {
+    method: 'POST',
+    body: JSON.stringify({
+      customerId,
+    }),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
@@ -227,6 +271,9 @@ export const customerApi = {
   reverseGeocode,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,
+  initiateCustomerAadhaarKyc,
+  getCustomerAadhaarKycStatus,
+  refreshCustomerAadhaarKycStatus,
 };
 
 

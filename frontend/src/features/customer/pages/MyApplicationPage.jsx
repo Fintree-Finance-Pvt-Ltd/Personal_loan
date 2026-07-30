@@ -38,6 +38,9 @@ import {
   reverseGeocode,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,
+  initiateCustomerAadhaarKyc,
+  getCustomerAadhaarKycStatus,
+  refreshCustomerAadhaarKycStatus,
 } from '../customerApi';
 import { authApi } from '../../auth/authApi';
 
@@ -53,6 +56,10 @@ const FLOW_STEPS = [
   {
     id: 'profile_details',
     label: 'Profile Details',
+  },
+  {
+    id: 'aadhaar_kyc',
+    label: 'Aadhaar KYC',
   },
   {
     id: 'submit_application',
@@ -296,6 +303,18 @@ function deriveCustomerWorkflow(customer) {
     ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(customer.onboardingStatus)
   );
 
+  const aadhaarKycStatus = String(
+    customer.aadhaarKycStatus ||
+    customer.digilockerStatus ||
+    ''
+  ).toUpperCase();
+
+  const aadhaarKycCompleted = Boolean(
+    customer.aadhaarVerified === true ||
+    customer.digilockerVerified === true ||
+    ['VERIFIED', 'COMPLETED', 'SUCCESS'].includes(aadhaarKycStatus)
+  );
+
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
     currentStep = 'basic_details';
@@ -307,6 +326,8 @@ function deriveCustomerWorkflow(customer) {
     currentStep = 'assessment_fee';
   } else if (!profileDetailsCompleted) {
     currentStep = 'profile_details';
+  } else if (!aadhaarKycCompleted) {
+    currentStep = 'aadhaar_kyc';
   } else {
     currentStep = 'submit_application';
   }
@@ -321,6 +342,8 @@ function deriveCustomerWorkflow(customer) {
     emailVerified,
     basicDetailsCompleted,
     profileDetailsCompleted,
+    aadhaarKycCompleted,
+    aadhaarKycStatus,
     eligibilityCompleted,
     eligibilityPassed,
     assessmentFeePaid,
@@ -1623,7 +1646,7 @@ export default function MyApplicationPage() {
     try {
       await updateCustomerProfile(customerId, form);
       showMessage('Profile details and live photograph saved successfully.');
-      goToStep('submit_application');
+      goToStep('aadhaar_kyc');
     } catch (err) {
       console.error('Failed to save profile details:', err);
       showMessage(
@@ -1676,6 +1699,12 @@ export default function MyApplicationPage() {
     if (!validateProfileDetails()) {
       showMessage('Profile details are incomplete.', 'error');
       goToStep('profile_details');
+      return;
+    }
+
+    if (!workflow.aadhaarKycCompleted) {
+      showMessage('Please complete Aadhaar KYC through DigiLocker before submitting your application.', 'error');
+      goToStep('aadhaar_kyc');
       return;
     }
 
@@ -1860,8 +1889,7 @@ export default function MyApplicationPage() {
         </StepCard>
       )}
 
-      {currentStep ===
-        'profile_details' && (
+      {currentStep === 'profile_details' && (
         <ProfileDetailsStep
           customerId={customerId}
           customerCode={customer?.customerCode}
@@ -1871,17 +1899,23 @@ export default function MyApplicationPage() {
           errors={errors}
           isSaving={isSaving}
           onChange={handleChange}
-          onBack={() =>
-            goToStep(
-              'assessment_fee',
-            )
-          }
-          onSaveDraft={
-            handleSaveDraft
-          }
-          onContinue={
-            handleProfileContinue
-          }
+          onBack={() => goToStep('assessment_fee')}
+          onSaveDraft={handleSaveDraft}
+          onContinue={handleProfileContinue}
+        />
+      )}
+
+      {currentStep === 'aadhaar_kyc' && (
+        <AadhaarKycStep
+          customerId={customerId}
+          customerCode={customer?.customerCode}
+          customer={customer}
+          workflow={workflow}
+          onCompleted={() => {
+            fetchCustomer();
+            goToStep('submit_application');
+          }}
+          onBack={() => goToStep('profile_details')}
         />
       )}
 
@@ -1893,11 +1927,233 @@ export default function MyApplicationPage() {
           applicationSubmitted={applicationSubmitted}
           applicationNumber={applicationNumber}
           isSubmitting={isSubmitting}
-          onBack={() => goToStep('profile_details')}
+          onBack={() => goToStep('aadhaar_kyc')}
           onSubmit={handleSubmitApplication}
         />
       )}
     </div>
+  );
+}
+
+function AadhaarKycStep({
+  customerId,
+  customerCode,
+  customer,
+  workflow,
+  onCompleted,
+  onBack,
+}) {
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [kycStatus, setKycStatus] = useState(null);
+  const [polling, setPolling] = useState(false);
+  const pollTimerRef = useRef(null);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await getCustomerAadhaarKycStatus();
+      setKycStatus(res);
+      if (res?.aadhaarVerified || res?.status === 'VERIFIED') {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setPolling(false);
+      }
+      return res;
+    } catch (err) {
+      console.error('Failed to fetch Aadhaar KYC status:', err);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await refreshCustomerAadhaarKycStatus();
+      setKycStatus(res);
+      if (res?.aadhaarVerified || res?.status === 'VERIFIED') {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setPolling(false);
+        onCompleted?.();
+      }
+    } catch (err) {
+      setError(err?.message || 'Failed to refresh status.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+
+    const handleMessage = (event) => {
+      if (event.data?.type === 'DIGILOCKER_CALLBACK_RECEIVED') {
+        handleRefresh();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  const handleStartDigilocker = async () => {
+    if (!consentGiven) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await initiateCustomerAadhaarKyc(customerCode);
+      if (res?.verificationUrl) {
+        const popup = window.open(
+          res.verificationUrl,
+          'DigitapDigiLocker',
+          'width=520,height=760,resizable=yes,scrollbars=yes'
+        );
+        if (!popup) {
+          setError('Popup was blocked by browser. Please allow popups and click Start DigiLocker Verification again.');
+          setLoading(false);
+          return;
+        }
+      }
+      setPolling(true);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      pollTimerRef.current = setInterval(async () => {
+        const statusRes = await fetchStatus();
+        if (statusRes?.aadhaarVerified || statusRes?.status === 'VERIFIED') {
+          clearInterval(pollTimerRef.current);
+          setPolling(false);
+        }
+      }, 5000);
+    } catch (err) {
+      setError(err?.message || 'Failed to initiate DigiLocker verification.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isVerified = Boolean(
+    kycStatus?.aadhaarVerified ||
+    kycStatus?.status === 'VERIFIED' ||
+    customer?.aadhaarVerified ||
+    customer?.digilockerStatus === 'VERIFIED'
+  );
+
+  return (
+    <StepCard>
+      <StepHeading
+        icon={FileCheck2}
+        eyebrow="AADHAAR VERIFICATION"
+        title="Aadhaar KYC via DigiLocker"
+        description="Verify your identity securely through DigiLocker before submitting your application to the lender."
+      />
+
+      <div className="mt-6 space-y-6">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-800">{customer?.fullName || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Registered Mobile</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-800">
+                {customer?.mobileNumber ? `+91 ${customer.mobileNumber.slice(0, 2)}****${customer.mobileNumber.slice(-4)}` : 'N/A'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Customer Reference</p>
+              <p className="mt-0.5 font-mono text-sm font-bold text-emerald-700">{customerCode || customer?.customerCode || 'N/A'}</p>
+            </div>
+          </div>
+        </div>
+
+        {isVerified ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500 text-white">
+              <CheckCircle2 size={24} />
+            </div>
+            <h3 className="mt-3 text-lg font-bold text-emerald-900">Aadhaar KYC Verified</h3>
+            <p className="mt-1 text-sm text-emerald-700">
+              Your identity has been verified via DigiLocker.
+              {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={consentGiven}
+                  onChange={(e) => setConsentGiven(e.target.checked)}
+                  className="mt-1 h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-xs text-slate-700 leading-relaxed">
+                  I consent to Fintree Finance Private Limited securely initiating DigiLocker-based Aadhaar KYC using my verified account information. I authorize the retrieval and processing of permitted identity information for loan onboarding, verification and lender submission.
+                </span>
+              </label>
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={handleStartDigilocker}
+                disabled={!consentGiven || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                Start DigiLocker Verification
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+              >
+                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+                Check Status
+              </button>
+            </div>
+
+            {polling && (
+              <div className="flex items-center gap-3 text-xs font-medium text-blue-700 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                <LoaderCircle size={14} className="animate-spin text-blue-600" />
+                <span>DigiLocker verification in progress... Please complete the window and return.</span>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex items-center justify-between border-t border-slate-100 pt-6">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+
+          {isVerified && (
+            <button
+              type="button"
+              onClick={onCompleted}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer"
+            >
+              Continue to Submit Application <ArrowRight size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </StepCard>
   );
 }
 
@@ -1906,7 +2162,8 @@ function ApplicationProgress({ currentStep, workflow }) {
     basic_details: 0,
     assessment_fee: 1,
     profile_details: 2,
-    submit_application: 3,
+    aadhaar_kyc: 3,
+    submit_application: 4,
   };
   const currentStepIndex = stepIndices[currentStep] ?? 0;
   const progressPercentage =
@@ -2002,6 +2259,8 @@ function ApplicationProgress({ currentStep, workflow }) {
               isCompleted = Boolean(workflow?.assessmentFeePaid);
             } else if (step.id === 'profile_details') {
               isCompleted = Boolean(workflow?.profileDetailsCompleted);
+            } else if (step.id === 'aadhaar_kyc') {
+              isCompleted = Boolean(workflow?.aadhaarKycCompleted);
             } else if (step.id === 'submit_application') {
               isCompleted = Boolean(workflow?.applicationSubmitted);
             }

@@ -52,8 +52,6 @@ function getCustomerSession() {
 
 const STEPS = [
   { id: 'APPROVAL_SUMMARY', label: 'Offer', icon: BadgeCheck },
-  { id: 'DIGILOCKER_KYC', label: 'KYC', icon: FileCheck2 },
-  { id: 'ADDRESS_CONFIRMATION', label: 'Address', icon: MapPin },
   { id: 'BANK_VERIFICATION', label: 'Bank', icon: Building2 },
   { id: 'KFS_ACCEPTANCE', label: 'KFS', icon: FileText },
   { id: 'EMANDATE', label: 'Mandate', icon: CreditCard },
@@ -78,8 +76,7 @@ export default function PostApprovalJourneyPage() {
       const result = await getPostApprovalJourney(normalizedLan);
       setData(result);
     } catch (err) {
-      console.error('Failed to fetch post approval journey:', err);
-      setError(err instanceof Error ? err.message : 'Unable to load your loan details.');
+      setError(err?.message || 'Failed to load journey details.');
     } finally {
       setIsLoading(false);
     }
@@ -107,20 +104,18 @@ export default function PostApprovalJourneyPage() {
     );
   }
 
-  if (error || !data) {
+  if (error) {
     return (
-      <div className="mx-auto max-w-lg rounded-3xl border border-red-200 bg-white p-8 text-center shadow-lg">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-red-100 text-red-600">
-          <AlertCircle size={28} />
-        </div>
-        <h3 className="mt-4 text-lg font-bold text-slate-900">Unable to load loan details</h3>
-        <p className="mt-2 text-sm text-slate-600">{error || 'An unexpected error occurred.'}</p>
+      <div className="rounded-3xl border border-rose-200 bg-rose-50/50 p-8 text-center shadow-sm">
+        <AlertCircle className="mx-auto h-12 w-12 text-rose-500" />
+        <h2 className="mt-3 text-lg font-bold text-slate-900">Something went wrong</h2>
+        <p className="mt-1 text-sm text-slate-600">{error}</p>
         <button
+          type="button"
           onClick={fetchJourney}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-emerald-700"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow hover:bg-emerald-700 cursor-pointer"
         >
-          <RotateCcw size={16} />
-          Retry
+          <RotateCcw size={16} /> Try Again
         </button>
       </div>
     );
@@ -231,12 +226,6 @@ export default function PostApprovalJourneyPage() {
       <div>
         {activeStepId === 'APPROVAL_SUMMARY' && (
           <ApprovalSummaryStep data={data} onNext={handleNextStep} />
-        )}
-        {activeStepId === 'DIGILOCKER_KYC' && (
-          <DigiLockerStep lan={normalizedLan} data={data} onNext={handleNextStep} />
-        )}
-        {activeStepId === 'ADDRESS_CONFIRMATION' && (
-          <AddressConfirmationStep lan={normalizedLan} data={data} onNext={handleNextStep} />
         )}
         {activeStepId === 'BANK_VERIFICATION' && (
           <BankVerificationStep lan={normalizedLan} data={data} onNext={handleNextStep} />

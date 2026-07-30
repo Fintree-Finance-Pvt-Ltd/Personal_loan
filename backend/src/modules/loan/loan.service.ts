@@ -136,8 +136,6 @@ export class LoanService {
       loan.status === PlLoanStatus.READY_FOR_DISBURSAL ||
       loan.currentStep === 'READY_FOR_DISBURSAL' ||
       (loan.acceptedTenureDays &&
-        loan.digilockerStatus === 'VERIFIED' &&
-        loan.addressConfirmed &&
         loan.bankVerified &&
         loan.kfsAccepted &&
         loan.mandateCompleted &&
@@ -157,14 +155,8 @@ export class LoanService {
     if (loan.bankVerified) {
       return 'KFS_ACCEPTANCE';
     }
-    if (loan.addressConfirmed) {
-      return 'BANK_VERIFICATION';
-    }
-    if (loan.digilockerStatus === 'VERIFIED') {
-      return 'ADDRESS_CONFIRMATION';
-    }
     if (loan.acceptedTenureDays) {
-      return 'DIGILOCKER_KYC';
+      return 'BANK_VERIFICATION';
     }
 
     return 'APPROVAL_SUMMARY';
@@ -354,8 +346,6 @@ export class LoanService {
         readyForDisbursal:
           Boolean(
             loan.acceptedTenureDays &&
-            loan.digilockerStatus === 'VERIFIED' &&
-            loan.addressConfirmed &&
             loan.bankVerified &&
             loan.kfsAccepted &&
             loan.mandateCompleted &&
@@ -413,7 +403,7 @@ export class LoanService {
         acceptedEmiAmount: emi,
         acceptedTotalRepayment: totalRepayment,
         status: PlLoanStatus.OFFER_ACCEPTED,
-        currentStep: 'DIGILOCKER_KYC',
+        currentStep: 'BANK_VERIFICATION',
       },
     });
 
@@ -428,7 +418,7 @@ export class LoanService {
       requestId: randomBytes(16).toString('hex'),
     }).catch(() => { /* non-critical */ });
 
-    return { success: true, message: 'Offer accepted successfully.', nextStep: 'DIGILOCKER_KYC' };
+    return { success: true, message: 'Offer accepted successfully.', nextStep: 'BANK_VERIFICATION' };
   }
 
   async saveAddress(lan: string, customerId: bigint, payload: any) {

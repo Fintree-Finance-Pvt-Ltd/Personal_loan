@@ -665,6 +665,19 @@ model Customer {
 
   latestApplicationId BigInt? @map("latest_application_id") @db.UnsignedBigInt
 
+  // ── Aadhaar DigiLocker KYC ───────────────────────────────────────────
+  aadhaarVerified       Boolean   @default(false) @map("aadhaar_verified")
+  aadhaarKycStatus      String?   @map("aadhaar_kyc_status") @db.VarChar(30)
+  maskedAadhaar         String?   @map("masked_aadhaar") @db.VarChar(20)
+  aadhaarLastFourDigits String?   @map("aadhaar_last_four_digits") @db.VarChar(4)
+  aadhaarVerifiedAt     DateTime? @map("aadhaar_verified_at") @db.DateTime(0)
+  digilockerStatus      String?   @map("digilocker_status") @db.VarChar(30)
+  digilockerSessionId   String?   @map("digilocker_session_id") @db.VarChar(255)
+  digilockerReference   String?   @map("digilocker_reference") @db.VarChar(255)
+  digilockerVerifiedAt  DateTime? @map("digilocker_verified_at") @db.DateTime(0)
+  digilockerConsentAt   DateTime? @map("digilocker_consent_at") @db.DateTime(0)
+  digilockerRawResponse String?   @map("digilocker_raw_response") @db.LongText
+
   lastLoginAt    DateTime? @map("last_login_at") @db.DateTime(0)
   lastActivityAt DateTime? @map("last_activity_at") @db.DateTime(0)
 

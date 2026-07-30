@@ -461,6 +461,12 @@ export class CustomerService {
         lastLoginAt: customer.lastLoginAt,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
+        // Aadhaar DigiLocker KYC
+        aadhaarVerified: Boolean(customer.aadhaarVerified || customer.digilockerStatus === 'VERIFIED'),
+        aadhaarKycStatus: customer.aadhaarKycStatus || customer.digilockerStatus || null,
+        maskedAadhaar: customer.maskedAadhaar || null,
+        aadhaarLastFourDigits: customer.aadhaarLastFourDigits || null,
+        aadhaarVerifiedAt: customer.aadhaarVerifiedAt || customer.digilockerVerifiedAt || null,
         // Application & loan info
         latestApplicationStatus: latestApp?.status ?? null,
         latestLan: latestLoan?.lan ?? null,
@@ -492,7 +498,6 @@ export class CustomerService {
     };
   }
 
-
   async findByMobile(mobileNumber: string) {
     const customer =
       await this.prisma.customer.findUnique({
@@ -521,6 +526,18 @@ export class CustomerService {
 
     if (!customer) {
       throw new NotFoundException('Customer not found.');
+    }
+
+    const isAadhaarVerified = Boolean(
+      customer.aadhaarVerified ||
+      customer.digilockerStatus === 'VERIFIED' ||
+      customer.aadhaarKycStatus === 'VERIFIED'
+    );
+
+    if (!isAadhaarVerified) {
+      throw new BadRequestException(
+        'Aadhaar KYC through DigiLocker must be completed before lender submission.',
+      );
     }
 
     const dateStr = new Date().toISOString().slice(2, 10).replaceAll('-', '');
