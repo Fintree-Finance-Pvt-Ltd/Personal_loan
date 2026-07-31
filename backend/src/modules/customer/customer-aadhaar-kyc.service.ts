@@ -21,7 +21,7 @@ export class CustomerAadhaarKycService {
     private readonly digitapService: DigitapDigilockerService,
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService,
-  ) {}
+  ) { }
 
   /**
    * Initiates DigiLocker Aadhaar KYC for pre-approval onboarding stage
@@ -278,7 +278,11 @@ export class CustomerAadhaarKycService {
       throw new BadRequestException('Webhook does not belong to Personal Loan.');
     }
 
-    // ── 5. Safe structured log (no raw payload) ────────────────────────────────
+    // ── 5. Safe structured log ──────────────────────────────────────────────────
+    this.logger.log(
+      `📥 [Aadhaar Webhook Received] TxID: ${transactionId}, UniqueID: ${uniqueId}, Status: ${payload.status || 'N/A'}, Source: ${input.webhookSource || 'DIRECT'}`,
+    );
+
     this.logger.log({
       event: 'AADHAAR_KYC_WEBHOOK_RECEIVED',
       transactionId,
@@ -381,18 +385,18 @@ export class CustomerAadhaarKycService {
         ? data.address
         : data.address
           ? [
-              addr.house || addr.careOf || addr.co,
-              addr.street,
-              addr.loc || addr.vtc,
-              addr.dist || addr.subdist,
-              addr.state,
-              addr.pc ? `- ${addr.pc}` : null,
-            ]
-              .filter(Boolean)
-              .join(', ')
-              .replace(/,\s*,/g, ',')
-              .replace(/^,\s*/g, '')
-              .trim() || JSON.stringify(data.address)
+            addr.house || addr.careOf || addr.co,
+            addr.street,
+            addr.loc || addr.vtc,
+            addr.dist || addr.subdist,
+            addr.state,
+            addr.pc ? `- ${addr.pc}` : null,
+          ]
+            .filter(Boolean)
+            .join(', ')
+            .replace(/,\s*,/g, ',')
+            .replace(/^,\s*/g, '')
+            .trim() || JSON.stringify(data.address)
           : null;
 
       // Full webhook payload JSON string (sanitized of unmasked 12-digit numbers for compliance)
@@ -467,7 +471,7 @@ export class CustomerAadhaarKycService {
         transactionId,
       });
 
-      return {
+      const responseObj = {
         success: true,
         message: 'Personal Loan DigiLocker webhook processed successfully.',
         data: {
@@ -477,6 +481,12 @@ export class CustomerAadhaarKycService {
           processed: true,
         },
       };
+
+      this.logger.log(
+        `✅ [Aadhaar Webhook Processed] Customer: ${customer.customerCode}, Result: ${JSON.stringify(responseObj)}`,
+      );
+
+      return responseObj;
     }
 
     // ── 10. Failure / Expired path ────────────────────────────────────────────
@@ -639,18 +649,18 @@ export class CustomerAadhaarKycService {
       ? aadhaarData.address
       : aadhaarData?.address
         ? [
-            addr.house || addr.careOf || addr.co,
-            addr.street,
-            addr.loc || addr.vtc,
-            addr.dist || addr.subdist,
-            addr.state,
-            addr.pc ? `- ${addr.pc}` : null,
-          ]
-            .filter(Boolean)
-            .join(', ')
-            .replace(/,\s*,/g, ',')
-            .replace(/^,\s*/g, '')
-            .trim() || JSON.stringify(aadhaarData.address)
+          addr.house || addr.careOf || addr.co,
+          addr.street,
+          addr.loc || addr.vtc,
+          addr.dist || addr.subdist,
+          addr.state,
+          addr.pc ? `- ${addr.pc}` : null,
+        ]
+          .filter(Boolean)
+          .join(', ')
+          .replace(/,\s*,/g, ',')
+          .replace(/^,\s*/g, '')
+          .trim() || JSON.stringify(aadhaarData.address)
         : null;
 
     await this.prisma.$transaction(async (tx) => {
