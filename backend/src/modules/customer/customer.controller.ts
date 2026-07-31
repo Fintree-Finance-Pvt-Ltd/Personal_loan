@@ -7,94 +7,100 @@ import {
   Patch,
   Post,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
 import { CustomerService } from './customer.service';
 
 @Controller('customer')
+@Public()
+@UseGuards(CustomerAuthGuard)
 export class CustomerController {
   constructor(
     private readonly customerService: CustomerService,
   ) {}
 
-  /**
-   * GET /api/customer/:id
-   *
-   * Returns the full customer profile (excluding sensitive fields).
-   * Currently marked @Public() for the customer-facing flow;
-   * protect with an auth guard when customer JWT session is implemented.
-   */
-  @Public()
-  @Get(':id')
-  async getCustomer(
-    @Param(
-      'id',
-      new ParseIntPipe(),
-    )
-    id: number,
-  ) {
-    return this.customerService.findById(
-      BigInt(id),
-    );
+  @Get('me')
+  async getMe(@CurrentCustomer() customer: any) {
+    return this.customerService.findById(BigInt(customer.customerId));
   }
 
-  @Public()
+  @Get(':id')
+  async getCustomer(
+    @CurrentCustomer() customer: any,
+    @Param('id', new ParseIntPipe()) id: number,
+  ) {
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.findById(BigInt(customer.customerId));
+  }
+
   @Patch(':id/pincode')
   async updatePincode(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: { pincode: string; city?: string; state?: string },
   ) {
-    return this.customerService.updatePincode(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.updatePincode(BigInt(customer.customerId), body);
   }
 
-  @Public()
   @Patch(':id/profile')
   async updateProfile(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.updateProfile(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.updateProfile(BigInt(customer.customerId), body);
   }
 
-  @Public()
   @Patch(':id/basic-details')
   async updateBasicDetails(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.updateBasicDetails(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.updateBasicDetails(BigInt(customer.customerId), body);
   }
 
-  @Public()
+  @Post('resume-application')
+  async resumeApplication(
+    @CurrentCustomer() customer: any,
+    @Body() body: { platformProductId: string; requestedAmount: number; scopeCode?: string },
+  ) {
+    return this.customerService.resumeApplication(BigInt(customer.customerId), body);
+  }
+
   @Post(':id/submit-application')
   async submitApplication(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.submitApplication(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.submitApplication(BigInt(customer.customerId), body);
   }
 
-  @Public() // Temporarily bypass global JWT guard since Customer JWT isn't implemented yet
   @Post(':id/run-eligibility')
   async runEligibility(
-    @CurrentUser() user: any,
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    // Attempt to derive from session as requested, but fallback to URL id if no session exists 
-    // to prevent breaking the frontend flow before Customer Auth is fully implemented.
-    const customerId = user?.customerId || user?.userId || id;
-    
-    return this.customerService.runEligibility(BigInt(customerId), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.runEligibility(BigInt(customer.customerId), body);
   }
 
-  @Public()
   @Post(':id/simulate-lender-approval')
   async simulateLenderApproval(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.simulateLenderApproval(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.simulateLenderApproval(BigInt(customer.customerId), body);
   }
 }

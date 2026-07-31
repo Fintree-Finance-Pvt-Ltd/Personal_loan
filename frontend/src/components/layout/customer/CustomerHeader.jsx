@@ -58,6 +58,7 @@ export default function CustomerHeader({
 
   const handleLogout = () => {
     sessionStorage.removeItem('customerSession');
+    sessionStorage.removeItem('customerAccessToken');
 
     navigate('/customer/login', {
       replace: true,

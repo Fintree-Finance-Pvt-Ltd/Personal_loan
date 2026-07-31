@@ -31,7 +31,8 @@ import {
 import { usePincodeLookup } from '../hooks/usePincodeLookup';
 import {
   customerApi,
-  getCustomerById,
+  getCustomerMe,
+  resumeApplication,
   updateBasicDetails,
   updateCustomerProfile,
   submitCustomerApplication,
@@ -41,8 +42,11 @@ import {
   initiateCustomerAadhaarKyc,
   getCustomerAadhaarKycStatus,
   refreshCustomerAadhaarKycStatus,
+  runEligibility,
+  updatePincode,
 } from '../customerApi';
 import { authApi } from '../../auth/authApi';
+
 
 const FLOW_STEPS = [
   {
@@ -385,11 +389,11 @@ function mapCustomerToForm(customer) {
         ? String(customer.annualTurnover)
         : '',
 
-    employmentVintage: '',
-    totalExperience: '',
-    salaryMode: '',
-    businessVintage: '',
-    kfsLanguage: 'English',
+    employmentVintage: customer.employmentVintage || '',
+    totalExperience: customer.totalExperience || '',
+    salaryMode: customer.salaryMode || '',
+    businessVintage: customer.businessVintage || '',
+    kfsLanguage: customer.kfsLanguage || 'English',
   };
 }
 
@@ -399,7 +403,7 @@ export default function MyApplicationPage() {
   const storedSession = useMemo(() => {
     try {
       return JSON.parse(
-        sessionStorage.getItem(
+        localStorage.getItem(
           'customerSession',
         ) || 'null',
       );
@@ -413,6 +417,9 @@ export default function MyApplicationPage() {
   const [customer, setCustomer] = useState(null);
   const [isCustomerLoading, setIsCustomerLoading] = useState(true);
   const [customerLoadError, setCustomerLoadError] = useState('');
+  
+  const [platformProducts, setPlatformProducts] = useState([]);
+  const [isLoadingPlatformProducts, setIsLoadingPlatformProducts] = useState(true);
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [currentStep, setCurrentStep] = useState('basic_details');
@@ -459,13 +466,11 @@ export default function MyApplicationPage() {
     '';
 
   const fetchCustomer = async () => {
-    if (!customerId) return;
-
     setIsCustomerLoading(true);
     setCustomerLoadError('');
 
     try {
-      const customerData = await getCustomerById(customerId);
+      const customerData = await getCustomerMe();
       setCustomer(customerData);
 
       const mappedForm = mapCustomerToForm(customerData);
@@ -478,6 +483,8 @@ export default function MyApplicationPage() {
       setBrePassed(wf.eligibilityPassed);
       setFeePaid(wf.assessmentFeePaid);
       if (wf.assessmentFeePaid) {
+        setPaymentId('ALREADY_PAID');
+        setTransactionId('ALREADY_PAID');
         setLenderConsent(true);
       }
       setApplicationSubmitted(wf.applicationSubmitted);
@@ -504,9 +511,8 @@ export default function MyApplicationPage() {
       } else {
         setPanVerification(null);
       }
-
       try {
-        const livePhotoDoc = await getCustomerLivePhoto(customerId);
+        const livePhotoDoc = await getCustomerLivePhoto(customerData?.id);
         if (livePhotoDoc && livePhotoDoc.status === 'VERIFIED') {
           setSavedPhotoDocument(livePhotoDoc);
         }
@@ -514,12 +520,12 @@ export default function MyApplicationPage() {
         console.error('Failed to load saved live photo document:', photoErr);
       }
     } catch (err) {
-      console.error('Failed to fetch customer data:', err);
       setCustomerLoadError(
-        err instanceof Error
-          ? err.message
-          : 'Unable to load customer details. Please try again.',
+        err?.message || 'Unable to load your details.',
       );
+      if (err?.message?.includes('Customer authentication is required') || err?.message?.includes('Access denied') || err?.message?.includes('Customer details were not found')) {
+          navigate('/customer/sign-in', { replace: true });
+      }
     } finally {
       setIsCustomerLoading(false);
     }
@@ -527,12 +533,15 @@ export default function MyApplicationPage() {
 
   useEffect(() => {
     if (!customerId) {
-      sessionStorage.removeItem('customerSession');
+      localStorage.removeItem('customerSession');
       navigate('/customer/login', { replace: true });
       return;
     }
 
     fetchCustomer();
+    
+    // Fetch products
+    setIsLoadingPlatformProducts(false);
   }, [customerId, navigate]);
 
   const currentStepIndex = FLOW_STEPS.findIndex(
@@ -878,10 +887,6 @@ export default function MyApplicationPage() {
           ...currentErrors,
           email: '',
         }));
-        updateStoredApplication({
-          form,
-          emailVerified: true,
-        });
         showMessage('Email already verified.');
         return;
       }
@@ -948,11 +953,6 @@ export default function MyApplicationPage() {
         ...currentErrors,
         email: '',
       }));
-
-      updateStoredApplication({
-        form,
-        emailVerified: true,
-      });
 
       showMessage(
         'Email verified successfully.',
@@ -1334,14 +1334,22 @@ export default function MyApplicationPage() {
           email: form.email ? form.email.trim() : undefined,
           emailVerified: emailVerified,
         });
+
+        const appRes = await resumeApplication(customerId, {});
+        
+        if (appRes?.applicationNumber) {
+          setApplicationNumber(appRes.applicationNumber);
+        }
       }
 
-      const res = await fetch(`/api/customer/${customerId}/run-eligibility`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const result = await res.json();
+      let result;
+      try {
+        const rawResult = await runEligibility(customerId);
+        // apiRequest unpacks success/data automatically, so we wrap it back to match the component's expectations
+        result = { success: true, data: rawResult };
+      } catch (err) {
+        result = { success: false, error: err };
+      }
 
       if (!result.success) {
         // ERROR state
@@ -1845,6 +1853,9 @@ export default function MyApplicationPage() {
           onContinue={
             handleBasicDetailsContinue
           }
+          platformProducts={platformProducts}
+          isLoadingPlatformProducts={isLoadingPlatformProducts}
+          applicationNumber={applicationNumber}
         />
       )}
 
@@ -2350,6 +2361,9 @@ function BasicDetailsStep({
   onVerifyPan,
   onSaveDraft,
   onContinue,
+  platformProducts,
+  isLoadingPlatformProducts,
+  applicationNumber,
 }) {
   const {
     city: pincodeCity,
@@ -2368,17 +2382,10 @@ function BasicDetailsStep({
     ) {
       const savePincodeToBackend = async () => {
         try {
-          await fetch(`/api/customer/${customerId}/pincode`, {
-            method: 'PATCH',
-            headers: {
-              Accept: 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              pincode: form.pincode.trim(),
-              city: pincodeCity,
-              state: pincodeState,
-            }),
+          await updatePincode(customerId, {
+            pincode: form.pincode.trim(),
+            city: pincodeCity,
+            state: pincodeState,
           });
           console.log(
             `Auto-saved residential PIN code ${form.pincode} (${pincodeCity}, ${pincodeState}) to customer table.`,
@@ -2410,6 +2417,7 @@ function BasicDetailsStep({
           </StatusBadge>
         }
       />
+
 
       <SectionHeading
         title="PAN verification"

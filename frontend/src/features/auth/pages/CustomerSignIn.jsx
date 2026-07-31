@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -34,6 +35,12 @@ export default function CustomerSignIn() {
   const navigate = useNavigate();
   const [searchParams] =
     useSearchParams();
+
+  useEffect(() => {
+    if (localStorage.getItem('customerAccessToken')) {
+      navigate('/customer/dashboard');
+    }
+  }, [navigate]);
 
   const otpInputRefs = useRef([]);
 
@@ -342,39 +349,23 @@ export default function CustomerSignIn() {
           );
         }
 
-        const customerSession = {
-          customerId: customer.id,
-          customerCode:
-            customer.customerCode,
-          mobileNumber:
-            customer.mobileNumber,
-          countryCode:
-            customer.countryCode ||
-            '+91',
-          mobileVerified:
-            customer.mobileVerified,
-          accountStatus:
-            customer.accountStatus,
-          onboardingStatus:
-            customer.onboardingStatus,
-          eligibilityStatus:
-            customer.eligibilityStatus,
-          panVerified:
-            customer.panVerified ||
-            false,
-          emailVerified:
-            customer.emailVerified ||
-            false,
-          verifiedAt:
-            new Date().toISOString(),
-          trackingData,
-        };
+        const responseData = result?.data?.data || result?.data || result;
+        const accessToken = responseData?.accessToken;
+        
+        if (!accessToken) {
+          throw new Error('Access token was not returned after OTP verification.');
+        }
 
-        sessionStorage.setItem(
+        localStorage.setItem('customerAccessToken', accessToken);
+
+        // We no longer rely on localStorage.customerSession for identity, but keeping a minimal hint for navigation is okay.
+        localStorage.setItem(
           'customerSession',
-          JSON.stringify(
-            customerSession,
-          ),
+          JSON.stringify({
+            customerId: customer.id,
+            customerCode: customer.customerCode,
+            mobileNumber: customer.mobileNumber,
+          }),
         );
 
         setSuccessMessage(

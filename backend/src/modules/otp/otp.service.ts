@@ -19,10 +19,12 @@ import {
   Prisma,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomInt, randomBytes } from 'crypto';
+import { randomInt, randomBytes, createHash } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EmailService } from './email/email.service';
 import { SmsService } from './sms/sms.service';
+import { deviceLabel } from '../../common/utils/security.utils';
 
 export type SendMobileOtpInput = {
   mobileNumber?: unknown;
@@ -30,11 +32,15 @@ export type SendMobileOtpInput = {
   consentText?: unknown;
   ipAddress?: string | null;
   userAgent?: string | null;
+  requestId?: string;
 };
 
 export type VerifyMobileOtpInput = {
   mobileNumber?: unknown;
   otp?: unknown;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  requestId?: string;
 };
 
 export type SendEmailOtpInput = {
@@ -64,6 +70,7 @@ export class OtpService {
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly jwt: JwtService,
   ) {
     this.otpExpiryMinutes = this.readPositiveNumber('OTP_EXPIRY_MINUTES', 5);
     this.maxAttempts = this.readPositiveNumber('OTP_MAX_ATTEMPTS', 5);
@@ -273,30 +280,70 @@ export class OtpService {
           },
         });
 
-        return verifiedCustomer;
+        // Customer portal: hardcoded 7 days session for seamless onboarding
+        const absoluteExpiresAt = new Date(now.getTime() + 7 * 24 * 3600000);
+        const idleExpiresAt = new Date(now.getTime() + 7 * 24 * 3600000);
+
+        const customerSession = await transaction.customerSession.create({
+          data: {
+            customerId: verifiedCustomer.id,
+            absoluteExpiresAt,
+            idleExpiresAt,
+            ipAddress: input.ipAddress?.slice(0, 64),
+            userAgent: input.userAgent?.slice(0, 512),
+            deviceLabel: deviceLabel(input.userAgent),
+            requestId: input.requestId || 'unknown',
+          }
+        });
+
+        const rawRefreshToken = randomBytes(48).toString('base64url');
+        const refreshHash = createHash('sha256').update(rawRefreshToken).digest('hex');
+
+        await transaction.customerRefreshToken.create({
+          data: {
+            sessionId: customerSession.id,
+            tokenHash: refreshHash,
+            expiresAt: absoluteExpiresAt
+          }
+        });
+
+        const accessToken = await this.jwt.signAsync({
+            sub: verifiedCustomer.id.toString(),
+            sid: customerSession.id,
+            type: 'customer-access',
+        }, {
+            secret: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_SECRET'),
+            expiresIn: '7d',
+            issuer: this.configService.getOrThrow<string>('JWT_ISSUER'),
+            audience: 'personal-loan-customer',
+        });
+
+        return { verifiedCustomer, accessToken, rawRefreshToken };
       });
 
       this.logger.log(
-        `Mobile verified for customer ${customer.customerCode}, mobile ending ${mobileNumber.slice(-4)}.`,
+        `Mobile verified for customer ${customer.verifiedCustomer.customerCode}, mobile ending ${mobileNumber.slice(-4)}.`,
       );
 
       return {
         success: true,
         message: 'Mobile number verified successfully.',
+        refreshToken: customer.rawRefreshToken,
         data: {
+          accessToken: customer.accessToken,
           customer: {
-            id: customer.id.toString(),
-            customerCode: customer.customerCode,
-            countryCode: customer.countryCode,
-            mobileNumber: customer.mobileNumber,
-            mobileVerified: customer.mobileVerified,
-            accountStatus: customer.accountStatus,
-            onboardingStatus: customer.onboardingStatus,
-            eligibilityStatus: customer.eligibilityStatus,
-            fullName: customer.fullName,
-            email: customer.email,
-            emailVerified: customer.emailVerified,
-            panVerified: customer.panVerified,
+            id: customer.verifiedCustomer.id.toString(),
+            customerCode: customer.verifiedCustomer.customerCode,
+            countryCode: customer.verifiedCustomer.countryCode,
+            mobileNumber: customer.verifiedCustomer.mobileNumber,
+            mobileVerified: customer.verifiedCustomer.mobileVerified,
+            accountStatus: customer.verifiedCustomer.accountStatus,
+            onboardingStatus: customer.verifiedCustomer.onboardingStatus,
+            eligibilityStatus: customer.verifiedCustomer.eligibilityStatus,
+            fullName: customer.verifiedCustomer.fullName,
+            email: customer.verifiedCustomer.email,
+            emailVerified: customer.verifiedCustomer.emailVerified,
+            panVerified: customer.verifiedCustomer.panVerified,
           },
         },
       };
@@ -783,5 +830,21 @@ export class OtpService {
     }
 
     return value;
+  }
+
+  getCookieName(): string {
+    return this.configService.get<string>('CUSTOMER_COOKIE_NAME', 'plp_customer_refresh');
+  }
+
+  getCookieOptions(): any {
+    const isProd = this.configService.get('NODE_ENV') === 'production';
+    const maxAgeHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 8);
+    return {
+      httpOnly: true,
+      secure: this.configService.get<string>('COOKIE_SECURE') === 'true' || isProd,
+      sameSite: this.configService.get<string>('COOKIE_SAME_SITE', 'lax'),
+      path: '/api/customer', // Restricted path so Admin doesn't see it
+      maxAge: maxAgeHours * 3600000,
+    };
   }
 }

@@ -8,8 +8,10 @@ import { PlatformPoliciesModule } from '../platform-policies/platform-policies.m
 import { MlmModule } from '../mlm/mlm.module';
 import { ExternalApiModule } from '../external-api/external-api.module';
 
+import { JwtModule } from '@nestjs/jwt';
+
 @Module({
-  imports: [LoanModule, PlatformPoliciesModule, MlmModule, ExternalApiModule],
+  imports: [LoanModule, PlatformPoliciesModule, MlmModule, ExternalApiModule, JwtModule.register({})],
   controllers: [CustomerController, CustomerAadhaarKycController],
   providers: [CustomerService, CustomerAadhaarKycService],
   exports: [CustomerService, CustomerAadhaarKycService],

@@ -19,7 +19,7 @@ function getFullApiUrl(endpoint) {
 
 function getCustomerId() {
   try {
-    const session = JSON.parse(sessionStorage.getItem('customerSession') || 'null');
+    const session = JSON.parse(localStorage.getItem('customerSession') || 'null');
     return session?.customerId ? String(session.customerId) : null;
   } catch {
     return null;

@@ -688,6 +688,7 @@ model Customer {
   documents               PlCustomerDocument[]
   applications            PlApplication[]
   loans                   PlLoan[]
+  sessions                CustomerSession[]
 
   @@index([email], map: "idx_customers_email")
   @@index([accountStatus], map: "idx_customers_account_status")
@@ -695,6 +696,47 @@ model Customer {
   @@index([eligibilityStatus], map: "idx_customers_eligibility_status")
   @@index([createdAt], map: "idx_customers_created_at")
   @@map("customers")
+}
+
+model CustomerSession {
+  id                String                 @id @default(cuid())
+  customerId        BigInt                 @map("customer_id") @db.UnsignedBigInt
+  createdAt         DateTime               @default(now()) @map("created_at")
+  lastSeenAt        DateTime               @default(now()) @map("last_seen_at")
+  absoluteExpiresAt DateTime               @map("absolute_expires_at")
+  idleExpiresAt     DateTime               @map("idle_expires_at")
+  revokedAt         DateTime?              @map("revoked_at")
+  revokedReason     String?                @map("revoked_reason") @db.VarChar(120)
+  ipAddress         String?                @map("ip_address") @db.VarChar(64)
+  userAgent         String?                @map("user_agent") @db.VarChar(512)
+  deviceLabel       String?                @map("device_label") @db.VarChar(160)
+  requestId         String                 @map("request_id") @db.VarChar(64)
+  customer          Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  refreshTokens     CustomerRefreshToken[]
+
+  @@index([customerId, revokedAt])
+  @@index([absoluteExpiresAt])
+  @@index([idleExpiresAt])
+  @@map("customer_sessions")
+}
+
+model CustomerRefreshToken {
+  id            String                 @id @default(cuid())
+  sessionId     String                 @map("session_id")
+  tokenHash     String                 @unique @map("token_hash") @db.Char(64)
+  parentTokenId String?                @map("parent_token_id")
+  issuedAt      DateTime               @default(now()) @map("issued_at")
+  expiresAt     DateTime               @map("expires_at")
+  usedAt        DateTime?              @map("used_at")
+  revokedAt     DateTime?              @map("revoked_at")
+  session       CustomerSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  parent        CustomerRefreshToken?  @relation("CustomerTokenRotation", fields: [parentTokenId], references: [id], onDelete: Restrict)
+  children      CustomerRefreshToken[] @relation("CustomerTokenRotation")
+
+  @@index([sessionId, revokedAt])
+  @@index([parentTokenId])
+  @@index([expiresAt])
+  @@map("customer_refresh_tokens")
 }
 
 enum KycStatus {
@@ -1075,6 +1117,12 @@ model PlApplication {
 
   applicationNumber String              @unique @map("application_number") @db.VarChar(50)
   status            PlApplicationStatus @default(DRAFT)
+  
+  platformProductId String?             @map("platform_product_id") @db.VarChar(50)
+  scopeCode         String              @default("PLATFORM_DEFAULT") @map("scope_code") @db.VarChar(60)
+  requestedAmount   Decimal?            @map("requested_amount") @db.Decimal(15, 2)
+  requestedTenure   Int?                @map("requested_tenure")
+
   lenderCode        String?             @map("lender_code") @db.VarChar(30)
 
   submittedAt          DateTime? @map("submitted_at") @db.DateTime(0)

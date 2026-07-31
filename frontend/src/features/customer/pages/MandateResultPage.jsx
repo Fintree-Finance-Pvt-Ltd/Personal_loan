@@ -5,7 +5,7 @@ import { refreshMandateStatus, getMandateStatus } from '../postApprovalApi';
 
 function getCustomerSession() {
   try {
-    return JSON.parse(sessionStorage.getItem('customerSession') || 'null');
+    return JSON.parse(localStorage.getItem('customerSession') || 'null');
   } catch {
     return null;
   }
