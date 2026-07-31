@@ -6,6 +6,7 @@ import {
   Ip,
   Post,
   Req,
+  Res,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
@@ -43,13 +44,33 @@ export class OtpController {
   @Public()
   @Post('mobile/verify')
   @HttpCode(HttpStatus.OK)
-  verifyMobileOtp(@Body() body: Record<string, unknown>) {
+  async verifyMobileOtp(
+    @Body() body: Record<string, unknown>,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) res: any,
+  ) {
     const input: VerifyMobileOtpInput = {
       mobileNumber: body.mobileNumber,
       otp: body.otp,
+      ipAddress,
+      userAgent: request.headers['user-agent'] || null,
+      requestId: request.headers['x-request-id'] as string || 'test-req-id', // Assuming request ID is handled by middleware
     };
 
-    return this.otpService.verifyMobileOtp(input);
+    const result = await this.otpService.verifyMobileOtp(input);
+    
+    if ((result as any).refreshToken) {
+      res.cookie(
+        this.otpService.getCookieName(),
+        (result as any).refreshToken,
+        this.otpService.getCookieOptions()
+      );
+      // Remove refreshToken from response body so it's only in HttpOnly cookie
+      delete (result as any).refreshToken;
+    }
+
+    return result;
   }
 
   @Public()

@@ -20,6 +20,8 @@ import { PlatformPoliciesService } from '../platform-policies/platform-policies.
 import { PolicyEvaluationService } from '../platform-policies/policy-evaluation.service';
 import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engine/mlm-allocation-engine.service';
 
+import { ApplicationTransitionService } from '../loan/services/application-transition.service';
+
 @Injectable()
 export class CustomerService {
   private readonly logger = new Logger(CustomerService.name);
@@ -30,6 +32,7 @@ export class CustomerService {
     private readonly platformPoliciesService: PlatformPoliciesService,
     private readonly policyEvaluationService: PolicyEvaluationService,
     private readonly mlmAllocationEngineService: MlmAllocationEngineService,
+    private readonly applicationTransitionService: ApplicationTransitionService,
   ) {}
 
   async findOrCreateAfterOtpVerification(
@@ -469,6 +472,8 @@ export class CustomerService {
         aadhaarVerifiedAt: customer.aadhaarVerifiedAt || customer.digilockerVerifiedAt || null,
         // Application & loan info
         latestApplicationStatus: latestApp?.status ?? null,
+        latestApplicationPlatformProductId: latestApp?.platformProductId ?? null,
+        latestApplicationRequestedAmount: latestApp?.requestedAmount ? Number(latestApp.requestedAmount) : null,
         latestLan: latestLoan?.lan ?? null,
         latestLoanId: latestLoan?.id?.toString() ?? null,
         latestLoanStatus: latestLoan?.status ?? null,
@@ -519,6 +524,46 @@ export class CustomerService {
     };
   }
 
+  async resumeApplication(
+    customerId: bigint,
+    body: { platformProductId?: string; requestedAmount?: number; scopeCode?: string },
+  ) {
+    let platformProductId = body.platformProductId || null;
+    if (!platformProductId) {
+      const defaultPolicy = await this.prisma.platformPolicy.findFirst({
+        where: { operationalStatus: 'ACTIVE' },
+        orderBy: { createdAt: 'asc' }
+      });
+      if (defaultPolicy) {
+        platformProductId = defaultPolicy.platformProductId;
+      }
+    }
+
+    const requestedAmount = body.requestedAmount ? Number(body.requestedAmount) : null;
+
+    const application = await this.applicationTransitionService.createOrResumeApplication(
+      customerId,
+      platformProductId,
+      requestedAmount,
+      body.scopeCode || 'PLATFORM_DEFAULT'
+    );
+
+    // Update customer's latest application ID
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: { latestApplicationId: application.id }
+    });
+
+    return {
+      success: true,
+      data: {
+        applicationId: application.id.toString(),
+        applicationNumber: application.applicationNumber,
+        status: application.status,
+      }
+    };
+  }
+
   async submitApplication(customerId: bigint, body: any) {
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -540,14 +585,20 @@ export class CustomerService {
       );
     }
 
-    const dateStr = new Date().toISOString().slice(2, 10).replaceAll('-', '');
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const applicationNumber = `PL-APP-${dateStr}-${randomNum}`;
-
-    const application = await this.prisma.plApplication.create({
-      data: {
+    const activeApplication = await this.prisma.plApplication.findFirst({
+      where: {
         customerId,
-        applicationNumber,
+        status: PlApplicationStatus.DRAFT,
+      },
+    });
+
+    if (!activeApplication) {
+      throw new BadRequestException('No active draft application found to submit.');
+    }
+
+    const application = await this.prisma.plApplication.update({
+      where: { id: activeApplication.id },
+      data: {
         status: PlApplicationStatus.SUBMITTED,
         submittedAt: new Date(),
       },
@@ -563,7 +614,7 @@ export class CustomerService {
       },
     });
 
-    this.logger.log(`Application ${applicationNumber} submitted for customer ${customer.customerCode}.`);
+    this.logger.log(`Application ${application.applicationNumber} submitted for customer ${customer.customerCode}.`);
 
     return {
       success: true,
@@ -571,11 +622,11 @@ export class CustomerService {
       data: {
         customerId: customer.id.toString(),
         customerCode: customer.customerCode,
-        applicationNumber,
+        applicationNumber: application.applicationNumber,
         applicationId: application.id.toString(),
         status: 'APPLICATION_SUBMITTED',
         statusLabel: 'Under Final Approval',
-        submittedAt: new Date().toISOString(),
+        submittedAt: application.submittedAt?.toISOString(),
         estimatedReviewTimeHours: 24,
         customer: this.serializeCustomer(updatedCustomer),
       },
@@ -653,29 +704,26 @@ export class CustomerService {
 
       if (!customer) throw new NotFoundException('Customer not found.');
 
-      // 2. Resolve existing application or create new DRAFT
-      let application = customer.applications[0];
+      // 2. Resolve existing application
+      let application;
       if (body?.applicationId) {
         application = await tx.plApplication.findUnique({ where: { id: BigInt(body.applicationId) } }) as any;
         if (!application) throw new NotFoundException('Application not found');
         if (application.customerId !== customerId) {
           throw new ForbiddenException('Application ownership verification failed');
         }
-      } else if (!application || (application.status !== 'DRAFT' && application.status !== 'SUBMITTED' && application.status !== 'PLATFORM_REJECTED' && application.status !== 'ALLOCATION_PENDING')) {
-        const dateStr = new Date().toISOString().slice(2, 10).replaceAll('-', '');
-        const randomNum = Math.floor(1000 + Math.random() * 9000);
-        const applicationNumber = `PL-APP-${dateStr}-${randomNum}`;
-        application = await tx.plApplication.create({
-          data: {
+      } else {
+        application = await tx.plApplication.findFirst({
+          where: {
             customerId,
-            applicationNumber,
-            status: PlApplicationStatus.DRAFT,
-          }
-        });
-        await tx.customer.update({
-          where: { id: customerId },
-          data: { latestApplicationId: application.id }
-        });
+            status: { in: ['DRAFT', 'SUBMITTED', 'ALLOCATION_PENDING', 'LENDER_ALLOCATED', 'LENDER_REVIEW'] }
+          },
+          orderBy: { id: 'desc' }
+        }) as any;
+        
+        if (!application) {
+          throw new BadRequestException('No active application found to run eligibility.');
+        }
       }
 
       // If already PASS and LENDER_ALLOCATED, return idempotent response
@@ -700,13 +748,14 @@ export class CustomerService {
       }
 
       // 3. Resolve ACTIVE Platform Eligibility Policy
-      const platformProduct = await tx.platformProduct.findFirst({ where: { status: 'ACTIVE' } });
-      if (!platformProduct) throw new BadRequestException('Platform product not configured.');
+      if (!application.platformProductId) {
+        throw new BadRequestException('Canonical application is missing platformProductId.');
+      }
 
       const activePolicies = await tx.platformPolicy.findMany({
         where: { 
-          platformProductId: platformProduct.id,
-          scopeCode: 'PLATFORM_DEFAULT',
+          platformProductId: application.platformProductId,
+          scopeCode: application.scopeCode,
           operationalStatus: 'ACTIVE',
           versions: { some: { status: 'ACTIVE', effectiveFrom: { lte: new Date() } } }
         },
@@ -714,7 +763,7 @@ export class CustomerService {
       });
 
       if (activePolicies.length !== 1 || activePolicies[0].versions.length !== 1) {
-        throw new BadRequestException(`No unique active and effective policy found for platform product ${platformProduct.id} and scope PLATFORM_DEFAULT.`);
+        throw new BadRequestException(`No unique active and effective policy found for platform product ${application.platformProductId} and scope ${application.scopeCode}.`);
       }
       
       const policyVersion = activePolicies[0].versions[0];
@@ -844,7 +893,7 @@ export class CustomerService {
       // 7. Invoke MLM Allocation
       try {
          const activeMlmPolicies = await tx.mlmPolicy.findMany({
-            where: { platformProductId: platformProduct.id, operationalStatus: 'ACTIVE' },
+            where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
             include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
          });
 
@@ -852,9 +901,9 @@ export class CustomerService {
             const mlmVersion = activeMlmPolicies[0].versions[0];
             const mlmDto = {
                applicationReference: application.applicationNumber,
-               requestedAmount: 50000, // Hardcoded for now or fetch from body
+               requestedAmount: application.requestedAmount ? Number(application.requestedAmount) : 50000,
                platformDecisionOutcome: 'PASS',
-               platformProductId: platformProduct.id,
+               platformProductId: application.platformProductId,
                customerSegment: 'NEW'
             };
 

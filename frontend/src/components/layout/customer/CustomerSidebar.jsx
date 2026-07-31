@@ -63,6 +63,7 @@ export default function CustomerSidebar({ isOpen, onClose }) {
 
   const handleLogout = () => {
     sessionStorage.removeItem('customerSession');
+    sessionStorage.removeItem('customerAccessToken');
     navigate('/customer/login', { replace: true });
   };
 

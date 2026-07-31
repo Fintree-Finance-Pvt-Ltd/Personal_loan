@@ -4,11 +4,13 @@ import { LoanService } from './loan.service';
 import { ExternalApiModule } from '../external-api/external-api.module';
 import { EasebuzzAutocollectService } from '../../integrations/easebuzz-autocollect.service';
 
+import { ApplicationTransitionService } from './services/application-transition.service';
+
 @Module({
   imports: [ExternalApiModule],
   controllers: [LoanController],
-  providers: [LoanService, EasebuzzAutocollectService],
-  exports: [LoanService, EasebuzzAutocollectService],
+  providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService],
+  exports: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService],
 })
 export class LoanModule { }
 

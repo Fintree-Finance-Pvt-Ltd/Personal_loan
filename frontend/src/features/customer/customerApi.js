@@ -32,6 +32,7 @@ async function apiRequest(
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...(localStorage.getItem('customerAccessToken') ? { Authorization: `Bearer ${localStorage.getItem('customerAccessToken')}` } : {}),
         ...(options.headers || {}),
       },
     },
@@ -43,6 +44,13 @@ async function apiRequest(
     result = await response.json();
   } catch {
     result = null;
+  }
+
+  if (response.status === 401) {
+    localStorage.removeItem('customerAccessToken');
+    localStorage.removeItem('customerSession');
+    window.location.href = '/customer/sign-in';
+    throw new Error('Your session has expired. Please sign in again.');
   }
 
   if (!response.ok) {
@@ -57,6 +65,7 @@ async function apiRequest(
   if (result?.success === false) {
     throw new Error(
       extractApiMessage(
+
         result,
         'The request could not be completed.',
       ),
@@ -72,6 +81,7 @@ function extractApiMessage(
 ) {
   const message =
     result?.message ||
+    result?.error?.message ||
     result?.error ||
     result?.data?.message;
 
@@ -86,51 +96,26 @@ function extractApiMessage(
   return fallbackMessage;
 }
 
+export async function getCustomerMe() {
+  const result = await apiRequest(`/customer/me`, {
+    method: 'GET',
+  });
+  return result?.data?.data || result?.data || result;
+}
+
 export async function getCustomerById(customerId) {
   if (!customerId) {
     throw new Error('Customer ID is required.');
   }
 
-  const response = await fetch(
-    `/api/customer/${encodeURIComponent(String(customerId))}`,
-    {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-      },
-    },
-  );
+  const result = await apiRequest(`/customer/${encodeURIComponent(String(customerId))}`, {
+    method: 'GET',
+  });
 
-  let result = null;
-
-  try {
-    result = await response.json();
-  } catch {
-    result = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      result?.message ||
-        result?.error ||
-        result?.data?.message ||
-        'Unable to load customer details.',
-    );
-  }
-
-  const customer =
-    result?.data?.data ||
-    result?.data ||
-    result ||
-    null;
-
+  const customer = result?.data?.data || result?.data || result;
   if (!customer?.id) {
-    throw new Error(
-      'Customer details were not found in the response.',
-    );
+    throw new Error('Customer details were not found in the response.');
   }
-
   return customer;
 }
 
@@ -203,6 +188,15 @@ export async function updateBasicDetails(customerId, basicDetails) {
   return result?.data?.data || result?.data || result;
 }
 
+export async function resumeApplication(customerId, payload = {}) {
+  const result = await apiRequest(`/customer/resume-application`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  return result?.data?.data || result?.data || result;
+}
+
 export async function submitCustomerApplication(customerId, payload = {}) {
   if (!customerId) throw new Error('Customer ID is required.');
 
@@ -218,7 +212,7 @@ export async function submitCustomerApplication(customerId, payload = {}) {
 
 function getCustomerSession() {
   try {
-    return JSON.parse(sessionStorage.getItem('customerSession') || 'null');
+    return JSON.parse(localStorage.getItem('customerSession') || 'null');
   } catch {
     return null;
   }
@@ -260,12 +254,29 @@ export async function refreshCustomerAadhaarKycStatus() {
   return result?.data?.data || result?.data || result;
 }
 
+export async function runEligibility(customerId) {
+  const result = await apiRequest(`/customer/${customerId}/run-eligibility`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  return result;
+}
+
+export async function updatePincode(customerId, body) {
+  const result = await apiRequest(`/customer/${customerId}/pincode`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
   },
   getCustomerById,
   updateBasicDetails,
+  updatePincode,
   updateCustomerProfile,
   submitCustomerApplication,
   reverseGeocode,
@@ -274,6 +285,7 @@ export const customerApi = {
   initiateCustomerAadhaarKyc,
   getCustomerAadhaarKycStatus,
   refreshCustomerAadhaarKycStatus,
+  runEligibility,
 };
 
 

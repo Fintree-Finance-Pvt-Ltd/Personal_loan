@@ -53,7 +53,7 @@ export default function CustomerDashboard() {
   // Fetch backend customer data on mount or redirect if missing session
   useEffect(() => {
     if (!customerId) {
-      sessionStorage.removeItem('customerSession');
+      localStorage.removeItem('customerSession');
       navigate('/customer/login', { replace: true });
       return;
     }
@@ -500,7 +500,7 @@ export default function CustomerDashboard() {
 function getStoredSession() {
   try {
     return JSON.parse(
-      sessionStorage.getItem('customerSession') ||
+      localStorage.getItem('customerSession') ||
         'null',
     );
   } catch {
