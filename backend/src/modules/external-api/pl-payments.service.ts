@@ -954,19 +954,16 @@ export class PlPaymentsService {
   /**
    * Process the Easebuzz callback/webhook response.
    */
-  async handleEasebuzzWebhook(
-    body: any,
-    headers: any,
-  ) {
+  async handleEasebuzzWebhook(body: any, headers: any,) {
     try {
-      this.logger.log(
-        'Easebuzz webhook received.',
-      );
+      console.log(
+        'Easebuzz webhook received.', {
+        body,
+        headers,
+      });
 
       const data =
-        body?.data &&
-          typeof body.data ===
-          'object'
+        body?.data && typeof body.data === 'object'
           ? body.data
           : body;
 
@@ -991,30 +988,26 @@ export class PlPaymentsService {
         data?.id ||
         null;
 
-      const source = String(
-        data?.udf4 || '',
-      )
+      const source = String(data?.udf4 || '',)
         .trim()
         .toUpperCase();
 
-      if (
-        source &&
-        source !== 'LAP' &&
-        source !== 'PL'
+      if (source && source !== 'LAP' && source !== 'PL'
       ) {
         return {
           success: false,
-
           message:
             'Webhook ignored. Not a Personal Loan payment.',
-
           source,
         };
       }
 
+      /*
+ * Avoid reading a boolean API status such as:
+ * { status: true, data: {...} }
+ */
       const rawPaymentStatus =
-        typeof data?.status ===
-          'string'
+        typeof data?.status === 'string'
           ? data.status
           : data?.payment_status ||
           data?.transaction_status ||
@@ -1022,10 +1015,9 @@ export class PlPaymentsService {
           data?.state ||
           '';
 
-      const providerStatus =
-        String(rawPaymentStatus)
-          .trim()
-          .toLowerCase();
+      const providerStatus = String(rawPaymentStatus)
+        .trim()
+        .toLowerCase();
 
       const normalizedStatus =
         this.normalizeWebhookStatus(
@@ -1084,31 +1076,20 @@ export class PlPaymentsService {
         null;
 
       const webhookPayload = {
-        provider:
-          'easebuzz',
-
-        module:
-          'pl',
-
-        eventType:
-          'payment-webhook',
-
-        direction:
-          'inbound',
-
-        receivedAt:
-          new Date().toISOString(),
+        provider: 'easebuzz',
+        module: 'pl',
+        eventType: 'payment-webhook',
+        direction: 'inbound',
+        receivedAt: new Date().toISOString(),
 
         merchantTxn,
         easebuzzId,
-
         providerStatus,
         normalizedStatus,
 
-        customerId:
-          customerId
-            ? customerId.toString()
-            : null,
+        customerId: customerId
+          ? customerId.toString()
+          : null,
 
         applicationNumber,
         purpose,
@@ -1118,60 +1099,37 @@ export class PlPaymentsService {
         amount,
         paymentLink,
 
-        bankReferenceNumber:
-          data?.bank_ref_num ||
-          null,
-
-        authorizationReferenceNumber:
-          data?.auth_ref_num ||
-          null,
-
-        upiVirtualAddress:
-          data?.upi_va ||
-          null,
-
-        paymentSource:
-          data?.payment_source ||
-          null,
-
-        paymentGatewayType:
-          data?.PG_TYPE ||
-          null,
-
+        bankReferenceNumber: data?.bank_ref_num || null,
+        authorizationReferenceNumber: data?.auth_ref_num || null,
+        upiVirtualAddress: data?.upi_va || null,
+        paymentSource: data?.payment_source || null,
+        paymentGatewayType: data?.PG_TYPE || null,
         errorMessage,
-
-        udf1:
-          data?.udf1 || null,
-
-        udf2:
-          data?.udf2 || null,
-
-        udf3:
-          data?.udf3 || null,
-
-        udf4:
-          data?.udf4 || 'PL',
-
-        udf5:
-          data?.udf5 || null,
-
-        udf6:
-          data?.udf6 || null,
-
-        udf7:
-          data?.udf7 || null,
-
-        udf10:
-          data?.udf10 || null,
+        udf1: data?.udf1 || null,
+        udf2: data?.udf2 || null,
+        udf3: data?.udf3 || null,
+        udf4: data?.udf4 || 'PL',
+        udf5: data?.udf5 || null,
+        udf6: data?.udf6 || null,
+        udf7: data?.udf7 || null,
+        udf10: data?.udf10 || null,
 
         headers,
         body,
+        rawPayload: body,
+        rawBodyStr: typeof body === 'string' ? body : JSON.stringify(body),
       };
 
-      const rawWebhookResponse =
-        this.stringifyJson(
-          webhookPayload,
-        );
+      const rawWebhookResponse = this.stringifyJson(webhookPayload);
+
+      console.log('Easebuzz webhook mapped:', {
+        merchantTxn,
+        easebuzzId,
+        normalizedStatus,
+        applicationNumber,
+        amount,
+        errorMessage,
+      });
 
       const existingPayment =
         await (
@@ -1226,8 +1184,7 @@ export class PlPaymentsService {
         }
 
         if (email) {
-          updateData.email =
-            email;
+          updateData.email = email;
         }
 
         if (amount > 0) {
