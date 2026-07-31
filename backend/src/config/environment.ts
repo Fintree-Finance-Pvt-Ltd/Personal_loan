@@ -37,6 +37,7 @@ const schema = z
     ELECTRONIC_SIGN_REQUIRE_PUBLIC_IP: booleanString.default('false'),
     ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL: booleanString.default('true'),
     ELECTRONIC_SIGN_TIMEZONE: z.string().default('Asia/Kolkata'),
+    PL_WEBHOOK_SECRET: z.string().min(16).optional(),
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV !== 'production') return;

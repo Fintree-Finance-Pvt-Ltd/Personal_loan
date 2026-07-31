@@ -39,7 +39,7 @@ export class PlPaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   /**
    * Initialize Easebuzz Payment Gateway checkout.
@@ -86,8 +86,8 @@ export class PlPaymentsService {
         throw new BadRequestException('No application found for customer.');
       }
 
-      const amount = latestApp.assessmentFeeTotalAmount 
-        ? Number(latestApp.assessmentFeeTotalAmount) 
+      const amount = latestApp.assessmentFeeTotalAmount
+        ? Number(latestApp.assessmentFeeTotalAmount)
         : Number(body?.amount); // fallback for existing tests, though we should strictly use snapshot
 
       if (
@@ -228,9 +228,9 @@ export class PlPaymentsService {
       const actorId =
         actor?.id
           ? this.parsePositiveBigInt(
-              actor.id,
-              'Actor ID',
-            )
+            actor.id,
+            'Actor ID',
+          )
           : null;
 
       const rawRequest = {
@@ -321,7 +321,7 @@ export class PlPaymentsService {
             rawCreateResponse:
               this.stringifyJson(
                 initiatedPayment.rawResponse ||
-                  {},
+                {},
               ),
 
             createdBy:
@@ -379,27 +379,26 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Easebuzz iFrame initialization failed: ${
-          error?.message ||
-          'Unknown error'
+        `Easebuzz iFrame initialization failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
 
       if (
         error instanceof
-          BadRequestException ||
+        BadRequestException ||
         error instanceof
-          NotFoundException ||
+        NotFoundException ||
         error instanceof
-          BadGatewayException
+        BadGatewayException
       ) {
         throw error;
       }
 
       throw new BadGatewayException(
         error?.message ||
-          'Unable to initialize Easebuzz checkout.',
+        'Unable to initialize Easebuzz checkout.',
       );
     }
   }
@@ -521,16 +520,16 @@ export class PlPaymentsService {
             data: {
               status:
                 existingPayment.status ===
-                'PROCESSING'
+                  'PROCESSING'
                   ? 'PROCESSING'
                   : 'SENT',
 
               updatedBy:
                 actor?.id
                   ? this.parsePositiveBigInt(
-                      actor.id,
-                      'Actor ID',
-                    )
+                    actor.id,
+                    'Actor ID',
+                  )
                   : null,
             },
           });
@@ -591,10 +590,10 @@ export class PlPaymentsService {
 
         description:
           typeof body?.description ===
-          'string'
+            'string'
             ? body.description
-                .trim()
-                .slice(0, 255)
+              .trim()
+              .slice(0, 255)
             : null,
       };
 
@@ -649,9 +648,8 @@ export class PlPaymentsService {
         );
       } catch (error: any) {
         this.logger.error(
-          `Easebuzz EasyCollect link creation failed for ${txnid}: ${
-            error?.message ||
-            'Unknown error'
+          `Easebuzz EasyCollect link creation failed for ${txnid}: ${error?.message ||
+          'Unknown error'
           }`,
           error?.stack,
         );
@@ -672,9 +670,9 @@ export class PlPaymentsService {
       const actorId =
         actor?.id
           ? this.parsePositiveBigInt(
-              actor.id,
-              'Actor ID',
-            )
+            actor.id,
+            'Actor ID',
+          )
           : null;
 
       const createdPayment =
@@ -760,27 +758,26 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Create payment link failed: ${
-          error?.message ||
-          'Unknown error'
+        `Create payment link failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
 
       if (
         error instanceof
-          BadRequestException ||
+        BadRequestException ||
         error instanceof
-          NotFoundException ||
+        NotFoundException ||
         error instanceof
-          BadGatewayException
+        BadGatewayException
       ) {
         throw error;
       }
 
       throw new BadGatewayException(
         error?.message ||
-          'Create payment link failed.',
+        'Create payment link failed.',
       );
     }
   }
@@ -805,9 +802,9 @@ export class PlPaymentsService {
       const transactionId =
         String(
           body?.transactionId ||
-            body?.txnid ||
-            body?.merchantTxn ||
-            '',
+          body?.txnid ||
+          body?.merchantTxn ||
+          '',
         ).trim();
 
       const paymentIdInput =
@@ -873,16 +870,16 @@ export class PlPaymentsService {
 
             ...(paymentId
               ? {
-                  id:
-                    paymentId,
-                }
+                id:
+                  paymentId,
+              }
               : {}),
 
             ...(transactionId
               ? {
-                  txnid:
-                    transactionId,
-                }
+                txnid:
+                  transactionId,
+              }
               : {}),
           },
 
@@ -932,25 +929,24 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Get payment status failed: ${
-          error?.message ||
-          'Unknown error'
+        `Get payment status failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
 
       if (
         error instanceof
-          BadRequestException ||
+        BadRequestException ||
         error instanceof
-          NotFoundException
+        NotFoundException
       ) {
         throw error;
       }
 
       throw new BadGatewayException(
         error?.message ||
-          'Unable to get payment status.',
+        'Unable to get payment status.',
       );
     }
   }
@@ -969,7 +965,7 @@ export class PlPaymentsService {
 
       const data =
         body?.data &&
-        typeof body.data ===
+          typeof body.data ===
           'object'
           ? body.data
           : body;
@@ -1018,13 +1014,13 @@ export class PlPaymentsService {
 
       const rawPaymentStatus =
         typeof data?.status ===
-        'string'
+          'string'
           ? data.status
           : data?.payment_status ||
-            data?.transaction_status ||
-            data?.unmappedstatus ||
-            data?.state ||
-            '';
+          data?.transaction_status ||
+          data?.unmappedstatus ||
+          data?.state ||
+          '';
 
       const providerStatus =
         String(rawPaymentStatus)
@@ -1047,8 +1043,8 @@ export class PlPaymentsService {
       const purpose =
         this.normalizePurpose(
           data?.udf3 ||
-            data?.productinfo ||
-            'PROCESSING_FEE',
+          data?.productinfo ||
+          'PROCESSING_FEE',
         );
 
       const customerName =
@@ -1154,7 +1150,7 @@ export class PlPaymentsService {
           data?.udf3 || null,
 
         udf4:
-          data?.udf4 || null,
+          data?.udf4 || 'PL',
 
         udf5:
           data?.udf5 || null,
@@ -1202,7 +1198,7 @@ export class PlPaymentsService {
           PlPaymentStatus =
           existingPayment.status ===
             'SUCCESS' &&
-          normalizedStatus !==
+            normalizedStatus !==
             'SUCCESS'
             ? 'SUCCESS'
             : normalizedStatus;
@@ -1246,7 +1242,7 @@ export class PlPaymentsService {
 
         if (
           nextStatus ===
-            'SUCCESS' &&
+          'SUCCESS' &&
           !existingPayment.paidAt
         ) {
           updateData.paidAt =
@@ -1336,7 +1332,7 @@ export class PlPaymentsService {
 
             paidAt:
               normalizedStatus ===
-              'SUCCESS'
+                'SUCCESS'
                 ? new Date()
                 : null,
           },
@@ -1364,9 +1360,8 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Easebuzz webhook processing failed: ${
-          error?.message ||
-          'Unknown error'
+        `Easebuzz webhook processing failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
@@ -1400,14 +1395,14 @@ export class PlPaymentsService {
     return {
       paymentId:
         payment?.id !== undefined &&
-        payment?.id !== null
+          payment?.id !== null
           ? payment.id.toString()
           : null,
 
       customerId:
         payment?.customerId !==
           undefined &&
-        payment?.customerId !==
+          payment?.customerId !==
           null
           ? payment.customerId.toString()
           : null,
@@ -1443,10 +1438,10 @@ export class PlPaymentsService {
       amount:
         payment?.amount !==
           undefined &&
-        payment?.amount !== null
+          payment?.amount !== null
           ? Number(
-              payment.amount,
-            )
+            payment.amount,
+          )
           : null,
 
       status,
@@ -1489,7 +1484,7 @@ export class PlPaymentsService {
     const normalizedValue =
       String(
         value ||
-          'PROCESSING_FEE',
+        'PROCESSING_FEE',
       )
         .trim()
         .toUpperCase();
@@ -1510,7 +1505,7 @@ export class PlPaymentsService {
     const normalizedValue =
       String(
         value ||
-          'CREATED',
+        'CREATED',
       )
         .trim()
         .toUpperCase();
@@ -1706,7 +1701,7 @@ export class PlPaymentsService {
       where: {
         OR: [
           { txnid: searchTxn },
-          ...( /^\d+$/.test(searchTxn) ? [{ customerId: BigInt(searchTxn) }] : [] ),
+          ...(/^\d+$/.test(searchTxn) ? [{ customerId: BigInt(searchTxn) }] : []),
         ],
       },
       orderBy: { id: 'desc' },

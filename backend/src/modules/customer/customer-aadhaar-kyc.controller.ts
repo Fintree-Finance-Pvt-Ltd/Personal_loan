@@ -2,9 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -75,9 +75,28 @@ export class CustomerAadhaarKycController {
     `;
   }
 
+  /**
+   * POST /api/customer/aadhaar-kyc/digilocker/webhook
+   *
+   * Receives forwarded DigiLocker webhook from the LMS Digitap forwarder.
+   * Requires:
+   *   x-pl-webhook-secret  — must match PL_WEBHOOK_SECRET in .env
+   *   x-webhook-source     — must be "lms-digitap-forwarder"
+   *   x-digitap-unique-id  — the DLK_CUS-... unique ID (forwarded by LMS)
+   */
   @Public()
   @Post('webhook')
-  async handleWebhook(@Body() payload: any) {
-    return this.kycService.handleWebhook(payload);
+  async handleDigitapWebhook(
+    @Body() payload: Record<string, any>,
+    @Headers('x-pl-webhook-secret') webhookSecret?: string,
+    @Headers('x-webhook-source') webhookSource?: string,
+    @Headers('x-digitap-unique-id') forwardedUniqueId?: string,
+  ) {
+    return this.kycService.handleForwardedWebhook({
+      payload,
+      webhookSecret,
+      webhookSource,
+      forwardedUniqueId,
+    });
   }
 }

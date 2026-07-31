@@ -13,7 +13,7 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 
 async function bootstrap(): Promise<void> {
-  
+
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const config = app.get(ConfigService);
   const logger = new Logger("UserService");
@@ -29,7 +29,22 @@ async function bootstrap(): Promise<void> {
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
   app.enableCors({
-    origin: true,
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow requests with no origin (like mobile apps, curl, or same-origin)
+      if (!origin) return callback(null, true);
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'https://pl-fintree-uat.fintreelms.com',
+        'https://pl-fintree-uat.fintreelms.com/api'
+      ];
+      if (allowedOrigins.includes(origin) || origin.endsWith('.localhost')) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin'],
