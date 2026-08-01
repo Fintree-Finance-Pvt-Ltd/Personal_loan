@@ -4,7 +4,11 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { CustomerGender } from '@prisma/client';
+import { CustomerGender, PlDocumentStatus, PlDocumentType } from '@prisma/client';
+import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
@@ -321,7 +325,7 @@ export class CustomerAadhaarKycService {
     const previousStatus = kycRecord.aadhaarStatus;
 
     // ── 8. Idempotency: VERIFIED is final ─────────────────────────────────────
-    if (previousStatus === 'VERIFIED' && customer.aadhaarVerified) {
+    if (previousStatus === 'VERIFIED' && customer.aadhaarVerified && !isSuccess) {
       this.logger.log({
         event: 'AADHAAR_KYC_WEBHOOK_DUPLICATE',
         uniqueId,
@@ -426,6 +430,16 @@ export class CustomerAadhaarKycService {
             .trim() || JSON.stringify(data.address)
           : null;
 
+      // Persist the provider-hosted signed XML and DigiLocker PDF before their
+      // temporary URLs expire. Existing records are updated idempotently.
+      await this.storeDigitapDocuments(
+        customer.id,
+        transactionId,
+        data,
+        aadhaarAddressStr,
+        addr,
+      );
+
       // Full webhook payload JSON string (sanitized of unmasked 12-digit numbers for compliance)
       const sanitizedPayload = this.sanitizePayloadForStorage(providerResponse);
       const fullWebhookPayloadStr = JSON.stringify(sanitizedPayload);
@@ -464,6 +478,9 @@ export class CustomerAadhaarKycService {
             aadhaarLastFourDigits: aadhaarLastFour,
             aadhaarVerifiedAt: new Date(),
             digilockerVerifiedAt: new Date(),
+            residentialPincode: addr.pc ? String(addr.pc).slice(0, 6) : undefined,
+            residentialCity: (addr.vtc || addr.po || addr.dist) ? String(addr.vtc || addr.po || addr.dist) : undefined,
+            residentialState: addr.state ? String(addr.state) : undefined,
             // Only update fullName from Aadhaar if it is currently null
             ...(fullName && !customer.fullName ? { fullName } : {}),
           },
@@ -596,6 +613,77 @@ export class CustomerAadhaarKycService {
    * Normalizes provider details and updates Customer record atomically.
    * Used by manual refresh flow.
    */
+  private async storeDigitapDocuments(
+    customerId: bigint,
+    transactionId: string,
+    providerData: any,
+    formattedAddress: string | null,
+    address: any,
+  ): Promise<void> {
+    const files = Array.isArray(providerData?.digilockerFiles)
+      ? providerData.digilockerFiles
+      : Array.isArray(providerData?.digilockerFileInfos) ? providerData.digilockerFileInfos : [];
+    const xml = files.find((item: any) => String(item?.docExtension || '').toLowerCase() === 'xml');
+    const pdf = files.find((item: any) => String(item?.docExtension || '').toLowerCase() === 'pdf');
+    const documents = [
+      { type: PlDocumentType.OTHER, extension: 'xml', mimeType: 'application/xml', source: xml?.docLink || providerData?.xmlLink || providerData?.xmlResponse || null },
+      { type: PlDocumentType.AADHAAR_CARD, extension: 'pdf', mimeType: 'application/pdf', source: pdf?.docLink || providerData?.pdfLink || null },
+    ];
+    const now = new Date();
+    const relativeDir = path.join('uploads', 'customer-documents', 'digilocker', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'));
+    const targetDir = path.join(process.cwd(), relativeDir);
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    for (const document of documents) {
+      if (!document.source) continue;
+      try {
+        const buffer = await this.resolveDigitapDocument(document.source, document.extension);
+        if (!buffer.length || buffer.length > 10 * 1024 * 1024) continue;
+        const fileName = `digilocker-${transactionId}-${randomBytes(4).toString('hex')}.${document.extension}`;
+        const filePath = path.join(targetDir, fileName);
+        const fileUrl = `/${relativeDir.replace(/\\/g, '/')}/${fileName}`;
+        fs.writeFileSync(filePath, buffer);
+
+        const existing = await this.prisma.plCustomerDocument.findFirst({
+          where: { customerId, documentType: document.type, source: 'DIGITAP_DIGILOCKER', metadataJson: { contains: `\"extension\":\"${document.extension}\"` } },
+        });
+        const record = {
+          documentType: document.type,
+          applicantType: 'BORROWER',
+          status: PlDocumentStatus.VERIFIED,
+          fileName,
+          originalFileName: document.extension === 'pdf' ? 'DIGILOCKER_PDF.pdf' : 'AADHAAR.xml',
+          filePath,
+          fileUrl,
+          mimeType: document.mimeType,
+          fileSize: buffer.length,
+          source: 'DIGITAP_DIGILOCKER',
+          formattedAddress,
+          city: address?.vtc || address?.po || address?.dist || null,
+          state: address?.state || null,
+          country: address?.country || 'India',
+          postalCode: address?.pc ? String(address.pc) : null,
+          metadataJson: JSON.stringify({ provider: 'DIGITAP', transactionId, extension: document.extension }),
+        };
+        if (existing) await this.prisma.plCustomerDocument.update({ where: { id: existing.id }, data: record });
+        else await this.prisma.plCustomerDocument.create({ data: { customerId, ...record } });
+      } catch (error: any) {
+        this.logger.error(`Failed to store DigiLocker ${document.extension.toUpperCase()}: ${error?.message}`);
+      }
+    }
+  }
+
+  private async resolveDigitapDocument(source: string, extension: string): Promise<Buffer> {
+    if (source.startsWith('https://') || source.startsWith('http://')) {
+      const url = new URL(source);
+      if (['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254'].includes(url.hostname)) throw new BadRequestException('Invalid DigiLocker document URL.');
+      const response = await axios.get(source, { responseType: 'arraybuffer', timeout: 15000, maxContentLength: 10 * 1024 * 1024 });
+      return Buffer.from(response.data);
+    }
+    if (extension === 'xml' && source.trim().startsWith('<?xml')) return Buffer.from(source, 'utf8');
+    return Buffer.from(source.replace(/^data:[^;]+;base64,/, ''), 'base64');
+  }
+
   private async processAndPersistVerifiedDetails(customerId: bigint, providerResponse: any) {
     const model = providerResponse?.model || providerResponse?.data || providerResponse;
     const aadhaarData = model?.aadhaarData || model?.kycData || model?.data || model;
