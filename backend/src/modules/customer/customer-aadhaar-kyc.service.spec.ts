@@ -4,6 +4,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 describe('CustomerAadhaarKycService', () => {
   let service: CustomerAadhaarKycService;
@@ -30,6 +31,11 @@ describe('CustomerAadhaarKycService', () => {
         findFirst: jest.fn(),
         update: jest.fn(),
       },
+      kycVerificationStatus: {
+        upsert: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
     };
 
     digitapService = {
@@ -42,6 +48,7 @@ describe('CustomerAadhaarKycService', () => {
         CustomerAadhaarKycService,
         { provide: PrismaService, useValue: prisma },
         { provide: DigitapDigilockerService, useValue: digitapService },
+        { provide: AuditLogsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: ConfigService,
           useValue: {

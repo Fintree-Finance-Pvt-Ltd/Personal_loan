@@ -3,9 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
-import { timingSafeEqual } from 'node:crypto';
 import { CustomerGender } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
@@ -242,45 +240,39 @@ export class CustomerAadhaarKycService {
    * - Never stores full Aadhaar number, OTP, PDF, XML
    * - Fully idempotent: VERIFIED is final
    */
-  async handleForwardedWebhook(input: {
-    payload: Record<string, any>;
-    webhookSecret?: string;
-    webhookSource?: string;
-    forwardedUniqueId?: string;
-  }): Promise<Record<string, any>> {
+  async handleDigitapWebhook(payload: any): Promise<Record<string, any>> {
     // ── 1. Validate forwarding secret ──────────────────────────────────────────
-    this.validateWebhookSecret(input.webhookSecret);
-
     // ── 2. Validate source ────────────────────────────────────────────────────
-    if (input.webhookSource && input.webhookSource !== 'lms-digitap-forwarder') {
-      throw new UnauthorizedException('Invalid webhook source.');
-    }
-
     // ── 3. Extract payload components ─────────────────────────────────────────
-    const payload = input.payload || {};
-    const data =
+    payload = payload || {};
+    let data =
       payload.data && typeof payload.data === 'object' ? (payload.data as Record<string, any>) : {};
 
     const uniqueId: string | null =
       (data.uniqueId as string | undefined) ||
       (payload.uniqueId as string | undefined) ||
       (payload.model?.uniqueId as string | undefined) ||
-      input.forwardedUniqueId ||
       null;
 
     const transactionId: string | null =
       (payload.transactionId as string | undefined) ||
+      (data.transactionId as string | undefined) ||
       (payload.model?.transactionId as string | undefined) ||
       null;
 
     // ── 4. Verify uniqueId belongs to PL ──────────────────────────────────────
-    if (!uniqueId || !String(uniqueId).startsWith('DLK_CUS-')) {
-      throw new BadRequestException('Webhook does not belong to Personal Loan.');
+    if (!transactionId) {
+      this.logger.warn('Digitap DigiLocker webhook ignored: missing transactionId');
+      return {
+        success: true,
+        message: 'Webhook ignored because transactionId is missing.',
+        data: { processed: false },
+      };
     }
 
     // ── 5. Safe structured log ──────────────────────────────────────────────────
     this.logger.log(
-      `📥 [Aadhaar Webhook Received] TxID: ${transactionId}, UniqueID: ${uniqueId}, Status: ${payload.status || 'N/A'}, Source: ${input.webhookSource || 'DIRECT'}`,
+      `[Aadhaar Webhook Received] TxID: ${transactionId}, Status: ${payload.status || 'N/A'}, Source: DIRECT_DIGITAP`,
     );
 
     this.logger.log({
@@ -293,11 +285,12 @@ export class CustomerAadhaarKycService {
     });
 
     // ── 6. Normalise provider status ──────────────────────────────────────────
-    const normalizedStatus = String(payload.status || '')
+    const rawStatus = payload.status || data.status || payload.model?.status || payload.code || '';
+    const normalizedStatus = String(rawStatus)
       .trim()
       .toUpperCase();
 
-    const isSuccess = ['SUCCESS', 'VERIFIED', 'COMPLETED'].includes(normalizedStatus);
+    const isSuccess = ['S', 'SUCCESS', 'SUCCESSFUL', 'VERIFIED', 'COMPLETED', '200'].includes(normalizedStatus);
     const isPending = ['PENDING', 'INITIATED', 'IN_PROGRESS'].includes(normalizedStatus);
     const isExpired = ['EXPIRED', 'TIMEOUT'].includes(normalizedStatus);
     const isFailure =
@@ -306,10 +299,7 @@ export class CustomerAadhaarKycService {
     // ── 7. Find the KYC attempt via stored uniqueId or transactionId ─────────────
     const kycRecord = await this.prisma.kycVerificationStatus.findFirst({
       where: {
-        OR: [
-          ...(uniqueId ? [{ aadhaarUniqueId: String(uniqueId) }] : []),
-          ...(transactionId ? [{ aadhaarTransactionId: String(transactionId) }] : []),
-        ],
+        aadhaarTransactionId: String(transactionId),
       },
       include: { customer: true },
     });
@@ -347,6 +337,43 @@ export class CustomerAadhaarKycService {
 
     // ── 9. Success path ───────────────────────────────────────────────────────
     if (isSuccess) {
+      // Never trust a success webhook by itself. Fetch the authoritative result
+      // from Digitap and bind it to the exact UID stored for this attempt.
+      let providerResponse: any;
+      try {
+        providerResponse = await this.digitapService.getDigitapDigilockerDetails(transactionId);
+      } catch (error: any) {
+        this.logger.error(`Authoritative DigiLocker verification failed for TxID ${transactionId}: ${error?.message}`);
+        return {
+          success: true,
+          message: 'Webhook acknowledged; provider verification is pending.',
+          data: { transactionId, processed: false },
+        };
+      }
+
+      const providerModel = providerResponse?.model || providerResponse?.data || providerResponse || {};
+      const providerData = providerModel?.aadhaarData || providerModel?.kycData || providerModel?.data || providerModel;
+      const authoritativeUniqueId = String(providerData?.uniqueId || providerData?.uid || '').trim();
+      const authoritativeStatus = String(providerData?.status || providerModel?.status || providerResponse?.status || '').trim().toUpperCase();
+
+      if (!authoritativeUniqueId || authoritativeUniqueId !== String(kycRecord.aadhaarUniqueId || '') || !authoritativeUniqueId.startsWith('DLK_CUS-')) {
+        this.logger.warn(`Digitap DigiLocker uniqueId mismatch for TxID ${transactionId}`);
+        return {
+          success: true,
+          message: 'Webhook acknowledged but authoritative attempt validation failed.',
+          data: { transactionId, processed: false },
+        };
+      }
+
+      if (!['S', 'SUCCESS', 'SUCCESSFUL', 'VERIFIED', 'COMPLETED', '200'].includes(authoritativeStatus)) {
+        return {
+          success: true,
+          message: 'Webhook acknowledged; authoritative KYC is not successful.',
+          data: { transactionId, processed: false, status: authoritativeStatus || 'UNKNOWN' },
+        };
+      }
+
+      data = providerData;
       // Extract permitted fields only — never full Aadhaar
       const maskedAadhaar: string | null =
         (data.maskedAdharNumber as string | undefined) ||
@@ -400,7 +427,7 @@ export class CustomerAadhaarKycService {
           : null;
 
       // Full webhook payload JSON string (sanitized of unmasked 12-digit numbers for compliance)
-      const sanitizedPayload = this.sanitizePayloadForStorage(payload);
+      const sanitizedPayload = this.sanitizePayloadForStorage(providerResponse);
       const fullWebhookPayloadStr = JSON.stringify(sanitizedPayload);
 
       // Atomic transaction
@@ -458,7 +485,7 @@ export class CustomerAadhaarKycService {
             maskedAadhaar,
             transactionId,
             uniqueId,
-            webhookSource: input.webhookSource,
+            webhookSource: 'DIRECT_DIGITAP',
           },
           requestId: `webhook-${transactionId || uniqueId}`,
         })
@@ -506,8 +533,8 @@ export class CustomerAadhaarKycService {
         data: {
           aadhaarStatus: 'FAILED',
           aadhaarTransactionId: transactionId,
-          aadhaarApiResponse: JSON.stringify(payload),
-          aadhaarWebhookResponse: JSON.stringify(payload),
+          aadhaarApiResponse: JSON.stringify(this.sanitizePayloadForStorage(payload)),
+          aadhaarWebhookResponse: JSON.stringify(this.sanitizePayloadForStorage(payload)),
         },
       });
 
@@ -564,33 +591,6 @@ export class CustomerAadhaarKycService {
   // ─────────────────────────────────────────────────────────────────────────────
   // PRIVATE HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Timing-safe webhook secret validation.
-   */
-  private validateWebhookSecret(suppliedSecret?: string): void {
-    const expectedSecret = this.config.get<string>('PL_WEBHOOK_SECRET');
-
-    if (!expectedSecret) {
-      // PL_WEBHOOK_SECRET not configured — reject all webhook calls
-      throw new UnauthorizedException('Webhook endpoint is not configured.');
-    }
-
-    if (!suppliedSecret) {
-      throw new UnauthorizedException('Webhook secret is missing.');
-    }
-
-    const suppliedBuffer = Buffer.from(suppliedSecret);
-    const expectedBuffer = Buffer.from(expectedSecret);
-
-    if (suppliedBuffer.length !== expectedBuffer.length) {
-      throw new UnauthorizedException('Invalid webhook secret.');
-    }
-
-    if (!timingSafeEqual(suppliedBuffer, expectedBuffer)) {
-      throw new UnauthorizedException('Invalid webhook secret.');
-    }
-  }
 
   /**
    * Normalizes provider details and updates Customer record atomically.
