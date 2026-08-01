@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { doCustomerLogout } from '../../../features/customer/customerApi';
 
 const menuItems = [
   {
@@ -61,9 +62,8 @@ export default function CustomerSidebar({ isOpen, onClose }) {
     location.pathname.startsWith('/customer/loan/') &&
     location.pathname.endsWith('/post-approval');
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('customerSession');
-    sessionStorage.removeItem('customerAccessToken');
+  const handleLogout = async () => {
+    await doCustomerLogout();
     navigate('/customer/login', { replace: true });
   };
 

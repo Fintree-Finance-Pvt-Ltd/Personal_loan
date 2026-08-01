@@ -433,7 +433,7 @@ model LenderProduct {
   updatedAt   DateTime @updatedAt
 
   lender                 Lender                  @relation(fields: [lenderId], references: [id], onDelete: Restrict)
-  platformProduct        PlatformProduct        @relation(fields: [platformProductId], references: [id], onDelete: Restrict)
+  platformProduct        PlatformProduct         @relation(fields: [platformProductId], references: [id], onDelete: Restrict)
   createdBy              User                    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy              User                    @relation("ProductUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
   versions               LenderProductVersion[]
@@ -442,7 +442,6 @@ model LenderProduct {
   mlmAllocationDecisions MlmAllocationDecision[]
 
   @@unique([lenderId, code])
-  
   @@index([platformProductId, operationalStatus])
   @@index([lenderId, operationalStatus])
 }
@@ -957,11 +956,13 @@ model PlatformPolicyRule {
 
 enum PlPaymentPurpose {
   PROCESSING_FEE
+  ASSESSMENT_FEE
   OTHER
 }
 
 enum PlPaymentStatus {
   CREATED
+  INITIATED
   SENT
   SUCCESS
   FAILED
@@ -1091,6 +1092,7 @@ enum PlApplicationStatus {
   LENDER_REVIEW
   LENDER_APPROVED
   LENDER_REJECTED
+  ASSESSMENT_FEE_PAID
 }
 
 enum PlLoanStatus {
@@ -1117,23 +1119,26 @@ model PlApplication {
 
   applicationNumber String              @unique @map("application_number") @db.VarChar(50)
   status            PlApplicationStatus @default(DRAFT)
-  
-  platformProductId String?             @map("platform_product_id") @db.VarChar(50)
-  scopeCode         String              @default("PLATFORM_DEFAULT") @map("scope_code") @db.VarChar(60)
-  requestedAmount   Decimal?            @map("requested_amount") @db.Decimal(15, 2)
-  requestedTenure   Int?                @map("requested_tenure")
 
-  lenderCode        String?             @map("lender_code") @db.VarChar(30)
+  platformProductId String?          @map("platform_product_id") @db.VarChar(50)
+  platformProduct   PlatformProduct? @relation(fields: [platformProductId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  scopeCode       String?  @map("scope_code") @db.VarChar(60)
+  requestedAmount Decimal? @map("requested_amount") @db.Decimal(15, 2)
+  requestedTenure Int?     @map("requested_tenure")
+
+  lenderCode String? @map("lender_code") @db.VarChar(30)
 
   submittedAt          DateTime? @map("submitted_at") @db.DateTime(0)
+  platformDecisionAt   DateTime? @map("platform_decision_at") @db.DateTime(0)
   lenderDecisionAt     DateTime? @map("lender_decision_at") @db.DateTime(0)
   lenderDecisionReason String?   @map("lender_decision_reason") @db.VarChar(500)
   approvedAmount       Decimal?  @map("approved_amount") @db.Decimal(15, 2)
 
   // ── BRE & Allocation Snapshots ──────────────────────────────────────────
-  platformDecisionOutcome     String?   @map("platform_decision_outcome") @db.VarChar(30)
-  platformEvaluationReference String?   @map("platform_evaluation_reference") @db.VarChar(100)
-  platformPolicyVersionId     String?   @map("platform_policy_version_id") @db.VarChar(50)
+  platformDecisionOutcome     String? @map("platform_decision_outcome") @db.VarChar(30)
+  platformEvaluationReference String? @map("platform_evaluation_reference") @db.VarChar(100)
+  platformPolicyVersionId     String? @map("platform_policy_version_id") @db.VarChar(50)
 
   mlmAllocationDecisionId  String?   @map("mlm_allocation_decision_id") @db.VarChar(50)
   mlmPolicyId              String?   @map("mlm_policy_id") @db.VarChar(50)
@@ -1143,11 +1148,11 @@ model PlApplication {
   productStrategyVersionId String?   @map("product_strategy_version_id") @db.VarChar(50)
   allocatedAt              DateTime? @map("allocated_at") @db.DateTime(0)
 
-  assessmentFeeBaseAmount  Decimal?  @map("assessment_fee_base_amount") @db.Decimal(15, 2)
-  assessmentFeeGstRate     Decimal?  @map("assessment_fee_gst_rate") @db.Decimal(5, 2)
-  assessmentFeeGstAmount   Decimal?  @map("assessment_fee_gst_amount") @db.Decimal(15, 2)
-  assessmentFeeTotalAmount Decimal?  @map("assessment_fee_total_amount") @db.Decimal(15, 2)
-  assessmentFeeCurrency    String?   @default("INR") @map("assessment_fee_currency") @db.VarChar(10)
+  assessmentFeeBaseAmount  Decimal? @map("assessment_fee_base_amount") @db.Decimal(15, 2)
+  assessmentFeeGstRate     Decimal? @map("assessment_fee_gst_rate") @db.Decimal(5, 2)
+  assessmentFeeGstAmount   Decimal? @map("assessment_fee_gst_amount") @db.Decimal(15, 2)
+  assessmentFeeTotalAmount Decimal? @map("assessment_fee_total_amount") @db.Decimal(15, 2)
+  assessmentFeeCurrency    String?  @default("INR") @map("assessment_fee_currency") @db.VarChar(10)
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
@@ -1267,10 +1272,10 @@ model PlLoan {
   esignInitiatedAt   DateTime? @map("esign_initiated_at") @db.DateTime(0)
   esignCompletedAt   DateTime? @map("esign_completed_at") @db.DateTime(0)
 
-  electronicSignStatus        PlElectronicSignStatus?       @map("electronic_sign_status")
-  electronicSignReference     String?                       @map("electronic_sign_reference") @db.VarChar(120)
-  electronicSignedAt          DateTime?                     @map("electronic_signed_at") @db.DateTime(0)
-  acceptedAgreementDocumentId BigInt?                       @map("accepted_agreement_document_id") @db.UnsignedBigInt
+  electronicSignStatus        PlElectronicSignStatus? @map("electronic_sign_status")
+  electronicSignReference     String?                 @map("electronic_sign_reference") @db.VarChar(120)
+  electronicSignedAt          DateTime?               @map("electronic_signed_at") @db.DateTime(0)
+  acceptedAgreementDocumentId BigInt?                 @map("accepted_agreement_document_id") @db.UnsignedBigInt
 
   // ── Disbursal ─────────────────────────────────────────────────────────
   disbursalStatus      String?   @map("disbursal_status") @db.VarChar(30)
@@ -1350,8 +1355,8 @@ model PlLoanMandate {
   provider    PlMandateProvider @default(EASEBUZZ)
   mandateType PlMandateType     @map("mandate_type")
 
-  merchantTransactionId String    @unique(map: "uk_pl_loan_mandate_transaction") @map("merchant_transaction_id") @db.VarChar(40)
-  providerMandateId     String?   @unique(map: "uk_pl_loan_mandate_provider_id") @map("provider_mandate_id") @db.VarChar(255)
+  merchantTransactionId String  @unique(map: "uk_pl_loan_mandate_transaction") @map("merchant_transaction_id") @db.VarChar(40)
+  providerMandateId     String? @unique(map: "uk_pl_loan_mandate_provider_id") @map("provider_mandate_id") @db.VarChar(255)
 
   accessKey          String?   @map("access_key") @db.VarChar(500)
   accessKeyExpiresAt DateTime? @map("access_key_expires_at") @db.DateTime(0)
@@ -1488,8 +1493,8 @@ model MlmPolicy {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  createdBy       User             @relation("MlmPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy       User             @relation("MlmPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  createdBy       User            @relation("MlmPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy       User            @relation("MlmPolicyUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
   platformProduct PlatformProduct @relation(fields: [platformProductId], references: [id], onDelete: Restrict)
 
   versions  MlmPolicyVersion[]
@@ -1530,10 +1535,10 @@ model MlmPolicyVersion {
 
   policy MlmPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
 
-  routes    MlmAllocationRoute[]
+  routes      MlmAllocationRoute[]
   routeStates MlmAllocationRouteState[]
-  decisions MlmAllocationDecision[]
-  attempts  MlmAllocationAttempt[]
+  decisions   MlmAllocationDecision[]
+  attempts    MlmAllocationAttempt[]
 
   createdBy   User  @relation("MlmPolicyVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy   User  @relation("MlmPolicyVersionUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
@@ -1576,7 +1581,7 @@ model MlmAllocationRoute {
   lender        Lender           @relation(fields: [lenderId], references: [id], onDelete: Restrict)
   product       LenderProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
 
-  decisions MlmAllocationDecision[]
+  decisions  MlmAllocationDecision[]
   routeState MlmAllocationRouteState?
 
   @@unique([mlmPolicyVersionId, lenderId, productId, customerSegment])
@@ -1628,7 +1633,7 @@ model MlmAllocationDecision {
   platformPolicyVersionId     String?
   platformEvaluationReference String?
 
-  requestedAmount         Decimal               @db.Decimal(12, 2)
+  requestedAmount         Decimal?              @db.Decimal(12, 2)
   customerSegment         MlmCustomerSegment
   platformDecisionOutcome PolicyDecisionOutcome
 
@@ -1672,7 +1677,7 @@ model MlmAllocationAttempt {
   attemptNumber Int
   outcome       MlmAllocationAttemptOutcome
 
-  requestedAmount  Decimal @db.Decimal(12, 2)
+  requestedAmount  Decimal? @db.Decimal(12, 2)
   candidateResults Json
   selectedRouteId  String?
   reasonCode       String? @db.VarChar(100)
@@ -1710,6 +1715,7 @@ model PlatformProduct {
   lenderProducts LenderProduct[]
   mlmPolicies    MlmPolicy[]
   mlmDecisions   MlmAllocationDecision[]
+  applications   PlApplication[]
 
   @@index([status, name])
 }
@@ -1718,22 +1724,23 @@ model MlmAllocationRouteState {
   id String @id @default(cuid())
 
   mlmPolicyVersionId String
-  routeId String @unique
+  routeId            String @unique
 
-  currentWeight Decimal @db.Decimal(12, 4) @default(0)
-  allocatedApplicationCount Int @default(0)
-  allocatedAmount Decimal @default(0) @db.Decimal(16, 2)
-  lastAllocatedAt DateTime?
+  currentWeight             Decimal   @default(0) @db.Decimal(12, 4)
+  allocatedApplicationCount Int       @default(0)
+  allocatedAmount           Decimal   @default(0) @db.Decimal(16, 2)
+  lastAllocatedAt           DateTime?
 
-  version Int @default(1)
+  version   Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  policyVersion MlmPolicyVersion @relation(fields: [mlmPolicyVersionId], references: [id], onDelete: Cascade)
-  route MlmAllocationRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  policyVersion MlmPolicyVersion   @relation(fields: [mlmPolicyVersionId], references: [id], onDelete: Cascade)
+  route         MlmAllocationRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
 
   @@index([mlmPolicyVersionId])
 }
+
 enum PlBankVerificationStatus {
   INITIATED
   VERIFIED
@@ -1857,7 +1864,7 @@ model PlElectronicSignTransaction {
   otpVerifiedAt DateTime? @map("otp_verified_at") @db.DateTime(0)
 
   otpFailedAttempts Int @default(0) @map("otp_failed_attempts")
-  otpResendCount     Int @default(0) @map("otp_resend_count")
+  otpResendCount    Int @default(0) @map("otp_resend_count")
 
   signerName           String @map("signer_name") @db.VarChar(200)
   verifiedMobileMasked String @map("verified_mobile_masked") @db.VarChar(20)

@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { CustomerGender, PlDocumentStatus, PlDocumentType } from '@prisma/client';
 import axios from 'axios';
@@ -29,22 +30,15 @@ export class CustomerAadhaarKycService {
    * Initiates DigiLocker Aadhaar KYC for pre-approval onboarding stage
    */
   async initiate(
-    user: any,
-    body?: { customerId?: number | string; customerCode?: string; consentGiven?: boolean },
+    currentCustomer: any,
+    body?: { consentGiven?: boolean },
   ) {
-    const rawCustomerId = user?.customerId || user?.id || user?.userId || body?.customerId;
-    const customerCodeInput = body?.customerCode;
-
-    let customer = null;
-    if (rawCustomerId) {
-      customer = await this.prisma.customer.findUnique({
-        where: { id: BigInt(rawCustomerId) },
-      });
-    } else if (customerCodeInput) {
-      customer = await this.prisma.customer.findUnique({
-        where: { customerCode: customerCodeInput },
-      });
+    if (!currentCustomer?.customerId) {
+      throw new UnauthorizedException('Customer authentication is required.');
     }
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: BigInt(currentCustomer.customerId) },
+    });
 
     if (!customer) {
       throw new BadRequestException('Customer identity could not be resolved.');
@@ -52,10 +46,6 @@ export class CustomerAadhaarKycService {
 
     if (!customer.customerCode) {
       throw new BadRequestException('Customer reference code is missing.');
-    }
-
-    if (customerCodeInput && customerCodeInput !== customer.customerCode) {
-      throw new BadRequestException('Invalid customer reference code.');
     }
 
     if (!customer.mobileVerified) {
@@ -145,19 +135,15 @@ export class CustomerAadhaarKycService {
   /**
    * Retrieves current Aadhaar KYC status for authenticated customer
    */
-  async getStatus(user: any, queryCustomerId?: string, queryCustomerCode?: string) {
-    const rawCustomerId = user?.customerId || user?.id || user?.userId || queryCustomerId;
-
-    let customer = null;
-    if (rawCustomerId) {
-      customer = await this.prisma.customer.findUnique({
-        where: { id: BigInt(rawCustomerId) },
-      });
-    } else if (queryCustomerCode) {
-      customer = await this.prisma.customer.findUnique({
-        where: { customerCode: queryCustomerCode },
-      });
+  async getStatus(
+    currentCustomer: any,
+  ) {
+    if (!currentCustomer?.customerId) {
+      throw new UnauthorizedException('Customer authentication is required.');
     }
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: BigInt(currentCustomer.customerId) },
+    });
 
     if (!customer) {
       throw new NotFoundException('Customer identity could not be resolved.');
@@ -184,34 +170,30 @@ export class CustomerAadhaarKycService {
   }
 
   /**
+  /**
    * Manually checks & updates live DigiLocker status with provider
    */
-  async refreshStatus(user: any, body?: { customerId?: number | string; customerCode?: string }) {
-    const rawCustomerId = user?.customerId || user?.id || user?.userId || body?.customerId;
-    const customerCodeInput = body?.customerCode;
-
-    let customer = null;
-    if (rawCustomerId) {
-      customer = await this.prisma.customer.findUnique({
-        where: { id: BigInt(rawCustomerId) },
-      });
-    } else if (customerCodeInput) {
-      customer = await this.prisma.customer.findUnique({
-        where: { customerCode: customerCodeInput },
-      });
+  async refreshStatus(
+    currentCustomer: any,
+  ) {
+    if (!currentCustomer?.customerId) {
+      throw new UnauthorizedException('Customer authentication is required.');
     }
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: BigInt(currentCustomer.customerId) },
+    });
 
     if (!customer) {
       throw new NotFoundException('Customer identity could not be resolved.');
     }
 
     if (customer.aadhaarVerified || customer.digilockerStatus === 'VERIFIED') {
-      return this.getStatus(user, rawCustomerId?.toString(), customerCodeInput);
+      return this.getStatus(currentCustomer);
     }
 
     const transactionId = customer.digilockerSessionId;
     if (!transactionId) {
-      return this.getStatus(user, rawCustomerId?.toString(), customerCodeInput);
+      return this.getStatus(currentCustomer);
     }
 
     try {
@@ -225,7 +207,7 @@ export class CustomerAadhaarKycService {
       );
     }
 
-    return this.getStatus(user, rawCustomerId?.toString(), customerCodeInput);
+    return this.getStatus(currentCustomer);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

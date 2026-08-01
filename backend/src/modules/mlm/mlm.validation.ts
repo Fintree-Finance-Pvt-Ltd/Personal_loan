@@ -60,7 +60,7 @@ export const mlmDistributionQuerySchema = z.object({
 
 export const executeMlmAllocationSchema = z.object({
   applicationReference: z.string().min(1).max(100),
-  requestedAmount: z.number().positive(),
+  requestedAmount: z.number().positive().nullable().optional(),
   platformEvaluationReference: z.string().optional(),
   platformDecisionOutcome: z.string(),
   platformProductId: z.string().min(1),

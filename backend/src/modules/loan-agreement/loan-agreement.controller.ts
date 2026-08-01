@@ -9,13 +9,15 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { LoanAgreementService } from './services/loan-agreement.service';
-import { Public } from '../../common/decorators/public.decorator';
+import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
-@Public()
+@UseGuards(CustomerAuthGuard)
 @Controller('customer/loans/:lan/agreement')
 export class LoanAgreementController {
   constructor(
@@ -23,40 +25,13 @@ export class LoanAgreementController {
     private readonly prisma: PrismaService,
   ) {}
 
-  private async resolveCustomerId(lan: string, req: Request, providedCustomerId?: string): Promise<bigint> {
-    if (providedCustomerId && providedCustomerId !== '0') {
-      return BigInt(providedCustomerId);
-    }
-    const user = (req as any).user;
-    const userCustId = user?.customerId || user?.id || user?.sub;
-    if (userCustId) {
-      return BigInt(userCustId);
-    }
-    const headerCustId = req.headers['x-customer-id'] as string;
-    if (headerCustId) {
-      return BigInt(headerCustId);
-    }
-
-    const loan = await this.prisma.plLoan.findFirst({
-      where: { lan },
-      select: { customerId: true },
-    });
-
-    if (!loan) {
-      throw new NotFoundException(`Loan account ${lan} not found.`);
-    }
-
-    return loan.customerId;
-  }
-
   @Post('generate')
   @HttpCode(HttpStatus.OK)
   async generateAgreement(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     const html = await this.loanAgreementService.generateAgreementHtml(lan, customerId);
     return {
       success: true,
@@ -69,11 +44,10 @@ export class LoanAgreementController {
   @Get('preview')
   async previewAgreement(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
     @Res() res: Response,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     const pdfBuffer = await this.loanAgreementService.generateAgreementPdf(lan, customerId);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -85,11 +59,10 @@ export class LoanAgreementController {
   @Get('download')
   async downloadAgreement(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
     @Res() res: Response,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     const pdfBuffer = await this.loanAgreementService.generateAgreementPdf(lan, customerId);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -101,10 +74,9 @@ export class LoanAgreementController {
   @Get('status')
   async getAgreementStatus(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     const loan = await this.prisma.plLoan.findFirst({
       where: { lan, customerId },
       include: { electronicSignTransactions: { orderBy: { createdAt: 'desc' }, take: 1 } },

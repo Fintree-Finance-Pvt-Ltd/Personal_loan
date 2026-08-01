@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { PlApplicationStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import { ACTIVE_APPLICATION_STATUSES } from '../../../common/constants/application.constants';
 
 @Injectable()
 export class ApplicationTransitionService {
@@ -15,30 +16,26 @@ export class ApplicationTransitionService {
    */
   async createOrResumeApplication(
     customerId: bigint,
-    platformProductId: string | null = null,
-    requestedAmount: number | null = null,
+    platformProductId: string,
     scopeCode: string = 'PLATFORM_DEFAULT'
   ) {
     return this.prisma.$transaction(async (tx) => {
+      // 0. Acquire row lock on the Customer to prevent concurrent creation
+      await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customerId} FOR UPDATE`;
+
       // 1. Check for an active application
       const activeApplication = await tx.plApplication.findFirst({
         where: {
           customerId,
           status: {
-            in: [
-              PlApplicationStatus.DRAFT,
-              PlApplicationStatus.SUBMITTED,
-              PlApplicationStatus.ALLOCATION_PENDING,
-              PlApplicationStatus.LENDER_ALLOCATED,
-              PlApplicationStatus.LENDER_REVIEW,
-            ]
+            in: ACTIVE_APPLICATION_STATUSES
           }
         },
       });
 
       if (activeApplication) {
         // If an active app exists but for a different product (and product was requested), we reject (only 1 active overall allowed)
-        if (platformProductId && activeApplication.platformProductId !== platformProductId) {
+        if (activeApplication.platformProductId !== platformProductId) {
             throw new ConflictException(
               `You already have an active application (${activeApplication.applicationNumber}) for a different product.`
             );
@@ -61,7 +58,8 @@ export class ApplicationTransitionService {
           status: PlApplicationStatus.DRAFT,
           platformProductId,
           scopeCode,
-          requestedAmount: requestedAmount ? new Prisma.Decimal(requestedAmount) : null,
+          // Retained for future use; the current customer flow is lender-determined.
+          requestedAmount: null,
         },
       });
 

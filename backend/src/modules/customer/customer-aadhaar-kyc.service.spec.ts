@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { CustomerAadhaarKycService } from './customer-aadhaar-kyc.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 describe('CustomerAadhaarKycService', () => {
@@ -48,7 +48,10 @@ describe('CustomerAadhaarKycService', () => {
         CustomerAadhaarKycService,
         { provide: PrismaService, useValue: prisma },
         { provide: DigitapDigilockerService, useValue: digitapService },
-        { provide: AuditLogsService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: AuditLogsService,
+          useValue: { record: jest.fn().mockResolvedValue(undefined), logEvent: jest.fn() },
+        },
         {
           provide: ConfigService,
           useValue: {
@@ -65,9 +68,9 @@ describe('CustomerAadhaarKycService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should throw BadRequestException if customer identity cannot be resolved', async () => {
+  it('should throw UnauthorizedException if customer identity cannot be resolved', async () => {
     prisma.customer.findUnique.mockResolvedValue(null);
-    await expect(service.initiate(null, { customerId: 999 })).rejects.toThrow(BadRequestException);
+    await expect(service.initiate(null, { consentGiven: true })).rejects.toThrow(UnauthorizedException);
   });
 
   it('should throw BadRequestException if mobile is unverified', async () => {
@@ -75,7 +78,7 @@ describe('CustomerAadhaarKycService', () => {
       ...mockCustomer,
       mobileVerified: false,
     });
-    await expect(service.initiate(null, { customerId: 1 })).rejects.toThrow(BadRequestException);
+    await expect(service.initiate({ customerId: 1n }, { consentGiven: true })).rejects.toThrow(BadRequestException);
   });
 
   it('should return VERIFIED if customer is already verified', async () => {
@@ -84,7 +87,7 @@ describe('CustomerAadhaarKycService', () => {
       aadhaarVerified: true,
     });
 
-    const result = await service.initiate(null, { customerId: 1 });
+    const result = await service.initiate({ customerId: 1n }, { consentGiven: true });
     expect(result.data.status).toBe('VERIFIED');
     expect(result.data.aadhaarVerified).toBe(true);
   });
@@ -97,10 +100,15 @@ describe('CustomerAadhaarKycService', () => {
     });
     prisma.customer.update.mockResolvedValue({});
 
-    const result = await service.initiate(null, { customerCode: 'FFPL000001', consentGiven: true });
+    const result = await service.initiate({ customerId: 1n }, { consentGiven: true });
     expect(result.success).toBe(true);
     expect(result.data.status).toBe('INITIATED');
     expect(result.data.transactionId).toBe('TXN12345');
     expect(digitapService.generateDigitapDigilockerUrl).toHaveBeenCalled();
+  });
+
+  it('should throw NotFoundException when NotFoundException is expected', async () => {
+    prisma.customer.findUnique.mockResolvedValue(null);
+    await expect(service.refreshStatus(null)).rejects.toThrow(UnauthorizedException);
   });
 });

@@ -9,6 +9,9 @@ import {
   Req,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { UseGuards } from '@nestjs/common';
 import { ExternalApiService } from './external-api.service';
 import { PlPaymentsService } from './pl-payments.service';
 
@@ -50,15 +53,14 @@ export class ExternalApiController {
     });
   }
 
-@Public()
+@UseGuards(CustomerAuthGuard)
 @Post('initiate-payment')
 @HttpCode(HttpStatus.OK)
 initiatePayment(
   @Body() body: any,
+  @CurrentCustomer() customer: any,
 ) {
-  const customerId =
-    body?.customerId ||
-    body?.customer?.id;
+  const customerId = BigInt(customer.customerId);
 
   return this.plPaymentsService
     .initiateIframePayment(
@@ -68,15 +70,14 @@ initiatePayment(
     );
 }
 
-@Public()
+@UseGuards(CustomerAuthGuard)
 @Post('create-payment-link')
 @HttpCode(HttpStatus.OK)
 createPaymentLink(
   @Body() body: any,
+  @CurrentCustomer() customer: any,
 ) {
-  const customerId =
-    body?.customerId ||
-    body?.customer?.id;
+  const customerId = BigInt(customer.customerId);
 
   return this.plPaymentsService
     .createPaymentLink(
@@ -86,15 +87,14 @@ createPaymentLink(
     );
 }
 
-@Public()
+@UseGuards(CustomerAuthGuard)
 @Post('payment-status')
 @HttpCode(HttpStatus.OK)
 getPaymentStatus(
   @Body() body: any,
+  @CurrentCustomer() customer: any,
 ) {
-  const customerId =
-    body?.customerId ||
-    body?.customer?.id;
+  const customerId = BigInt(customer.customerId);
 
   return this.plPaymentsService
     .getPaymentStatus(
@@ -143,15 +143,6 @@ handleEasebuzzPaymentSuccess(
         body,
         headers,
       );
-  }
-
-  @Public()
-  @Post('easebuzz-payment-manual-paid')
-  @HttpCode(HttpStatus.OK)
-  markPaymentAsPaid(@Body() body: any) {
-    const identifier = body?.txnid || body?.customerId || body?.id;
-    const status = body?.status || 'SUCCESS';
-    return this.plPaymentsService.markPaymentAsPaid(identifier, status);
   }
 
   @Public()

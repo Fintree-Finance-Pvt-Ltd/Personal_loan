@@ -15,10 +15,12 @@ import {
 import { Request, Response } from 'express';
 import { ElectronicSignService } from './electronic-sign.service';
 import { SigningIpService } from './services/signing-ip.service';
-import { Public } from '../../common/decorators/public.decorator';
+import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+import { UseGuards } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
-@Public()
+@UseGuards(CustomerAuthGuard)
 @Controller('customer/loans/:lan/electronic-sign')
 export class ElectronicSignController {
   constructor(
@@ -27,42 +29,13 @@ export class ElectronicSignController {
     private readonly prisma: PrismaService,
   ) {}
 
-  private async resolveCustomerId(lan: string, req: Request, providedCustomerId?: string): Promise<bigint> {
-    if (providedCustomerId && providedCustomerId !== '0') {
-      return BigInt(providedCustomerId);
-    }
-    const user = (req as any).user;
-    const userCustId = user?.customerId || user?.id || user?.sub;
-    if (userCustId) {
-      return BigInt(userCustId);
-    }
-    const headerCustId = req.headers['x-customer-id'] as string;
-    if (headerCustId) {
-      return BigInt(headerCustId);
-    }
-
-    // Fallback: Resolve customerId directly from loan LAN
-    const loan = await this.prisma.plLoan.findFirst({
-      where: { lan },
-      select: { customerId: true, id: true },
-    });
-
-    if (!loan) {
-      throw new NotFoundException(`Loan account ${lan} not found.`);
-    }
-
-    return loan.customerId;
-  }
-
   @Post('prepare')
   @HttpCode(HttpStatus.OK)
   async prepareAgreement(
     @Param('lan') lan: string,
-    @Body('customerId') bodyCustId: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, bodyCustId || queryCustId);
+    const customerId = BigInt(customer.customerId);
 
     const loan = await this.prisma.plLoan.findFirst({
       where: { lan, customerId },
@@ -90,11 +63,10 @@ export class ElectronicSignController {
   @Get('document')
   async previewDocument(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
     @Res() res: Response,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
 
     // Auto-prepare document if not initialized yet
     const loan = await this.prisma.plLoan.findFirst({ where: { lan, customerId } });
@@ -125,11 +97,9 @@ export class ElectronicSignController {
   @HttpCode(HttpStatus.OK)
   async markViewed(
     @Param('lan') lan: string,
-    @Body('customerId') bodyCustId: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, bodyCustId || queryCustId);
+    const customerId = BigInt(customer.customerId);
     return this.electronicSignService.markDocumentViewed(lan, customerId);
   }
 
@@ -138,10 +108,9 @@ export class ElectronicSignController {
   async sendOtp(
     @Param('lan') lan: string,
     @Body() body: any,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, body?.customerId || queryCustId);
+    const customerId = BigInt(customer.customerId);
     const consentAccepted = Boolean(body?.consentAccepted);
     return this.electronicSignService.sendSigningOtp(lan, customerId, consentAccepted);
   }
@@ -151,10 +120,10 @@ export class ElectronicSignController {
   async verifyOtp(
     @Param('lan') lan: string,
     @Body() body: any,
-    @Query('customerId') queryCustId: string,
+    @CurrentCustomer() customer: any,
     @Req() req: Request,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, body?.customerId || queryCustId);
+    const customerId = BigInt(customer.customerId);
 
     // Capture & validate signing IP from request BEFORE processing OTP
     const ipEvidence = this.signingIpService.capture(req);
@@ -186,21 +155,19 @@ export class ElectronicSignController {
   @Get('status')
   async getStatus(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     return this.electronicSignService.getSigningStatus(lan, customerId);
   }
 
   @Get('accepted-document')
   async downloadAcceptedDocument(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
     @Res() res: Response,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     const { buffer, filename } = await this.electronicSignService.getAcceptedDocument(lan, customerId);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -212,11 +179,10 @@ export class ElectronicSignController {
   @Get('audit-certificate')
   async downloadAuditCertificate(
     @Param('lan') lan: string,
-    @Query('customerId') queryCustId: string,
-    @Req() req: Request,
+    @CurrentCustomer() customer: any,
     @Res() res: Response,
   ) {
-    const customerId = await this.resolveCustomerId(lan, req, queryCustId);
+    const customerId = BigInt(customer.customerId);
     const { buffer, filename } = await this.electronicSignService.getAuditCertificate(lan, customerId);
 
     res.setHeader('Content-Type', 'application/pdf');

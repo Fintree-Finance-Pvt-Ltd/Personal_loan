@@ -476,4 +476,42 @@ export class PlatformPoliciesService {
       return updated;
     });
   }
+
+  async resolveActivePolicyVersion(
+    platformProductId: string,
+    scopeCode: string,
+    txClient?: any
+  ) {
+    const prismaClient = txClient || this.prisma;
+    
+    // Check count first to ensure uniqueness
+    const activePoliciesCount = await prismaClient.platformPolicy.count({
+      where: { 
+        platformProductId,
+        scopeCode,
+        operationalStatus: 'ACTIVE',
+        versions: { some: { status: 'ACTIVE', effectiveFrom: { lte: new Date() } } }
+      }
+    });
+
+    if (activePoliciesCount !== 1) {
+      throw new Error(`Expected exactly one active policy for product ${platformProductId} and scope ${scopeCode}, found ${activePoliciesCount}`);
+    }
+
+    const activePolicies = await prismaClient.platformPolicy.findMany({
+      where: { 
+        platformProductId,
+        scopeCode,
+        operationalStatus: 'ACTIVE',
+        versions: { some: { status: 'ACTIVE', effectiveFrom: { lte: new Date() } } }
+      },
+      include: { versions: { where: { status: 'ACTIVE', effectiveFrom: { lte: new Date() } }, include: { rules: true } } }
+    });
+
+    if (activePolicies[0].versions.length !== 1) {
+      throw new Error(`Expected exactly one active version for policy, found ${activePolicies[0].versions.length}`);
+    }
+
+    return activePolicies[0].versions[0];
+  }
 }

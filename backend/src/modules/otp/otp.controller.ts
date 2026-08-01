@@ -61,10 +61,22 @@ export class OtpController {
     const result = await this.otpService.verifyMobileOtp(input);
     
     if ((result as any).refreshToken) {
+      const cookieName = this.otpService.getCookieName();
+      const cookieOptions = this.otpService.getCookieOptions();
+
+      for (const path of this.otpService.getLegacyCookiePaths()) {
+        res.clearCookie(cookieName, {
+          httpOnly: cookieOptions.httpOnly,
+          secure: cookieOptions.secure,
+          sameSite: cookieOptions.sameSite,
+          path,
+        });
+      }
+
       res.cookie(
-        this.otpService.getCookieName(),
+        cookieName,
         (result as any).refreshToken,
-        this.otpService.getCookieOptions()
+        cookieOptions
       );
       // Remove refreshToken from response body so it's only in HttpOnly cookie
       delete (result as any).refreshToken;

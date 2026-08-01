@@ -1,99 +1,140 @@
-function getFullApiUrl(endpoint) {
-  const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const cleanBase = rawBaseUrl.replace(/\/+$/, '');
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+import axios from 'axios';
 
-  if (cleanEndpoint.startsWith('/api/')) {
-    if (cleanBase.endsWith('/api')) {
-      return `${cleanBase.slice(0, -4)}${cleanEndpoint}`;
-    }
-    return `${cleanBase}${cleanEndpoint}`;
-  }
+let memoryCustomerAccessToken = null;
+let refreshPromise = null;
+let refreshPromiseResetTimer = null;
 
-  if (cleanBase.endsWith('/api')) {
-    return `${cleanBase}${cleanEndpoint}`;
-  }
+export function getCustomerApiBaseUrl(rawBaseUrl = import.meta.env.VITE_API_BASE_URL || '') {
+  // In local development, use Vite's same-origin proxy so the HttpOnly
+  // refresh cookie is not split between localhost and 127.0.0.1.
+  if (import.meta.env.DEV) return '/api';
 
-  return `${cleanBase}/api${cleanEndpoint}`;
+  const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+
+  if (!cleanBaseUrl) return '/api';
+  return cleanBaseUrl.endsWith('/api') ? cleanBaseUrl : `${cleanBaseUrl}/api`;
 }
 
-async function apiRequest(
-  endpoint,
-  options = {},
-) {
-  const url = getFullApiUrl(endpoint);
-  const response = await fetch(
-    url,
-    {
-      credentials: 'include',
+export const setCustomerAccessToken = (token) => {
+  memoryCustomerAccessToken = token;
+};
+export const getCustomerAccessToken = () => memoryCustomerAccessToken;
 
-      ...options,
+const customerAxios = axios.create({
+  baseURL: getCustomerApiBaseUrl(),
+  withCredentials: true,
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+});
 
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(localStorage.getItem('customerAccessToken') ? { Authorization: `Bearer ${localStorage.getItem('customerAccessToken')}` } : {}),
-        ...(options.headers || {}),
+export async function doCustomerRefresh() {
+  if (!refreshPromise) {
+    refreshPromise = customerAxios
+      .post('/customer/auth/refresh', {}, { _retry: true })
+      .then((res) => {
+        const payload = res.data?.data?.data || res.data?.data || res.data || {};
+        const { accessToken, customer } = payload;
+
+        if (!accessToken) {
+          throw new Error('The customer session could not be restored.');
+        }
+
+        setCustomerAccessToken(accessToken);
+        if (customer) {
+          localStorage.setItem('customerSession', JSON.stringify({
+            customerId: customer.id || customer.customerId,
+            mobileNumber: customer.mobileNumber,
+          }));
+        }
+        return accessToken;
+      });
+
+    refreshPromise.then(
+      () => {
+        // React StrictMode and near-simultaneous protected requests can ask for
+        // a refresh just after the first rotation completes. Reuse the result
+        // briefly instead of rotating the same browser session again.
+        window.clearTimeout(refreshPromiseResetTimer);
+        refreshPromiseResetTimer = window.setTimeout(() => {
+          refreshPromise = null;
+          refreshPromiseResetTimer = null;
+        }, 1000);
       },
-    },
-  );
-
-  let result = null;
-
-  try {
-    result = await response.json();
-  } catch {
-    result = null;
-  }
-
-  if (response.status === 401) {
-    localStorage.removeItem('customerAccessToken');
-    localStorage.removeItem('customerSession');
-    window.location.href = '/customer/sign-in';
-    throw new Error('Your session has expired. Please sign in again.');
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      extractApiMessage(
-        result,
-        `Request failed with status ${response.status}.`,
-      ),
+      () => {
+        refreshPromise = null;
+      },
     );
   }
-
-  if (result?.success === false) {
-    throw new Error(
-      extractApiMessage(
-
-        result,
-        'The request could not be completed.',
-      ),
-    );
-  }
-
-  return result;
+  return refreshPromise;
 }
 
-function extractApiMessage(
-  result,
-  fallbackMessage,
-) {
-  const message =
-    result?.message ||
-    result?.error?.message ||
-    result?.error ||
-    result?.data?.message;
-
-  if (Array.isArray(message)) {
-    return message.join(', ');
+export async function doCustomerLogout() {
+  try {
+    await customerAxios.post('/customer/auth/logout');
+  } catch (err) {
+    console.error('Logout error:', err);
+  } finally {
+    setCustomerAccessToken(null);
+    localStorage.removeItem('customerSession');
+    sessionStorage.removeItem('customerSession');
   }
+}
 
-  if (typeof message === 'string') {
-    return message;
+customerAxios.interceptors.request.use((config) => {
+  if (memoryCustomerAccessToken) {
+    if (config.headers.set) {
+      config.headers.set('Authorization', `Bearer ${memoryCustomerAccessToken}`);
+    } else {
+      config.headers.Authorization = `Bearer ${memoryCustomerAccessToken}`;
+    }
   }
+  return config;
+});
 
-  return fallbackMessage;
+customerAxios.interceptors.response.use(
+  (res) => res,
+  async (err) => {
+    const originalConfig = err.config;
+    if (err.response?.status === 401 && !originalConfig._retry) {
+      originalConfig._retry = true;
+      try {
+        const newToken = await doCustomerRefresh();
+        
+        // Ensure the new token is applied to the retried request
+        if (originalConfig.headers.set) {
+          originalConfig.headers.set('Authorization', `Bearer ${newToken}`);
+        } else {
+          originalConfig.headers.Authorization = `Bearer ${newToken}`;
+        }
+        
+        return await customerAxios(originalConfig);
+      } catch (e) {
+        setCustomerAccessToken(null);
+        localStorage.removeItem('customerSession');
+        sessionStorage.removeItem('customerSession');
+        window.location.href = '/customer/login';
+        return Promise.reject(e);
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
+async function apiRequest(endpoint, options = {}) {
+  try {
+    const res = await customerAxios({
+      url: endpoint,
+      method: options.method || 'GET',
+      data: options.body && typeof options.body === 'string' ? JSON.parse(options.body) : options.body,
+      headers: options.headers,
+    });
+    return res.data;
+  } catch (err) {
+    const result = err.response?.data;
+    const message = result?.message || result?.error?.message || result?.error || result?.data?.message || err.message || 'The request could not be completed.';
+    if (Array.isArray(message)) throw new Error(message.join(', '));
+    throw new Error(message);
+  }
 }
 
 export async function getCustomerMe() {
@@ -140,25 +181,14 @@ export async function reverseGeocode(latitude, longitude) {
 }
 
 export async function uploadLivePhotoDocument(formData) {
-  const url = getFullApiUrl('/documents/customer-live-photo');
-  const response = await fetch(url, {
+  const result = await apiRequest('/documents/customer-live-photo', {
     method: 'POST',
-    credentials: 'include',
     body: formData,
+    headers: {
+      // Axios will automatically set the correct Content-Type for FormData
+      'Content-Type': 'multipart/form-data',
+    },
   });
-
-  let result = null;
-  try {
-    result = await response.json();
-  } catch {
-    result = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      result?.message || result?.error || result?.data?.message || 'Failed to upload live photo document.',
-    );
-  }
 
   return result?.data?.data || result?.data || result;
 }

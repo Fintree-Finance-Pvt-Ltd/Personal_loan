@@ -7,40 +7,39 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomerAadhaarKycService } from './customer-aadhaar-kyc.service';
+import { UseGuards } from '@nestjs/common';
 
 @Controller('customer/aadhaar-kyc/digilocker')
 export class CustomerAadhaarKycController {
   constructor(private readonly kycService: CustomerAadhaarKycService) {}
 
-  @Public()
+  @UseGuards(CustomerAuthGuard)
   @Post('initiate')
   async initiate(
-    @CurrentUser() user: any,
-    @Body() body: { customerId?: number | string; customerCode?: string; consentGiven?: boolean },
+    @CurrentCustomer() customer: any,
+    @Body() body: { consentGiven?: boolean },
   ) {
-    return this.kycService.initiate(user, body);
+    return this.kycService.initiate(customer, body);
   }
 
-  @Public()
+  @UseGuards(CustomerAuthGuard)
   @Get('status')
   async getStatus(
-    @CurrentUser() user: any,
-    @Query('customerId') queryCustomerId?: string,
-    @Query('customerCode') queryCustomerCode?: string,
+    @CurrentCustomer() customer: any,
   ) {
-    return this.kycService.getStatus(user, queryCustomerId, queryCustomerCode);
+    return this.kycService.getStatus(customer);
   }
 
-  @Public()
+  @UseGuards(CustomerAuthGuard)
   @Post('refresh')
   async refresh(
-    @CurrentUser() user: any,
-    @Body() body: { customerId?: number | string; customerCode?: string },
+    @CurrentCustomer() customer: any,
   ) {
-    return this.kycService.refreshStatus(user, body);
+    return this.kycService.refreshStatus(customer);
   }
 
   @Public()
