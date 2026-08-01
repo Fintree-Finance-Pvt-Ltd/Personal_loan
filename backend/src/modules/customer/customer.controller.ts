@@ -69,7 +69,7 @@ export class CustomerController {
   @Post('resume-application')
   async resumeApplication(
     @CurrentCustomer() customer: any,
-    @Body() body: { platformProductId: string; requestedAmount: number; scopeCode?: string },
+    @Body() body: { platformProductId?: string; scopeCode?: string },
   ) {
     return this.customerService.resumeApplication(BigInt(customer.customerId), body);
   }

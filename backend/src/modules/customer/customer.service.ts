@@ -16,6 +16,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 import { LoanService } from '../loan/loan.service';
 import { PlApplicationStatus, PolicyDecisionOutcome } from '@prisma/client';
+import { ACTIVE_APPLICATION_STATUSES } from '../../common/constants/application.constants';
 import { PlatformPoliciesService } from '../platform-policies/platform-policies.service';
 import { PolicyEvaluationService } from '../platform-policies/policy-evaluation.service';
 import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engine/mlm-allocation-engine.service';
@@ -372,10 +373,7 @@ export class CustomerService {
 
   async findById(customerId: bigint) {
     // Auto-heal: fix any empty-string enum values that can't be read by Prisma
-    await this.prisma.$executeRawUnsafe(
-      `UPDATE \`customers\` SET \`eligibility_status\` = 'NOT_CHECKED' WHERE \`id\` = ? AND (\`eligibility_status\` = '' OR \`eligibility_status\` IS NULL)`,
-      customerId,
-    ).catch(() => { /* ignore if heal fails */ });
+    await this.prisma.$executeRaw`UPDATE customers SET eligibility_status = 'NOT_CHECKED' WHERE id = ${customerId} AND (eligibility_status = '' OR eligibility_status IS NULL)`.catch(() => { /* ignore if heal fails */ });
 
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -526,7 +524,7 @@ export class CustomerService {
 
   async resumeApplication(
     customerId: bigint,
-    body: { platformProductId?: string; requestedAmount?: number; scopeCode?: string },
+    body: { platformProductId?: string; scopeCode?: string },
   ) {
     let platformProductId = body.platformProductId || null;
     if (!platformProductId) {
@@ -538,13 +536,13 @@ export class CustomerService {
         platformProductId = defaultPolicy.platformProductId;
       }
     }
-
-    const requestedAmount = body.requestedAmount ? Number(body.requestedAmount) : null;
+    if (!platformProductId) {
+      throw new BadRequestException('Platform product ID must be provided or configured by default.');
+    }
 
     const application = await this.applicationTransitionService.createOrResumeApplication(
       customerId,
       platformProductId,
-      requestedAmount,
       body.scopeCode || 'PLATFORM_DEFAULT'
     );
 
@@ -752,23 +750,19 @@ export class CustomerService {
         throw new BadRequestException('Canonical application is missing platformProductId.');
       }
 
-      const activePolicies = await tx.platformPolicy.findMany({
-        where: { 
-          platformProductId: application.platformProductId,
-          scopeCode: application.scopeCode,
-          operationalStatus: 'ACTIVE',
-          versions: { some: { status: 'ACTIVE', effectiveFrom: { lte: new Date() } } }
-        },
-        include: { versions: { where: { status: 'ACTIVE', effectiveFrom: { lte: new Date() } }, include: { rules: true } } }
-      });
-
-      if (activePolicies.length !== 1 || activePolicies[0].versions.length !== 1) {
-        throw new BadRequestException(`No unique active and effective policy found for platform product ${application.platformProductId} and scope ${application.scopeCode}.`);
-      }
+      const policyVersion = await this.platformPoliciesService.resolveActivePolicyVersion(
+        application.platformProductId,
+        application.scopeCode,
+        tx
+      );
       
-      const policyVersion = activePolicies[0].versions[0];
-      const activeRules = policyVersion.rules.filter(r => r.isActive);
-      const requiredKeys = new Set(activeRules.map(r => r.inputKey));
+      // Requested amount is intentionally not part of the current customer flow.
+      // Keep the persisted column for future use, but do not run amount-based BRE rules.
+      const eligibilityRules = policyVersion.rules.filter(
+        (r: any) => r.inputKey !== 'requestedAmount',
+      );
+      const activeRules = eligibilityRules.filter((r: any) => r.isActive);
+      const requiredKeys = new Set(activeRules.map((r: any) => r.inputKey));
       
       // 4. Build dynamic inputs
       const inputs: Record<string, any> = {};
@@ -787,7 +781,7 @@ export class CustomerService {
           where: {
             customerId,
             id: { not: application.id },
-            status: { in: ['SUBMITTED', 'ALLOCATION_PENDING', 'LENDER_ALLOCATED', 'LENDER_REVIEW', 'LENDER_APPROVED'] }
+            status: { in: ACTIVE_APPLICATION_STATUSES }
           }
         });
         inputs.hasActiveApplication = activeAppCount > 0;
@@ -818,11 +812,18 @@ export class CustomerService {
         });
         
         if (lastRejection) {
-          const diffTime = Math.abs(new Date().getTime() - lastRejection.updatedAt.getTime());
+          const decisionTimestamp = lastRejection.status === 'PLATFORM_REJECTED' 
+            ? lastRejection.platformDecisionAt 
+            : lastRejection.lenderDecisionAt;
+
+          if (!decisionTimestamp) {
+            throw new Error(`Cooling-off calculation failed: Missing authoritative rejection timestamp for ${lastRejection.status}.`);
+          }
+          const diffTime = Math.abs(new Date().getTime() - decisionTimestamp.getTime());
           inputs.daysSinceLastRejection = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         } else {
-          // No previous rejection must PASS the rule. 9999 ensures it passes any reasonable cooling off period.
-          inputs.daysSinceLastRejection = 9999;
+          // PASS (no rejection) - the explicit absence of a prior rejection is represented by null
+          inputs.daysSinceLastRejection = null;
         }
       }
 
@@ -832,13 +833,14 @@ export class CustomerService {
       }
 
       if (requiredKeys.has('internalOverdueAmount')) {
-        inputs.internalOverdueAmount = null;
+        // Without an internal installment ledger, overdue is 0
+        inputs.internalOverdueAmount = 0;
       }
 
       // 5. Evaluate policy
       let evalResult;
       try {
-        evalResult = this.policyEvaluationService.evaluate(policyVersion.rules, inputs);
+        evalResult = this.policyEvaluationService.evaluate(eligibilityRules, inputs);
       } catch (err: any) {
         this.logger.error(`BRE Technical Error: ${err.message}`, err.stack);
         throw new BadRequestException(`Eligibility Check Failed: ${err.message}`);
@@ -855,20 +857,26 @@ export class CustomerService {
       // 6. Handle Binary Outcome
       const isPass = evalResult.finalOutcome === PolicyDecisionOutcome.PASS;
       
+      const updatedData: any = {
+        platformDecisionOutcome: evalResult.finalOutcome,
+        platformPolicyVersionId: policyVersion.id,
+        platformEvaluationReference: `EVAL-${application.applicationNumber}-${Date.now()}`,
+        status: isPass ? PlApplicationStatus.ALLOCATION_PENDING : PlApplicationStatus.PLATFORM_REJECTED
+      };
+
+      if (!isPass) {
+        updatedData.platformDecisionAt = new Date();
+      }
+
       let updatedApp = await tx.plApplication.update({
         where: { id: application.id },
-        data: {
-          platformDecisionOutcome: evalResult.finalOutcome,
-          platformPolicyVersionId: policyVersion.id,
-          platformEvaluationReference: `EVAL-${application.applicationNumber}-${Date.now()}`,
-          status: isPass ? PlApplicationStatus.ALLOCATION_PENDING : PlApplicationStatus.PLATFORM_REJECTED
-        }
+        data: updatedData
       });
 
       let failReason = 'Platform policy rejection';
       if (!isPass && evalResult.ruleResults) {
         const failedRules = evalResult.ruleResults
-          .filter((r: any) => r.outcome === 'FAIL' || r.outcome === 'REFER' || r.outcome === 'POLICY_INPUT_MISSING')
+          .filter((r: any) => r.outcome === 'FAIL' || r.outcome === 'REFER')
           .map((r: any) => r.ruleCode || r.ruleName)
           .join(', ');
         if (failedRules) {
@@ -901,7 +909,9 @@ export class CustomerService {
             const mlmVersion = activeMlmPolicies[0].versions[0];
             const mlmDto = {
                applicationReference: application.applicationNumber,
-               requestedAmount: application.requestedAmount ? Number(application.requestedAmount) : 50000,
+               requestedAmount: application.requestedAmount == null
+                 ? null
+                 : Number(application.requestedAmount),
                platformDecisionOutcome: 'PASS',
                platformProductId: application.platformProductId,
                customerSegment: 'NEW'

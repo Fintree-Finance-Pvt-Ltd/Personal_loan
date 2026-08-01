@@ -172,7 +172,9 @@ export class MlmAllocationEngineService {
       }
     }
 
-    const amount = new Prisma.Decimal(dto.requestedAmount);
+    const amount = dto.requestedAmount == null
+      ? null
+      : new Prisma.Decimal(dto.requestedAmount);
     
     // Constraint [14]: Require Platform BRE PASS. FAIL and REFER must not modify SWRR state.
     // Constraint [8]: BRE FAIL and REFER must create/reuse safe decision evidence and append a PLATFORM_POLICY_NOT_PASSED attempt, but must not change any SWRR state.
@@ -197,12 +199,58 @@ export class MlmAllocationEngineService {
 
     for (const route of policyVersion.routes) {
       if (!route.isActive) continue;
-
       let isEligible = isPlatformPassed;
       let reason = isPlatformPassed ? '' : 'PLATFORM_POLICY_NOT_PASSED';
+      let productStrategyVersionId: string | null = null;
 
       if (isEligible) {
-         // Placeholder for product/lender checks if joined
+         // MLM Readiness Checks
+         
+         // 1. Check Lender Status
+         const lender = await tx.lender.findUnique({ where: { id: route.lenderId } });
+         if (!lender || lender.operationalStatus !== 'ACTIVE' || lender.approvalStatus !== 'APPROVED') {
+           isEligible = false;
+           reason = 'LENDER_INACTIVE_OR_UNAPPROVED';
+         }
+
+         // 2. Check Product Match & Status
+         if (isEligible) {
+           const product = await tx.lenderProduct.findUnique({ where: { id: route.productId } });
+           if (!product || product.operationalStatus !== 'ACTIVE') {
+             isEligible = false;
+             reason = 'PRODUCT_INACTIVE';
+           } else if (product.platformProductId !== dto.platformProductId) {
+             isEligible = false;
+             reason = 'PRODUCT_MISMATCH';
+           }
+         }
+
+         // 3. Check Exactly 1 Active and Effective PSV
+         if (isEligible) {
+           const activeVersions = await tx.lenderProductVersion.findMany({
+             where: { productId: route.productId, status: 'ACTIVE' }
+           });
+           const now = new Date();
+           const effectiveVersions = activeVersions.filter(v => !v.effectiveFrom || v.effectiveFrom <= now);
+           
+           if (effectiveVersions.length !== 1) {
+             isEligible = false;
+             reason = 'INVALID_PRODUCT_VERSIONS';
+           } else {
+             productStrategyVersionId = effectiveVersions[0].id;
+           }
+         }
+
+         // 4. Check Amount Limits
+         if (isEligible && amount !== null) {
+           if (route.minimumTicketAmount && amount.lessThan(route.minimumTicketAmount)) {
+             isEligible = false;
+             reason = 'BELOW_MINIMUM_AMOUNT';
+           } else if (route.maximumTicketAmount && amount.greaterThan(route.maximumTicketAmount)) {
+             isEligible = false;
+             reason = 'ABOVE_MAXIMUM_AMOUNT';
+           }
+         }
       }
 
       const lockedState = stateMap.get(route.id);
@@ -216,18 +264,17 @@ export class MlmAllocationEngineService {
         rejectionReason: reason || undefined,
         allocationPercentage: route.allocationWeightPercent?.toString() || '0',
         currentWeight: currentWeight.toString(),
+        // Pass internally to extract later
+        ...(productStrategyVersionId && { __psvId: productStrategyVersionId })
       });
 
-      if (isPlatformPassed) {
+      if (isEligible) {
         swrrRoutes.push({
           id: route.id,
           allocationPercentage: route.allocationWeightPercent || new Prisma.Decimal(0),
           currentWeight,
           isEligible,
         });
-      }
-
-      if (isEligible) {
         eligibleRoutes.push(route);
       }
     }
@@ -237,7 +284,7 @@ export class MlmAllocationEngineService {
     let updatedRoutesStates: any[] = [];
     let reasonCode = isPlatformPassed ? 'NO_ELIGIBLE_ROUTE' : 'PLATFORM_POLICY_NOT_PASSED';
 
-    if (isPlatformPassed) {
+    if (eligibleRoutes.length > 0) {
       const swrrResult = this.swrrService.selectNext(swrrRoutes);
       selectedRouteId = swrrResult.selectedRouteId;
       selectedRoute = policyVersion.routes.find(r => r.id === selectedRouteId) || null;
@@ -262,10 +309,10 @@ export class MlmAllocationEngineService {
           routeId: selectedRoute?.id,
           lenderId: selectedRoute?.lenderId,
           productId: selectedRoute?.productId,
-          productVersionId: selectedRoute ? selectedRoute.productId : null,
+          productVersionId: selectedRoute ? (candidateResults.find(c => c.routeId === selectedRoute.id) as any)?.__psvId || null : null,
           platformPolicyVersionId: dto.platformEvaluationReference,
           platformEvaluationReference: dto.platformEvaluationReference,
-          requestedAmount: dto.requestedAmount,
+          requestedAmount: amount,
           customerSegment: 'ALL',
           platformDecisionOutcome: (dto.platformDecisionOutcome || 'APPROVED') as any,
           platformProductId: (policyVersion as any).policy?.platformProductId || undefined,
@@ -279,7 +326,7 @@ export class MlmAllocationEngineService {
                 policyVersionId: policyVersion.id,
                 attemptNumber: 1,
                 outcome: status as any,
-                requestedAmount: dto.requestedAmount,
+                requestedAmount: amount,
                 candidateResults: candidateResults as any,
                 selectedRouteId: selectedRoute?.id,
                 reasonCode: selectedRoute ? undefined : reasonCode,
@@ -297,7 +344,7 @@ export class MlmAllocationEngineService {
           routeId: selectedRoute?.id,
           lenderId: selectedRoute?.lenderId,
           productId: selectedRoute?.productId,
-          productVersionId: selectedRoute ? selectedRoute.productId : null,
+          productVersionId: selectedRoute ? (candidateResults.find(c => c.routeId === selectedRoute.id) as any)?.__psvId || null : null,
           status,
           decisionReasonCode: reasonCode,
           assignedAt: selectedRoute ? new Date() : null,
@@ -307,7 +354,7 @@ export class MlmAllocationEngineService {
                 policyVersionId: policyVersion.id,
                 attemptNumber: nextAttemptNumber,
                 outcome: status as any,
-                requestedAmount: dto.requestedAmount,
+                requestedAmount: amount,
                 candidateResults: candidateResults as any,
                 selectedRouteId: selectedRoute?.id,
                 reasonCode: selectedRoute ? undefined : reasonCode,
@@ -323,17 +370,18 @@ export class MlmAllocationEngineService {
       // Update SWRR states
       for (const updatedState of updatedRoutesStates) {
          let deltaApp = 0;
-         let deltaAmt = new Prisma.Decimal(0);
-         if (updatedState.id === selectedRouteId) {
-             deltaApp = 1;
-             deltaAmt = amount;
-         }
-         await tx.mlmAllocationRouteState.update({
+          if (updatedState.id === selectedRouteId) {
+              deltaApp = 1;
+          }
+          const allocatedAmountUpdate = deltaApp > 0 && amount !== null
+            ? { allocatedAmount: { increment: amount } }
+            : {};
+          await tx.mlmAllocationRouteState.update({
              where: { routeId: updatedState.id },
              data: {
                 currentWeight: updatedState.currentWeight,
                 allocatedApplicationCount: { increment: deltaApp },
-                allocatedAmount: { increment: deltaAmt },
+                 ...allocatedAmountUpdate,
                 lastAllocatedAt: deltaApp > 0 ? new Date() : undefined,
                 version: { increment: 1 }
              }

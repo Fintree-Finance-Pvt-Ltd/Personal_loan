@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { doCustomerLogout } from '../../../features/customer/customerApi';
 
 const pageTitles = {
   '/customer/dashboard': {
@@ -56,10 +57,8 @@ export default function CustomerHeader({
     ? `+91 ${mobileNumber.slice(0, 2)}XXXX${mobileNumber.slice(-4)}`
     : 'Customer';
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('customerSession');
-    sessionStorage.removeItem('customerAccessToken');
-
+  const handleLogout = async () => {
+    await doCustomerLogout();
     navigate('/customer/login', {
       replace: true,
     });

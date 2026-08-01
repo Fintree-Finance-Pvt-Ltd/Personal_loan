@@ -1335,7 +1335,7 @@ export default function MyApplicationPage() {
           emailVerified: emailVerified,
         });
 
-        const appRes = await resumeApplication(customerId, {});
+        const appRes = await resumeApplication(customerId);
         
         if (appRes?.applicationNumber) {
           setApplicationNumber(appRes.applicationNumber);
@@ -2089,6 +2089,11 @@ function AadhaarKycStep({
               Your identity has been verified via DigiLocker.
               {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
             </p>
+            {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
+              <p className="mt-2 text-sm font-semibold text-emerald-900">
+                Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
+              </p>
+            )}
           </div>
         ) : (
           <>

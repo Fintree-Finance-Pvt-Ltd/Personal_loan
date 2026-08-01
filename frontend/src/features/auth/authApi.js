@@ -3,6 +3,12 @@ function getFullApiUrl(endpoint) {
   const cleanBase = rawBaseUrl.replace(/\/+$/, '');
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
+  // Keep OTP login and customer refresh on the same browser origin in local
+  // development. Vite proxies /api to VITE_API_BASE_URL.
+  if (import.meta.env.DEV) {
+    return `/api${cleanEndpoint}`;
+  }
+
   if (cleanEndpoint.startsWith('/api/')) {
     if (cleanBase.endsWith('/api')) {
       return `${cleanBase.slice(0, -4)}${cleanEndpoint}`;

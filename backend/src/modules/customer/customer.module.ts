@@ -9,10 +9,12 @@ import { MlmModule } from '../mlm/mlm.module';
 import { ExternalApiModule } from '../external-api/external-api.module';
 
 import { JwtModule } from '@nestjs/jwt';
+import { OtpModule } from '../otp/otp.module';
+import { CustomerAuthController } from './customer-auth.controller';
 
 @Module({
-  imports: [LoanModule, PlatformPoliciesModule, MlmModule, ExternalApiModule, JwtModule.register({})],
-  controllers: [CustomerController, CustomerAadhaarKycController],
+  imports: [LoanModule, PlatformPoliciesModule, MlmModule, ExternalApiModule, OtpModule, JwtModule.register({})],
+  controllers: [CustomerController, CustomerAadhaarKycController, CustomerAuthController],
   providers: [CustomerService, CustomerAadhaarKycService],
   exports: [CustomerService, CustomerAadhaarKycService],
 })

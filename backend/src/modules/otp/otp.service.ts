@@ -280,9 +280,10 @@ export class OtpService {
           },
         });
 
-        // Customer portal: hardcoded 7 days session for seamless onboarding
-        const absoluteExpiresAt = new Date(now.getTime() + 7 * 24 * 3600000);
-        const idleExpiresAt = new Date(now.getTime() + 7 * 24 * 3600000);
+        const sessionLengthHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 168);
+        const idleLengthMins = this.configService.get<number>('REFRESH_IDLE_TIMEOUT_MINUTES', 30);
+        const absoluteExpiresAt = new Date(now.getTime() + sessionLengthHours * 3600000);
+        const idleExpiresAt = new Date(now.getTime() + idleLengthMins * 60000);
 
         const customerSession = await transaction.customerSession.create({
           data: {
@@ -313,7 +314,7 @@ export class OtpService {
             type: 'customer-access',
         }, {
             secret: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_SECRET'),
-            expiresIn: '7d',
+            expiresIn: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_EXPIRES_IN') as any,
             issuer: this.configService.getOrThrow<string>('JWT_ISSUER'),
             audience: 'personal-loan-customer',
         });
@@ -832,19 +833,181 @@ export class OtpService {
     return value;
   }
 
+  private hashRefreshToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private invalidRefresh(): never {
+    throw new UnauthorizedException({
+      error: { code: 'AUTH_REFRESH_INVALID', message: 'Your session is no longer valid.' },
+    });
+  }
+
+  async refreshCustomerSession(rawToken: string, userAgent: string | null, ipAddress: string | null) {
+    const tokenHash = this.hashRefreshToken(rawToken);
+    const token = await this.prisma.customerRefreshToken.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        usedAt: true,
+        revokedAt: true,
+        expiresAt: true,
+        session: {
+          select: {
+            id: true,
+            revokedAt: true,
+            absoluteExpiresAt: true,
+            idleExpiresAt: true,
+            customer: {
+              select: {
+                id: true,
+                customerCode: true,
+                mobileNumber: true,
+                accountStatus: true,
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!token) this.invalidRefresh();
+
+    const now = new Date();
+    
+    // Check if token was already used (replay/compromise)
+    if (token.usedAt) {
+      // A browser can issue a second refresh during React StrictMode startup
+      // before it has applied the rotated cookie. Do not revoke the whole
+      // session for this short, legitimate race; an older replay is still
+      // treated as compromise below.
+      if (now.getTime() - token.usedAt.getTime() <= 5_000) {
+        this.invalidRefresh();
+      }
+
+      await this.prisma.customerSession.update({
+        where: { id: token.session.id },
+        data: { revokedAt: now, revokedReason: 'REFRESH_TOKEN_REUSE' }
+      });
+      await this.prisma.customerRefreshToken.updateMany({
+        where: { sessionId: token.session.id, revokedAt: null },
+        data: { revokedAt: now }
+      });
+      this.invalidRefresh();
+    }
+
+    if (token.revokedAt || token.expiresAt < now) this.invalidRefresh();
+
+    const session = token.session;
+    if (session.revokedAt || session.absoluteExpiresAt < now || session.idleExpiresAt < now) {
+      this.invalidRefresh();
+    }
+
+    if (session.customer.accountStatus !== 'ACTIVE') {
+      this.invalidRefresh();
+    }
+
+    const replacement = randomBytes(48).toString('base64url');
+    const replacementHash = this.hashRefreshToken(replacement);
+    
+    const idleLengthMins = this.configService.get<number>('REFRESH_IDLE_TIMEOUT_MINUTES', 30);
+    const newIdleExpiresAt = new Date(now.getTime() + idleLengthMins * 60000);
+
+    const rotated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.customerRefreshToken.updateMany({
+        where: { id: token.id, usedAt: null, revokedAt: null },
+        data: { usedAt: now }
+      });
+
+      if (claimed.count !== 1) return false;
+
+      await tx.customerRefreshToken.create({
+        data: {
+          sessionId: session.id,
+          tokenHash: replacementHash,
+          parentTokenId: token.id,
+          expiresAt: session.absoluteExpiresAt
+        }
+      });
+
+      await tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          idleExpiresAt: newIdleExpiresAt,
+          lastSeenAt: now,
+          ipAddress: ipAddress?.slice(0, 64),
+          userAgent: userAgent?.slice(0, 512),
+        }
+      });
+
+      return true;
+    });
+
+    if (!rotated) this.invalidRefresh();
+
+    const accessToken = await this.jwt.signAsync({
+      sub: session.customer.id.toString(),
+      sid: session.id,
+      type: 'customer-access',
+    }, {
+      secret: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_SECRET'),
+      expiresIn: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_EXPIRES_IN') as any,
+      issuer: this.configService.getOrThrow<string>('JWT_ISSUER'),
+      audience: 'personal-loan-customer',
+    });
+
+    return {
+      accessToken,
+      refreshToken: replacement,
+      customer: {
+        id: session.customer.id.toString(),
+        customerCode: session.customer.customerCode,
+        mobileNumber: session.customer.mobileNumber,
+      }
+    };
+  }
+
+  async revokeCustomerSessionByToken(rawToken: string) {
+    try {
+      const tokenHash = this.hashRefreshToken(rawToken);
+      const token = await this.prisma.customerRefreshToken.findUnique({
+        where: { tokenHash },
+        select: { sessionId: true }
+      });
+
+      if (token) {
+        await this.prisma.customerSession.update({
+          where: { id: token.sessionId },
+          data: { revokedAt: new Date(), revokedReason: 'LOGOUT' }
+        });
+      }
+    } catch (e) {
+      // Ignore errors on logout
+    }
+  }
+
   getCookieName(): string {
-    return this.configService.get<string>('CUSTOMER_COOKIE_NAME', 'plp_customer_refresh');
+    return this.configService.getOrThrow<string>('CUSTOMER_COOKIE_NAME');
   }
 
   getCookieOptions(): any {
     const isProd = this.configService.get('NODE_ENV') === 'production';
-    const maxAgeHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 8);
+    const maxAgeHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 168);
+    const apiPrefix = this.configService.get<string>('API_PREFIX', 'api');
+    const secure = this.configService.get<boolean>('COOKIE_SECURE', false) || isProd;
+    const sameSite = this.configService.get<'strict' | 'lax' | 'none'>('COOKIE_SAME_SITE', 'strict');
+
     return {
       httpOnly: true,
-      secure: this.configService.get<string>('COOKIE_SECURE') === 'true' || isProd,
-      sameSite: this.configService.get<string>('COOKIE_SAME_SITE', 'lax'),
-      path: '/api/customer', // Restricted path so Admin doesn't see it
+      secure,
+      sameSite,
+      path: `/${apiPrefix}/customer/auth`,
       maxAge: maxAgeHours * 3600000,
     };
+  }
+
+  getLegacyCookiePaths(): string[] {
+    const apiPrefix = this.configService.get<string>('API_PREFIX', 'api');
+    return [`/${apiPrefix}/customer`];
   }
 }

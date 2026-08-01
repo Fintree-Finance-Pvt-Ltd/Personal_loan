@@ -8,7 +8,7 @@ export class CustomerAuthGuard extends AuthGuard('customer-jwt') {
   }
 
   handleRequest(err: any, user: any) {
-    if (err || !user || user.audience !== 'personal-loan-customer') {
+    if (err || !user || user.audience !== 'personal-loan-customer' || !user.customerId) {
       throw err || new UnauthorizedException({
         error: { code: 'CUSTOMER_AUTH_REQUIRED', message: 'Customer authentication is required.' }
       });

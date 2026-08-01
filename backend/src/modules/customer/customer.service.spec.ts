@@ -5,6 +5,8 @@ import { PolicyEvaluationService } from '../platform-policies/policy-evaluation.
 import { PlatformPoliciesService } from '../platform-policies/platform-policies.service';
 import { LoanService } from '../loan/loan.service';
 import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engine/mlm-allocation-engine.service';
+import { PlPaymentsService } from '../external-api/pl-payments.service';
+import { ApplicationTransitionService } from '../loan/services/application-transition.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 describe('CustomerService Integration', () => {
@@ -30,7 +32,19 @@ describe('CustomerService Integration', () => {
         },
         { provide: LoanService, useValue: {} },
         { provide: PlatformPoliciesService, useValue: {} },
-        { provide: MlmAllocationEngineService, useValue: {} },
+        {
+          provide: MlmAllocationEngineService,
+          useValue: { allocateLender: jest.fn() },
+        },
+
+        {
+          provide: PlPaymentsService,
+          useValue: { getPaymentStatus: jest.fn() },
+        },
+        {
+          provide: ApplicationTransitionService,
+          useValue: { createOrResumeApplication: jest.fn() },
+        },
         {
           provide: PolicyEvaluationService,
           useValue: { evaluate: jest.fn() },
@@ -59,8 +73,9 @@ describe('CustomerService Integration', () => {
     });
 
     it('should query exactly one scoped policy and evaluate only active inputs', async () => {
-      const customerMock = { id: 1n, applications: [{ id: 10n, status: 'DRAFT', customerId: 1n }], dateOfBirth: new Date() };
+      const customerMock = { id: 1n, dateOfBirth: new Date() };
       jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue(customerMock as any);
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue({ id: 10n, status: 'DRAFT', customerId: 1n, platformProductId: 'PROD_1', scopeCode: 'PLATFORM_DEFAULT', requestedAmount: 50000 } as any);
       jest.spyOn(prisma.platformProduct, 'findFirst').mockResolvedValue({ id: 'PROD_1', status: 'ACTIVE' } as any);
       
       const mockPolicy = {
@@ -73,18 +88,21 @@ describe('CustomerService Integration', () => {
           ] 
         }]
       };
+      const mockPolicyVersion = mockPolicy.versions[0];
       
-      jest.spyOn(prisma.platformPolicy, 'findMany').mockResolvedValue([mockPolicy] as any);
+      (service as any).platformPoliciesService.resolveActivePolicyVersion = jest.fn().mockResolvedValue(mockPolicyVersion);
+      
       jest.spyOn(policyEvalService, 'evaluate').mockReturnValue({ finalOutcome: 'POLICY_INPUT_MISSING', ruleResults: [{ outcome: 'POLICY_INPUT_MISSING', ruleCode: 'NO_FRAUD_FLAG' }] } as any);
 
       // Missing fraud flag results in POLICY_INPUT_MISSING error
       await expect(service.runEligibility(1n, {}))
         .rejects.toThrow(/Missing required inputs for eligibility check/);
 
-      expect(prisma.platformPolicy.findMany).toHaveBeenCalledWith({
-        where: expect.objectContaining({ platformProductId: 'PROD_1', scopeCode: 'PLATFORM_DEFAULT' }),
-        include: expect.anything()
-      });
+      expect((service as any).platformPoliciesService.resolveActivePolicyVersion).toHaveBeenCalledWith(
+        'PROD_1',
+        'PLATFORM_DEFAULT',
+        expect.anything()
+      );
     });
   });
 });

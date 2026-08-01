@@ -1544,36 +1544,40 @@ export class LoanService {
       return { success: false, message: 'Missing transaction_id in webhook payload' };
     }
 
-    const mandate = await this.prisma.plLoanMandate.findFirst({
-      where: {
-        OR: [
-          { merchantTransactionId: String(txId) },
-          { lan: String(txId) },
-          ...(providerMandateId ? [{ providerMandateId: String(providerMandateId) }] : []),
-        ],
-      },
-      include: { loan: true },
-    });
+    // Exact-once processing via interactive transaction and row-level locking
+    return this.prisma.$transaction(async (tx) => {
+      const mandate = await tx.plLoanMandate.findFirst({
+        where: {
+          OR: [
+            { merchantTransactionId: String(txId) },
+            { lan: String(txId) },
+            ...(providerMandateId ? [{ providerMandateId: String(providerMandateId) }] : []),
+          ],
+        },
+        include: { loan: true },
+      });
 
-    if (!mandate) {
-      this.logger.warn(`No local mandate found for webhook TxID ${maskedTxId}`);
-      return { success: true, acknowledged: true, processed: false, reason: 'MANDATE_NOT_FOUND' };
-    }
+      if (!mandate) {
+        this.logger.warn(`No local mandate found for webhook TxID ${maskedTxId}`);
+        return { success: true, acknowledged: true, processed: false, reason: 'MANDATE_NOT_FOUND' };
+      }
 
-    const normalizedStatus = this.normalizeEasebuzzMandateStatus(rawStatus);
+      // Lock row to prevent concurrent webhook replays
+      await tx.$queryRaw`SELECT id FROM pl_loan_mandates WHERE id = ${mandate.id} FOR UPDATE`;
 
-    // Prevent downgrading an already AUTHORIZED mandate
-    if (mandate.status === PlMandateStatus.AUTHORIZED || mandate.status === PlMandateStatus.COMPLETED) {
-      this.logger.log(`Mandate ${maskedTxId} is already AUTHORIZED. Ignoring webhook status change.`);
-      return { success: true, acknowledged: true, processed: true, note: 'ALREADY_AUTHORIZED' };
-    }
+      const normalizedStatus = this.normalizeEasebuzzMandateStatus(rawStatus);
 
-    const umrn = payload?.umrn || payload?.bank_reference_number || null;
-    const failureReason = payload?.failure_reason || payload?.error_desc || null;
+      // Prevent downgrading an already AUTHORIZED mandate
+      if (mandate.status === PlMandateStatus.AUTHORIZED || mandate.status === PlMandateStatus.COMPLETED) {
+        this.logger.log(`Mandate ${maskedTxId} is already AUTHORIZED. Ignoring webhook status change.`);
+        return { success: true, acknowledged: true, processed: true, note: 'ALREADY_AUTHORIZED' };
+      }
 
-    if (normalizedStatus === PlMandateStatus.AUTHORIZED || normalizedStatus === PlMandateStatus.COMPLETED) {
-      await this.prisma.$transaction([
-        this.prisma.plLoanMandate.update({
+      const umrn = payload?.umrn || payload?.bank_reference_number || null;
+      const failureReason = payload?.failure_reason || payload?.error_desc || null;
+
+      if (normalizedStatus === PlMandateStatus.AUTHORIZED || normalizedStatus === PlMandateStatus.COMPLETED) {
+        await tx.plLoanMandate.update({
           where: { id: mandate.id },
           data: {
             status: PlMandateStatus.AUTHORIZED,
@@ -1584,8 +1588,9 @@ export class LoanService {
             lastStatusCheckedAt: new Date(),
             webhookResponseJson: JSON.stringify(sanitized || {}),
           },
-        }),
-        this.prisma.plLoan.update({
+        });
+        
+        await tx.plLoan.update({
           where: { id: mandate.loanId },
           data: {
             mandateCompleted: true,
@@ -1594,36 +1599,36 @@ export class LoanService {
             mandateProviderRef: providerMandateId ? String(providerMandateId) : mandate.merchantTransactionId,
             currentStep: 'ESIGN',
           },
-        }),
-      ]);
+        });
 
-      this.auditLogs.record({
-        actorUserId: null,
-        module: 'LOAN',
-        action: 'EASEBUZZ_MANDATE_AUTHORIZED',
-        entityType: 'PlLoanMandate',
-        entityId: mandate.id.toString(),
-        outcome: 'SUCCESS',
-        newValue: { lan: mandate.lan, transactionId: mandate.merchantTransactionId, status: 'AUTHORIZED' },
-        ipAddress: metadata?.ipAddress,
-        userAgent: metadata?.userAgent,
-        requestId: randomBytes(16).toString('hex'),
-      }).catch(() => {});
-    } else {
-      await this.prisma.plLoanMandate.update({
-        where: { id: mandate.id },
-        data: {
-          status: normalizedStatus,
-          providerStatus: String(rawStatus),
-          failureReason: failureReason ? String(failureReason).slice(0, 500) : null,
-          failedAt: ([PlMandateStatus.FAILED, PlMandateStatus.REJECTED, PlMandateStatus.CANCELLED] as PlMandateStatus[]).includes(normalizedStatus) ? new Date() : undefined,
-          lastStatusCheckedAt: new Date(),
-          webhookResponseJson: JSON.stringify(sanitized || {}),
-        },
-      });
-    }
+        this.auditLogs.record({
+          actorUserId: null,
+          module: 'LOAN',
+          action: 'EASEBUZZ_MANDATE_AUTHORIZED',
+          entityType: 'PlLoanMandate',
+          entityId: mandate.id.toString(),
+          outcome: 'SUCCESS',
+          newValue: { lan: mandate.lan, transactionId: mandate.merchantTransactionId, status: 'AUTHORIZED' },
+          ipAddress: metadata?.ipAddress,
+          userAgent: metadata?.userAgent,
+          requestId: randomBytes(16).toString('hex'),
+        }).catch(() => {});
+      } else {
+        await tx.plLoanMandate.update({
+          where: { id: mandate.id },
+          data: {
+            status: normalizedStatus,
+            providerStatus: String(rawStatus),
+            failureReason: failureReason ? String(failureReason).slice(0, 500) : null,
+            failedAt: ([PlMandateStatus.FAILED, PlMandateStatus.REJECTED, PlMandateStatus.CANCELLED] as PlMandateStatus[]).includes(normalizedStatus) ? new Date() : undefined,
+            lastStatusCheckedAt: new Date(),
+            webhookResponseJson: JSON.stringify(sanitized || {}),
+          },
+        });
+      }
 
-    return { success: true, acknowledged: true, processed: true };
+      return { success: true, acknowledged: true, processed: true };
+    });
   }
 
   async initiateEsign(lan: string, customerId: bigint) {

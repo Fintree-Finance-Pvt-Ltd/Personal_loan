@@ -54,6 +54,19 @@ export class PolicyEvaluationService {
       }
 
       if (actualInputVal === undefined || actualInputVal === null) {
+        if (rule.ruleCode === 'COOLING_OFF_DAYS' && actualInputVal === null) {
+          ruleResults.push({
+            ruleCode: rule.ruleCode,
+            ruleName: rule.ruleName,
+            outcome: PolicyDecisionOutcome.PASS,
+            message: undefined,
+            reasonCode: undefined,
+            inputValue: 'No Previous Rejection',
+            expectedValue: rule.expectedValue,
+          });
+          continue;
+        }
+
         ruleResults.push(this.createMissingResult(rule));
         finalOutcome = 'POLICY_INPUT_MISSING';
         continue; // Stop on missing required data

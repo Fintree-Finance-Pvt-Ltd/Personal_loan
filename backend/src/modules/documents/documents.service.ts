@@ -91,10 +91,7 @@ export class DocumentsService {
 
     try {
       const document = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-          `UPDATE \`pl_customer_documents\` SET \`status\` = 'REPLACED', \`updated_at\` = NOW(6) WHERE \`customer_id\` = ? AND \`document_type\` = 'CUSTOMER_LIVE_PHOTO' AND \`status\` = 'VERIFIED'`,
-          customerId,
-        );
+        await tx.$executeRaw`UPDATE pl_customer_documents SET status = 'REPLACED', updated_at = NOW(6) WHERE customer_id = ${customerId} AND document_type = 'CUSTOMER_LIVE_PHOTO' AND status = 'VERIFIED'`;
 
         const metadataJson = JSON.stringify({
           capturedAt: capturedAtDate.toISOString(),
@@ -112,48 +109,33 @@ export class DocumentsService {
           ? Number(body.faceLivenessScore)
           : null;
 
-        await tx.$executeRawUnsafe(
-          `INSERT INTO \`pl_customer_documents\` (
-            \`customer_id\`, \`application_id\`, \`document_type\`, \`applicant_type\`, \`status\`,
-            \`file_name\`, \`original_file_name\`, \`file_path\`, \`file_url\`, \`mime_type\`, \`file_size\`, \`source\`,
-            \`latitude\`, \`longitude\`, \`accuracy\`, \`formatted_address\`, \`city\`, \`state\`, \`country\`, \`postal_code\`,
-            \`captured_at\`, \`face_liveness_status\`, \`face_liveness_score\`, \`face_liveness_provider_app_id\`, \`metadata_json\`, \`created_at\`, \`updated_at\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
-          customerId,
-          appId,
-          'CUSTOMER_LIVE_PHOTO',
-          body?.applicantType || 'BORROWER',
-          'VERIFIED',
-          fileName,
-          file.originalname || fileName,
-          relativePath,
-          fileUrl,
-          'image/jpeg',
-          file.size || 0,
-          body?.source || 'PROFILE_DETAILS',
-          lat,
-          lon,
-          acc,
-          body?.formattedAddress || null,
-          body?.city || null,
-          body?.state || null,
-          body?.country || 'India',
-          body?.postalCode || null,
-          capturedAtDate,
-          body?.faceLivenessStatus || 'VERIFIED',
-          scoreVal,
-          body?.faceLivenessProviderApplicationId || null,
-          metadataJson,
-        );
+        const applicantType = body?.applicantType || 'BORROWER';
+        const source = body?.source || 'PROFILE_DETAILS';
+        const formattedAddress = body?.formattedAddress || null;
+        const city = body?.city || null;
+        const state = body?.state || null;
+        const country = body?.country || 'India';
+        const postalCode = body?.postalCode || null;
+        const faceLivenessStatus = body?.faceLivenessStatus || 'VERIFIED';
+        const faceLivenessProviderApplicationId = body?.faceLivenessProviderApplicationId || null;
+        const originalName = file.originalname || fileName;
+        const fileSize = file.size || 0;
 
-        const insertedRows: any[] = await tx.$queryRawUnsafe(
-          `SELECT \`id\`, \`customer_id\` AS customerId, \`application_id\` AS applicationId, \`document_type\` AS documentType, \`applicant_type\` AS applicantType, \`status\`, \`file_name\` AS fileName, \`original_file_name\` AS originalFileName, \`file_path\` AS filePath, \`file_url\` AS fileUrl, \`mime_type\` AS mimeType, \`file_size\` AS fileSize, \`source\`, \`latitude\`, \`longitude\`, \`accuracy\`, \`formatted_address\` AS formattedAddress, \`city\`, \`state\`, \`country\`, \`postal_code\` AS postalCode, \`captured_at\` AS capturedAt, \`uploaded_at\` AS uploadedAt, \`face_liveness_status\` AS faceLivenessStatus, \`face_liveness_score\` AS faceLivenessScore, \`face_liveness_provider_app_id\` AS faceLivenessProviderApplicationId, \`metadata_json\` AS metadataJson, \`created_at\` AS createdAt, \`updated_at\` AS updatedAt FROM \`pl_customer_documents\` WHERE \`id\` = LAST_INSERT_ID()`,
-        );
+        await tx.$executeRaw`INSERT INTO pl_customer_documents (
+            customer_id, application_id, document_type, applicant_type, status,
+            file_name, original_file_name, file_path, file_url, mime_type, file_size, source,
+            latitude, longitude, accuracy, formatted_address, city, state, country, postal_code,
+            captured_at, face_liveness_status, face_liveness_score, face_liveness_provider_app_id, metadata_json, created_at, updated_at
+          ) VALUES (
+            ${customerId}, ${appId}, 'CUSTOMER_LIVE_PHOTO', ${applicantType}, 'VERIFIED',
+            ${fileName}, ${originalName}, ${relativePath}, ${fileUrl}, 'image/jpeg', ${fileSize}, ${source},
+            ${lat}, ${lon}, ${acc}, ${formattedAddress}, ${city}, ${state}, ${country}, ${postalCode},
+            ${capturedAtDate}, ${faceLivenessStatus}, ${scoreVal}, ${faceLivenessProviderApplicationId}, ${metadataJson}, NOW(3), NOW(3)
+          )`;
 
-        await tx.$executeRawUnsafe(
-          `UPDATE \`customers\` SET \`last_activity_at\` = NOW(0) WHERE \`id\` = ?`,
-          customerId,
-        );
+        const insertedRows: any[] = await tx.$queryRaw`SELECT id, customer_id AS customerId, application_id AS applicationId, document_type AS documentType, applicant_type AS applicantType, status, file_name AS fileName, original_file_name AS originalFileName, file_path AS filePath, file_url AS fileUrl, mime_type AS mimeType, file_size AS fileSize, source, latitude, longitude, accuracy, formatted_address AS formattedAddress, city, state, country, postal_code AS postalCode, captured_at AS capturedAt, uploaded_at AS uploadedAt, face_liveness_status AS faceLivenessStatus, face_liveness_score AS faceLivenessScore, face_liveness_provider_app_id AS faceLivenessProviderApplicationId, metadata_json AS metadataJson, created_at AS createdAt, updated_at AS updatedAt FROM pl_customer_documents WHERE id = LAST_INSERT_ID()`;
+
+        await tx.$executeRaw`UPDATE customers SET last_activity_at = NOW(0) WHERE id = ${customerId}`;
 
         return insertedRows[0];
       });

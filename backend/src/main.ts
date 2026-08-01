@@ -43,7 +43,7 @@ async function bootstrap(): Promise<void> {
       if (allowedOrigins.includes(origin) || origin.endsWith('.localhost')) {
         return callback(null, true);
       }
-      return callback(null, true);
+      return callback(new Error('CORS origin rejected'), false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],

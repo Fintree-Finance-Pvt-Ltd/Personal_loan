@@ -21,6 +21,7 @@ describe('MlmService', () => {
       mlmPolicy: {
         findMany: jest.fn(),
         updateMany: jest.fn(),
+        update: jest.fn(),
       },
       mlmAllocationRoute: {
         deleteMany: jest.fn(),
@@ -89,13 +90,17 @@ describe('MlmService', () => {
         id: 'v1', status: 'APPROVED', 
         policyId: 'pol-new',
         policy: { scopeCode: 'DEFAULT', platformProductId: 'plat-1' },
-        routes: []
+        routes: [
+          { isActive: true, allocationWeightPercent: new Prisma.Decimal(50), routeCode: 'R1', product: { platformProductId: 'plat-1' } },
+          { isActive: true, allocationWeightPercent: new Prisma.Decimal(50), routeCode: 'R2', product: { platformProductId: 'plat-1' } }
+        ]
       });
 
       // Conflicting policies on the same platform product
       prisma.mlmPolicy.findMany.mockResolvedValue([
         { id: 'pol-old' }
       ]);
+      prisma.mlmPolicy.update.mockResolvedValue({} as any);
 
       await service.activateVersion('v1', 'user1');
 

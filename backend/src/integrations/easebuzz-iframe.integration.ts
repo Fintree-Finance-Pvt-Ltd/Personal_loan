@@ -798,3 +798,42 @@ export async function initiateEasebuzzIframePayment(
     });
   }
 }
+
+export function verifyEasebuzzWebhookHash(data: any): boolean {
+  try {
+    const key = getEasebuzzKey();
+    const salt = getEasebuzzSalt();
+
+    const txnid = data.txnid || '';
+    // Use formatted amount for hash check to ensure exact string match (two decimals)
+    const amountStr = typeof data.amount === 'number' ? data.amount.toFixed(2) : (data.amount || '');
+    const productinfo = data.productinfo || '';
+    const firstname = data.firstname || '';
+    const email = data.email || '';
+    const udf1 = data.udf1 || '';
+    const udf2 = data.udf2 || '';
+    const udf3 = data.udf3 || '';
+    const udf4 = data.udf4 || '';
+    const udf5 = data.udf5 || '';
+    const udf6 = data.udf6 || '';
+    const udf7 = data.udf7 || '';
+    const udf8 = data.udf8 || '';
+    const udf9 = data.udf9 || '';
+    const udf10 = data.udf10 || '';
+    const status = data.status || '';
+
+    // The official Easebuzz reverse hash sequence:
+    // salt|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
+    let hashSequence = `${salt}|${status}|${udf10}|${udf9}|${udf8}|${udf7}|${udf6}|${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amountStr}|${txnid}|${key}`;
+
+    if (data.additionalCharges) {
+      hashSequence = `${data.additionalCharges}|${hashSequence}`;
+    }
+
+    const computedHash = createHash('sha512').update(hashSequence).digest('hex');
+
+    return computedHash === data.hash;
+  } catch (err) {
+    return false;
+  }
+}

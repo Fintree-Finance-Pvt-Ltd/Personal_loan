@@ -9,6 +9,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { authApi } from '../authApi';
+import { setCustomerAccessToken, getCustomerAccessToken, doCustomerRefresh } from '../../customer/customerApi';
 
 const INDIAN_MOBILE_REGEX =
   /^[6-9]\d{9}$/;
@@ -37,9 +38,16 @@ export default function CustomerSignIn() {
     useSearchParams();
 
   useEffect(() => {
-    if (localStorage.getItem('customerAccessToken')) {
+    if (getCustomerAccessToken()) {
       navigate('/customer/dashboard');
+      return;
     }
+    // Attempt silent refresh on load
+    doCustomerRefresh()
+      .then(() => navigate('/customer/dashboard'))
+      .catch(() => {
+        // Stay on login page
+      });
   }, [navigate]);
 
   const otpInputRefs = useRef([]);
@@ -180,8 +188,10 @@ export default function CustomerSignIn() {
       setStep('OTP');
 
       setDevelopmentOtp(
-        result?.data
-          ?.developmentOtp || '',
+        result?.data?.data
+          ?.developmentOtp ||
+          result?.data
+            ?.developmentOtp || '',
       );
 
       setSuccessMessage(
@@ -356,7 +366,7 @@ export default function CustomerSignIn() {
           throw new Error('Access token was not returned after OTP verification.');
         }
 
-        localStorage.setItem('customerAccessToken', accessToken);
+        setCustomerAccessToken(accessToken);
 
         // We no longer rely on localStorage.customerSession for identity, but keeping a minimal hint for navigation is okay.
         localStorage.setItem(
@@ -435,8 +445,10 @@ export default function CustomerSignIn() {
         );
 
         setDevelopmentOtp(
-          result?.data
-            ?.developmentOtp || '',
+          result?.data?.data
+            ?.developmentOtp ||
+            result?.data
+              ?.developmentOtp || '',
         );
 
         setSuccessMessage(
