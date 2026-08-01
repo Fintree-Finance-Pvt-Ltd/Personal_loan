@@ -1098,14 +1098,19 @@ export class LoanService {
     };
   }
 
-  private resolveMandateConfiguration(loan: any) {
+  private resolveMandateConfiguration(loan: any, requestedMandateType?: string) {
     const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
     const acceptedTotalRepayment = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
 
     const amount = Math.max(acceptedTotalRepayment, approvedAmount, 100);
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
     const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly';
-    const mandateType = (this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH') as PlMandateType;
+    const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
+    
+    let mandateType = (requestedMandateType || configMandateType) as PlMandateType;
+    if (mandateType !== 'UPI' && mandateType !== 'ENACH') {
+      mandateType = 'ENACH' as PlMandateType;
+    }
 
     const startDateObj = new Date();
     startDateObj.setDate(startDateObj.getDate() + 1);
@@ -1153,7 +1158,7 @@ export class LoanService {
     return PlMandateStatus.UNKNOWN;
   }
 
-  async initiateMandate(lan: string, customerId: bigint, forceNew: boolean = false, metadata?: { ipAddress?: string; userAgent?: string }) {
+  async initiateMandate(lan: string, customerId: bigint, forceNew: boolean = false, mandateTypeReq?: string, metadata?: { ipAddress?: string; userAgent?: string }) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
 
     // Validate step prerequisites
@@ -1259,7 +1264,7 @@ export class LoanService {
       decryptedAccountNumber = loan.bankAccountMasked;
     }
 
-    const config = this.resolveMandateConfiguration(loan);
+    const config = this.resolveMandateConfiguration(loan, mandateTypeReq);
     const transactionId = this.generateUniqueTransactionId(loan.lan);
 
     const successUrl = this.configService.get<string>('EASEBUZZ_MANDATE_SUCCESS_URL') || `${this.configService.get('FRONTEND_URL')}/customer/mandate/result`;
@@ -1354,6 +1359,7 @@ export class LoanService {
           accountHolderName: bankAccHolder || 'ACCOUNT HOLDER',
           ifscCode: bankIfsc,
           accountType: bankType,
+          mandateType: newMandate.mandateType,
         });
       } catch (err: any) {
         this.logger.warn(`Mandate creation payload generation warning: ${err?.message}`);

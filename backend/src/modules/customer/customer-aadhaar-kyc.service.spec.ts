@@ -1,10 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { CustomerAadhaarKycService } from './customer-aadhaar-kyc.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
-import { NotFoundException } from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 describe('CustomerAadhaarKycService', () => {
@@ -34,6 +33,8 @@ describe('CustomerAadhaarKycService', () => {
       },
       kycVerificationStatus: {
         upsert: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
       },
     };
 
@@ -48,14 +49,14 @@ describe('CustomerAadhaarKycService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: DigitapDigilockerService, useValue: digitapService },
         {
+          provide: AuditLogsService,
+          useValue: { record: jest.fn().mockResolvedValue(undefined), logEvent: jest.fn() },
+        },
+        {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockReturnValue('http://localhost:5173/customer/digilocker/callback'),
           },
-        },
-        {
-          provide: AuditLogsService,
-          useValue: { logEvent: jest.fn() },
         },
       ],
     }).compile();
@@ -104,5 +105,10 @@ describe('CustomerAadhaarKycService', () => {
     expect(result.data.status).toBe('INITIATED');
     expect(result.data.transactionId).toBe('TXN12345');
     expect(digitapService.generateDigitapDigilockerUrl).toHaveBeenCalled();
+  });
+
+  it('should throw NotFoundException when NotFoundException is expected', async () => {
+    prisma.customer.findUnique.mockResolvedValue(null);
+    await expect(service.refreshStatus(null)).rejects.toThrow(UnauthorizedException);
   });
 });

@@ -138,6 +138,7 @@ export class EasebuzzAutocollectService {
     ifscCode: string;
     accountType?: string;
     authMode?: string;
+    mandateType?: string;
   }) {
     const cleanAccountHolder = String(input.accountHolderName || '')
       .replace(/[^A-Za-z\s]/g, '')
@@ -162,29 +163,39 @@ export class EasebuzzAutocollectService {
     const authHashBase64 = this.generateMandateAuthHash(encryptedAccBase64, cleanIfsc);
     const authHashHex = this.generateMandateAuthHash(encryptedAccHex, cleanIfsc);
 
+    const mandateTypeStr = input.mandateType || 'ENACH';
+    let authModeStr = input.authMode;
+    if (!authModeStr) {
+      if (mandateTypeStr === 'UPI') {
+        authModeStr = 'collect_request,intent,qr';
+      } else {
+        authModeStr = 'netbanking,debitcard';
+      }
+    }
+
     const mandateFormDataBase64 = {
       key: this.merchantKey,
       access_key: input.accessKey,
-      mandate_type: 'ENACH',
+      mandate_type: mandateTypeStr,
       account_number: encryptedAccBase64,
       account_holder_name: encryptedNameBase64,
       account_type: encryptedTypeBase64,
       ifsc: cleanIfsc,
       bank_code: bankCode,
-      auth_mode: input.authMode || 'netbanking',
+      auth_mode: authModeStr,
       Authorization: authHashBase64,
     };
 
     const mandateFormDataHex = {
       key: this.merchantKey,
       access_key: input.accessKey,
-      mandate_type: 'ENACH',
+      mandate_type: mandateTypeStr,
       account_number: encryptedAccHex,
       account_holder_name: encryptedNameHex,
       account_type: encryptedTypeHex,
       ifsc: cleanIfsc,
       bank_code: bankCode,
-      auth_mode: input.authMode || 'netbanking',
+      auth_mode: authModeStr,
       Authorization: authHashHex,
     };
 

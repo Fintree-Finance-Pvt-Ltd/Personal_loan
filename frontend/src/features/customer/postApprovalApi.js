@@ -159,10 +159,10 @@ export const acceptKfs = async (lan, payload) => {
   return extractApiData(response);
 };
 
-export const initiateMandate = async (lan, forceNew = false) => {
+export const initiateMandate = async (lan, forceNew = false, mandateType = 'ENACH') => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/initiate`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId({ forceNew })),
+    body: JSON.stringify(withCustomerId({ forceNew, mandateType })),
   });
   return extractApiData(response);
 };

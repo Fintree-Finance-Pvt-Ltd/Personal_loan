@@ -899,7 +899,7 @@ function BankVerificationStep({ lan, data, onNext }) {
                 <input
                   id="accountNumber"
                   name="accountNumber"
-                  type="password"
+                  type="text"
                   inputMode="numeric"
                   placeholder="Enter 9–20 digit account number"
                   value={formData.accountNumber}
@@ -1022,7 +1022,7 @@ function BankVerificationStep({ lan, data, onNext }) {
 
             <div className="mt-8 flex justify-end pt-2">
               <ActionButton type="submit" onClick={handleVerify} loading={isLoading} variant="blue">
-                Verify Bank Account
+                Send ₹1.00 & Verify Bank
               </ActionButton>
             </div>
           </form>
@@ -1292,7 +1292,7 @@ function MandateStep({ lan, data, onNext }) {
     };
   }, [isModalOpen, isCompleted, portalUrl, lan]);
 
-  const handleInitiate = async (forceNew = false) => {
+  const handleInitiate = async (forceNew = false, mandateType = 'ENACH') => {
     if (isLoading || isCheckingStatus) return;
     if (isCompleted) {
       onNext();
@@ -1308,7 +1308,7 @@ function MandateStep({ lan, data, onNext }) {
     setStatusMsg('');
 
     try {
-      const res = await initiateMandate(lan, forceNew);
+      const res = await initiateMandate(lan, forceNew, mandateType);
       const st = String(res?.status || res?.data?.status || '').toUpperCase();
       const accessKey = res?.accessKey || res?.data?.accessKey;
       const targetUrl = res?.portalUrl || res?.data?.portalUrl;
@@ -1464,7 +1464,7 @@ function MandateStep({ lan, data, onNext }) {
               </div>
               <div>
                 <span className="text-xs text-slate-500 block">Mandate Type</span>
-                <strong className="text-slate-900">eNACH / Autopay</strong>
+                <strong className="text-slate-900">UPI Autopay / eNACH</strong>
               </div>
               <div>
                 <span className="text-xs text-slate-500 block">Debit Frequency</span>
@@ -1535,14 +1535,36 @@ function MandateStep({ lan, data, onNext }) {
                 </button>
               )}
 
-              <ActionButton
-                onClick={() => handleInitiate(false)}
-                loading={isLoading || isCheckingStatus}
-                disabled={!consent}
-                variant="blue"
-              >
-                {isCheckingStatus ? 'Checking Status…' : portalUrl ? 'Re-open Mandate Portal' : 'Set Up e-Mandate'}
-              </ActionButton>
+              {!portalUrl ? (
+                <>
+                  <ActionButton
+                    onClick={() => handleInitiate(false, 'ENACH')}
+                    loading={isLoading || isCheckingStatus}
+                    disabled={!consent}
+                    variant="slate"
+                    className="!bg-slate-800 hover:!bg-slate-900 text-white"
+                  >
+                    Set Up via Netbanking / Debit Card
+                  </ActionButton>
+                  <ActionButton
+                    onClick={() => handleInitiate(false, 'UPI')}
+                    loading={isLoading || isCheckingStatus}
+                    disabled={!consent}
+                    variant="blue"
+                  >
+                    Set Up via UPI Autopay
+                  </ActionButton>
+                </>
+              ) : (
+                <ActionButton
+                  onClick={() => handleInitiate(false)}
+                  loading={isLoading || isCheckingStatus}
+                  disabled={!consent}
+                  variant="blue"
+                >
+                  {isCheckingStatus ? 'Checking Status…' : 'Re-open Mandate Portal'}
+                </ActionButton>
+              )}
             </div>
           </div>
 

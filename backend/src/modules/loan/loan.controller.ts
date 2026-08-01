@@ -120,9 +120,9 @@ export class LoanController {
   @Post(':lan/mandate/initiate')
   initiateMandate(
     @Param('lan') lan: string,
-    @Body() body: { customerId?: string; forceNew?: boolean },
+    @Body() body: { customerId?: string; forceNew?: boolean; mandateType?: string },
   ) {
-    return this.loanService.initiateMandate(lan, BigInt(body?.customerId || '0'), Boolean(body?.forceNew));
+    return this.loanService.initiateMandate(lan, BigInt(body?.customerId || '0'), Boolean(body?.forceNew), body?.mandateType);
   }
 
   @Public()
