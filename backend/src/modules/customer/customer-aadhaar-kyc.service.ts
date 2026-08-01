@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { CustomerGender } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
