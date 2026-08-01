@@ -41,6 +41,9 @@ import {
   getCustomerLivePhoto,
   initiateCustomerAadhaarKyc,
   getCustomerAadhaarKycStatus,
+  saveCurrentAddressSameAsAadhaar,
+  initiateCustomerPayment,
+  getCustomerPaymentStatus,
   refreshCustomerAadhaarKycStatus,
   runEligibility,
   updatePincode,
@@ -1421,36 +1424,9 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const response = await fetch('/api/external-api/initiate-payment', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: String(customerId),
-          purpose: 'PROCESSING_FEE',
-        }),
+      const paymentData = await initiateCustomerPayment({
+        purpose: 'PROCESSING_FEE',
       });
-
-      let result = null;
-      try {
-        result = await response.json();
-      } catch {
-        throw new Error('Payment initiation service returned an invalid response.');
-      }
-
-      if (!response.ok) {
-        const msg =
-          result?.message ||
-          result?.error ||
-          result?.data?.message ||
-          'Payment initiation failed.';
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
-
-      const paymentData =
-        result?.data?.data || result?.data || result || null;
 
       const accessKey = paymentData?.accessKey || null;
       const merchantKey = paymentData?.merchantKey || null;
@@ -1537,29 +1513,11 @@ export default function MyApplicationPage() {
       attempts += 1;
 
       try {
-        const response = await fetch('/api/external-api/payment-status', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            customerId: String(customerId),
-            paymentId: pId,
-            transactionId: txId,
-            purpose: 'PROCESSING_FEE',
-          }),
+        const statusPayload = await getCustomerPaymentStatus({
+          paymentId: pId,
+          transactionId: txId,
+          purpose: 'PROCESSING_FEE',
         });
-
-        let result = null;
-        try {
-          result = await response.json();
-        } catch {
-          result = null;
-        }
-
-        const statusPayload =
-          result?.data?.data || result?.data || result || null;
 
         const currentStatus = String(
           statusPayload?.status || statusPayload?.paymentStatus || '',
@@ -1619,14 +1577,10 @@ export default function MyApplicationPage() {
   }, []);
 
   const handleProceedToProfile = () => {
-    // TESTING MODE: Bypassing feePaid check for testing next steps
-    // if (!feePaid) {
-    //   showMessage(
-    //     'Complete the assessment fee payment first.',
-    //     'error',
-    //   );
-    //   return;
-    // }
+    if (!feePaid || !lenderConsent) {
+      showMessage('Complete the lender consent and assessment fee payment first.', 'error');
+      return;
+    }
 
     goToStep('profile_details');
   };
@@ -1790,6 +1744,13 @@ export default function MyApplicationPage() {
   }
 
   const workflow = deriveCustomerWorkflow(customer);
+  const canReviewAndSubmit = Boolean(
+    workflow.basicDetailsCompleted &&
+    workflow.eligibilityPassed &&
+    workflow.assessmentFeePaid &&
+    workflow.profileDetailsCompleted &&
+    workflow.aadhaarKycCompleted,
+  );
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -1924,16 +1885,16 @@ export default function MyApplicationPage() {
           workflow={workflow}
           onCompleted={() => {
             fetchCustomer();
-            goToStep('submit_application');
           }}
           onBack={() => goToStep('profile_details')}
         />
       )}
 
-      {currentStep === 'submit_application' && (
+      {currentStep === 'submit_application' && canReviewAndSubmit && (
         <SubmitApplicationStep
           form={form}
           customer={customer}
+          workflow={workflow}
           mobileNumber={mobileNumber}
           applicationSubmitted={applicationSubmitted}
           applicationNumber={applicationNumber}
@@ -1959,6 +1920,9 @@ function AadhaarKycStep({
   const [error, setError] = useState('');
   const [kycStatus, setKycStatus] = useState(null);
   const [polling, setPolling] = useState(false);
+  const [sameAsPermanent, setSameAsPermanent] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [addressSaved, setAddressSaved] = useState(false);
   const pollTimerRef = useRef(null);
 
   const fetchStatus = async () => {
@@ -2050,6 +2014,24 @@ function AadhaarKycStep({
     customer?.digilockerStatus === 'VERIFIED'
   );
 
+  const handleSameAsPermanent = async (checked) => {
+    setSameAsPermanent(checked);
+    setAddressSaved(false);
+    if (!checked) return;
+    setSavingAddress(true);
+    setError('');
+    try {
+      const result = await saveCurrentAddressSameAsAadhaar();
+      setKycStatus((current) => ({ ...current, currentAddress: result?.currentAddress }));
+      setAddressSaved(true);
+    } catch (err) {
+      setSameAsPermanent(false);
+      setError(err?.message || 'Failed to save current address.');
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
   return (
     <StepCard>
       <StepHeading
@@ -2093,6 +2075,41 @@ function AadhaarKycStep({
               <p className="mt-2 text-sm font-semibold text-emerald-900">
                 Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
               </p>
+            )}
+            {kycStatus?.permanentAddress && (
+              <div className="mt-5 rounded-xl border border-emerald-200 bg-white p-4 text-left">
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Permanent Address Received from Aadhaar</p>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-800">
+                  {kycStatus.permanentAddress.formattedAddress || [
+                    kycStatus.permanentAddress.addressLine1,
+                    kycStatus.permanentAddress.addressLine2,
+                    kycStatus.permanentAddress.landmark,
+                    kycStatus.permanentAddress.locality,
+                    kycStatus.permanentAddress.city,
+                    kycStatus.permanentAddress.district,
+                    kycStatus.permanentAddress.state,
+                    kycStatus.permanentAddress.pincode,
+                    kycStatus.permanentAddress.country,
+                  ].filter(Boolean).join(', ')}
+                </p>
+              </div>
+            )}
+            {kycStatus?.permanentAddress && (
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left">
+                <input
+                  type="checkbox"
+                  checked={sameAsPermanent}
+                  disabled={savingAddress}
+                  onChange={(event) => handleSameAsPermanent(event.target.checked)}
+                  className="mt-0.5 h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>
+                  <span className="block text-sm font-bold text-slate-900">My current address is the same as my Aadhaar permanent address</span>
+                  <span className="mt-1 block text-xs text-slate-600">
+                    {savingAddress ? 'Saving current address...' : addressSaved ? 'Current address auto-filled and saved.' : 'Select to auto-fill and save your current address.'}
+                  </span>
+                </span>
+              </label>
             )}
           </div>
         ) : (
@@ -2174,16 +2191,15 @@ function AadhaarKycStep({
 }
 
 function ApplicationProgress({ currentStep, workflow }) {
-  const stepIndices = {
-    basic_details: 0,
-    assessment_fee: 1,
-    profile_details: 2,
-    aadhaar_kyc: 3,
-    submit_application: 4,
+  const completionByStep = {
+    basic_details: Boolean(workflow?.basicDetailsCompleted),
+    assessment_fee: Boolean(workflow?.assessmentFeePaid),
+    profile_details: Boolean(workflow?.profileDetailsCompleted),
+    aadhaar_kyc: Boolean(workflow?.aadhaarKycCompleted),
+    submit_application: Boolean(workflow?.applicationSubmitted),
   };
-  const currentStepIndex = stepIndices[currentStep] ?? 0;
-  const progressPercentage =
-    ((currentStepIndex + 1) / FLOW_STEPS.length) * 100;
+  const completedCount = FLOW_STEPS.filter((step) => completionByStep[step.id]).length;
+  const progressPercentage = (completedCount / FLOW_STEPS.length) * 100;
 
   return (
     <section className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -2268,18 +2284,7 @@ function ApplicationProgress({ currentStep, workflow }) {
       <div className="overflow-x-auto px-4 py-4 sm:px-6">
         <div className="flex min-w-[680px] items-center">
           {FLOW_STEPS.map((step, index) => {
-            let isCompleted = false;
-            if (step.id === 'basic_details') {
-              isCompleted = Boolean(workflow?.basicDetailsCompleted);
-            } else if (step.id === 'assessment_fee') {
-              isCompleted = Boolean(workflow?.assessmentFeePaid);
-            } else if (step.id === 'profile_details') {
-              isCompleted = Boolean(workflow?.profileDetailsCompleted);
-            } else if (step.id === 'aadhaar_kyc') {
-              isCompleted = Boolean(workflow?.aadhaarKycCompleted);
-            } else if (step.id === 'submit_application') {
-              isCompleted = Boolean(workflow?.applicationSubmitted);
-            }
+            const isCompleted = completionByStep[step.id];
 
             const isActive = step.id === currentStep && !isCompleted;
 
@@ -3042,7 +3047,7 @@ function AssessmentFeeStep({
         onBack={onBack}
         onNext={onContinue}
         nextLabel="Complete Profile"
-        nextDisabled={false} /* TESTING: Bypassing !feePaid check */
+        nextDisabled={!feePaid || !lenderConsent || isFeeProcessing || isCheckingPayment}
         hideSave
       />
     </StepCard>
@@ -4060,6 +4065,7 @@ function ProfileDetailsStep({
 function SubmitApplicationStep({
   form,
   customer,
+  workflow,
   mobileNumber,
   applicationSubmitted,
   applicationNumber,
@@ -4068,6 +4074,21 @@ function SubmitApplicationStep({
   onSubmit,
 }) {
   const navigate = useNavigate();
+  const [aadhaarReview, setAadhaarReview] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getCustomerAadhaarKycStatus()
+      .then((result) => {
+        if (active) setAadhaarReview(result);
+      })
+      .catch(() => {
+        if (active) setAadhaarReview(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const status = customer?.onboardingStatus || 'APPLICATION_SUBMITTED';
   const isApproved = status === 'LENDER_APPROVED';
@@ -4181,7 +4202,7 @@ function SubmitApplicationStep({
             icon={
               BriefcaseBusiness
             }
-            title="Professional Details"
+            title="Residence and Professional Details"
           >
             <ReviewItem
               label="Employment"
@@ -4236,6 +4257,28 @@ function SubmitApplicationStep({
               }
             />
           </ReviewSection>
+
+          <ReviewSection
+            icon={FileCheck2}
+            title="Aadhaar KYC"
+          >
+            <ReviewItem
+              label="Verification status"
+              value={aadhaarReview?.aadhaarVerified || aadhaarReview?.status === 'VERIFIED' ? 'Verified' : 'Not verified'}
+            />
+            <ReviewItem
+              label="Masked Aadhaar"
+              value={aadhaarReview?.maskedAadhaar || 'N/A'}
+            />
+            <ReviewItem
+              label="Permanent address from Aadhaar"
+              value={aadhaarReview?.permanentAddress?.formattedAddress || 'N/A'}
+            />
+            <ReviewItem
+              label="Current address"
+              value={aadhaarReview?.currentAddress?.formattedAddress || 'Not confirmed as same as permanent'}
+            />
+          </ReviewSection>
         </div>
 
         <aside className="h-fit rounded-3xl border border-slate-200 bg-slate-50 p-6">
@@ -4246,37 +4289,42 @@ function SubmitApplicationStep({
           <div className="mt-5 space-y-4">
             <SummaryStatus
               label="Mobile verification"
-              value="Completed"
+              value={workflow?.mobileVerified ? 'Completed' : 'Pending'}
             />
 
             <SummaryStatus
               label="PAN verification"
-              value="Completed"
+              value={workflow?.panVerified ? 'Completed' : 'Pending'}
             />
 
             <SummaryStatus
               label="Email verification"
-              value="Completed"
+              value={workflow?.emailVerified ? 'Completed' : 'Pending'}
             />
 
             <SummaryStatus
               label="Platform BRE"
-              value="Passed"
+              value={workflow?.eligibilityPassed ? 'Passed' : 'Pending'}
             />
 
             <SummaryStatus
               label="Assigned lender"
-              value="Fintree Finance"
+              value={customer?.assignedLenderName || customer?.lenderName || customer?.lenderCode || 'Pending'}
             />
 
             <SummaryStatus
               label="Assessment fee"
-              value="Paid"
+              value={workflow?.assessmentFeePaid ? 'Paid' : 'Pending'}
             />
 
             <SummaryStatus
               label="Profile details"
-              value="Completed"
+              value={workflow?.profileDetailsCompleted ? 'Completed' : 'Pending'}
+            />
+
+            <SummaryStatus
+              label="Aadhaar KYC"
+              value={aadhaarReview?.aadhaarVerified || aadhaarReview?.status === 'VERIFIED' ? 'Completed' : 'Pending'}
             />
           </div>
 

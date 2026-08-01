@@ -149,6 +149,22 @@ export class CustomerAadhaarKycService {
       throw new NotFoundException('Customer identity could not be resolved.');
     }
 
+    const kycRecord = await this.prisma.kycVerificationStatus.findUnique({
+      where: { customerId: customer.id },
+    });
+    const aadhaarSnapshot = this.readAadhaarSnapshot(kycRecord?.aadhaarApiResponse);
+    const permanentAddress = aadhaarSnapshot?.address
+      ? this.mapAadhaarAddress(aadhaarSnapshot.address)
+      : kycRecord?.aadhaarAddress
+        ? { formattedAddress: kycRecord.aadhaarAddress }
+        : null;
+    const isCurrentSameAsAadhaar = Boolean(
+      permanentAddress?.pincode &&
+      customer.residentialPincode === permanentAddress.pincode &&
+      customer.residentialCity === permanentAddress.city &&
+      customer.residentialState === permanentAddress.state,
+    );
+
     const isVerified = Boolean(customer.aadhaarVerified || customer.digilockerStatus === 'VERIFIED');
     const currentStatus = isVerified
       ? 'VERIFIED'
@@ -165,7 +181,54 @@ export class CustomerAadhaarKycService {
         verifiedAt: customer.aadhaarVerifiedAt || customer.digilockerVerifiedAt || null,
         fullName: customer.fullName || null,
         transactionId: customer.digilockerSessionId || null,
+        permanentAddress,
+        currentAddress: isCurrentSameAsAadhaar ? permanentAddress : null,
+        currentAddressSameAsPermanent: isCurrentSameAsAadhaar,
       },
+    };
+  }
+
+  async saveCurrentAddressSameAsAadhaar(currentCustomer: any, body: any) {
+    const rawCustomerId = currentCustomer?.customerId || body?.customerId;
+    if (!rawCustomerId) throw new BadRequestException('Customer identity could not be resolved.');
+    const customerId = BigInt(rawCustomerId);
+    const kycRecord = await this.prisma.kycVerificationStatus.findUnique({ where: { customerId } });
+    if (!kycRecord || kycRecord.aadhaarStatus !== 'VERIFIED') {
+      throw new BadRequestException('Aadhaar KYC must be verified first.');
+    }
+    const snapshot = this.readAadhaarSnapshot(kycRecord.aadhaarApiResponse);
+    if (!snapshot?.address) throw new BadRequestException('Aadhaar address is not available.');
+    const mapped = this.mapAadhaarAddress(snapshot.address);
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        residentialPincode: mapped.pincode || undefined,
+        residentialCity: mapped.city || undefined,
+        residentialState: mapped.state || undefined,
+        lastActivityAt: new Date(),
+      },
+    });
+    await this.prisma.plLoan.updateMany({
+      where: { customerId },
+      data: {
+        addressSameAsPermanent: true,
+        currentAddrLine1: mapped.addressLine1 || null,
+        currentAddrLine2: mapped.addressLine2 || null,
+        currentAddrLandmark: mapped.landmark || null,
+        currentAddrLocality: mapped.locality || null,
+        currentAddrDistrict: mapped.district || null,
+        currentAddrCity: mapped.city || null,
+        currentAddrState: mapped.state || null,
+        currentAddrCountry: mapped.country || 'India',
+        currentAddrPincode: mapped.pincode || null,
+        currentAddrProofType: 'AADHAAR',
+      },
+    });
+    return {
+      success: true,
+      message: 'Current address saved from Aadhaar successfully.',
+      data: { currentAddress: mapped, sameAsPermanent: true },
     };
   }
 
@@ -595,6 +658,36 @@ export class CustomerAadhaarKycService {
    * Normalizes provider details and updates Customer record atomically.
    * Used by manual refresh flow.
    */
+  private readAadhaarSnapshot(rawResponse?: string | null): any {
+    if (!rawResponse) return null;
+    try {
+      const response = JSON.parse(rawResponse);
+      const model = response?.model || response?.data || response || {};
+      return model?.aadhaarData || model?.kycData || model?.data || model;
+    } catch {
+      return null;
+    }
+  }
+
+  private mapAadhaarAddress(address: any): any {
+    const value = address && typeof address === 'object' ? address : {};
+    const mapped = {
+      addressLine1: value.house || '',
+      addressLine2: value.street || '',
+      landmark: value.landmark || value.lm || '',
+      locality: value.loc || '',
+      district: value.dist || value.subdist || '',
+      city: value.vtc || value.po || value.dist || '',
+      state: value.state || '',
+      country: value.country || 'India',
+      pincode: value.pc ? String(value.pc).slice(0, 6) : '',
+      formattedAddress: '',
+    };
+    mapped.formattedAddress = [mapped.addressLine1, mapped.addressLine2, mapped.landmark, mapped.locality, mapped.city, mapped.district, mapped.state, mapped.pincode, mapped.country]
+      .filter(Boolean).join(', ');
+    return mapped;
+  }
+
   private async storeDigitapDocuments(
     customerId: bigint,
     transactionId: string,

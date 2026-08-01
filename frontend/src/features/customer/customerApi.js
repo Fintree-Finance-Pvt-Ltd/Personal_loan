@@ -272,6 +272,30 @@ export async function getCustomerAadhaarKycStatus() {
   return result?.data?.data || result?.data || result;
 }
 
+export async function saveCurrentAddressSameAsAadhaar() {
+  const result = await apiRequest('/customer/aadhaar-kyc/digilocker/current-address/same-as-aadhaar', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
+export async function initiateCustomerPayment(payload) {
+  const result = await apiRequest('/external-api/initiate-payment', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
+export async function getCustomerPaymentStatus(payload) {
+  const result = await apiRequest('/external-api/payment-status', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
 export async function refreshCustomerAadhaarKycStatus() {
   const session = getCustomerSession();
   const customerId = session?.customerId;

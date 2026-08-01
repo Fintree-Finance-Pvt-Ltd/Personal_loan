@@ -42,6 +42,15 @@ export class CustomerAadhaarKycController {
     return this.kycService.refreshStatus(customer);
   }
 
+  @UseGuards(CustomerAuthGuard)
+  @Post('current-address/same-as-aadhaar')
+  async saveCurrentAddressSameAsAadhaar(
+    @CurrentCustomer() customer: any,
+    @Body() body: any,
+  ) {
+    return this.kycService.saveCurrentAddressSameAsAadhaar(customer, body);
+  }
+
   @Public()
   @Get('callback')
   async handleCallback(@Query() query: any) {
