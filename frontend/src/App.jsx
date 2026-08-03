@@ -13,6 +13,8 @@ import MyApplicationPage from './features/customer/pages/MyApplicationPage';
 import PostApprovalJourneyPage from './features/customer/pages/PostApprovalJourneyPage';
 import DigiLockerCallbackPage from './features/customer/pages/DigiLockerCallbackPage';
 import MandateResultPage from './features/customer/pages/MandateResultPage';
+import { CustomerLoanDetailsPage } from './features/customer/pages/CustomerLoanDetailsPage';
+import { CustomerProfilePage } from './features/customer/pages/CustomerProfilePage';
 
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
@@ -79,24 +81,9 @@ export default function App() {
         <Route path="/customer/dashboard" element={<CustomerDashboard />} />
         <Route path="/customer/application" element={<MyApplicationPage />} />
         <Route path="/customer/loan/:lan/post-approval" element={<PostApprovalJourneyPage />} />
-        <Route
-          path="/customer/loan-details"
-          element={
-            <CustomerPlaceholderPage
-              title="Loan Details"
-              description="Your approved loan amount, tenure and repayment information will appear here."
-            />
-          }
-        />
-        <Route
-          path="/customer/profile"
-          element={
-            <CustomerPlaceholderPage
-              title="My Profile"
-              description="Manage your personal and contact information."
-            />
-          }
-        />
+        <Route path="/customer/loan/:lan/details" element={<CustomerLoanDetailsPage />} />
+        <Route path="/customer/loan-details" element={<CustomerLoanDetailsPage />} />
+        <Route path="/customer/profile" element={<CustomerProfilePage />} />
         <Route
           path="/customer/support"
           element={

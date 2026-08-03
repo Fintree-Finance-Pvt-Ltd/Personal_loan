@@ -127,9 +127,19 @@ export default function CustomerDashboard() {
   const hasLan = !!backendCustomer?.latestLan;
   const isApproved = backendCustomer?.onboardingStatus === 'LENDER_APPROVED';
 
+  const isDisbursalRequestedOrDisbursed =
+    backendCustomer?.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
+    backendCustomer?.latestDisbursalStatus === 'DISBURSAL_PROCESSING' ||
+    backendCustomer?.latestDisbursalStatus === 'DISBURSED' ||
+    backendCustomer?.latestLoanStatus === 'DISBURSED';
+
   const handleApplicationButton = () => {
     if (isApproved && hasLan) {
-      navigate(`/customer/loan/${backendCustomer.latestLan}/post-approval`);
+      if (isDisbursalRequestedOrDisbursed) {
+        navigate(`/customer/loan/${backendCustomer.latestLan}/details`);
+      } else {
+        navigate(`/customer/loan/${backendCustomer.latestLan}/post-approval`);
+      }
     } else {
       navigate('/customer/application');
     }
@@ -167,7 +177,7 @@ export default function CustomerDashboard() {
           <button
             type="button"
             onClick={fetchCustomerData}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-emerald-700"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer"
           >
             <RotateCcw size={16} />
             Retry
@@ -178,7 +188,7 @@ export default function CustomerDashboard() {
   }
 
   const buttonLabel = (isApproved && hasLan)
-    ? 'Continue Approved Loan Journey'
+    ? (isDisbursalRequestedOrDisbursed ? 'View Loan Details' : 'Continue Approved Loan Journey')
     : applicationSubmitted
       ? 'View Application'
       : hasBackendProgress

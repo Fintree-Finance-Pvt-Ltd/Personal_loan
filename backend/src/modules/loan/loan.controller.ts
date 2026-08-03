@@ -108,4 +108,31 @@ export class LoanController {
     const journey = await this.loanService.getPostApprovalJourney(lan, this.customerId(customer));
     return { status: journey.workflow?.disbursalStatus ?? 'NOT_STARTED' };
   }
+
+  @Get(':lan/details')
+  async getLoanDetails(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.getLoanDetails(lan, this.customerId(customer));
+  }
+
+  @Post(':lan/repay/initiate')
+  async initiateRepaymentPayment(
+    @Param('lan') lan: string,
+    @CurrentCustomer() customer: any,
+    @Body() body: any,
+  ) {
+    return this.loanService.initiateRepaymentPayment(
+      lan,
+      this.customerId(customer),
+      body?.installmentNumber,
+      body?.amount,
+    );
+  }
+
+  @Post(':lan/repay/confirm')
+  async processRepayment(
+    @Param('lan') lan: string,
+    @Body() body: any,
+  ) {
+    return this.loanService.processRepayment(lan, body);
+  }
 }

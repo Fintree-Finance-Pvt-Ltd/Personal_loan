@@ -1641,6 +1641,8 @@ model PlLoan {
   disbursalRequestedAt DateTime? @map("disbursal_requested_at") @db.DateTime(0)
   disbursalCompletedAt DateTime? @map("disbursal_completed_at") @db.DateTime(0)
   disbursalUtr         String?   @map("disbursal_utr") @db.VarChar(100)
+  disbursalDate        DateTime? @map("disbursal_date") @db.Date
+  firstRepaymentDate   DateTime? @map("first_repayment_date") @db.Date
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
@@ -1649,6 +1651,10 @@ model PlLoan {
   bankVerification           PlBankVerification?
   mandates                   PlLoanMandate[]
   electronicSignTransactions PlElectronicSignTransaction[]
+  repaymentSchedules         PlRepaymentSchedule[]
+  repayments                 PlRepayment[]
+  allocations                PlRepaymentAllocation[]
+  charges                    PlLoanCharge[]
 
   @@unique([applicationId], map: "uk_pl_loans_application_id")
   @@index([customerId], map: "idx_pl_loans_customer_id")
@@ -1786,6 +1792,117 @@ model PlLoanAuditEvent {
   @@index([eventType, createdAt], map: "idx_pl_loan_audit_event_type")
   @@index([customerId], map: "idx_pl_loan_audit_customer_id")
   @@map("pl_loan_audit_events")
+}
+
+model DisbursalWebhookEvent {
+  id               BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  provider         String    @db.VarChar(50)
+  eventId          String?   @map("event_id") @db.VarChar(100)
+  lan              String?   @db.VarChar(30)
+  payloadHash      String    @map("payload_hash") @db.Char(64)
+  sanitizedPayload Json?     @map("sanitized_payload") @db.Json
+  processingStatus String    @default("RECEIVED") @map("processing_status") @db.VarChar(30)
+  retryCount       Int       @default(0) @map("retry_count")
+  safeErrorCode    String?   @map("safe_error_code") @db.VarChar(100)
+  receivedAt       DateTime  @default(now()) @map("received_at") @db.DateTime(0)
+  processedAt      DateTime? @map("processed_at") @db.DateTime(0)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@unique([provider, payloadHash], map: "uk_disbursal_webhook_provider_hash")
+  @@index([lan], map: "idx_disbursal_webhook_lan")
+  @@index([processingStatus], map: "idx_disbursal_webhook_status")
+  @@map("disbursal_webhook_events")
+}
+
+model PlRepaymentSchedule {
+  id                   BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  loanId               BigInt    @map("loan_id") @db.UnsignedBigInt
+  loan                 PlLoan    @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  lan                  String    @db.VarChar(30)
+  installmentNumber    Int       @map("installment_number")
+  dueDate              DateTime  @map("due_date") @db.Date
+  openingPrincipal     Decimal   @map("opening_principal") @db.Decimal(15, 2)
+  emi                  Decimal   @db.Decimal(15, 2)
+  interest             Decimal   @db.Decimal(15, 2)
+  principal            Decimal   @db.Decimal(15, 2)
+  closingPrincipal     Decimal   @map("closing_principal") @db.Decimal(15, 2)
+  outstandingPrincipal Decimal   @map("outstanding_principal") @db.Decimal(15, 2)
+  paymentStatus        String    @default("PENDING") @map("payment_status") @db.VarChar(30)
+  dpd                  Int       @default(0)
+  paidAmount           Decimal   @default(0.00) @map("paid_amount") @db.Decimal(15, 2)
+  paymentDate          DateTime? @map("payment_date") @db.DateTime(0)
+  remainingAmount      Decimal   @map("remaining_amount") @db.Decimal(15, 2)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@unique([lan, installmentNumber], map: "uk_pl_rps_lan_installment")
+  @@index([loanId], map: "idx_pl_rps_loan_id")
+  @@index([lan], map: "idx_pl_rps_lan")
+  @@map("pl_repayment_schedules")
+}
+
+model PlRepayment {
+  id                BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  loanId            BigInt   @map("loan_id") @db.UnsignedBigInt
+  loan              PlLoan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  lan               String   @db.VarChar(30)
+  paymentId         String   @unique(map: "uk_pl_repayment_payment_id") @map("payment_id") @db.VarChar(100)
+  amountReceived    Decimal  @map("amount_received") @db.Decimal(15, 2)
+  paymentDate       DateTime @map("payment_date") @db.DateTime(0)
+  paymentMode       String   @map("payment_mode") @db.VarChar(50)
+  referenceNumber   String?  @map("reference_number") @db.VarChar(100)
+  status            String   @default("SUCCESS") @db.VarChar(30)
+  unallocatedAmount Decimal  @default(0.00) @map("unallocated_amount") @db.Decimal(15, 2)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  allocations PlRepaymentAllocation[]
+
+  @@index([loanId], map: "idx_pl_repayment_loan_id")
+  @@index([lan], map: "idx_pl_repayment_lan")
+  @@map("pl_repayments")
+}
+
+model PlRepaymentAllocation {
+  id                BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  repaymentId       BigInt      @map("repayment_id") @db.UnsignedBigInt
+  repayment         PlRepayment @relation(fields: [repaymentId], references: [id], onDelete: Cascade)
+  loanId            BigInt      @map("loan_id") @db.UnsignedBigInt
+  loan              PlLoan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  lan               String      @db.VarChar(30)
+  installmentNumber Int         @map("installment_number")
+  component         String      @db.VarChar(50)
+  allocatedAmount   Decimal     @map("allocated_amount") @db.Decimal(15, 2)
+  allocationDate    DateTime    @default(now()) @map("allocation_date") @db.DateTime(0)
+  createdAt         DateTime    @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([repaymentId], map: "idx_pl_allocation_repayment_id")
+  @@index([loanId], map: "idx_pl_allocation_loan_id")
+  @@index([lan], map: "idx_pl_allocation_lan")
+  @@map("pl_repayment_allocations")
+}
+
+model PlLoanCharge {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  loanId          BigInt    @map("loan_id") @db.UnsignedBigInt
+  loan            PlLoan    @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  lan             String    @db.VarChar(30)
+  chargeType      String    @map("charge_type") @db.VarChar(50) // BOUNCE_CHARGE, PENAL_CHARGE
+  amount          Decimal   @db.Decimal(15, 2)
+  paidAmount      Decimal   @default(0.00) @map("paid_amount") @db.Decimal(15, 2)
+  remainingAmount Decimal   @map("remaining_amount") @db.Decimal(15, 2)
+  status          String    @default("PENDING") @db.VarChar(30) // PENDING, PARTIAL, PAID, WAIVED
+  dueDate         DateTime? @map("due_date") @db.Date
+  description     String?   @db.VarChar(255)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([loanId], map: "idx_pl_charge_loan_id")
+  @@index([lan], map: "idx_pl_charge_lan")
+  @@index([chargeType], map: "idx_pl_charge_type")
+  @@map("pl_loan_charges")
 }
 
 enum MlmPolicyOperationalStatus {

@@ -1,15 +1,16 @@
-import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, ConflictException, UnprocessableEntityException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PlApplicationStatus, PlLoanStatus, PlDocumentType, PlDocumentStatus, PlMandateStatus, PlMandateType, PlMandateProvider, Prisma } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ExternalApiService } from '../external-api/external-api.service';
 import { EasebuzzAutocollectService } from '../../integrations/easebuzz-autocollect.service';
+import { initiateEasebuzzIframePayment } from '../../integrations/easebuzz-iframe.integration';
 import { decryptBankAccountNumber } from '../../common/utils/bank-security.helper';
 import { normalizeDigitapDetails, sanitizeDigitapPayload } from './digilocker-normalizer';
 
@@ -1734,8 +1735,42 @@ export class LoanService {
     };
   }
 
-  async requestDisbursal(lan: string, customerId: bigint) {
-    const loan = await this.findLoanByLanAndCustomer(lan, customerId);
+  async requestDisbursal(lan: string, customerId?: bigint) {
+    const where: Prisma.PlLoanWhereInput = { lan };
+    if (customerId !== undefined) {
+      where.customerId = customerId;
+    }
+
+    const loan = await this.prisma.plLoan.findFirst({ where });
+    if (!loan) {
+      throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+    }
+
+    if (loan.disbursalStatus === 'DISBURSED' || loan.status === PlLoanStatus.DISBURSED) {
+      return {
+        success: true,
+        data: {
+          lan: loan.lan,
+          status: 'DISBURSED',
+          message: 'Loan is already disbursed.',
+        },
+      };
+    }
+
+    if (
+      loan.disbursalStatus === 'DISBURSAL_REQUESTED' ||
+      loan.disbursalStatus === 'DISBURSAL_PROCESSING' ||
+      loan.status === PlLoanStatus.DISBURSAL_PROCESSING
+    ) {
+      return {
+        success: true,
+        data: {
+          lan: loan.lan,
+          status: loan.disbursalStatus || 'DISBURSAL_REQUESTED',
+          message: 'Disbursal request is already in progress.',
+        },
+      };
+    }
 
     const missingSteps: string[] = [];
     if (!loan.acceptedTenureDays) missingSteps.push('Offer Acceptance');
@@ -1755,11 +1790,10 @@ export class LoanService {
     const updatedLoan = await this.prisma.plLoan.update({
       where: { id: loan.id },
       data: {
-        disbursalStatus: 'DISBURSED',
-        status: PlLoanStatus.DISBURSED,
+        disbursalStatus: 'DISBURSAL_REQUESTED',
+        status: PlLoanStatus.DISBURSAL_PROCESSING,
         disbursalRequestedAt: loan.disbursalRequestedAt || new Date(),
-        disbursalCompletedAt: new Date(),
-        currentStep: 'DISBURSED',
+        currentStep: 'READY_FOR_DISBURSAL',
       },
     });
 
@@ -1767,23 +1801,720 @@ export class LoanService {
       .record({
         actorUserId: null,
         module: 'LOAN',
-        action: 'LOAN_DISBURSED',
+        action: 'DISBURSAL_REQUESTED',
         entityType: 'PlLoan',
         entityId: loan.id.toString(),
         outcome: 'SUCCESS',
         requestId: randomBytes(16).toString('hex'),
+        newValue: { lan: loan.lan, customerId: loan.customerId.toString() },
       })
       .catch(() => {});
 
     return {
       success: true,
-      message: 'Loan disbursed successfully',
-      nextStep: 'DISBURSED',
-      loan: {
+      data: {
         lan: updatedLoan.lan,
-        disbursalStatus: updatedLoan.disbursalStatus,
-        currentStep: 'DISBURSED',
+        status: 'DISBURSAL_REQUESTED',
+        message: 'Disbursal request submitted successfully.',
       },
+    };
+  }
+
+  async processDisbursalWebhook(
+    lenderCode: string,
+    rawPayload: Record<string, any>,
+    clientIp?: string,
+    userAgent?: string,
+  ) {
+    const lan = String(rawPayload.lan || rawPayload.LAN || rawPayload.loanId || '').trim();
+    const disbursalUtr = String(rawPayload.DisbursalUTR || rawPayload.disbursalUtr || rawPayload.utr || '').trim();
+    const rawDisbursalDate = rawPayload.DisbursalDate || rawPayload.disbursalDate;
+    const rawAmount = rawPayload.DisbursedAmount ?? rawPayload.disbursedAmount ?? rawPayload.amount;
+    const rawRepaymentDate = rawPayload.RepaymentDate || rawPayload.firstRepaymentDate || rawPayload.repaymentDate;
+    const rawStatus = String(rawPayload.status || rawPayload.Status || '').trim().toUpperCase();
+    const eventId = rawPayload.eventId ? String(rawPayload.eventId).trim() : undefined;
+
+    if (!lan) throw new BadRequestException('LAN is required in disbursal webhook payload');
+    if (!disbursalUtr) throw new BadRequestException('DisbursalUTR is required in disbursal webhook payload');
+    if (!rawDisbursalDate || isNaN(Date.parse(String(rawDisbursalDate)))) throw new BadRequestException('Valid DisbursalDate is required');
+    if (!rawRepaymentDate || isNaN(Date.parse(String(rawRepaymentDate)))) throw new BadRequestException('Valid RepaymentDate is required');
+
+    const amountNum = Number(rawAmount);
+    if (!rawAmount || isNaN(amountNum) || amountNum <= 0) {
+      throw new BadRequestException('DisbursedAmount must be a positive number');
+    }
+
+    const disbursalDate = new Date(rawDisbursalDate);
+    const firstRepaymentDate = new Date(rawRepaymentDate);
+    if (firstRepaymentDate <= disbursalDate) {
+      throw new BadRequestException('RepaymentDate must be later than DisbursalDate');
+    }
+
+    const DISBURSAL_STATUS_MAP: Record<string, 'DISBURSED' | 'DISBURSAL_PENDING' | 'DISBURSAL_PROCESSING' | 'DISBURSAL_FAILED'> = {
+      SUCCESS: 'DISBURSED',
+      DISBURSED: 'DISBURSED',
+      COMPLETED: 'DISBURSED',
+      PENDING: 'DISBURSAL_PENDING',
+      PROCESSING: 'DISBURSAL_PROCESSING',
+      FAILED: 'DISBURSAL_FAILED',
+      REJECTED: 'DISBURSAL_FAILED',
+    };
+
+    const normalizedStatus = DISBURSAL_STATUS_MAP[rawStatus];
+    if (!normalizedStatus) {
+      throw new BadRequestException(`Unsupported disbursal status: ${rawStatus}`);
+    }
+
+    const sanitizedPayload = {
+      lan,
+      disbursalUtr,
+      disbursalDate: disbursalDate.toISOString().slice(0, 10),
+      disbursedAmount: amountNum,
+      firstRepaymentDate: firstRepaymentDate.toISOString().slice(0, 10),
+      status: normalizedStatus,
+      rawStatus,
+      eventId,
+    };
+
+    const payloadHash = createHash('sha256').update(JSON.stringify(sanitizedPayload)).digest('hex');
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Check Webhook Event Duplicate Inbox Record
+      const existingEvent = await tx.disbursalWebhookEvent.findUnique({
+        where: {
+          provider_payloadHash: {
+            provider: lenderCode,
+            payloadHash,
+          },
+        },
+      });
+
+      // 2. Lock & Validate Loan
+      const loan = await tx.plLoan.findFirst({
+        where: { lan },
+        include: { customer: true },
+      });
+
+      if (!loan) {
+        throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+      }
+
+      // Check UTR duplicate across other loans
+      const utrConflictLoan = await tx.plLoan.findFirst({
+        where: {
+          disbursalUtr,
+          id: { not: loan.id },
+        },
+      });
+      if (utrConflictLoan) {
+        throw new ConflictException(`Disbursal UTR ${disbursalUtr} is already registered for another LAN (${utrConflictLoan.lan})`);
+      }
+
+      // If loan is already DISBURSED
+      if (loan.disbursalStatus === 'DISBURSED' || loan.status === PlLoanStatus.DISBURSED) {
+        if (
+          loan.disbursalUtr === disbursalUtr &&
+          loan.disbursalAmount &&
+          Number(loan.disbursalAmount) === amountNum
+        ) {
+          this.logger.log(`Idempotent duplicate disbursal webhook received for LAN ${lan} [UTR: ${disbursalUtr}]`);
+          return {
+            success: true,
+            status: 'DISBURSED',
+            message: 'Disbursal webhook event already processed successfully.',
+            lan: loan.lan,
+            disbursalUtr,
+          };
+        } else {
+          throw new ConflictException(`Conflicting disbursal details received for LAN ${lan}. Registered UTR: ${loan.disbursalUtr}, Amount: ${loan.disbursalAmount}`);
+        }
+      }
+
+      // Validate Post Approval Requirements
+      if (!loan.acceptedTenureDays || !loan.kfsAccepted || !loan.mandateCompleted || !loan.esignCompleted) {
+        throw new BadRequestException(`Post approval requirements for LAN ${lan} are incomplete.`);
+      }
+
+      const approvedAmount = Number(loan.approvedAmount);
+      if (amountNum > approvedAmount) {
+        throw new BadRequestException(`Disbursed amount (${amountNum}) cannot exceed approved loan amount (${approvedAmount})`);
+      }
+
+      // Upsert DisbursalWebhookEvent
+      const webhookEventRecord = existingEvent
+        ? await tx.disbursalWebhookEvent.update({
+            where: { id: existingEvent.id },
+            data: {
+              processingStatus: 'PROCESSED',
+              processedAt: new Date(),
+              sanitizedPayload,
+            },
+          })
+        : await tx.disbursalWebhookEvent.create({
+            data: {
+              provider: lenderCode,
+              eventId: eventId || null,
+              lan,
+              payloadHash,
+              sanitizedPayload,
+              processingStatus: 'PROCESSED',
+              processedAt: new Date(),
+            },
+          });
+
+      // 3. Update Loan Record
+      const updatedLoan = await tx.plLoan.update({
+        where: { id: loan.id },
+        data: {
+          disbursalStatus: normalizedStatus,
+          status: normalizedStatus === 'DISBURSED' ? PlLoanStatus.DISBURSED : PlLoanStatus.FAILED,
+          currentStep: normalizedStatus === 'DISBURSED' ? 'DISBURSED' : 'DISBURSAL_FAILED',
+          disbursalAmount: new Prisma.Decimal(amountNum),
+          disbursalUtr,
+          disbursalDate,
+          firstRepaymentDate,
+          disbursalCompletedAt: new Date(),
+        },
+      });
+
+      // 4. Generate RPS (Repayment Schedule) if normalizedStatus is DISBURSED
+      let generatedRpsCount = 0;
+      if (normalizedStatus === 'DISBURSED') {
+        const existingRpsCount = await tx.plRepaymentSchedule.count({
+          where: { loanId: loan.id },
+        });
+
+        if (existingRpsCount === 0) {
+          const rpsRows = this.calculateRpsRows(
+            loan.id,
+            loan.lan,
+            amountNum,
+            loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18,
+            loan.acceptedTenureDays || 30,
+            disbursalDate,
+            firstRepaymentDate,
+          );
+
+          for (const rps of rpsRows) {
+            await tx.plRepaymentSchedule.create({ data: rps });
+          }
+          generatedRpsCount = rpsRows.length;
+        }
+      }
+
+      // Record Audit Event
+      await tx.plLoanAuditEvent.create({
+        data: {
+          loanId: loan.id,
+          lan: loan.lan,
+          customerId: loan.customerId,
+          applicationId: loan.applicationId,
+          eventType: normalizedStatus === 'DISBURSED' ? 'DISBURSAL_CONFIRMED' : 'DISBURSAL_WEBHOOK_FAILED',
+          metadata: {
+            provider: lenderCode,
+            eventId,
+            disbursalUtr,
+            disbursedAmount: amountNum,
+            status: normalizedStatus,
+            rpsCount: generatedRpsCount,
+            webhookEventId: webhookEventRecord.id.toString(),
+          },
+          ipAddress: clientIp || null,
+          userAgent: userAgent || null,
+        },
+      });
+
+      return {
+        success: true,
+        status: normalizedStatus,
+        message: normalizedStatus === 'DISBURSED' ? 'Disbursal processed and repayment schedule generated successfully' : 'Disbursal failure recorded',
+        lan: updatedLoan.lan,
+        disbursalUtr,
+        disbursedAmount: amountNum,
+        firstRepaymentDate: firstRepaymentDate.toISOString().slice(0, 10),
+      };
+    });
+  }
+
+  private calculateRpsRows(
+    loanId: bigint,
+    lan: string,
+    principal: number,
+    annualRate: number,
+    tenureDays: number,
+    disbursalDate: Date,
+    firstRepaymentDate: Date,
+  ): Prisma.PlRepaymentScheduleCreateInput[] {
+    const rows: Prisma.PlRepaymentScheduleCreateInput[] = [];
+
+    if (tenureDays <= 30) {
+      const tenureFraction = tenureDays / 365;
+      const interestVal = Number((principal * (annualRate / 100) * tenureFraction).toFixed(2));
+      const emiVal = Number((principal + interestVal).toFixed(2));
+
+      rows.push({
+        loan: { connect: { id: loanId } },
+        lan,
+        installmentNumber: 1,
+        dueDate: firstRepaymentDate,
+        openingPrincipal: new Prisma.Decimal(principal),
+        emi: new Prisma.Decimal(emiVal),
+        interest: new Prisma.Decimal(interestVal),
+        principal: new Prisma.Decimal(principal),
+        closingPrincipal: new Prisma.Decimal(0.00),
+        outstandingPrincipal: new Prisma.Decimal(principal),
+        paymentStatus: 'PENDING',
+        dpd: 0,
+        paidAmount: new Prisma.Decimal(0.00),
+        remainingAmount: new Prisma.Decimal(emiVal),
+      });
+    } else {
+      const n = Math.max(1, Math.round(tenureDays / 30));
+      const monthlyRate = annualRate / 12 / 100;
+
+      const emiCalc = monthlyRate > 0
+        ? (principal * monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
+        : principal / n;
+      const emiVal = Number(emiCalc.toFixed(2));
+
+      let currentOpening = principal;
+      for (let i = 1; i <= n; i++) {
+        const dueDate = new Date(firstRepaymentDate);
+        dueDate.setMonth(dueDate.getMonth() + (i - 1));
+
+        let interestVal = Number((currentOpening * monthlyRate).toFixed(2));
+        let principalVal = Number((emiVal - interestVal).toFixed(2));
+
+        if (i === n || currentOpening - principalVal <= 0) {
+          principalVal = Number(currentOpening.toFixed(2));
+          interestVal = Number((emiVal - principalVal).toFixed(2));
+          if (interestVal < 0) interestVal = 0;
+        }
+
+        const closingVal = Math.max(0, Number((currentOpening - principalVal).toFixed(2)));
+
+        rows.push({
+          loan: { connect: { id: loanId } },
+          lan,
+          installmentNumber: i,
+          dueDate,
+          openingPrincipal: new Prisma.Decimal(currentOpening),
+          emi: new Prisma.Decimal(principalVal + interestVal),
+          interest: new Prisma.Decimal(interestVal),
+          principal: new Prisma.Decimal(principalVal),
+          closingPrincipal: new Prisma.Decimal(closingVal),
+          outstandingPrincipal: new Prisma.Decimal(currentOpening),
+          paymentStatus: 'PENDING',
+          dpd: 0,
+          paidAmount: new Prisma.Decimal(0.00),
+          remainingAmount: new Prisma.Decimal(principalVal + interestVal),
+        });
+
+        currentOpening = closingVal;
+      }
+    }
+
+    return rows;
+  }
+
+  async getLoanDetails(lan: string, customerId: bigint) {
+    const loan = await this.prisma.plLoan.findFirst({
+      where: { lan, customerId },
+      include: {
+        repaymentSchedules: {
+          orderBy: { installmentNumber: 'asc' },
+        },
+        repayments: {
+          include: {
+            allocations: {
+              orderBy: { id: 'asc' },
+            },
+          },
+          orderBy: { paymentDate: 'desc' },
+        },
+      },
+    });
+
+    if (!loan) {
+      throw new NotFoundException(`Loan with LAN ${lan} not found for this customer.`);
+    }
+
+    const rpsList = loan.repaymentSchedules || [];
+    const repaymentsList = loan.repayments || [];
+
+    let principalOutstanding = 0;
+    let interestOutstanding = 0;
+    let totalPaid = 0;
+    let overdueAmount = 0;
+    let nextDueDate: Date | null = null;
+    let nextEmiAmount = 0;
+
+    const now = new Date();
+
+    for (const rps of rpsList) {
+      const remaining = Number(rps.remainingAmount);
+      const paid = Number(rps.paidAmount);
+      totalPaid += paid;
+
+      if (rps.paymentStatus !== 'PAID') {
+        principalOutstanding += Number(rps.principal);
+        interestOutstanding += Number(rps.interest);
+
+        if (rps.dueDate < now) {
+          overdueAmount += remaining;
+        }
+
+        if (!nextDueDate) {
+          nextDueDate = rps.dueDate;
+          nextEmiAmount = Number(rps.emi);
+        }
+      }
+    }
+
+    const totalOutstanding = principalOutstanding + interestOutstanding;
+
+    const formattedRps = rpsList.map((rps) => ({
+      installmentNumber: rps.installmentNumber,
+      dueDate: rps.dueDate ? rps.dueDate.toISOString().slice(0, 10) : null,
+      openingPrincipal: Number(rps.openingPrincipal),
+      emi: Number(rps.emi),
+      interest: Number(rps.interest),
+      principal: Number(rps.principal),
+      closingPrincipal: Number(rps.closingPrincipal),
+      outstandingPrincipal: Number(rps.outstandingPrincipal),
+      paymentStatus: rps.paymentStatus,
+      dpd: rps.dpd,
+      paidAmount: Number(rps.paidAmount),
+      paymentDate: rps.paymentDate,
+      remainingAmount: Number(rps.remainingAmount),
+    }));
+
+    const formattedRepayments = repaymentsList.map((rep) => ({
+      paymentId: rep.paymentId,
+      paymentDate: rep.paymentDate,
+      amountReceived: Number(rep.amountReceived),
+      paymentMode: rep.paymentMode,
+      referenceNumber: rep.referenceNumber,
+      status: rep.status,
+      unallocatedAmount: Number(rep.unallocatedAmount),
+    }));
+
+    const formattedAllocations = repaymentsList.flatMap((rep) =>
+      (rep.allocations || []).map((alloc) => ({
+        paymentId: rep.paymentId,
+        installmentNumber: alloc.installmentNumber,
+        component: alloc.component,
+        allocatedAmount: Number(alloc.allocatedAmount),
+        allocationDate: alloc.allocationDate,
+      })),
+    );
+
+    return {
+      loan: {
+        lan: loan.lan,
+        status: loan.status,
+        approvedAmount: Number(loan.approvedAmount),
+        disbursedAmount: loan.disbursalAmount ? Number(loan.disbursalAmount) : Number(loan.approvedAmount),
+        disbursalUtr: loan.disbursalUtr || null,
+        disbursalDate: loan.disbursalDate ? loan.disbursalDate.toISOString().slice(0, 10) : null,
+        firstRepaymentDate: loan.firstRepaymentDate ? loan.firstRepaymentDate.toISOString().slice(0, 10) : null,
+        repaymentFrequency: 'MONTHLY',
+        interestRate: loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18,
+        tenure: loan.acceptedTenureDays || 30,
+      },
+      disbursal: {
+        status: loan.disbursalStatus || loan.status,
+        requestedAt: loan.disbursalRequestedAt,
+        processedAt: loan.disbursalCompletedAt,
+        providerReference: loan.disbursalProviderRef || loan.disbursalUtr || null,
+      },
+      summary: {
+        principalOutstanding,
+        interestOutstanding,
+        totalOutstanding,
+        totalPaid,
+        overdueAmount,
+        nextDueDate: nextDueDate ? nextDueDate.toISOString().slice(0, 10) : null,
+        nextEmiAmount,
+      },
+      rps: formattedRps,
+      repayments: formattedRepayments,
+      allocations: formattedAllocations,
+    };
+  }
+
+  async processRepayment(
+    lanInput: string,
+    payload: {
+      installmentNumber: number;
+      amount: number;
+      paymentId?: string;
+      paymentMode?: string;
+      referenceNumber?: string;
+    },
+  ) {
+    const lan = String(lanInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+    const instNum = Number(payload.installmentNumber);
+    if (!instNum || instNum < 1) throw new BadRequestException('Valid installmentNumber is required.');
+
+    const amountNum = Number(payload.amount);
+    if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+      throw new BadRequestException('Payment amount must be a positive number.');
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Fetch Loan
+      const loan = await tx.plLoan.findFirst({
+        where: { lan },
+      });
+      if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+
+      // 2. Fetch target RPS installment
+      const rps = await tx.plRepaymentSchedule.findUnique({
+        where: {
+          lan_installmentNumber: {
+            lan,
+            installmentNumber: instNum,
+          },
+        },
+      });
+      if (!rps) throw new NotFoundException(`Installment #${instNum} not found for LAN ${lan}.`);
+
+      const remainingAmount = Number(rps.remainingAmount);
+      if (remainingAmount <= 0 || rps.paymentStatus === 'PAID') {
+        throw new BadRequestException(`Installment #${instNum} is already fully paid.`);
+      }
+
+      // Generate unique paymentId if not provided
+      const paymentId = payload.paymentId || `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      // 3. Create PlRepayment Record
+      const repayment = await tx.plRepayment.create({
+        data: {
+          lan,
+          loanId: loan.id,
+          paymentId,
+          amountReceived: new Prisma.Decimal(amountNum),
+          paymentDate: new Date(),
+          paymentMode: payload.paymentMode || 'EASEBUZZ',
+          referenceNumber: payload.referenceNumber || paymentId,
+          status: 'SUCCESS',
+          unallocatedAmount: new Prisma.Decimal(0),
+        },
+      });
+
+      // 4. Waterfall Component Allocation (IPC Order: Interest -> Principal -> Charges)
+      const interestDue = Number(rps.interest);
+      const principalDue = Number(rps.principal);
+      const paidSoFar = Number(rps.paidAmount);
+
+      let allocInterest = 0;
+      let allocPrincipal = 0;
+      let unallocated = amountNum;
+
+      // I - Interest
+      const unpaidInterest = Math.max(0, interestDue - paidSoFar);
+      if (unpaidInterest > 0) {
+        allocInterest = Math.min(unallocated, unpaidInterest);
+        unallocated -= allocInterest;
+      }
+
+      // P - Principal
+      const unpaidPrincipal = Math.max(0, principalDue - Math.max(0, paidSoFar - interestDue));
+      if (unallocated > 0 && unpaidPrincipal > 0) {
+        allocPrincipal = Math.min(unallocated, unpaidPrincipal);
+        unallocated -= allocPrincipal;
+      }
+
+      if (allocInterest > 0) {
+        await tx.plRepaymentAllocation.create({
+          data: {
+            lan,
+            repaymentId: repayment.id,
+            loanId: loan.id,
+            installmentNumber: instNum,
+            component: 'INTEREST',
+            allocatedAmount: new Prisma.Decimal(allocInterest),
+            allocationDate: new Date(),
+          },
+        });
+      }
+
+      if (allocPrincipal > 0) {
+        await tx.plRepaymentAllocation.create({
+          data: {
+            lan,
+            repaymentId: repayment.id,
+            loanId: loan.id,
+            installmentNumber: instNum,
+            component: 'PRINCIPAL',
+            allocatedAmount: new Prisma.Decimal(allocPrincipal),
+            allocationDate: new Date(),
+          },
+        });
+      }
+
+      // C - Charges (BOUNCE_CHARGE, PENAL_CHARGE)
+      if (unallocated > 0) {
+        try {
+          const pendingCharges = await (tx as any).plLoanCharge.findMany({
+            where: {
+              lan,
+              status: { in: ['PENDING', 'PARTIAL'] },
+            },
+            orderBy: { id: 'asc' },
+          });
+
+          for (const chg of pendingCharges) {
+            if (unallocated <= 0) break;
+            const remChg = Number(chg.remainingAmount);
+            const allocChg = Math.min(unallocated, remChg);
+            unallocated -= allocChg;
+
+            const newPaidChg = Number(chg.paidAmount) + allocChg;
+            const newRemChg = remChg - allocChg;
+            const newChgStatus = newRemChg === 0 ? 'PAID' : 'PARTIAL';
+
+            await (tx as any).plLoanCharge.update({
+              where: { id: chg.id },
+              data: {
+                paidAmount: new Prisma.Decimal(newPaidChg),
+                remainingAmount: new Prisma.Decimal(newRemChg),
+                status: newChgStatus,
+              },
+            });
+
+            await tx.plRepaymentAllocation.create({
+              data: {
+                lan,
+                repaymentId: repayment.id,
+                loanId: loan.id,
+                installmentNumber: instNum,
+                component: chg.chargeType,
+                allocatedAmount: new Prisma.Decimal(allocChg),
+                allocationDate: new Date(),
+              },
+            });
+          }
+        } catch (_err) {
+          // Non-critical if table does not exist yet before DDL execution
+        }
+      }
+
+      // 5. Update PlRepaymentSchedule row
+      const newPaidAmount = paidSoFar + amountNum;
+      const newRemainingAmount = Math.max(0, Number(rps.emi) - newPaidAmount);
+      const newPaymentStatus = newRemainingAmount === 0 ? 'PAID' : 'PARTIAL';
+
+      await tx.plRepaymentSchedule.update({
+        where: { id: rps.id },
+        data: {
+          paidAmount: new Prisma.Decimal(newPaidAmount),
+          remainingAmount: new Prisma.Decimal(newRemainingAmount),
+          paymentStatus: newPaymentStatus,
+          paymentDate: new Date(),
+        },
+      });
+
+      // 6. Record Audit Log
+      this.auditLogs
+        .record({
+          actorUserId: null,
+          module: 'LOAN',
+          action: 'REPAYMENT_SUCCESS',
+          entityType: 'PlLoan',
+          entityId: loan.id.toString(),
+          outcome: 'SUCCESS',
+          requestId: randomBytes(16).toString('hex'),
+          newValue: { lan, installmentNumber: instNum, amount: amountNum, paymentId },
+        })
+        .catch(() => {});
+
+      return {
+        success: true,
+        message: `Repayment of ₹${amountNum} recorded successfully for Installment #${instNum}`,
+        paymentId,
+        installmentNumber: instNum,
+        newRemainingAmount,
+        paymentStatus: newPaymentStatus,
+      };
+    });
+  }
+
+  async initiateRepaymentPayment(
+    lanInput: string,
+    customerIdInput: bigint | number | string,
+    installmentNumberInput: number,
+    amountInput?: number,
+  ) {
+    const lan = String(lanInput || '').trim();
+    const instNum = Number(installmentNumberInput);
+    if (!lan) throw new BadRequestException('LAN is required.');
+    if (!instNum || instNum < 1) throw new BadRequestException('Valid installmentNumber is required.');
+
+    const loan = await this.prisma.plLoan.findFirst({
+      where: { lan },
+      include: { customer: true },
+    });
+    if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+
+    const rps = await this.prisma.plRepaymentSchedule.findUnique({
+      where: {
+        lan_installmentNumber: {
+          lan,
+          installmentNumber: instNum,
+        },
+      },
+    });
+    if (!rps) throw new NotFoundException(`Installment #${instNum} not found for LAN ${lan}.`);
+
+    const remainingAmount = Number(rps.remainingAmount);
+    if (remainingAmount <= 0 || rps.paymentStatus === 'PAID') {
+      throw new BadRequestException(`Installment #${instNum} is already fully paid.`);
+    }
+
+    const payAmount = amountInput && amountInput > 0 ? Math.min(amountInput, remainingAmount) : remainingAmount;
+
+    const customer = loan.customer;
+    const customerName =
+      customer.fullName ||
+      [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' ').trim() ||
+      'Customer';
+    const txnid = `RPY-${loan.id}-${instNum}-${Date.now()}`;
+
+    const successUrl =
+      this.configService.get<string>('EASEBUZZ_SUCCESS_URL') ||
+      `${this.configService.get('FRONTEND_URL') || 'http://localhost:5173'}/customer/loan/${lan}/details`;
+    const failureUrl =
+      this.configService.get<string>('EASEBUZZ_FAILURE_URL') ||
+      `${this.configService.get('FRONTEND_URL') || 'http://localhost:5173'}/customer/loan/${lan}/details`;
+
+    const initiatedPayment = await initiateEasebuzzIframePayment({
+      txnid,
+      amount: payAmount,
+      productinfo: `LOAN EMI REPAYMENT INST #${instNum}`,
+      firstname: customerName,
+      phone: customer.mobileNumber || '',
+      email: customer.email || '',
+      surl: successUrl,
+      furl: failureUrl,
+      udf1: customer.id.toString(),
+      udf2: customer.customerCode,
+      udf3: 'EMI_REPAYMENT',
+      udf4: lan,
+      udf5: instNum.toString(),
+    });
+
+    return {
+      success: true,
+      accessKey: initiatedPayment.accessKey,
+      merchantKey: initiatedPayment.key,
+      env: initiatedPayment.environment,
+      txnid,
+      lan,
+      installmentNumber: instNum,
+      amount: payAmount,
     };
   }
 }

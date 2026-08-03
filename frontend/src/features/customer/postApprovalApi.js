@@ -229,5 +229,26 @@ export const getDisbursalStatus = async (lan) => {
   return extractApiData(response);
 };
 
+export const getCustomerLoanDetails = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/details`, { method: 'GET' });
+  return extractApiData(response);
+};
+
+export const initiateRepaymentPayment = async (lan, payload) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/repay/initiate`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return extractApiData(response);
+};
+
+export const confirmRepayment = async (lan, payload) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/repay/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return extractApiData(response);
+};
+
 
 

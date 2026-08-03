@@ -1949,6 +1949,7 @@ function EsignStep({ lan, data, onNext }) {
 }
 
 function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -1975,7 +1976,10 @@ function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
     setErrorMsg('');
     try {
       await requestDisbursal(lan);
-      await onRefresh();
+      navigate(`/customer/loan/${encodeURIComponent(lan)}/details`, {
+        replace: true,
+        state: { disbursalRequested: true },
+      });
     } catch (err) {
       setErrorMsg(err.message || 'Failed to request disbursal');
     } finally {

@@ -4079,19 +4079,35 @@ function SubmitApplicationStep({
           </div>
         </div>
 
-        {isApproved && hasLan && (
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Continue to Disbursal</h3>
-            <p className="text-sm text-slate-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
-            <button
-              onClick={() => navigate(`/customer/loan/${customer.latestLan}/post-approval`)}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-bold text-white shadow hover:bg-emerald-700"
-            >
-              Continue Approved Loan Journey
-              <ArrowRight size={18} />
-            </button>
-          </div>
-        )}
+        {isApproved && hasLan && (() => {
+          const isDisbursalRequestedOrDisbursed =
+            customer?.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
+            customer?.latestDisbursalStatus === 'DISBURSAL_PROCESSING' ||
+            customer?.latestDisbursalStatus === 'DISBURSED' ||
+            customer?.latestLoanStatus === 'DISBURSED';
+
+          return (
+            <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">
+                {isDisbursalRequestedOrDisbursed ? 'Loan Account & Disbursal Status' : 'Continue to Disbursal'}
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
+              <button
+                onClick={() =>
+                  navigate(
+                    isDisbursalRequestedOrDisbursed
+                      ? `/customer/loan/${customer.latestLan}/details`
+                      : `/customer/loan/${customer.latestLan}/post-approval`
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-bold text-white shadow hover:bg-emerald-700 cursor-pointer"
+              >
+                {isDisbursalRequestedOrDisbursed ? 'View Loan Details' : 'Continue Approved Loan Journey'}
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          );
+        })()}
 
         {isApproved && !hasLan && (
           <div className="rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-sm">

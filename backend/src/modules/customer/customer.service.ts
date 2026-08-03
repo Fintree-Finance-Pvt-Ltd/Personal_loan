@@ -508,6 +508,7 @@ export class CustomerService {
         latestLan: latestLoan?.lan ?? null,
         latestLoanId: latestLoan?.id?.toString() ?? null,
         latestLoanStatus: latestLoan?.status ?? null,
+        latestDisbursalStatus: latestLoan?.disbursalStatus ?? null,
         // Payment
         assessmentFeePaid: Boolean(latestSuccessPayment),
         latestPayment: latestSuccessPayment ? {
