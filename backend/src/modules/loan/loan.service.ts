@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, BadGatewayException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -11,7 +11,7 @@ import { DigitapDigilockerService } from '../external-api/digitap-digilocker.ser
 import { ExternalApiService } from '../external-api/external-api.service';
 import { EasebuzzAutocollectService } from '../../integrations/easebuzz-autocollect.service';
 import { decryptBankAccountNumber } from '../../common/utils/bank-security.helper';
-import { normalizeDigitapDetails, sanitizeDigitapPayload, normalizeDigitapStatus } from './digilocker-normalizer';
+import { normalizeDigitapDetails, sanitizeDigitapPayload } from './digilocker-normalizer';
 
 @Injectable()
 export class LoanService {
@@ -421,7 +421,7 @@ export class LoanService {
       throw new BadRequestException('Aadhaar verification not completed');
     }
 
-    let updateData: Prisma.PlLoanUpdateInput = {
+    const updateData: Prisma.PlLoanUpdateInput = {
       addressConfirmed: true,
       addressConfirmedAt: new Date(),
       status: loan.status === PlLoanStatus.OFFER_ACCEPTED ? PlLoanStatus.ADDRESS_CONFIRMED : loan.status,
@@ -461,7 +461,7 @@ export class LoanService {
 
     updateData.currentStep = 'BANK_VERIFICATION';
 
-    const updatedLoan = await this.prisma.plLoan.update({
+    await this.prisma.plLoan.update({
       where: { id: loan.id },
       data: updateData,
     });
@@ -832,7 +832,7 @@ export class LoanService {
         if (fs.existsSync(filePath)) {
           try {
             fs.unlinkSync(filePath);
-          } catch (e) {
+          } catch (_e) {
             // Ignore cleanup errors
           }
         }
@@ -1152,7 +1152,7 @@ export class LoanService {
     return PlMandateStatus.UNKNOWN;
   }
 
-  async initiateMandate(lan: string, customerId: bigint, forceNew: boolean = false, mandateTypeReq?: string, metadata?: { ipAddress?: string; userAgent?: string }) {
+  async initiateMandate(lan: string, customerId: bigint, forceNew: boolean = false, mandateTypeReq?: string, _metadata?: { ipAddress?: string; userAgent?: string }) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
 
     // Validate step prerequisites
@@ -1533,28 +1533,40 @@ export class LoanService {
 
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
     const sanitized = this.easebuzzAutocollectService.sanitizeEasebuzzMandatePayload(payload);
+    const event = String(payload?.event || payload?.data?.event || '').trim().toUpperCase();
+
+    if (!this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload)) {
+      this.logger.warn(`Easebuzz mandate webhook failed authorization hash verification [event=${event}]`);
+      throw new UnauthorizedException('Invalid webhook signature.');
+    }
+
     const txId =
       payload?.transaction_id ||
       payload?.merchant_transaction_id ||
       payload?.udf1_tx_id ||
       payload?.data?.transaction_id ||
       payload?.data?.merchant_transaction_id ||
-      payload?.data?.udf1_tx_id;
+      payload?.data?.udf1_tx_id ||
+      payload?.data?.mandate?.transaction_id;
     const providerMandateId =
       payload?.mandate_id ||
       payload?.provider_mandate_id ||
       payload?.data?.mandate_id ||
-      payload?.data?.provider_mandate_id;
+      payload?.data?.provider_mandate_id ||
+      payload?.data?.id ||
+      payload?.data?.mandate?.mandate_id ||
+      payload?.data?.mandate?.id;
     const rawStatus =
       payload?.status ||
       payload?.mandate_status ||
       payload?.data?.status ||
+      payload?.data?.mandate?.status ||
       payload?.data?.mandate_status ||
       payload?.data?.transaction_status ||
       '';
 
     const maskedTxId = txId ? `...${String(txId).slice(-8)}` : 'UNKNOWN';
-    this.logger.log(`Received Easebuzz mandate webhook [TxID: ${maskedTxId}, Status: ${rawStatus}]`);
+    this.logger.log(`Received Easebuzz mandate webhook [TxID: ${maskedTxId}, ProviderMandateId: ${providerMandateId || 'NONE'}, Status: ${rawStatus}]`);
 
     if (!txId) {
       return { success: false, message: 'Missing transaction_id in webhook payload' };
@@ -1562,6 +1574,34 @@ export class LoanService {
 
     // Exact-once processing via interactive transaction and row-level locking
     return this.prisma.$transaction(async (tx) => {
+      if (typeof tx.plWebhookInbox?.create === 'function') {
+        try {
+          await tx.plWebhookInbox.create({
+            data: {
+              id: randomBytes(16).toString('hex'),
+              providerTransactionId: String(
+                payload?.data?.id ||
+                payload?.data?.transaction_id ||
+                payload?.data?.mandate?.mandate_id ||
+                payload?.data?.mandate?.transaction_id ||
+                payload?.id ||
+                payload?.transaction_id ||
+                'UNKNOWN'
+              ),
+              provider: 'easebuzz',
+              eventHash: String(payload?.data?.authorization || payload?.authorization || payload?.hash || 'NO_HASH'),
+              payload: payload,
+            },
+          });
+        } catch (_e: any) {
+          if (_e.code === 'P2002') {
+            this.logger.warn(`Idempotent webhook replay detected for Easebuzz event ${payload?.data?.id || payload?.data?.transaction_id}`);
+            return { success: true, message: 'Webhook already processed (idempotent replay).' };
+          }
+          throw _e;
+        }
+      }
+
       const mandate = await tx.plLoanMandate.findFirst({
         where: {
           OR: [

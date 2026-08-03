@@ -544,6 +544,40 @@ export class EasebuzzAutocollectService {
     throw new ServiceUnavailableException(`Unable to retrieve mandate status from provider: ${msg}`);
   }
 
+  public verifyEasebuzzMandateWebhookHash(payload: any): boolean {
+    try {
+      const data = payload?.data || {};
+      const auth = String(data.authorization || payload?.authorization || '').trim();
+      if (!auth) return false;
+
+      const event = String(payload?.event || '').trim().toUpperCase();
+      const key = this.merchantKey;
+      const salt = this.merchantSalt;
+      let hashSequence = '';
+
+      if (event === 'PRESENTMENT_STATUS_UPDATE') {
+        const transactionId = String(data.transaction_id || data?.mandate?.transaction_id || '').trim();
+        const merchantRequestNumber = String(data.merchant_request_number || '').trim();
+        const status = String(data.status || data.status_at_bank || '').trim();
+        if (!transactionId || !merchantRequestNumber || !status) return false;
+        hashSequence = `${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`;
+      } else {
+        const transactionId = String(data.transaction_id || data?.mandate?.transaction_id || '').trim();
+        const amount = String(data.amount ?? '').trim();
+        const accountNumber = String(data.customer_account_number || '').trim();
+        const ifsc = String(data.customer_ifsc || '').trim();
+        const upiHandle = String(data.customer_upi_handle || '').trim();
+        if (!transactionId || !amount || !accountNumber || !ifsc) return false;
+        hashSequence = `${key}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${salt}`;
+      }
+
+      const computedHash = createHash('sha512').update(hashSequence, 'utf8').digest('hex');
+      return computedHash === auth;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Sanitizes payload by stripping sensitive credentials, keys, salts, and raw account data
    */
