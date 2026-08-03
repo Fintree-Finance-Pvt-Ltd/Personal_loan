@@ -989,8 +989,8 @@ export class PlPaymentsService {
 
       // Run interactive transaction for atomic lock & update
       const result = await this.prisma.$transaction(async (tx: any) => {
-         // Idempotency: Insert into WebhookInbox if table exists
-         if (tx.plWebhookInbox) {
+         // Idempotency: Insert into WebhookInbox if this model exists on the Prisma client
+         if (typeof tx.plWebhookInbox?.create === 'function') {
            try {
              await tx.plWebhookInbox.create({
                data: {
@@ -998,8 +998,8 @@ export class PlPaymentsService {
                  providerTransactionId: String(merchantTxn),
                  provider: 'easebuzz',
                  eventHash: data.hash || 'NO_HASH',
-                 payload: data
-               }
+                 payload: data,
+               },
              });
            } catch (e: any) {
              // P2002 Unique constraint failed = Replay!
