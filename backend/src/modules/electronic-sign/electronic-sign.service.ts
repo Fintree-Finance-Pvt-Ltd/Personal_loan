@@ -444,9 +444,45 @@ export class ElectronicSignService {
       authenticatedSessionId: input.authenticatedSessionId || '',
     };
 
+    // Mark transaction as SIGNED in database so LoanAgreementDataBuilder renders Handlebars with electronicAcceptance.completed = true
+    await this.prisma.plElectronicSignTransaction.update({
+      where: { id: tx.id },
+      data: {
+        status: 'SIGNED',
+        signedAt: now,
+        ipAddress: input.ipAddress,
+      },
+    });
+
+    await this.prisma.plLoan.update({
+      where: { id: tx.loanId },
+      data: {
+        esignCompleted: true,
+        esignCompletedAt: now,
+        esignStatus: 'SIGNED',
+        electronicSignStatus: 'SIGNED',
+        electronicSignReference: transactionRef,
+        electronicSignedAt: now,
+      },
+    });
+
+    // Generate authoritative signed PDF buffer (where all 6 signature boxes render ELECTRONICALLY ACCEPTED stamps)
+    const loanForPdf = await this.prisma.plLoan.findFirst({
+      where: { id: tx.loanId },
+      include: { customer: true },
+    });
+
+    let signedAgreementPdfBuffer: Buffer;
+    try {
+      signedAgreementPdfBuffer = await this.agreementDocumentService.generateLoanAgreementPdf(loanForPdf);
+    } catch (_pdfErr: any) {
+      this.logger.warn(`Failed to re-render signed agreement PDF: ${_pdfErr?.message || _pdfErr}`);
+      signedAgreementPdfBuffer = originalPdfBuffer;
+    }
+
     // Generate Stamped PDF & Append Evidence Page using PdfStampService
     const { acceptedPdfBuffer, signedPageNumber } = await this.pdfStampService.stampAndAppendEvidence(
-      originalPdfBuffer,
+      signedAgreementPdfBuffer,
       {
         signerName: tx.signerName,
         signedAt: now,
@@ -455,6 +491,7 @@ export class ElectronicSignService {
         reference: transactionRef,
         environment: evidenceData.ipEnvironment,
         showEnvLabel,
+        drawOverlay: false,
       },
       evidenceData,
     );

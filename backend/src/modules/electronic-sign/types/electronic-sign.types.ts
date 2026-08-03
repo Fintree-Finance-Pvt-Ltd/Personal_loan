@@ -41,4 +41,5 @@ export interface StampOptions {
   reference: string;
   environment?: string;
   showEnvLabel?: boolean;
+  drawOverlay?: boolean;
 }

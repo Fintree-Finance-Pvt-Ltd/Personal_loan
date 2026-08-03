@@ -9,7 +9,7 @@ import { numberToWords } from '../helpers/handlebars-helpers';
 export class LoanAgreementDataBuilder {
   private readonly logger = new Logger(LoanAgreementDataBuilder.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async buildForLoan(input: {
     lan: string;
@@ -55,11 +55,11 @@ export class LoanAgreementDataBuilder {
 
     const appDateFormatted = application?.createdAt
       ? new Intl.DateTimeFormat('en-IN', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-          timeZone: 'Asia/Kolkata',
-        }).format(new Date(application.createdAt))
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'Asia/Kolkata',
+      }).format(new Date(application.createdAt))
       : formattedDate;
 
     let authorizedSignatoryImage = '';
@@ -190,15 +190,15 @@ export class LoanAgreementDataBuilder {
         acceptedAt: esignTx.signedAt || undefined,
         acceptedAtFormatted: esignTx.signedAt
           ? new Intl.DateTimeFormat('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: true,
-              timeZone: 'Asia/Kolkata',
-            }).format(new Date(esignTx.signedAt)) + ' IST'
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata',
+          }).format(new Date(esignTx.signedAt)) + ' IST'
           : undefined,
         ipAddress: esignTx.ipAddress || '127.0.0.1',
         environmentLabel: showEnvLabel ? 'LOCAL DEVELOPMENT' : undefined,
@@ -212,7 +212,7 @@ export class LoanAgreementDataBuilder {
           'I confirm that I have read and understood the Personal Loan Agreement and consent to accept it electronically using OTP.',
         consentVersion: esignTx.consentVersion || '1.0',
         signedPageNumber: esignTx.signedPageNumber || undefined,
-        stampHeading: 'ELECTRONICALLY ACCEPTED THROUGH VERIFIED-MOBILE OTP',
+        stampHeading: 'ELECTRONICALLY ACCEPTED ',
         stampFooterText: 'OTP-verified electronic acceptance',
       };
     } else {
@@ -220,7 +220,7 @@ export class LoanAgreementDataBuilder {
         completed: false,
         signerName: customer?.fullName || 'Borrower',
         maskedMobile,
-        stampHeading: 'ELECTRONICALLY ACCEPTED THROUGH VERIFIED-MOBILE OTP',
+        stampHeading: 'ELECTRONICALLY ACCEPTED ',
         stampFooterText: 'OTP-verified electronic acceptance',
       };
     }

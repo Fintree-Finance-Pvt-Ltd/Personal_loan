@@ -27,82 +27,84 @@ export class PdfStampService {
     const lastPage = pages[lastPageNumber - 1];
     const { width: pageWidth } = lastPage.getSize();
 
-    // 1. Draw Visible Stamp on Last Page
-    const showEnvLabel =
-      options.showEnvLabel ??
-      (process.env.ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL === 'true' ||
-        process.env.NODE_ENV !== 'production');
+    // 1. Draw Visible Stamp on Last Page (if requested/needed)
+    if (options.drawOverlay !== false) {
+      const showEnvLabel =
+        options.showEnvLabel ??
+        (process.env.ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL === 'true' ||
+          process.env.NODE_ENV !== 'production');
 
-    const dateFormatted = new Intl.DateTimeFormat('en-IN', {
-      timeZone: process.env.ELECTRONIC_SIGN_TIMEZONE || 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    }).format(options.signedAt);
+      const dateFormatted = new Intl.DateTimeFormat('en-IN', {
+        timeZone: process.env.ELECTRONIC_SIGN_TIMEZONE || 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      }).format(options.signedAt);
 
-    const lines = [
-      `By: ${options.signerName.slice(0, 26)}`,
-      `Date: ${dateFormatted} IST`,
-      `IP: ${options.ipAddress || '127.0.0.1'}`,
-    ];
+      const lines = [
+        `By: ${options.signerName.slice(0, 26)}`,
+        `Date: ${dateFormatted} IST`,
+        `IP: ${options.ipAddress || '127.0.0.1'}`,
+      ];
 
-    if (showEnvLabel) {
-      lines.push('Environment: LOCAL DEVELOPMENT');
-    }
+      if (showEnvLabel) {
+        lines.push('Environment: LOCAL DEVELOPMENT');
+      }
 
-    lines.push(`Ref: ${options.reference.slice(0, 24)}`);
+      lines.push(`Ref: ${options.reference.slice(0, 24)}`);
 
-    const stampWidth = 230;
-    const stampHeight = showEnvLabel ? 95 : 85;
-    const marginX = 28;
-    const marginY = 28;
-    const xPos = Math.max(10, pageWidth - stampWidth - marginX);
-    const yPos = marginY;
+      const stampWidth = 230;
+      const stampHeight = showEnvLabel ? 95 : 85;
+      const marginX = 28;
+      const marginY = 28;
+      const xPos = Math.max(10, pageWidth - stampWidth - marginX);
+      const yPos = marginY;
 
-    // Stamp Background Card
-    lastPage.drawRectangle({
-      x: xPos,
-      y: yPos,
-      width: stampWidth,
-      height: stampHeight,
-      color: rgb(0.95, 0.97, 1.0),
-      borderColor: rgb(0.1, 0.35, 0.75),
-      borderWidth: 1.5,
-    });
-
-    // Stamp Header
-    lastPage.drawText('ELECTRONICALLY ACCEPTED', {
-      x: xPos + 10,
-      y: yPos + stampHeight - 16,
-      size: 9,
-      font: helveticaBold,
-      color: rgb(0.05, 0.25, 0.65),
-    });
-
-    let currentY = yPos + stampHeight - 28;
-    for (const line of lines) {
-      lastPage.drawText(line, {
-        x: xPos + 10,
-        y: currentY,
-        size: 7,
-        font: helveticaFont,
-        color: rgb(0.1, 0.15, 0.3),
+      // Stamp Background Card
+      lastPage.drawRectangle({
+        x: xPos,
+        y: yPos,
+        width: stampWidth,
+        height: stampHeight,
+        color: rgb(0.95, 0.97, 1.0),
+        borderColor: rgb(0.1, 0.35, 0.75),
+        borderWidth: 1.5,
       });
-      currentY -= 10;
-    }
 
-    // Stamp Footer Text
-    lastPage.drawText('OTP verified electronic acceptance', {
-      x: xPos + 10,
-      y: yPos + 6,
-      size: 6.5,
-      font: helveticaBold,
-      color: rgb(0.75, 0.1, 0.1),
-    });
+      // Stamp Header
+      lastPage.drawText('ELECTRONICALLY ACCEPTED', {
+        x: xPos + 10,
+        y: yPos + stampHeight - 16,
+        size: 9,
+        font: helveticaBold,
+        color: rgb(0.05, 0.25, 0.65),
+      });
+
+      let currentY = yPos + stampHeight - 28;
+      for (const line of lines) {
+        lastPage.drawText(line, {
+          x: xPos + 10,
+          y: currentY,
+          size: 7,
+          font: helveticaFont,
+          color: rgb(0.1, 0.15, 0.3),
+        });
+        currentY -= 10;
+      }
+
+      // Stamp Footer Text
+      lastPage.drawText('OTP verified electronic acceptance', {
+        x: xPos + 10,
+        y: yPos + 6,
+        size: 6.5,
+        font: helveticaBold,
+        color: rgb(0.75, 0.1, 0.1),
+      });
+    }
 
     // 2. Append Evidence Page
     const evidencePage = pdfDoc.addPage([595.28, 841.89]); // A4
@@ -172,7 +174,7 @@ export class PdfStampService {
     drawField('OTP Sent At', evidenceData.otpSentAt || '—');
     drawField('OTP Verified At', evidenceData.otpVerifiedAt || '—');
     drawField('Accepted Timestamp', evidenceData.signedAt);
-    drawField('Environment', evidenceData.ipEnvironment || (showEnvLabel ? 'LOCAL DEVELOPMENT' : 'UAT/PRODUCTION'));
+    drawField('Environment', evidenceData.ipEnvironment || (process.env.ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL === 'true' ? 'LOCAL DEVELOPMENT' : 'UAT/PRODUCTION'));
     drawField('IP Address (Resolved Client IP)', evidenceData.ipAddress);
     drawField('Forwarded IP Chain', evidenceData.forwardedFor || 'None');
     drawField('User Agent', evidenceData.userAgent);

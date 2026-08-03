@@ -20,7 +20,7 @@ import {
   Eye,
   X,
 } from 'lucide-react';
-
+import { getCustomerAccessToken } from '../customerApi';
 import {
   getPostApprovalJourney,
   acceptLoanOffer,
@@ -190,29 +190,26 @@ export default function PostApprovalJourneyPage() {
                   if (isClickable) setSelectedStepId(step.id);
                 }}
                 disabled={!isClickable}
-                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors cursor-pointer disabled:cursor-not-allowed ${
-                  isActive
-                    ? 'border-emerald-600 bg-emerald-50'
-                    : isDone
-                      ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50'
-                      : 'border-transparent bg-white opacity-60'
-                }`}
+                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors cursor-pointer disabled:cursor-not-allowed ${isActive
+                  ? 'border-emerald-600 bg-emerald-50'
+                  : isDone
+                    ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50'
+                    : 'border-transparent bg-white opacity-60'
+                  }`}
               >
                 <div
-                  className={`grid h-8 w-8 place-items-center rounded-full transition ${
-                    isDone
-                      ? 'bg-emerald-500 text-white'
-                      : isActive
-                        ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400'
-                        : 'bg-slate-100 text-slate-400'
-                  }`}
+                  className={`grid h-8 w-8 place-items-center rounded-full transition ${isDone
+                    ? 'bg-emerald-500 text-white'
+                    : isActive
+                      ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400'
+                      : 'bg-slate-100 text-slate-400'
+                    }`}
                 >
                   {isDone ? <CheckCircle2 size={16} /> : <Icon size={15} />}
                 </div>
                 <p
-                  className={`text-[11px] font-semibold leading-tight ${
-                    isActive ? 'text-emerald-900 font-bold' : isDone ? 'text-emerald-700' : 'text-slate-400'
-                  }`}
+                  className={`text-[11px] font-semibold leading-tight ${isActive ? 'text-emerald-900 font-bold' : isDone ? 'text-emerald-700' : 'text-slate-400'
+                    }`}
                 >
                   {step.label}
                 </p>
@@ -376,11 +373,10 @@ function ApprovalSummaryStep({ data, onNext }) {
                 key={t}
                 type="button"
                 onClick={() => setSelectedTenure(t)}
-                className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${
-                  selectedTenure === t
-                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
-                    : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
-                }`}
+                className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+                  : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
+                  }`}
               >
                 {t} Days
               </button>
@@ -801,10 +797,9 @@ function BankVerificationStep({ lan, data, onNext }) {
   };
 
   const inputClass = (fieldName) =>
-    `w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:ring-4 disabled:bg-slate-100 disabled:cursor-not-allowed ${
-      fieldErrors[fieldName]
-        ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
-        : 'border-slate-200 focus:border-blue-500 focus:ring-blue-100'
+    `w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:ring-4 disabled:bg-slate-100 disabled:cursor-not-allowed ${fieldErrors[fieldName]
+      ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
+      : 'border-slate-200 focus:border-blue-500 focus:ring-blue-100'
     }`;
 
   return (
@@ -1147,11 +1142,9 @@ function KfsStep({ lan, data, onNext }) {
             {detailItems.map((item, index) => (
               <div
                 key={item.label}
-                className={`min-h-[108px] p-5 ${
-                  index !== detailItems.length - 1 ? 'border-b border-slate-200' : ''
-                } sm:border-b ${index % 2 !== 1 ? 'sm:border-r' : ''} lg:border-b lg:border-r ${
-                  index === 2 || index === 4 ? 'lg:border-r-0' : ''
-                } ${index >= 3 ? 'lg:border-b-0' : ''}`}
+                className={`min-h-[108px] p-5 ${index !== detailItems.length - 1 ? 'border-b border-slate-200' : ''
+                  } sm:border-b ${index % 2 !== 1 ? 'sm:border-r' : ''} lg:border-b lg:border-r ${index === 2 || index === 4 ? 'lg:border-r-0' : ''
+                  } ${index >= 3 ? 'lg:border-b-0' : ''}`}
               >
                 <p className="text-sm font-medium text-slate-500">{item.label}</p>
                 <p className="mt-2 text-xl font-extrabold text-slate-950">{item.value}</p>
@@ -1747,9 +1740,15 @@ function EsignStep({ lan, data, onNext }) {
     }
   };
 
-  const previewUrl = `/api/customer/loans/${lan}/electronic-sign/document`;
-  const acceptedDocUrl = `/api/customer/loans/${lan}/electronic-sign/accepted-document`;
-  const auditCertUrl = `/api/customer/loans/${lan}/electronic-sign/audit-certificate`;
+  // const previewUrl = `/api/customer/loans/${lan}/electronic-sign/document`;
+  // const acceptedDocUrl = `/api/customer/loans/${lan}/electronic-sign/accepted-document`;
+  // const auditCertUrl = `/api/customer/loans/${lan}/electronic-sign/audit-certificate`;
+
+  const customerToken = getCustomerAccessToken() || '';
+  const tokenQuery = customerToken ? `?token=${encodeURIComponent(customerToken)}` : '';
+  const previewUrl = `/api/customer/loans/${lan}/electronic-sign/document${tokenQuery}`;
+  const acceptedDocUrl = `/api/customer/loans/${lan}/electronic-sign/accepted-document${tokenQuery}`;
+  const auditCertUrl = `/api/customer/loans/${lan}/electronic-sign/audit-certificate${tokenQuery}`;
 
   return (
     <StepCard title="e-Sign Loan Agreement" subtitle="Electronically accept your loan agreement using mobile OTP authentication." icon={PenLine}>
