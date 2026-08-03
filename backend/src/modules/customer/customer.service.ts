@@ -22,6 +22,7 @@ import { PolicyEvaluationService } from '../platform-policies/policy-evaluation.
 import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engine/mlm-allocation-engine.service';
 
 import { ApplicationTransitionService } from '../loan/services/application-transition.service';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 @Injectable()
 export class CustomerService {
@@ -34,6 +35,7 @@ export class CustomerService {
     private readonly policyEvaluationService: PolicyEvaluationService,
     private readonly mlmAllocationEngineService: MlmAllocationEngineService,
     private readonly applicationTransitionService: ApplicationTransitionService,
+    private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
   ) {}
 
   async findOrCreateAfterOtpVerification(
@@ -258,6 +260,12 @@ export class CustomerService {
 
     const isSalaried = body.employmentType === 'SALARIED';
     const isSelfEmployed = body.employmentType === 'SELF_EMPLOYED';
+    const monthlyIncome = Number(body.monthlyIncome);
+    if ((!isSalaried && !isSelfEmployed) || !Number.isFinite(monthlyIncome) || monthlyIncome <= 0) {
+      throw new BadRequestException('Complete employment details and a valid monthly income are required.');
+    }
+    if (isSalaried && (!body.companyName || !body.designation)) throw new BadRequestException('Employer name and designation are required.');
+    if (isSelfEmployed && (!body.businessName || !body.businessConstitution)) throw new BadRequestException('Business name and constitution are required.');
 
     const updateData: any = {
       residenceStatus: body.residenceStatus || null,
@@ -290,17 +298,23 @@ export class CustomerService {
       lastActivityAt: new Date(),
     };
 
-    const customer = await (this.prisma as any).customer.update({
-      where: {
-        id: customerId,
-      },
-      data: updateData,
+    const result = await this.prisma.$transaction(async (tx) => {
+      const application = await tx.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+      if (!application) throw new BadRequestException('Canonical application was not found.');
+      const customer = await tx.customer.update({ where: { id: customerId }, data: updateData });
+      await tx.applicationEmploymentSnapshot.upsert({
+        where: { applicationId: application.id },
+        create: { applicationId: application.id, employmentType: body.employmentType, companyType: isSalaried ? body.companyType || null : null, companyName: isSalaried ? String(body.companyName).trim() : null, designation: isSalaried ? String(body.designation).trim() : null, businessName: isSelfEmployed ? String(body.businessName).trim() : null, businessConstitution: isSelfEmployed ? body.businessConstitution : null, monthlyIncome, annualTurnover: isSelfEmployed && body.annualTurnover ? Number(body.annualTurnover) : null, employmentVintage: isSalaried ? body.employmentVintage || null : null, businessVintage: isSelfEmployed ? body.businessVintage || null : null, salaryMode: isSalaried ? body.salaryMode || null : null, completedAt: new Date() },
+        update: { employmentType: body.employmentType, companyType: isSalaried ? body.companyType || null : null, companyName: isSalaried ? String(body.companyName).trim() : null, designation: isSalaried ? String(body.designation).trim() : null, businessName: isSelfEmployed ? String(body.businessName).trim() : null, businessConstitution: isSelfEmployed ? body.businessConstitution : null, monthlyIncome, annualTurnover: isSelfEmployed && body.annualTurnover ? Number(body.annualTurnover) : null, employmentVintage: isSalaried ? body.employmentVintage || null : null, businessVintage: isSelfEmployed ? body.businessVintage || null : null, salaryMode: isSalaried ? body.salaryMode || null : null, completedAt: new Date() },
+      });
+      return { customer, applicationId: application.id };
     });
+    await this.lenderIntegrationOutbox.enqueueUpdateWhenReady(result.applicationId);
 
     return {
       success: true,
       message: 'Profile details saved successfully.',
-      data: this.serializeCustomer(customer),
+      data: this.serializeCustomer(result.customer),
     };
   }
 
@@ -381,7 +395,15 @@ export class CustomerService {
         applications: {
           orderBy: { id: 'desc' },
           take: 1,
-          include: { loans: { orderBy: { id: 'desc' }, take: 1 } },
+          include: {
+            loans: { orderBy: { id: 'desc' }, take: 1 },
+            lenderApplicationLink: true,
+            lenderIntegrationOutbox: { orderBy: { createdAt: 'desc' }, take: 1 },
+            employmentSnapshot: true,
+            kycSnapshot: true,
+            addresses: true,
+            liveness: true,
+          },
         },
       },
     });
@@ -390,20 +412,18 @@ export class CustomerService {
       throw new NotFoundException('Customer not found.');
     }
 
-    let latestSuccessPayment: any = null;
-    try {
-      const paymentRows: any[] = await this.prisma.$queryRawUnsafe(
-        `SELECT \`txnid\`, \`amount\`, \`purpose\`, \`status\`, \`paid_at\` AS paidAt FROM \`pl_payment_links\` WHERE \`customer_id\` = ? AND \`status\` = 'SUCCESS' ORDER BY \`id\` DESC LIMIT 1`,
-        customerId,
-      );
-      if (paymentRows && paymentRows.length > 0) {
-        latestSuccessPayment = paymentRows[0];
-      }
-    } catch (e) {
-      latestSuccessPayment = null;
-    }
-
     const latestApp = customer.applications[0] ?? null;
+    const latestSuccessPayment = latestApp
+      ? await this.prisma.plPaymentLink.findFirst({
+          where: {
+            customerId,
+            applicationId: latestApp.id,
+            purpose: 'ASSESSMENT_FEE',
+            status: 'SUCCESS',
+          },
+          orderBy: { paidAt: 'desc' },
+        })
+      : null;
     const latestLoan = latestApp?.loans[0] ?? null;
 
     let allocatedLenderName: string | null = null;
@@ -413,6 +433,18 @@ export class CustomerService {
       });
       allocatedLenderName = lender?.displayName ?? lender?.legalName ?? null;
     }
+    let updateReadiness = { ready: false, reasons: ['APPLICATION_MISSING'] as string[] };
+    if (latestApp) {
+      try {
+        const readiness = await this.lenderIntegrationOutbox.getUpdateReadiness(latestApp.id);
+        updateReadiness = { ready: readiness.ready, reasons: readiness.reasons };
+      } catch {
+        updateReadiness = { ready: false, reasons: ['READINESS_UNAVAILABLE'] };
+      }
+    }
+    const link = latestApp?.lenderApplicationLink ?? null;
+    const currentOutbox = latestApp?.lenderIntegrationOutbox?.[0] ?? null;
+    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan });
 
     // Explicitly build response — never spread raw Prisma objects with BigInt fields
     return {
@@ -459,6 +491,7 @@ export class CustomerService {
         eligibilityStatus: customer.eligibilityStatus,
         eligibilityReason: customer.eligibilityReason,
         latestApplicationId: customer.latestApplicationId?.toString() ?? null,
+        latestApplicationReference: latestApp?.applicationNumber ?? null,
         lastLoginAt: customer.lastLoginAt,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
@@ -496,6 +529,24 @@ export class CustomerService {
           gstAmount: latestApp.assessmentFeeGstAmount ? Number(latestApp.assessmentFeeGstAmount) : null,
           totalAmount: Number(latestApp.assessmentFeeTotalAmount),
           currency: latestApp.assessmentFeeCurrency
+        } : null,
+        journey: latestApp ? {
+          applicationId: latestApp.id.toString(),
+          applicationReference: latestApp.applicationNumber,
+          applicationStatus: latestApp.status,
+          platformBreResult: latestApp.platformDecisionOutcome,
+          allocatedLender: latestApp.lenderId ? { id: latestApp.lenderId, code: latestApp.lenderCode, name: allocatedLenderName, productId: latestApp.lenderProductId, productStrategyVersionId: latestApp.productStrategyVersionId } : null,
+          assessmentFee: { paid: Boolean(latestSuccessPayment), paymentStatus: latestSuccessPayment?.status ?? null, paidAt: latestSuccessPayment?.paidAt ?? null },
+          createStatus: link?.createStatus ?? 'NOT_STARTED',
+          updateReadiness,
+          updateStatus: link?.updateStatus ?? 'NOT_STARTED',
+          decisionStatus: link?.decisionStatus ?? 'NOT_STARTED',
+          normalizedDecision: link?.normalizedDecision ?? null,
+          partnerReference: link?.partnerReference ?? null,
+          coolingOffUntil: latestApp.lenderCoolingOffUntil,
+          nextStatusCheckAt: latestApp.lenderNextStatusCheckAt,
+          integration: currentOutbox ? { stage: currentOutbox.integrationStage, status: currentOutbox.status, attemptCount: currentOutbox.attemptCount, safeErrorCode: currentOutbox.lastErrorCode } : null,
+          nextPermittedStep,
         } : null,
       },
     };
@@ -583,24 +634,8 @@ export class CustomerService {
       );
     }
 
-    const activeApplication = await this.prisma.plApplication.findFirst({
-      where: {
-        customerId,
-        status: PlApplicationStatus.DRAFT,
-      },
-    });
-
-    if (!activeApplication) {
-      throw new BadRequestException('No active draft application found to submit.');
-    }
-
-    const application = await this.prisma.plApplication.update({
-      where: { id: activeApplication.id },
-      data: {
-        status: PlApplicationStatus.SUBMITTED,
-        submittedAt: new Date(),
-      },
-    });
+    const application = await this.applicationTransitionService.submitCanonicalApplication(customerId);
+    const readiness = await this.lenderIntegrationOutbox.enqueueUpdateWhenReady(application.id);
 
     const updatedCustomer = await this.prisma.customer.update({
       where: { id: customerId },
@@ -626,12 +661,16 @@ export class CustomerService {
         statusLabel: 'Under Final Approval',
         submittedAt: application.submittedAt?.toISOString(),
         estimatedReviewTimeHours: 24,
+        updateReadiness: readiness.readiness,
         customer: this.serializeCustomer(updatedCustomer),
       },
     };
   }
 
   async simulateLenderApproval(customerId: bigint, body: any) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Route not found.');
+    }
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
       include: {
@@ -921,10 +960,15 @@ export class CustomerService {
             
             if (allocationDecision && allocationDecision.status === 'ASSIGNED') {
                const decision = allocationDecision;
-               // Resolve fee from Product Strategy Version
-               const productVersion = await tx.lenderProductVersion.findFirst({
-                 where: { productId: decision.productId!, status: 'ACTIVE' }
+               if (!decision.productVersionId) {
+                 throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
+               }
+               const productVersion = await tx.lenderProductVersion.findUnique({
+                 where: { id: decision.productVersionId }
                });
+               if (!productVersion || productVersion.productId !== decision.productId) {
+                 throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
+               }
                
                const baseAmount = productVersion?.assessmentFeeAmount ? new Prisma.Decimal(productVersion.assessmentFeeAmount) : new Prisma.Decimal(0);
                const gstRate = productVersion?.assessmentFeeGstPercent ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent) : new Prisma.Decimal(18);
@@ -941,7 +985,7 @@ export class CustomerService {
                      mlmPolicyVersionId: decision.policyVersionId,
                      lenderId: decision.lenderId,
                      lenderProductId: decision.productId,
-                     productStrategyVersionId: productVersion?.id || null,
+                     productStrategyVersionId: decision.productVersionId,
                      allocatedAt: new Date(),
                      assessmentFeeBaseAmount: baseAmount,
                      assessmentFeeGstRate: gstRate,
@@ -986,6 +1030,50 @@ export class CustomerService {
        throw new BadRequestException('Eligibility passed but no lender route available. Please try again later.');
 
     });
+  }
+
+  private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any }): string {
+    const { application, payment, link, outbox, updateReadiness, loan } = input;
+    if (!application) return 'BASIC_DETAILS';
+    if (link?.normalizedDecision === 'APPROVED' || application.status === 'LENDER_APPROVED') return loan ? 'BANK_DETAILS' : 'APPROVAL_PROCESSING';
+    if (link?.normalizedDecision === 'REJECTED' || application.status === 'LENDER_REJECTED') return 'LENDER_REJECTED';
+    if (outbox?.status === 'FAILED') return 'INTEGRATION_SUPPORT';
+    if (application.platformDecisionOutcome !== 'PASS') return application.status === 'PLATFORM_REJECTED' ? 'PLATFORM_REJECTED' : 'BASIC_DETAILS';
+    if (!payment) return 'ASSESSMENT_FEE';
+    if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) return 'LENDER_CREATE_PROCESSING';
+    if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';
+    if (updateReadiness.reasons.includes('DIGILOCKER_KYC_NOT_VERIFIED')) return 'AADHAAR_KYC';
+    if (updateReadiness.reasons.some((reason) => ['PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'SAME_ADDRESS_DECISION_MISSING'].includes(reason))) return 'ADDRESS_DETAILS';
+    if (!['ACKNOWLEDGED', 'COMPLETED'].includes(link.updateStatus)) return 'LENDER_UPDATE_PROCESSING';
+    if (link.normalizedDecision === 'PENDING' || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.decisionStatus)) return 'LENDER_DECISION_PROCESSING';
+    return 'LENDER_DECISION_PROCESSING';
+  }
+
+  async saveApplicationAddress(customerId: bigint, body: any) {
+    const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+    if (!application) throw new BadRequestException('Canonical application was not found.');
+    const addressType = String(body?.addressType || '').toUpperCase();
+    if (!['PERMANENT', 'CURRENT'].includes(addressType)) throw new BadRequestException('Address type must be PERMANENT or CURRENT.');
+    let address = body;
+    if (addressType === 'CURRENT' && body?.sameAsPermanent === true) {
+      const permanent = await this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } });
+      if (!permanent) throw new BadRequestException('Permanent address must be saved first.');
+      address = { ...permanent, addressType: 'CURRENT', sameAsPermanent: true, source: permanent.source };
+    }
+    const required = ['addressLine1', 'city', 'state', 'pincode'];
+    if (required.some((field) => !String(address?.[field] || '').trim()) || !/^[1-9][0-9]{5}$/.test(String(address.pincode))) throw new BadRequestException('Complete structured address details are required.');
+    if (addressType === 'CURRENT' && typeof address.sameAsPermanent !== 'boolean') throw new BadRequestException('Same-as-permanent decision is required for current address.');
+    const data = { source: address.source === 'DIGILOCKER' ? 'DIGILOCKER' as const : 'CUSTOMER' as const, addressLine1: String(address.addressLine1).trim(), addressLine2: address.addressLine2 ? String(address.addressLine2).trim() : null, landmark: address.landmark ? String(address.landmark).trim() : null, locality: address.locality ? String(address.locality).trim() : null, district: address.district ? String(address.district).trim() : null, city: String(address.city).trim(), state: String(address.state).trim(), country: String(address.country || 'India').trim(), pincode: String(address.pincode), sameAsPermanent: addressType === 'CURRENT' ? Boolean(address.sameAsPermanent) : null, sourceVerifiedAt: address.source === 'DIGILOCKER' ? new Date() : null };
+    const saved = await this.prisma.applicationAddress.upsert({ where: { applicationId_addressType: { applicationId: application.id, addressType: addressType as any } }, create: { applicationId: application.id, addressType: addressType as any, ...data }, update: data });
+    const update = await this.lenderIntegrationOutbox.enqueueUpdateWhenReady(application.id);
+    return { success: true, data: { address: saved, updateReadiness: update.readiness } };
+  }
+
+  async acceptDecisionConsents(customerId: bigint, body: any, metadata: { ipAddress?: string; userAgent?: string }) {
+    const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+    if (!application) throw new BadRequestException('Canonical application was not found.');
+    const result = await this.lenderIntegrationOutbox.recordDecisionConsents({ customerId, applicationId: application.id, consents: Array.isArray(body?.consents) ? body.consents : [], ipAddress: metadata.ipAddress, userAgent: metadata.userAgent });
+    return { success: true, data: { decisionEnqueued: result.enqueued, eventId: result.event?.id ?? null } };
   }
 
   private calculateCompletedYears(dobStr: string): number {

@@ -14,10 +14,19 @@ export default function CustomerLayout() {
       setIsInitializing(false);
       return;
     }
+
+    const hasStoredSession = Boolean(localStorage.getItem('customerSession') || sessionStorage.getItem('customerSession'));
+
+    if (!hasStoredSession) {
+      navigate('/customer/login', { replace: true });
+      return;
+    }
+
     doCustomerRefresh()
       .then(() => setIsInitializing(false))
       .catch(() => {
-        navigate('/customer/login');
+        setIsInitializing(false);
+        navigate('/customer/login', { replace: true });
       });
   }, [navigate]);
 

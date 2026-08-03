@@ -17,6 +17,7 @@ import {
 } from '../../integrations/easebuzz-iframe.integration';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 export type PlPaymentPurpose =
   | 'PROCESSING_FEE'
@@ -43,6 +44,7 @@ export class PlPaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
   ) { }
 
   /**
@@ -58,6 +60,7 @@ export class PlPaymentsService {
       | bigint,
     body: any,
     actor: any,
+    requestMetadata?: { ipAddress?: string | null; userAgent?: string | null },
   ) {
     try {
       const customerId =
@@ -106,6 +109,19 @@ export class PlPaymentsService {
         this.normalizePurpose(
           body?.purpose,
         );
+
+      if (purpose === 'ASSESSMENT_FEE') {
+        await this.lenderIntegrationOutbox.recordDataSharingConsent({
+          customerId,
+          applicationId: latestApp.id,
+          consentTemplateId: body?.consentTemplateId,
+          consentVersion: body?.consentVersion,
+          consentText: body?.consentText,
+          ipAddress: requestMetadata?.ipAddress,
+          userAgent: requestMetadata?.userAgent,
+        });
+        await this.lenderIntegrationOutbox.assertValidDataSharingConsent(latestApp.id);
+      }
 
       if (!customer) {
         throw new NotFoundException(
@@ -288,9 +304,10 @@ export class PlPaymentsService {
         ).plPaymentLink.create({
           data: {
             customerId,
+            applicationId: latestApp.id,
 
             applicationNumber:
-              customer.customerCode,
+              latestApp.applicationNumber,
 
             customerName,
 
@@ -959,7 +976,6 @@ export class PlPaymentsService {
    */
   async handleEasebuzzWebhook(body: any, headers: any) {
     try {
-      console.log('Easebuzz webhook received.', { body, headers });
       const data = body?.data && typeof body.data === 'object' ? body.data : body;
       const merchantTxn = data?.txnid || data?.merchant_txn || data?.merchantTxn || data?.referenceId || null;
       if (!merchantTxn) {
@@ -1036,6 +1052,12 @@ export class PlPaymentsService {
          }
 
          if (payment.purpose === 'ASSESSMENT_FEE' && application) {
+            if (payment.application_id == null || BigInt(payment.application_id) !== BigInt(application.id)) {
+              throw new BadRequestException('Assessment-fee payment is not bound to the canonical application.');
+            }
+            if (!['LENDER_ALLOCATED', 'ASSESSMENT_FEE_PAID'].includes(String(application.status))) {
+              throw new BadRequestException(`Application status ${application.status} cannot transition to ASSESSMENT_FEE_PAID.`);
+            }
             if (application.assessment_fee_total_amount) {
                const appAssessmentFee = new Prisma.Decimal(application.assessment_fee_total_amount);
                if (!appAssessmentFee.equals(webhookAmount)) {
@@ -1055,14 +1077,17 @@ export class PlPaymentsService {
             }
          });
 
-         // Exactly-Once state transition to ASSESSMENT_FEE_PAID if SUCCESS
-         if (nextStatus === 'SUCCESS' && payment.purpose === 'ASSESSMENT_FEE' && application && application.status !== 'ASSESSMENT_FEE_PAID') {
-            await tx.plApplication.update({
-               where: { id: application.id },
-               data: {
-                 status: 'ASSESSMENT_FEE_PAID'
-               }
-            });
+         // Payment, application transition and lender CREATE event commit atomically.
+         if (nextStatus === 'SUCCESS' && payment.purpose === 'ASSESSMENT_FEE' && application) {
+            if (application.status !== 'ASSESSMENT_FEE_PAID') {
+              await tx.plApplication.update({
+                 where: { id: application.id },
+                 data: {
+                   status: 'ASSESSMENT_FEE_PAID'
+                 }
+              });
+            }
+            await this.lenderIntegrationOutbox.enqueueCreateAfterVerifiedPayment(tx, BigInt(application.id));
          }
 
          return { 
@@ -1201,6 +1226,10 @@ export class PlPaymentsService {
       'PROCESSING_FEE'
     ) {
       return 'PROCESSING_FEE';
+    }
+
+    if (normalizedValue === 'ASSESSMENT_FEE') {
+      return 'ASSESSMENT_FEE';
     }
 
     return 'OTHER';

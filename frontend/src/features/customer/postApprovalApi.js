@@ -17,26 +17,23 @@ function getFullApiUrl(endpoint) {
   return `${cleanBase}/api${cleanEndpoint}`;
 }
 
-function getCustomerId() {
-  try {
-    const session = JSON.parse(localStorage.getItem('customerSession') || 'null');
-    return session?.customerId ? String(session.customerId) : null;
-  } catch {
-    return null;
-  }
-}
-
 async function apiRequest(endpoint, options = {}) {
   const url = getFullApiUrl(endpoint);
-  const response = await fetch(url, {
+  const send = (token) => fetch(url, {
     credentials: 'include',
     ...options,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  let response = await send(getCustomerAccessToken());
+  if (response.status === 401) {
+    const refreshedToken = await doCustomerRefresh();
+    response = await send(refreshedToken);
+  }
 
   let result = null;
   try {
@@ -66,37 +63,25 @@ function extractApiData(result) {
   return result?.data?.data || result?.data || result || null;
 }
 
-function withCustomerId(payload = {}) {
-  const customerId = getCustomerId();
-  if (!customerId) throw new Error('Customer session not found. Please log in again.');
-  return { ...payload, customerId };
-}
-
-function customerIdQuery() {
-  const customerId = getCustomerId();
-  if (!customerId) throw new Error('Customer session not found. Please log in again.');
-  return `customerId=${encodeURIComponent(customerId)}`;
-}
-
 export const getPostApprovalJourney = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/post-approval?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/post-approval`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const getLoanOffer = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/offer?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/offer`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const getOfferPricing = async (lan, tenureDays) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/offer/pricing?tenureDays=${tenureDays}&${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/offer/pricing?tenureDays=${tenureDays}`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const acceptLoanOffer = async (lan, payload) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/offer/accept`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId(payload)),
+    body: JSON.stringify(payload),
   });
   return extractApiData(response);
 };
@@ -104,20 +89,20 @@ export const acceptLoanOffer = async (lan, payload) => {
 export const initiateDigilocker = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/digilocker/initiate`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
 
 export const getDigilockerStatus = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/digilocker/status?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/digilocker/status`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const fetchDigilockerDetails = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/digilocker/fetch-details`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
@@ -125,7 +110,7 @@ export const fetchDigilockerDetails = async (lan) => {
 export const saveAddress = async (lan, payload) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/address`, {
     method: 'PATCH',
-    body: JSON.stringify(withCustomerId(payload)),
+    body: JSON.stringify(payload),
   });
   return extractApiData(response);
 };
@@ -133,7 +118,7 @@ export const saveAddress = async (lan, payload) => {
 export const verifyBankAccount = async (lan, payload) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/bank-accounts/verify`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId(payload)),
+    body: JSON.stringify(payload),
   });
   return extractApiData(response);
 };
@@ -141,7 +126,7 @@ export const verifyBankAccount = async (lan, payload) => {
 export const generateKfs = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/kfs/generate`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
@@ -154,7 +139,7 @@ export const getKfs = async (lan) => {
 export const acceptKfs = async (lan, payload) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/kfs/accept`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId(payload)),
+    body: JSON.stringify(payload),
   });
   return extractApiData(response);
 };
@@ -162,20 +147,20 @@ export const acceptKfs = async (lan, payload) => {
 export const initiateMandate = async (lan, forceNew = false, mandateType = 'ENACH') => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/initiate`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId({ forceNew, mandateType })),
+    body: JSON.stringify({ forceNew, mandateType }),
   });
   return extractApiData(response);
 };
 
 export const getMandateStatus = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/status?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/status`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const refreshMandateStatus = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/mandate/refresh-status`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
@@ -183,20 +168,20 @@ export const refreshMandateStatus = async (lan) => {
 export const initiateEsign = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/prepare`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
 
 export const getEsignStatus = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/status?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/status`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const prepareElectronicSign = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/prepare`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
@@ -204,7 +189,7 @@ export const prepareElectronicSign = async (lan) => {
 export const markDocumentViewed = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/document/viewed`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
@@ -212,7 +197,7 @@ export const markDocumentViewed = async (lan) => {
 export const sendSigningOtp = async (lan, consentAccepted) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/otp/send`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId({ consentAccepted })),
+    body: JSON.stringify({ consentAccepted }),
   });
   return extractApiData(response);
 };
@@ -220,28 +205,29 @@ export const sendSigningOtp = async (lan, consentAccepted) => {
 export const verifySigningOtp = async (lan, otpSessionId, otp) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/otp/verify`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId({ otpSessionId, otp })),
+    body: JSON.stringify({ otpSessionId, otp }),
   });
   return extractApiData(response);
 };
 
 export const getElectronicSignStatus = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/status?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/electronic-sign/status`, { method: 'GET' });
   return extractApiData(response);
 };
 
 export const requestDisbursal = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/disbursal/request`, {
     method: 'POST',
-    body: JSON.stringify(withCustomerId()),
+    body: JSON.stringify({}),
   });
   return extractApiData(response);
 };
 
 export const getDisbursalStatus = async (lan) => {
-  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/disbursal/status?${customerIdQuery()}`, { method: 'GET' });
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/disbursal/status`, { method: 'GET' });
   return extractApiData(response);
 };
 
 
 
+import { doCustomerRefresh, getCustomerAccessToken } from './customerApi';

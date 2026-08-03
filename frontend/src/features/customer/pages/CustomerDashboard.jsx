@@ -18,7 +18,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { customerApi } from '../customerApi';
+import { customerApi, getCustomerAccessToken } from '../customerApi';
 
 export default function CustomerDashboard() {
   const navigate = useNavigate();
@@ -50,11 +50,38 @@ export default function CustomerDashboard() {
     }
   };
 
-  // Fetch backend customer data on mount or redirect if missing session
+  // Fetch backend customer data on mount or redirect if the session is genuinely missing.
   useEffect(() => {
-    if (!customerId) {
+    const hasAccessToken = Boolean(getCustomerAccessToken());
+    const hasStoredSession = Boolean(getStoredSession() || localStorage.getItem('customerSession') || sessionStorage.getItem('customerSession'));
+
+    if (!hasAccessToken && !hasStoredSession) {
       localStorage.removeItem('customerSession');
+      sessionStorage.removeItem('customerSession');
       navigate('/customer/login', { replace: true });
+      return;
+    }
+
+    if (!customerId && hasAccessToken) {
+      setIsLoadingCustomer(true);
+      setCustomerError('');
+
+      customerApi
+        .getCustomerMe()
+        .then((customerData) => {
+          setBackendCustomer(customerData);
+        })
+        .catch((error) => {
+          console.error('Failed to fetch customer data:', error);
+          setCustomerError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to load customer details.',
+          );
+        })
+        .finally(() => {
+          setIsLoadingCustomer(false);
+        });
       return;
     }
 

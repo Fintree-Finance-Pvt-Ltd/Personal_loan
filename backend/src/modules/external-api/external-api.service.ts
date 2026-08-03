@@ -123,6 +123,14 @@ export class ExternalApiService {
       throw new BadRequestException('Customer account is blocked.');
     }
 
+    const hintedApplicationId = input.applicationId ? BigInt(input.applicationId) : null;
+    const application = hintedApplicationId
+      ? await this.prisma.plApplication.findFirst({ where: { id: hintedApplicationId, customerId } })
+      : await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+    if (!application) {
+      throw new NotFoundException('Canonical application not found for customer.');
+    }
+
     const clientRefNum = input.clientRefNum || `LIVENESS_${customerId}_${Date.now()}`.slice(0, 45);
 
     let base64Image = String(input.inputImage || '').trim();
@@ -165,6 +173,29 @@ export class ExternalApiService {
         `Face liveness verification completed for customer ${customer.customerCode}. Result is_live: ${providerData.result.is_live}`,
       );
 
+      const isVerified = providerData.result.is_live === true;
+      const liveness = await this.prisma.applicationLiveness.upsert({
+        where: { applicationId: application.id },
+        create: {
+          applicationId: application.id,
+          provider: 'DIGITAP',
+          providerTransactionId: providerData.req_id,
+          verificationStatus: isVerified ? 'VERIFIED' : 'FAILED',
+          score: providerData.result.liveness_confidence,
+          verifiedAt: isVerified ? new Date() : null,
+          evidenceReference: providerData.client_ref_num,
+        },
+        update: {
+          photoDocumentId: null,
+          provider: 'DIGITAP',
+          providerTransactionId: providerData.req_id,
+          verificationStatus: isVerified ? 'VERIFIED' : 'FAILED',
+          score: providerData.result.liveness_confidence,
+          verifiedAt: isVerified ? new Date() : null,
+          evidenceReference: providerData.client_ref_num,
+        },
+      });
+
       return {
         success: true,
         message: 'Face liveness check processed successfully.',
@@ -172,6 +203,7 @@ export class ExternalApiService {
           customerId: customer.id.toString(),
           customerCode: customer.customerCode,
           reqId: providerData.req_id,
+          livenessVerificationId: liveness.id,
           clientRefNum: providerData.client_ref_num,
           livenessResult: providerData.result,
         },
@@ -933,17 +965,17 @@ export class ExternalApiService {
       throw new BadRequestException('LAN is required.');
     }
 
-    const loan = await this.prisma.plLoan.findUnique({
-      where: { lan },
+    const principalCustomerId = String(authenticatedUser?.customerId || '').trim();
+    if (!/^[1-9][0-9]*$/.test(principalCustomerId)) {
+      throw new NotFoundException('Loan not found or does not belong to this customer.');
+    }
+    const loan = await this.prisma.plLoan.findFirst({
+      where: { lan, customerId: BigInt(principalCustomerId) },
       include: { customer: true, application: true, bankVerification: true },
     });
 
     if (!loan) {
-      throw new NotFoundException(`Loan ${lan} not found.`);
-    }
-
-    if (authenticatedUser?.customerId && String(loan.customerId) !== String(authenticatedUser.customerId)) {
-      throw new BadRequestException('Loan does not belong to this customer.');
+      throw new NotFoundException('Loan not found or does not belong to this customer.');
     }
 
     // Validate request payload

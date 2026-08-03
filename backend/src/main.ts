@@ -24,30 +24,20 @@ async function bootstrap(): Promise<void> {
       crossOriginResourcePolicy: false,
     }),
   );
-  app.use(json({ limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
+  app.use(json({ 
+    limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT'),
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
   app.use(urlencoded({ extended: false, limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Allow requests with no origin (like mobile apps, curl, or same-origin)
-      if (!origin) return callback(null, true);
-      const allowedOrigins = [
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'https://pl-fintree-uat.fintreelms.com',
-        'https://pl-fintree-uat.fintreelms.com/api'
-      ];
-      if (allowedOrigins.includes(origin) || origin.endsWith('.localhost')) {
-        return callback(null, true);
-      }
-      return callback(new Error('CORS origin rejected'), false);
-    },
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin', 'Idempotency-Key', 'X-Client-Id', 'X-Request-Timestamp', 'X-Nonce', 'X-Signature'],
     exposedHeaders: ['X-Request-ID'],
   });
   const adapter = app.getHttpAdapter().getInstance();

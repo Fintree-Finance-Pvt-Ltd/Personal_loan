@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -92,6 +93,19 @@ export class CustomerController {
   ) {
     if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
     return this.customerService.runEligibility(BigInt(customer.customerId), body);
+  }
+
+  @Patch('application/address')
+  async saveApplicationAddress(@CurrentCustomer() customer: any, @Body() body: any) {
+    return this.customerService.saveApplicationAddress(BigInt(customer.customerId), body);
+  }
+
+  @Post('application/decision-consents')
+  async acceptDecisionConsents(@CurrentCustomer() customer: any, @Body() body: any, @Req() req: any) {
+    return this.customerService.acceptDecisionConsents(BigInt(customer.customerId), body, {
+      ipAddress: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
   }
 
   @Post(':id/simulate-lender-approval')

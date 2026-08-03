@@ -41,6 +41,11 @@ const schema = z
     ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL: booleanString.default('true'),
     ELECTRONIC_SIGN_TIMEZONE: z.string().default('Asia/Kolkata'),
     PL_WEBHOOK_SECRET: z.string().min(16).optional(),
+    LENDER_INTEGRATION_WORKER_ENABLED: booleanString.default('true'),
+    LENDER_INTEGRATION_WORKER_POLL_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
+    LENDER_INTEGRATION_WORKER_LOCK_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
+    LENDER_DATA_SHARING_CONSENT_VERSION: z.string().min(1).max(50).default('1.0'),
+    LENDER_DATA_SHARING_CONSENT_REFERENCE: z.string().min(1).max(150).default('CUSTOMER_LENDER_DATA_SHARING'),
   })
   .superRefine((env, context) => {
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {

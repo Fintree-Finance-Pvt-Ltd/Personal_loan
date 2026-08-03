@@ -26,6 +26,7 @@ export interface DigitapFaceLivenessResponse {
 
 export interface VerifyFaceLivenessInput {
   customerId: string | bigint;
+  applicationId?: string | bigint;
   inputImage: string; // Base64 string, image URL, or image content
   clientRefNum?: string;
   allowDeepfake?: 'yes' | 'no';

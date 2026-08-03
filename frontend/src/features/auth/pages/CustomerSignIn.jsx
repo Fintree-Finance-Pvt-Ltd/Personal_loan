@@ -9,7 +9,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { authApi } from '../authApi';
-import { setCustomerAccessToken, getCustomerAccessToken, doCustomerRefresh } from '../../customer/customerApi';
+import { setCustomerAccessToken, getCustomerAccessToken } from '../../customer/customerApi';
 
 const INDIAN_MOBILE_REGEX =
   /^[6-9]\d{9}$/;
@@ -38,16 +38,11 @@ export default function CustomerSignIn() {
     useSearchParams();
 
   useEffect(() => {
-    if (getCustomerAccessToken()) {
-      navigate('/customer/dashboard');
-      return;
+    const hasActiveSession = Boolean(getCustomerAccessToken()) || Boolean(localStorage.getItem('customerSession') || sessionStorage.getItem('customerSession'));
+
+    if (hasActiveSession) {
+      navigate('/customer/dashboard', { replace: true });
     }
-    // Attempt silent refresh on load
-    doCustomerRefresh()
-      .then(() => navigate('/customer/dashboard'))
-      .catch(() => {
-        // Stay on login page
-      });
   }, [navigate]);
 
   const otpInputRefs = useRef([]);

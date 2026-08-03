@@ -37,6 +37,12 @@ import {
   updateCustomerProfile,
   submitCustomerApplication,
   reverseGeocode,
+  verifyCustomerPan,
+  verifyFaceLiveness,
+  initiateAssessmentPayment,
+  getAssessmentPaymentStatus,
+  saveApplicationAddress,
+  acceptLenderDecisionConsents,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,
   initiateCustomerAadhaarKyc,
@@ -339,6 +345,24 @@ function deriveCustomerWorkflow(customer) {
   if (applicationSubmitted) {
     currentStep = 'submit_application';
   }
+
+  const backendStep = customer.journey?.nextPermittedStep;
+  const backendStepMap = {
+    BASIC_DETAILS: 'basic_details',
+    PLATFORM_REJECTED: 'rejection_screen',
+    ASSESSMENT_FEE: 'assessment_fee',
+    PROFILE_DETAILS: 'profile_details',
+    AADHAAR_KYC: 'aadhaar_kyc',
+    ADDRESS_DETAILS: 'submit_application',
+    LENDER_CREATE_PROCESSING: 'integration_processing',
+    LENDER_UPDATE_PROCESSING: 'integration_processing',
+    LENDER_DECISION_PROCESSING: 'integration_processing',
+    APPROVAL_PROCESSING: 'integration_processing',
+    INTEGRATION_SUPPORT: 'integration_support',
+    LENDER_REJECTED: 'submit_application',
+    BANK_DETAILS: 'submit_application',
+  };
+  if (backendStepMap[backendStep]) currentStep = backendStepMap[backendStep];
 
   return {
     mobileVerified,
@@ -1036,49 +1060,7 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const response = await fetch(
-        '/api/external-api/verify-pan',
-        {
-          method: 'POST',
-
-          headers: {
-            Accept: 'application/json',
-            'Content-Type':
-              'application/json',
-          },
-
-          body: JSON.stringify({
-            customerId:
-              storedSession.customerId,
-            panNumber: normalizedPan,
-          }),
-        },
-      );
-
-      let result = null;
-
-      try {
-        result = await response.json();
-      } catch {
-        throw new Error(
-          'PAN verification service returned an invalid response.',
-        );
-      }
-
-      if (!response.ok) {
-        const backendMessage =
-          result?.message ||
-          result?.data?.message ||
-          result?.data?.data?.message ||
-          result?.error ||
-          'PAN verification failed.';
-
-        throw new Error(
-          Array.isArray(backendMessage)
-            ? backendMessage.join(', ')
-            : backendMessage,
-        );
-      }
+      const result = await verifyCustomerPan(normalizedPan);
 
       const responsePayload =
         result?.data?.data ||
@@ -1421,33 +1403,12 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const response = await fetch('/api/external-api/initiate-payment', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: String(customerId),
-          purpose: 'PROCESSING_FEE',
-        }),
+      const result = await initiateAssessmentPayment({
+          purpose: 'ASSESSMENT_FEE',
+          consentTemplateId: 'LENDER_DATA_SHARING_V1',
+          consentVersion: '1.0',
+          consentText: `I consent to share my application data with ${customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner'} for eligibility assessment and final decision.`,
       });
-
-      let result = null;
-      try {
-        result = await response.json();
-      } catch {
-        throw new Error('Payment initiation service returned an invalid response.');
-      }
-
-      if (!response.ok) {
-        const msg =
-          result?.message ||
-          result?.error ||
-          result?.data?.message ||
-          'Payment initiation failed.';
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
 
       const paymentData =
         result?.data?.data || result?.data || result || null;
@@ -1537,26 +1498,7 @@ export default function MyApplicationPage() {
       attempts += 1;
 
       try {
-        const response = await fetch('/api/external-api/payment-status', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            customerId: String(customerId),
-            paymentId: pId,
-            transactionId: txId,
-            purpose: 'PROCESSING_FEE',
-          }),
-        });
-
-        let result = null;
-        try {
-          result = await response.json();
-        } catch {
-          result = null;
-        }
+        const result = await getAssessmentPaymentStatus(pId, txId);
 
         const statusPayload =
           result?.data?.data || result?.data || result || null;
@@ -1619,16 +1561,15 @@ export default function MyApplicationPage() {
   }, []);
 
   const handleProceedToProfile = () => {
-    // TESTING MODE: Bypassing feePaid check for testing next steps
-    // if (!feePaid) {
-    //   showMessage(
-    //     'Complete the assessment fee payment first.',
-    //     'error',
-    //   );
-    //   return;
-    // }
+    if (!feePaid) {
+      showMessage(
+        'Complete the assessment fee payment first.',
+        'error',
+      );
+      return;
+    }
 
-    goToStep('profile_details');
+    fetchCustomer();
   };
 
   const handleProfileContinue = async () => {
@@ -1654,7 +1595,7 @@ export default function MyApplicationPage() {
     try {
       await updateCustomerProfile(customerId, form);
       showMessage('Profile details and live photograph saved successfully.');
-      goToStep('aadhaar_kyc');
+      await fetchCustomer();
     } catch (err) {
       console.error('Failed to save profile details:', err);
       showMessage(
@@ -1679,7 +1620,7 @@ export default function MyApplicationPage() {
     }
   };
 
-  const handleSubmitApplication = async () => {
+  const handleSubmitApplication = async ({ sameAsPermanent, decisionConsentAccepted } = {}) => {
     if (!validateBasicDetails()) {
       showMessage('Basic details are incomplete.', 'error');
       goToStep('basic_details');
@@ -1716,10 +1657,35 @@ export default function MyApplicationPage() {
       return;
     }
 
+    if (!decisionConsentAccepted) {
+      showMessage('Please provide the required lender decision consents.', 'error');
+      return;
+    }
+
+    if (!sameAsPermanent && (!savedPhotoDocument?.formattedAddress || !savedPhotoDocument?.city || !savedPhotoDocument?.state || !savedPhotoDocument?.postalCode)) {
+      showMessage('Current structured address is incomplete. Please recapture the live photo with location enabled.', 'error');
+      goToStep('profile_details');
+      return;
+    }
+
     setIsSubmitting(true);
     clearMessage();
 
     try {
+      await saveApplicationAddress(sameAsPermanent ? {
+        addressType: 'CURRENT',
+        sameAsPermanent: true,
+      } : {
+        addressType: 'CURRENT',
+        sameAsPermanent: false,
+        source: 'CUSTOMER',
+        addressLine1: savedPhotoDocument.formattedAddress,
+        city: savedPhotoDocument.city,
+        state: savedPhotoDocument.state,
+        country: savedPhotoDocument.country || 'India',
+        pincode: savedPhotoDocument.postalCode,
+      });
+      await acceptLenderDecisionConsents();
       const res = await submitCustomerApplication(customerId);
       const appNum = res?.applicationNumber || `PL-APP-${Date.now()}`;
 
@@ -1903,6 +1869,7 @@ export default function MyApplicationPage() {
       {currentStep === 'profile_details' && (
         <ProfileDetailsStep
           customerId={customerId}
+          applicationId={customer?.latestApplicationId}
           customerCode={customer?.customerCode}
           savedPhotoDocument={savedPhotoDocument}
           onPhotoSaved={setSavedPhotoDocument}
@@ -1924,7 +1891,6 @@ export default function MyApplicationPage() {
           workflow={workflow}
           onCompleted={() => {
             fetchCustomer();
-            goToStep('submit_application');
           }}
           onBack={() => goToStep('profile_details')}
         />
@@ -1934,6 +1900,7 @@ export default function MyApplicationPage() {
         <SubmitApplicationStep
           form={form}
           customer={customer}
+          savedPhotoDocument={savedPhotoDocument}
           mobileNumber={mobileNumber}
           applicationSubmitted={applicationSubmitted}
           applicationNumber={applicationNumber}
@@ -1941,6 +1908,24 @@ export default function MyApplicationPage() {
           onBack={() => goToStep('aadhaar_kyc')}
           onSubmit={handleSubmitApplication}
         />
+      )}
+      {currentStep === 'integration_processing' && (
+        <StepCard>
+          <div className="p-8 text-center">
+            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-emerald-600" />
+            <h2 className="mt-4 text-xl font-bold text-slate-900">Your lender application is processing</h2>
+            <p className="mt-2 text-sm text-slate-600">We are securely completing the current lender integration stage. This page will resume from the backend-confirmed state.</p>
+          </div>
+        </StepCard>
+      )}
+      {currentStep === 'integration_support' && (
+        <StepCard>
+          <div className="p-8 text-center">
+            <AlertCircle className="mx-auto h-10 w-10 text-amber-600" />
+            <h2 className="mt-4 text-xl font-bold text-slate-900">We need to retry this application securely</h2>
+            <p className="mt-2 text-sm text-slate-600">Your data and payment remain recorded. Please contact support and quote error code {customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW'}.</p>
+          </div>
+        </StepCard>
       )}
     </div>
   );
@@ -3042,7 +3027,7 @@ function AssessmentFeeStep({
         onBack={onBack}
         onNext={onContinue}
         nextLabel="Complete Profile"
-        nextDisabled={false} /* TESTING: Bypassing !feePaid check */
+        nextDisabled={!feePaid}
         hideSave
       />
     </StepCard>
@@ -3134,6 +3119,7 @@ function drawWatermarkOnCanvas(canvas, videoElement, metadata) {
 
 function LivePhotographSection({
   customerId,
+  applicationId,
   customerCode,
   savedPhotoDocument,
   onPhotoSaved,
@@ -3340,19 +3326,7 @@ function LivePhotographSection({
       reader.readAsDataURL(taggedBlob);
       const base64Image = await base64Promise;
 
-      const livenessResponse = await fetch('/api/external-api/face-liveness', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: String(customerId),
-          inputImage: base64Image,
-        }),
-      });
-
-      const livenessResultJson = await livenessResponse.json();
+      const livenessResultJson = await verifyFaceLiveness(applicationId, base64Image);
       const innerData = livenessResultJson?.data?.data || livenessResultJson?.data || livenessResultJson;
       const livenessResultObj = innerData?.livenessResult || innerData;
 
@@ -3370,7 +3344,8 @@ function LivePhotographSection({
       });
 
       formData.append('file', imageFile);
-      formData.append('customerId', String(customerId));
+      formData.append('applicationId', String(applicationId));
+      formData.append('livenessVerificationId', innerData.livenessVerificationId || '');
       formData.append('latitude', String(locationData.latitude));
       formData.append('longitude', String(locationData.longitude));
       formData.append('accuracy', String(locationData.accuracy || 0));
@@ -3380,9 +3355,6 @@ function LivePhotographSection({
       formData.append('country', addressData?.country || 'India');
       formData.append('postalCode', addressData?.postalCode || '');
       formData.append('capturedAt', locationData.capturedAt.toISOString());
-      formData.append('faceLivenessStatus', 'VERIFIED');
-      formData.append('faceLivenessScore', String(livenessResultObj.liveness_confidence || livenessResultObj.confidence || livenessResultObj.score || 0.98));
-      formData.append('faceLivenessProviderApplicationId', innerData.reqId || livenessResultObj.req_id || '');
       formData.append('documentType', 'CUSTOMER_LIVE_PHOTO');
       formData.append('source', 'PROFILE_DETAILS');
       formData.append('applicantType', 'BORROWER');
@@ -3619,6 +3591,7 @@ function LivePhotographSection({
 
 function ProfileDetailsStep({
   customerId,
+  applicationId,
   customerCode,
   savedPhotoDocument,
   onPhotoSaved,
@@ -4029,6 +4002,7 @@ function ProfileDetailsStep({
 
       <LivePhotographSection
         customerId={customerId}
+        applicationId={applicationId}
         customerCode={customerCode}
         savedPhotoDocument={savedPhotoDocument}
         onPhotoSaved={onPhotoSaved}
@@ -4060,6 +4034,7 @@ function ProfileDetailsStep({
 function SubmitApplicationStep({
   form,
   customer,
+  savedPhotoDocument,
   mobileNumber,
   applicationSubmitted,
   applicationNumber,
@@ -4068,6 +4043,8 @@ function SubmitApplicationStep({
   onSubmit,
 }) {
   const navigate = useNavigate();
+  const [sameAsPermanent, setSameAsPermanent] = useState(true);
+  const [decisionConsentAccepted, setDecisionConsentAccepted] = useState(false);
 
   const status = customer?.onboardingStatus || 'APPLICATION_SUBMITTED';
   const isApproved = status === 'LENDER_APPROVED';
@@ -4297,11 +4274,37 @@ function SubmitApplicationStep({
             </div>
           </div>
 
+          <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <label className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+              <input
+                type="checkbox"
+                checked={sameAsPermanent}
+                onChange={(event) => setSameAsPermanent(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              My current address is the same as my DigiLocker permanent address.
+            </label>
+            {!sameAsPermanent && (
+              <p className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600">
+                Current address from verified photo location: {savedPhotoDocument?.formattedAddress || 'Location address unavailable'}
+              </p>
+            )}
+            <label className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+              <input
+                type="checkbox"
+                checked={decisionConsentAccepted}
+                onChange={(event) => setDecisionConsentAccepted(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              I authorize the bureau enquiry, lender credit assessment, and submission of this completed application to the allocated lender for a decision.
+            </label>
+          </div>
+
           <button
             type="button"
-            onClick={onSubmit}
+            onClick={() => onSubmit({ sameAsPermanent, decisionConsentAccepted })}
             disabled={
-              isSubmitting
+              isSubmitting || !decisionConsentAccepted
             }
             className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
           >

@@ -451,6 +451,7 @@ export class CustomerAadhaarKycService {
           },
         });
       });
+      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr);
 
       // Audit log (non-blocking)
       this.auditLogs
@@ -681,7 +682,31 @@ export class CustomerAadhaarKycService {
       }
     });
 
+    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr);
+
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
+  }
+
+  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>) {
+    const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+    if (!application) return;
+    const verifiedAt = new Date();
+    await this.prisma.applicationKycSnapshot.upsert({
+      where: { applicationId: application.id },
+      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, verifiedAt },
+      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, verifiedAt },
+    });
+    const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
+    const city = String(address.vtc || address.city || address.dist || '').trim();
+    const state = String(address.state || '').trim();
+    const pincode = String(address.pc || address.pincode || '').trim();
+    if (addressLine1 && city && state && /^[1-9][0-9]{5}$/.test(pincode)) {
+      await this.prisma.applicationAddress.upsert({
+        where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } },
+        create: { applicationId: application.id, addressType: 'PERMANENT', source: 'DIGILOCKER', addressLine1, addressLine2: address.street || null, locality: address.loc || null, district: address.dist || null, city, state, pincode, country: address.country || 'India', sourceVerifiedAt: verifiedAt },
+        update: { source: 'DIGILOCKER', addressLine1, addressLine2: address.street || null, locality: address.loc || null, district: address.dist || null, city, state, pincode, country: address.country || 'India', sourceVerifiedAt: verifiedAt },
+      });
+    }
   }
 
   /**

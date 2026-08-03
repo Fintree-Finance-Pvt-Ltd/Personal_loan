@@ -180,6 +180,72 @@ export async function reverseGeocode(latitude, longitude) {
   return result?.data?.data || result?.data || result;
 }
 
+export async function verifyCustomerPan(panNumber) {
+  return apiRequest('/external-api/verify-pan', {
+    method: 'POST',
+    body: JSON.stringify({ panNumber }),
+  });
+}
+
+export async function verifyFaceLiveness(applicationId, inputImage) {
+  return apiRequest('/external-api/face-liveness', {
+    method: 'POST',
+    body: JSON.stringify({ applicationId: String(applicationId), inputImage }),
+  });
+}
+
+export async function initiateAssessmentPayment(payload) {
+  return apiRequest('/external-api/initiate-payment', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAssessmentPaymentStatus(paymentId, transactionId) {
+  return apiRequest('/external-api/payment-status', {
+    method: 'POST',
+    body: JSON.stringify({
+      paymentId,
+      transactionId,
+      purpose: 'ASSESSMENT_FEE',
+    }),
+  });
+}
+
+export async function saveApplicationAddress(payload) {
+  return apiRequest('/customer/application/address', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function acceptLenderDecisionConsents() {
+  const consents = [
+    {
+      consentType: 'BUREAU_ENQUIRY',
+      consentTemplateId: 'BUREAU_ENQUIRY_V1',
+      consentVersion: '1.0',
+      consentText: 'I authorize a bureau enquiry for this loan application.',
+    },
+    {
+      consentType: 'LENDER_CREDIT_ASSESSMENT',
+      consentTemplateId: 'LENDER_CREDIT_ASSESSMENT_V1',
+      consentVersion: '1.0',
+      consentText: 'I authorize the allocated lender to assess my eligibility and credit profile.',
+    },
+    {
+      consentType: 'LENDER_DECISION_REQUEST',
+      consentTemplateId: 'LENDER_DECISION_REQUEST_V1',
+      consentVersion: '1.0',
+      consentText: 'I authorize submission of my completed application to the allocated lender for a lending decision.',
+    },
+  ];
+  return apiRequest('/customer/application/decision-consents', {
+    method: 'POST',
+    body: JSON.stringify({ consents }),
+  });
+}
+
 export async function uploadLivePhotoDocument(formData) {
   const result = await apiRequest('/documents/customer-live-photo', {
     method: 'POST',
@@ -197,7 +263,7 @@ export async function getCustomerLivePhoto(customerId) {
   if (!customerId) return null;
 
   try {
-    const result = await apiRequest(`/documents/customer/${encodeURIComponent(String(customerId))}/live-photo`, {
+    const result = await apiRequest('/documents/customer/live-photo', {
       method: 'GET',
     });
 
@@ -310,6 +376,12 @@ export const customerApi = {
   updateCustomerProfile,
   submitCustomerApplication,
   reverseGeocode,
+  verifyCustomerPan,
+  verifyFaceLiveness,
+  initiateAssessmentPayment,
+  getAssessmentPaymentStatus,
+  saveApplicationAddress,
+  acceptLenderDecisionConsents,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,
   initiateCustomerAadhaarKyc,

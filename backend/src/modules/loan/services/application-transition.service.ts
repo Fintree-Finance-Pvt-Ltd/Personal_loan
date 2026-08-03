@@ -69,4 +69,20 @@ export class ApplicationTransitionService {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable, // Prevent race conditions on active check
     });
   }
+
+  async submitCanonicalApplication(customerId: bigint) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customerId} FOR UPDATE`;
+      const application = await tx.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+      if (!application) throw new ConflictException('Canonical application was not found.');
+      if (application.status === PlApplicationStatus.SUBMITTED || application.status === PlApplicationStatus.LENDER_REVIEW || application.status === PlApplicationStatus.LENDER_APPROVED) return application;
+      if (application.status !== PlApplicationStatus.ASSESSMENT_FEE_PAID) {
+        throw new ConflictException(`Application cannot be submitted from ${application.status}.`);
+      }
+      return tx.plApplication.update({
+        where: { id: application.id },
+        data: { status: PlApplicationStatus.SUBMITTED, submittedAt: application.submittedAt || new Date() },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
 }

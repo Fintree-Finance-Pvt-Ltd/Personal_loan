@@ -33,10 +33,10 @@ export class LoanService {
   }
 
   async findLoanByLanAndCustomer(lan: string, customerId: bigint) {
-    const where: any = { lan };
-    if (customerId && customerId > 0n) {
-      where.customerId = customerId;
+    if (!customerId || customerId <= 0n) {
+      throw new NotFoundException('Loan not found or does not belong to this customer');
     }
+    const where = { lan, customerId };
 
     const includeOptions = {
       application: true,
@@ -48,17 +48,10 @@ export class LoanService {
       },
     };
 
-    let loan = await this.prisma.plLoan.findFirst({
+    const loan = await this.prisma.plLoan.findFirst({
       where,
       include: includeOptions,
     });
-
-    if (!loan && customerId && customerId > 0n) {
-      loan = await this.prisma.plLoan.findFirst({
-        where: { lan },
-        include: includeOptions,
-      });
-    }
 
     if (!loan) {
       throw new NotFoundException('Loan not found or does not belong to this customer');
@@ -70,7 +63,7 @@ export class LoanService {
   async createLoanAfterApproval(applicationId: bigint, customerId: bigint, amount: number, lenderCode: string = 'FTF') {
     // Idempotency check: see if loan already exists for this application
     const existingLoan = await this.prisma.plLoan.findFirst({
-      where: { applicationId },
+      where: { applicationId, customerId },
     });
 
     if (existingLoan) {
@@ -1034,6 +1027,7 @@ export class LoanService {
   }
 
   async verifyBankAccount(lan: string, customerId: bigint, payload: any, metadata?: any) {
+    await this.findLoanByLanAndCustomer(lan, customerId);
     return this.externalApiService.verifyCustomerBankAccount(
       lan,
       payload,

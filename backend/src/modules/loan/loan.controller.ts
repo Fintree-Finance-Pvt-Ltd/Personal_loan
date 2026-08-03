@@ -1,175 +1,111 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
 import { LoanService } from './loan.service';
-import { Public } from '../../common/decorators/public.decorator';
 
-/**
- * Customer-facing loan journey endpoints.
- * These routes are @Public() because the customer portal uses OTP-based
- * session storage (not admin JWT). The customerId is passed via query param
- * from the frontend session.
- */
 @Controller('customer/loans')
+@UseGuards(CustomerAuthGuard)
 export class LoanController {
   constructor(private readonly loanService: LoanService) {}
 
-  @Public()
-  @Get(':lan/post-approval')
-  getPostApprovalJourney(
-    @Param('lan') lan: string,
-    @Query('customerId') customerId: string,
-  ) {
-    return this.loanService.getPostApprovalJourney(lan, BigInt(customerId || '0'));
+  private customerId(customer: any): bigint {
+    return BigInt(customer.customerId);
   }
 
-  @Public()
+  @Get(':lan/post-approval')
+  getPostApprovalJourney(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.getPostApprovalJourney(lan, this.customerId(customer));
+  }
+
   @Get(':lan/offer')
-  async getOffer(
-    @Param('lan') lan: string,
-    @Query('customerId') customerId: string,
-  ) {
-    const journey = await this.loanService.getPostApprovalJourney(lan, BigInt(customerId || '0'));
+  async getOffer(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    const journey = await this.loanService.getPostApprovalJourney(lan, this.customerId(customer));
     return journey.offer;
   }
 
-  @Public()
   @Post(':lan/offer/accept')
-  acceptOffer(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string; tenureDays: number },
-  ) {
-    return this.loanService.acceptOffer(lan, BigInt(body.customerId), body.tenureDays);
+  acceptOffer(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: { tenureDays: number }) {
+    return this.loanService.acceptOffer(lan, this.customerId(customer), body.tenureDays);
   }
 
-  @Public()
   @Post(':lan/digilocker/initiate')
-  initiateDigilocker(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string },
-  ) {
-    return this.loanService.initiateDigilocker(lan, BigInt(body.customerId));
+  initiateDigilocker(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.initiateDigilocker(lan, this.customerId(customer));
   }
 
-  @Public()
   @Get(':lan/digilocker/status')
-  getDigilockerStatus(
-    @Param('lan') lan: string,
-    @Query('customerId') customerId: string,
-  ) {
-    return this.loanService.getDigilockerStatus(lan, BigInt(customerId));
+  getDigilockerStatus(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.getDigilockerStatus(lan, this.customerId(customer));
   }
 
-  @Public()
   @Post(':lan/digilocker/fetch-details')
-  fetchDigilockerDetails(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string },
-  ) {
-    return this.loanService.fetchDigilockerDetails(lan, BigInt(body.customerId));
+  fetchDigilockerDetails(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.fetchDigilockerDetails(lan, this.customerId(customer));
   }
 
-  @Public()
   @Patch(':lan/address')
-  saveAddress(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string; [key: string]: any },
-  ) {
-    const { customerId, ...rest } = body;
-    return this.loanService.saveAddress(lan, BigInt(customerId), rest);
+  saveAddress(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: Record<string, any>) {
+    return this.loanService.saveAddress(lan, this.customerId(customer), body);
   }
 
-  @Public()
   @Post(':lan/bank-accounts/verify')
-  verifyBankAccount(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string; [key: string]: any },
-    @Req() req: any,
-  ) {
-    const { customerId, ...rest } = body;
-    return this.loanService.verifyBankAccount(lan, BigInt(customerId || '0'), body, {
+  verifyBankAccount(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: Record<string, any>, @Req() req: any) {
+    return this.loanService.verifyBankAccount(lan, this.customerId(customer), body, {
       ipAddress: req?.ip,
       userAgent: req?.headers?.['user-agent'],
     });
   }
 
-  @Public()
   @Post(':lan/kfs/generate')
-  generateKfs(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string },
-  ) {
-    return this.loanService.generateKfs(lan, BigInt(body?.customerId || '0'));
+  generateKfs(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.generateKfs(lan, this.customerId(customer));
   }
 
-  @Public()
   @Get(':lan/kfs')
-  getKfs(@Param('lan') lan: string) {
-    return { success: true };
+  async getKfs(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    const journey = await this.loanService.getPostApprovalJourney(lan, this.customerId(customer));
+    return { success: true, data: journey.kfs };
   }
 
-  @Public()
   @Post(':lan/kfs/accept')
-  acceptKfs(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string; [key: string]: any },
-  ) {
-    const { customerId, ...rest } = body || {};
-    return this.loanService.acceptKfs(lan, BigInt(customerId || '0'), rest);
+  acceptKfs(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: Record<string, any>) {
+    return this.loanService.acceptKfs(lan, this.customerId(customer), body);
   }
 
-  @Public()
   @Post(':lan/mandate/initiate')
-  initiateMandate(
-    @Param('lan') lan: string,
-    @Body() body: { customerId?: string; forceNew?: boolean; mandateType?: string },
-  ) {
-    return this.loanService.initiateMandate(lan, BigInt(body?.customerId || '0'), Boolean(body?.forceNew), body?.mandateType);
+  initiateMandate(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: { forceNew?: boolean; mandateType?: string }) {
+    return this.loanService.initiateMandate(lan, this.customerId(customer), Boolean(body?.forceNew), body?.mandateType);
   }
 
-  @Public()
   @Get(':lan/mandate/status')
-  getMandateStatus(
-    @Param('lan') lan: string,
-    @Query('customerId') customerId: string,
-  ) {
-    return this.loanService.getMandateStatus(lan, BigInt(customerId || '0'));
+  getMandateStatus(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.getMandateStatus(lan, this.customerId(customer));
   }
 
-  @Public()
   @Post(':lan/mandate/refresh-status')
-  refreshMandateStatus(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string },
-  ) {
-    return this.loanService.refreshMandateStatus(lan, BigInt(body?.customerId || '0'));
+  refreshMandateStatus(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.refreshMandateStatus(lan, this.customerId(customer));
   }
 
-  @Public()
   @Post(':lan/esign/initiate')
-  initiateEsign(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string },
-  ) {
-    return this.loanService.initiateEsign(lan, BigInt(body?.customerId || '0'));
+  initiateEsign(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.initiateEsign(lan, this.customerId(customer));
   }
 
-  @Public()
   @Get(':lan/esign/status')
-  getEsignStatus(@Param('lan') lan: string) {
-    return { status: 'NOT_STARTED' };
+  async getEsignStatus(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    const journey = await this.loanService.getPostApprovalJourney(lan, this.customerId(customer));
+    return journey.esign;
   }
 
-  @Public()
   @Post(':lan/disbursal/request')
-  requestDisbursal(
-    @Param('lan') lan: string,
-    @Body() body: { customerId: string },
-  ) {
-    return this.loanService.requestDisbursal(lan, BigInt(body?.customerId || '0'));
+  requestDisbursal(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.requestDisbursal(lan, this.customerId(customer));
   }
 
-  @Public()
   @Get(':lan/disbursal/status')
-  getDisbursalStatus(@Param('lan') lan: string) {
-    return { status: 'NOT_STARTED' };
+  async getDisbursalStatus(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    const journey = await this.loanService.getPostApprovalJourney(lan, this.customerId(customer));
+    return { status: journey.workflow?.disbursalStatus ?? 'NOT_STARTED' };
   }
 }

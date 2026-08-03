@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PlPaymentsService } from './pl-payments.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 // Mock easebuzz-iframe.integration
 jest.mock('../../integrations/easebuzz-iframe.integration', () => ({
@@ -21,6 +22,7 @@ import { verifyEasebuzzWebhookHash } from '../../integrations/easebuzz-iframe.in
 describe('PlPaymentsService - Webhook Security', () => {
   let service: PlPaymentsService;
   let prisma: any;
+  let lenderIntegrationOutbox: any;
 
   beforeEach(async () => {
     prisma = {
@@ -39,11 +41,16 @@ describe('PlPaymentsService - Webhook Security', () => {
       },
       $queryRaw: jest.fn(),
     };
+    lenderIntegrationOutbox = {
+      recordDataSharingConsent: jest.fn(),
+      enqueueCreateAfterVerifiedPayment: jest.fn().mockResolvedValue({ id: 'OUTBOX-1' }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlPaymentsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: LenderIntegrationOutboxService, useValue: lenderIntegrationOutbox },
       ],
     }).compile();
 
@@ -75,6 +82,7 @@ describe('PlPaymentsService - Webhook Security', () => {
       amount: new Prisma.Decimal('590.00'),
       purpose: 'ASSESSMENT_FEE',
       application_number: 'APP-001',
+      application_id: BigInt(1),
       paidAt: null,
       easebuzzId: null,
     };
@@ -117,6 +125,7 @@ describe('PlPaymentsService - Webhook Security', () => {
       amount: new Prisma.Decimal('590.00'),
       purpose: 'ASSESSMENT_FEE',
       application_number: 'APP-001',
+      application_id: BigInt(1),
       paidAt: null,
       easebuzzId: null,
     };
@@ -152,6 +161,7 @@ describe('PlPaymentsService - Webhook Security', () => {
         data: expect.objectContaining({ status: 'ASSESSMENT_FEE_PAID' }),
       }),
     );
+    expect(lenderIntegrationOutbox.enqueueCreateAfterVerifiedPayment).toHaveBeenCalledWith(prisma, BigInt(1));
   });
 
   it('should be idempotent on duplicate replay (P2002)', async () => {
@@ -175,6 +185,7 @@ describe('PlPaymentsService - Webhook Security', () => {
     expect(result!.message).toContain('idempotent replay');
     // Payment should NOT be updated
     expect(prisma.plPaymentLink.update).not.toHaveBeenCalled();
+    expect(lenderIntegrationOutbox.enqueueCreateAfterVerifiedPayment).not.toHaveBeenCalled();
   });
 
   it('should reject webhook with amount mismatch', async () => {
@@ -233,6 +244,7 @@ describe('PlPaymentsService - Webhook Security', () => {
       amount: new Prisma.Decimal('590.00'),
       purpose: 'ASSESSMENT_FEE',
       application_number: 'APP-001',
+      application_id: BigInt(1),
       paidAt: new Date(),
       easebuzzId: 'E001',
     };
