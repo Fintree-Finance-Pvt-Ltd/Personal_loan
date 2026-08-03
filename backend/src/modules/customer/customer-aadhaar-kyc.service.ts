@@ -530,6 +530,36 @@ export class CustomerAadhaarKycService {
             ...(fullName && !customer.fullName ? { fullName } : {}),
           },
         });
+        // Also propagate verified Aadhaar details to any active loan records for this customer
+        await tx.plLoan.updateMany({
+          where: {
+            customerId: customer.id,
+            NOT: { digilockerStatus: 'VERIFIED' },
+          },
+          data: {
+            digilockerStatus: 'VERIFIED',
+            aadhaarMaskedNumber: maskedAadhaar,
+            aadhaarLastFour: aadhaarLastFour,
+            aadhaarVerifiedName: fullName,
+            aadhaarDateOfBirth: dateOfBirth,
+            aadhaarGender: gender ? String(gender) : null,
+            aadhaarCareOf: addr.co || addr.careOf || null,
+            aadhaarAddrLine1: addr.house || null,
+            aadhaarAddrLine2: addr.street || null,
+            aadhaarLandmark: addr.landmark || null,
+            aadhaarLocality: addr.loc || addr.vtc || null,
+            aadhaarDistrict: addr.dist || addr.subdist || null,
+            aadhaarCity: addr.vtc || addr.po || null,
+            aadhaarState: addr.state || null,
+            aadhaarCountry: addr.country || 'India',
+            aadhaarPincode: addr.pc ? String(addr.pc).slice(0, 6) : null,
+            aadhaarFormattedAddr: aadhaarAddressStr,
+            digilockerVerifiedAt: new Date(),
+            digilockerRawResponse: fullWebhookPayloadStr,
+            currentStep: 'ADDRESS_CONFIRMATION',
+            status: 'KYC_IN_PROGRESS',
+          },
+        });
       });
 
       // Audit log (non-blocking)

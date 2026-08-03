@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   Req,
   Logger,
@@ -76,6 +77,17 @@ export class WebhooksController {
         reason: 'UNHANDLED_EVENT',
       };
     }
+  }
+
+  @Public()
+  @Get('easebuzz/mandate')
+  @HttpCode(HttpStatus.OK)
+  async handleEasebuzzMandateProbe() {
+    return {
+      success: true,
+      message: 'Easebuzz mandate webhook endpoint is reachable. Use POST for actual webhook events.',
+      path: '/api/webhooks/easebuzz/mandate',
+    };
   }
 
   @Public()
