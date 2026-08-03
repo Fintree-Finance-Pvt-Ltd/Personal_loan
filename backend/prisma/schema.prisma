@@ -1145,6 +1145,7 @@ enum LenderIntegrationStage {
   UPDATE
   DECISION
   STATUS
+  CONSENT
 }
 
 enum LenderIntegrationEventType {
@@ -1152,6 +1153,7 @@ enum LenderIntegrationEventType {
   LENDER_UPDATE_APPLICATION
   LENDER_REQUEST_DECISION
   LENDER_STATUS_CHECK
+  LENDER_SUBMIT_CONSENT
 }
 
 enum LenderIntegrationOutboxStatus {
@@ -1286,8 +1288,10 @@ model LenderIntegrationConfig {
   adapterVersion            String                    @db.VarChar(30)
   baseUrl                   String?                   @db.VarChar(500)
   authType                  LenderIntegrationAuthType @default(NONE)
+  clientId                  String?                   @db.VarChar(100)
   credentialSecretReference String?                   @db.VarChar(150)
   createApplicationPath     String?                   @db.VarChar(255)
+  consentPath               String?                   @db.VarChar(255)
   updateApplicationPath     String?                   @db.VarChar(255)
   decisionPath              String?                   @db.VarChar(255)
   statusPath                String?                   @db.VarChar(255)
@@ -2345,12 +2349,12 @@ model PartnerApplication {
   sourceSystem                 String                   @db.VarChar(100)
   productCode                  String                   @db.VarChar(50)
   status                       PartnerApplicationStatus @default(CREATED)
-  
-  customerId                   BigInt                   @db.UnsignedBigInt
-  plApplicationId              BigInt                   @db.UnsignedBigInt
 
-  createdAt                    DateTime                 @default(now()) @db.DateTime(0)
-  updatedAt                    DateTime                 @updatedAt @db.DateTime(0)
+  customerId      BigInt @db.UnsignedBigInt
+  plApplicationId BigInt @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @db.DateTime(0)
+  updatedAt DateTime @updatedAt @db.DateTime(0)
 
   client        PartnerApiClient @relation(fields: [clientId], references: [id], onDelete: Restrict)
   customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)

@@ -35,6 +35,10 @@ export class LenderIntegrationService {
       await this.processCreate(event, application, link, config, adapter);
       return false;
     }
+    if (event.integrationStage === 'CONSENT') {
+      await this.processConsent(event, application, link, config, adapter);
+      return false;
+    }
     if (event.integrationStage === 'UPDATE') {
       await this.processUpdate(event, application, link, config, adapter);
       return false;
@@ -87,21 +91,112 @@ export class LenderIntegrationService {
 
   private async processCreate(event: any, application: any, link: any, config: any, adapter: any): Promise<void> {
     if (link.createStatus === 'ACKNOWLEDGED' || link.createStatus === 'COMPLETED') {
-      await this.outbox.enqueueUpdateWhenReady(application.id);
       return;
     }
     const context = await this.buildCreateContext(event, application, config);
     const requestHash = this.hash(context);
     await this.prisma.lenderApplicationLink.update({ where: { id: link.id }, data: { createStatus: 'PROCESSING', lastAttemptAt: new Date(), lastRequestHash: requestHash, lastErrorCode: null, lastErrorMessage: null } });
+    
     const result = await adapter.createApplication(context);
+    
     if (!result.acknowledged || !result.partnerApplicationId) {
       throw new LenderIntegrationError('LENDER_CREATE_NOT_ACKNOWLEDGED', 'Lender create response was not acknowledged or did not contain an application reference.', 'PERMANENT_VALIDATION');
     }
-    await this.prisma.lenderApplicationLink.update({
-      where: { id: link.id },
-      data: { createStatus: 'ACKNOWLEDGED', lastSyncedStage: 'CREATE', partnerLeadId: result.partnerLeadId ?? null, partnerApplicationId: result.partnerApplicationId, partnerReference: result.partnerReference ?? null, lastResponseStatus: result.providerStatus, lastSuccessAt: new Date(), lastErrorCode: null, lastErrorMessage: null },
+
+    const consentIdempotencyKey = `${application.applicationNumber}:LENDER_SUBMIT_CONSENT:V1`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lenderApplicationLink.update({
+        where: { id: link.id },
+        data: { 
+          createStatus: 'COMPLETED', 
+          lastSyncedStage: 'CREATE', 
+          partnerLeadId: result.partnerLeadId ?? null, 
+          partnerApplicationId: result.partnerApplicationId, 
+          partnerReference: result.partnerReference ?? null, 
+          lastResponseStatus: result.providerStatus, 
+          lastSuccessAt: new Date(), 
+          lastErrorCode: null, 
+          lastErrorMessage: null 
+        },
+      });
+
+      await tx.lenderIntegrationOutbox.update({
+        where: { id: event.id },
+        data: { status: 'COMPLETED', processedAt: new Date() }
+      });
+
+      await tx.lenderIntegrationOutbox.upsert({
+        where: { idempotencyKey: consentIdempotencyKey },
+        create: {
+          eventType: 'LENDER_SUBMIT_CONSENT' as any,
+          applicationId: application.id,
+          applicationReference: application.applicationNumber,
+          lenderId: application.lenderId,
+          integrationStage: 'CONSENT' as any,
+          payloadVersion: 1,
+          idempotencyKey: consentIdempotencyKey
+        },
+        update: {}
+      });
     });
+  }
+
+  private async processConsent(event: any, application: any, link: any, config: any, adapter: any): Promise<void> {
+    if (!link.partnerApplicationId || link.createStatus !== 'COMPLETED') {
+      throw new LenderIntegrationError('LENDER_CONSENT_BEFORE_CREATE', 'Lender consent requires a completed create and partner application ID.', 'PERMANENT_VALIDATION');
+    }
+    const context = await this.buildConsentContext(event, application, config, link);
+    if (!adapter.submitConsent) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.lenderIntegrationOutbox.update({ where: { id: event.id }, data: { status: 'COMPLETED', processedAt: new Date() } });
+        await tx.lenderApplicationLink.update({ where: { id: link.id }, data: { lastSyncedStage: 'CONSENT' } });
+      });
+      await this.outbox.enqueueUpdateWhenReady(application.id);
+      return;
+    }
+    const result = await adapter.submitConsent(context);
+    if (!result.acknowledged) {
+      throw new LenderIntegrationError('LENDER_CONSENT_NOT_ACKNOWLEDGED', 'Lender consent was not acknowledged.', 'PERMANENT_VALIDATION');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      // mark event completed
+      await tx.lenderIntegrationOutbox.update({ where: { id: event.id }, data: { status: 'COMPLETED', processedAt: new Date() } });
+      // persist consent reference on link if any, and last synced stage
+      await tx.lenderApplicationLink.update({
+        where: { id: link.id },
+        data: { 
+          lastSyncedStage: 'CONSENT', 
+          lastResponseStatus: result.providerStatus, 
+          lastSuccessAt: new Date(), 
+          lastErrorCode: null, 
+          lastErrorMessage: null 
+        }
+      });
+    });
+    // Queue UPDATE
     await this.outbox.enqueueUpdateWhenReady(application.id);
+  }
+
+  private async buildConsentContext(event: any, application: any, config: any, link: any) {
+    const consent = await this.prisma.lenderDataSharingConsent.findFirst({ where: { applicationId: application.id, lenderId: application.lenderId }, orderBy: { acceptedAt: 'desc' } });
+    if (!consent) throw new LenderIntegrationError('LENDER_CONSENT_MISSING', 'Lender data-sharing consent is missing.', 'PERMANENT_VALIDATION');
+    return {
+      idempotencyKey: event.idempotencyKey,
+      correlationId: randomUUID(),
+      payloadVersion: event.payloadVersion,
+      transport: this.transport(config),
+      partnerApplicationId: link.partnerApplicationId,
+      applicationReference: application.applicationNumber,
+      consentType: 'DATA_SHARING',
+      consentTemplateId: consent.consentTemplateId,
+      consentVersion: consent.consentVersion,
+      consentTextHash: consent.consentTextHash,
+      consentReference: consent.consentReference,
+      acceptedAt: consent.acceptedAt.toISOString(),
+      ipAddress: consent.ipAddress,
+      userAgent: consent.userAgent
+    };
   }
 
   private async processUpdate(event: any, application: any, link: any, config: any, adapter: any): Promise<void> {
@@ -191,7 +286,7 @@ export class LenderIntegrationService {
   }
 
   private transport(config: any): LenderIntegrationTransportConfig {
-    return { lenderId: config.lenderId, baseUrl: config.baseUrl, authType: config.authType, credentialSecretReference: config.credentialSecretReference, createApplicationPath: config.createApplicationPath, updateApplicationPath: config.updateApplicationPath, decisionPath: config.decisionPath, statusPath: config.statusPath, connectTimeoutMs: config.connectTimeoutMs, requestTimeoutMs: config.requestTimeoutMs };
+    return { lenderId: config.lenderId, baseUrl: config.baseUrl, authType: config.authType, clientId: config.clientId, consentPath: config.consentPath, credentialSecretReference: config.credentialSecretReference, createApplicationPath: config.createApplicationPath, updateApplicationPath: config.updateApplicationPath, decisionPath: config.decisionPath, statusPath: config.statusPath, connectTimeoutMs: config.connectTimeoutMs, requestTimeoutMs: config.requestTimeoutMs };
   }
 
   private verifyEventAllocation(event: any, application: any): void {

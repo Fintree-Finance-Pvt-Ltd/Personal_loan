@@ -49,7 +49,7 @@ describe('LenderIntegrationOutboxService', () => {
     const consentText = 'Exact update consent';
     const application: any = {
       id: 1n, applicationNumber: 'APP-001', lenderId: 'L1',
-      lenderApplicationLink: { createStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1' },
+      lenderApplicationLink: { createStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1', lastSyncedStage: 'CONSENT' },
       employmentSnapshot: { completedAt: new Date(), monthlyIncome: 50000, employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer' },
       kycSnapshot: { verificationStatus: 'VERIFIED', verifiedAt: new Date() },
       addresses: [

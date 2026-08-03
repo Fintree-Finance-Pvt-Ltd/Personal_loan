@@ -35,7 +35,6 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ElectronicSignModule } from './modules/electronic-sign/electronic-sign.module';
 import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
 import { LenderIntegrationModule } from './modules/lender-integrations/lender-integration.module';
-import { PartnerApiModule } from './modules/partner-api/partner-api.module';
 
 @Module({
   imports: [
@@ -71,7 +70,6 @@ import { PartnerApiModule } from './modules/partner-api/partner-api.module';
     ElectronicSignModule,
     LoanAgreementModule,
     LenderIntegrationModule,
-    PartnerApiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -1,8 +1,6 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
-import { MockLenderAAdapter } from './adapters/mock-lender-a.adapter';
-import { MockLenderBAdapter } from './adapters/mock-lender-b.adapter';
-import { PartnerAV1Adapter } from './adapters/partner-a-v1.adapter';
+import { FintreeFinanceV1Adapter } from './adapters/fintree-finance-v1.adapter';
 import { LENDER_ADAPTERS, LenderAdapterRegistry } from './lender-adapter.registry';
 import { LenderHttpService } from './lender-http.service';
 import { LenderIntegrationOutboxService } from './lender-integration-outbox.service';
@@ -11,17 +9,17 @@ import { LenderIntegrationWorker } from './lender-integration.worker';
 import { LenderDecisionProcessor } from './lender-decision-processor.service';
 import { LenderIntegrationAdminController } from './lender-integration-admin.controller';
 
+import { ConfigModule } from '@nestjs/config';
+
 @Module({
-  imports: [HttpModule.register({ maxRedirects: 0 })],
+  imports: [HttpModule.register({ maxRedirects: 0 }), ConfigModule],
   controllers: [LenderIntegrationAdminController],
   providers: [
-    MockLenderAAdapter,
-    MockLenderBAdapter,
-    PartnerAV1Adapter,
+    FintreeFinanceV1Adapter,
     {
       provide: LENDER_ADAPTERS,
-      inject: [MockLenderAAdapter, MockLenderBAdapter, PartnerAV1Adapter],
-      useFactory: (mockA: MockLenderAAdapter, mockB: MockLenderBAdapter, partnerA: PartnerAV1Adapter) => [mockA, mockB, partnerA],
+      inject: [FintreeFinanceV1Adapter],
+      useFactory: (fintree: FintreeFinanceV1Adapter) => [fintree],
     },
     LenderAdapterRegistry,
     LenderHttpService,

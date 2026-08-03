@@ -135,6 +135,7 @@ export class LenderIntegrationOutboxService {
     const link = application.lenderApplicationLink;
     if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) reasons.push('CREATE_NOT_ACKNOWLEDGED');
     if (!link?.partnerApplicationId) reasons.push('PARTNER_APPLICATION_ID_MISSING');
+    if (link?.lastSyncedStage === 'CREATE') reasons.push('CONSENT_NOT_ACKNOWLEDGED');
     const employment = application.employmentSnapshot;
     if (!employment?.completedAt) reasons.push('EMPLOYMENT_SNAPSHOT_MISSING');
     if (!employment?.monthlyIncome || Number(employment.monthlyIncome) <= 0) reasons.push('MONTHLY_INCOME_MISSING');

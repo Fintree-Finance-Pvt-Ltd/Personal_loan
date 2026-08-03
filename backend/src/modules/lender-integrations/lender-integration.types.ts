@@ -9,8 +9,10 @@ export interface LenderIntegrationTransportConfig {
   lenderId: string;
   baseUrl: string | null;
   authType: 'NONE' | 'API_KEY' | 'BEARER_TOKEN' | 'BASIC' | 'CUSTOM';
+  clientId: string | null;
   credentialSecretReference: string | null;
   createApplicationPath: string | null;
+  consentPath: string | null;
   updateApplicationPath: string | null;
   decisionPath: string | null;
   statusPath: string | null;
@@ -68,6 +70,29 @@ export interface LenderCreateApplicationContext {
     userAgent: string | null;
     allocatedLenderId: string;
   };
+}
+
+export interface LenderConsentContext {
+  idempotencyKey: string;
+  correlationId: string;
+  payloadVersion: number;
+  transport: LenderIntegrationTransportConfig;
+  partnerApplicationId: string;
+  applicationReference: string;
+  consentType: string;
+  consentTemplateId: string;
+  consentVersion: string;
+  consentTextHash: string;
+  consentReference: string | null;
+  acceptedAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+}
+
+export interface LenderConsentResult {
+  acknowledged: boolean;
+  providerStatus: string;
+  consentReference?: string | null;
 }
 
 export interface LenderUpdateApplicationContext {
@@ -191,6 +216,7 @@ export interface LenderAdapter {
   readonly adapterKey: string;
   readonly adapterVersion: string;
   createApplication(context: LenderCreateApplicationContext): Promise<LenderCreateApplicationResult>;
+  submitConsent?(context: LenderConsentContext): Promise<LenderConsentResult>;
   updateApplication(context: LenderUpdateApplicationContext): Promise<LenderUpdateApplicationResult>;
   requestDecision(context: LenderDecisionContext): Promise<LenderDecisionResult>;
   getStatus?(context: LenderStatusContext): Promise<LenderStatusResult>;

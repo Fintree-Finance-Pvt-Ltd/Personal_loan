@@ -1,0 +1,4 @@
+ALTER TABLE `LenderIntegrationOutbox` MODIFY COLUMN `integrationStage` ENUM('CREATE','UPDATE','DECISION','STATUS','CONSENT') NOT NULL;
+ALTER TABLE `LenderApplicationLink` MODIFY COLUMN `lastSyncedStage` ENUM('CREATE','UPDATE','DECISION','STATUS','CONSENT') NULL DEFAULT NULL;
+ALTER TABLE `LenderIntegrationConfig` ADD COLUMN `clientId` VARCHAR(100) NULL;
+ALTER TABLE `LenderIntegrationConfig` ADD COLUMN `consentPath` VARCHAR(255) NULL;
