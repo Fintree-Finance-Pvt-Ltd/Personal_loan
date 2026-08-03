@@ -1005,24 +1005,26 @@ export class PlPaymentsService {
 
       // Run interactive transaction for atomic lock & update
       const result = await this.prisma.$transaction(async (tx: any) => {
-         // Idempotency: Insert into WebhookInbox
-         try {
-           await tx.plWebhookInbox.create({
-             data: {
-               id: randomUUID(),
-               providerTransactionId: String(merchantTxn),
-               provider: 'easebuzz',
-               eventHash: data.hash || 'NO_HASH',
-               payload: data
+         // Idempotency: Insert into WebhookInbox if this model exists on the Prisma client
+         if (typeof tx.plWebhookInbox?.create === 'function') {
+           try {
+             await tx.plWebhookInbox.create({
+               data: {
+                 id: randomUUID(),
+                 providerTransactionId: String(merchantTxn),
+                 provider: 'easebuzz',
+                 eventHash: data.hash || 'NO_HASH',
+                 payload: data,
+               },
+             });
+           } catch (e: any) {
+             // P2002 Unique constraint failed = Replay!
+             if (e.code === 'P2002') {
+               this.logger.warn(`Idempotent webhook replay detected for ${merchantTxn}`);
+               return { success: true, message: 'Webhook already processed (idempotent replay).' };
              }
-           });
-         } catch (e: any) {
-           // P2002 Unique constraint failed = Replay!
-           if (e.code === 'P2002') {
-             this.logger.warn(`Idempotent webhook replay detected for ${merchantTxn}`);
-             return { success: true, message: 'Webhook already processed (idempotent replay).' };
+             throw e;
            }
-           throw e;
          }
 
          // Lock Payment Link exactly once using raw SQL

@@ -54,6 +54,7 @@ export class ExternalApiController {
     });
   }
 
+@Public()
 @UseGuards(CustomerAuthGuard)
 @Post('initiate-payment')
 @HttpCode(HttpStatus.OK)
@@ -76,6 +77,7 @@ initiatePayment(
     );
 }
 
+@Public()
 @UseGuards(CustomerAuthGuard)
 @Post('create-payment-link')
 @HttpCode(HttpStatus.OK)
@@ -93,6 +95,7 @@ createPaymentLink(
     );
 }
 
+@Public()
 @UseGuards(CustomerAuthGuard)
 @Post('payment-status')
 @HttpCode(HttpStatus.OK)
