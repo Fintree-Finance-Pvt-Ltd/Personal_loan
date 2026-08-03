@@ -1534,10 +1534,15 @@ export class LoanService {
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
     const sanitized = this.easebuzzAutocollectService.sanitizeEasebuzzMandatePayload(payload);
     const event = String(payload?.event || payload?.data?.event || '').trim().toUpperCase();
+    const webhookSecret = this.configService.get<string>('EASEBUZZ_WEBHOOK_SECRET');
 
-    if (!this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload)) {
-      this.logger.warn(`Easebuzz mandate webhook failed authorization hash verification [event=${event}]`);
-      throw new UnauthorizedException('Invalid webhook signature.');
+    if (webhookSecret) {
+      if (!this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload)) {
+        this.logger.warn(`Easebuzz mandate webhook failed authorization hash verification [event=${event}]`);
+        throw new UnauthorizedException('Invalid webhook signature.');
+      }
+    } else {
+      this.logger.log('No EASEBUZZ_WEBHOOK_SECRET configured; skipping Easybuzz webhook signature verification.');
     }
 
     const txId =

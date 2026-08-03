@@ -547,32 +547,97 @@ export class EasebuzzAutocollectService {
   public verifyEasebuzzMandateWebhookHash(payload: any): boolean {
     try {
       const data = payload?.data || {};
-      const auth = String(data.authorization || payload?.authorization || '').trim();
+      const auth = String(
+        data.authorization ||
+        payload?.authorization ||
+        data.auth ||
+        payload?.auth ||
+        data.hash ||
+        payload?.hash ||
+        ''
+      ).trim();
       if (!auth) return false;
 
-      const event = String(payload?.event || '').trim().toUpperCase();
       const key = this.merchantKey;
       const salt = this.merchantSalt;
-      let hashSequence = '';
 
-      if (event === 'PRESENTMENT_STATUS_UPDATE') {
-        const transactionId = String(data.transaction_id || data?.mandate?.transaction_id || '').trim();
-        const merchantRequestNumber = String(data.merchant_request_number || '').trim();
-        const status = String(data.status || data.status_at_bank || '').trim();
-        if (!transactionId || !merchantRequestNumber || !status) return false;
-        hashSequence = `${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`;
-      } else {
-        const transactionId = String(data.transaction_id || data?.mandate?.transaction_id || '').trim();
-        const amount = String(data.amount ?? '').trim();
-        const accountNumber = String(data.customer_account_number || '').trim();
-        const ifsc = String(data.customer_ifsc || '').trim();
-        const upiHandle = String(data.customer_upi_handle || '').trim();
-        if (!transactionId || !amount || !accountNumber || !ifsc) return false;
-        hashSequence = `${key}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${salt}`;
+      const transactionId = String(
+        data.transaction_id ||
+        data?.mandate?.transaction_id ||
+        data?.txnid ||
+        payload?.transaction_id ||
+        payload?.txnid ||
+        ''
+      ).trim();
+      const merchantRequestNumber = String(
+        data.merchant_request_number ||
+        data.merchant_request_no ||
+        data.merchant_transaction_id ||
+        data?.mandate?.merchant_transaction_id ||
+        ''
+      ).trim();
+      const status = String(
+        data.status ||
+        data.status_at_bank ||
+        data?.mandate?.status ||
+        data?.transaction_status ||
+        payload?.status ||
+        ''
+      ).trim();
+      const amount = String(
+        data.amount ??
+        data?.mandate?.amount ??
+        payload?.amount ??
+        ''
+      ).trim();
+      const accountNumber = String(
+        data.customer_account_number ||
+        data.customer_account_no ||
+        data?.mandate?.customer_account_number ||
+        data.account_number ||
+        payload?.account_number ||
+        ''
+      ).trim();
+      const ifsc = String(
+        data.customer_ifsc ||
+        data?.mandate?.customer_ifsc ||
+        data?.mandate?.ifsc ||
+        data.ifsc ||
+        payload?.ifsc ||
+        ''
+      ).trim();
+      const upiHandle = String(
+        data.customer_upi_handle ||
+        data?.mandate?.customer_upi_handle ||
+        data?.mandate?.upi_handle ||
+        data.upi_handle ||
+        payload?.upi_handle ||
+        ''
+      ).trim();
+
+      const candidates: string[] = [];
+
+      if (transactionId && merchantRequestNumber && status) {
+        candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
+      }
+      if (transactionId && status) {
+        candidates.push(`${key}|${transactionId}|${status}|${salt}`);
+      }
+      if (transactionId && amount && accountNumber && ifsc) {
+        candidates.push(`${key}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${salt}`);
+      }
+      if (transactionId && merchantRequestNumber && status && !candidates.length) {
+        candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
       }
 
-      const computedHash = createHash('sha512').update(hashSequence, 'utf8').digest('hex');
-      return computedHash === auth;
+      for (const sequence of candidates) {
+        const computedHash = createHash('sha512').update(sequence, 'utf8').digest('hex');
+        if (computedHash === auth) {
+          return true;
+        }
+      }
+
+      return false;
     } catch {
       return false;
     }
