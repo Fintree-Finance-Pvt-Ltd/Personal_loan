@@ -7,6 +7,8 @@ import {
   Logger,
   HttpCode,
   HttpStatus,
+  BadRequestException,
+  InternalServerErrorException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -115,7 +117,27 @@ export class WebhooksController {
       return await this.webhooksService.processEasebuzzMandateWebhook(payload, clientIp, userAgent);
     } catch (error: any) {
       this.logger.error(`Easebuzz mandate webhook error: ${error?.message || error}`);
-      return { status: 'Ignored', acknowledged: true, processed: false };
+
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw error;
+      }
+
+      if (
+        error instanceof ServiceUnavailableException ||
+        error?.message?.includes('Prisma') ||
+        error?.message?.includes('ECONNREFUSED') ||
+        error?.message?.includes('timeout')
+      ) {
+        throw new ServiceUnavailableException({
+          status: 'Error',
+          message: 'Temporary processing error. Please retry.',
+        });
+      }
+
+      throw new InternalServerErrorException('Easebuzz webhook processing failed.');
     }
   }
 }

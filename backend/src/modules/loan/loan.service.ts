@@ -1533,9 +1533,25 @@ export class LoanService {
 
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
     const sanitized = this.easebuzzAutocollectService.sanitizeEasebuzzMandatePayload(payload);
-    const txId = payload?.transaction_id || payload?.merchant_transaction_id || payload?.udf1_tx_id || payload?.data?.transaction_id;
-    const providerMandateId = payload?.mandate_id || payload?.provider_mandate_id || payload?.data?.mandate_id;
-    const rawStatus = payload?.status || payload?.mandate_status || payload?.data?.status || '';
+    const txId =
+      payload?.transaction_id ||
+      payload?.merchant_transaction_id ||
+      payload?.udf1_tx_id ||
+      payload?.data?.transaction_id ||
+      payload?.data?.merchant_transaction_id ||
+      payload?.data?.udf1_tx_id;
+    const providerMandateId =
+      payload?.mandate_id ||
+      payload?.provider_mandate_id ||
+      payload?.data?.mandate_id ||
+      payload?.data?.provider_mandate_id;
+    const rawStatus =
+      payload?.status ||
+      payload?.mandate_status ||
+      payload?.data?.status ||
+      payload?.data?.mandate_status ||
+      payload?.data?.transaction_status ||
+      '';
 
     const maskedTxId = txId ? `...${String(txId).slice(-8)}` : 'UNKNOWN';
     this.logger.log(`Received Easebuzz mandate webhook [TxID: ${maskedTxId}, Status: ${rawStatus}]`);
