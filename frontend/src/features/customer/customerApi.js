@@ -4,6 +4,41 @@ let memoryCustomerAccessToken = null;
 let refreshPromise = null;
 let refreshPromiseResetTimer = null;
 
+function getApiErrorCode(error) {
+  return (
+    error?.response?.data?.error?.code ||
+    error?.response?.data?.code ||
+    null
+  );
+}
+
+function clearCustomerSession() {
+  setCustomerAccessToken(null);
+  localStorage.removeItem('customerSession');
+  sessionStorage.removeItem('customerSession');
+}
+
+function isCustomerRefreshRequest(config) {
+  return String(config?.url || '').includes(
+    '/customer/auth/refresh',
+  );
+}
+
+function shouldClearCustomerSession(error) {
+  const status = error?.response?.status;
+  const code = getApiErrorCode(error);
+
+  return (
+    status === 401 &&
+    [
+      'AUTH_REFRESH_INVALID',
+      'CUSTOMER_AUTH_REQUIRED',
+      'CUSTOMER_SESSION_INVALID',
+      'NOT_AUTHENTICATED',
+    ].includes(code)
+  );
+}
+
 export function getCustomerApiBaseUrl(rawBaseUrl = import.meta.env.VITE_API_BASE_URL || '') {
   // In local development, use Vite's same-origin proxy so the HttpOnly
   // refresh cookie is not split between localhost and 127.0.0.1.
@@ -91,33 +126,125 @@ customerAxios.interceptors.request.use((config) => {
   return config;
 });
 
+// customerAxios.interceptors.response.use(
+//   (res) => res,
+//   async (err) => {
+//     const originalConfig = err.config;
+//     if (err.response?.status === 401 && !originalConfig._retry) {
+//       originalConfig._retry = true;
+//       try {
+//         const newToken = await doCustomerRefresh();
+        
+//         // Ensure the new token is applied to the retried request
+//         if (originalConfig.headers.set) {
+//           originalConfig.headers.set('Authorization', `Bearer ${newToken}`);
+//         } else {
+//           originalConfig.headers.Authorization = `Bearer ${newToken}`;
+//         }
+        
+//         return await customerAxios(originalConfig);
+//       } catch (e) {
+//         setCustomerAccessToken(null);
+//         localStorage.removeItem('customerSession');
+//         sessionStorage.removeItem('customerSession');
+//         window.location.href = '/customer/login';
+//         return Promise.reject(e);
+//       }
+//     }
+//     return Promise.reject(err);
+//   }
+// );
+
 customerAxios.interceptors.response.use(
-  (res) => res,
-  async (err) => {
-    const originalConfig = err.config;
-    if (err.response?.status === 401 && !originalConfig._retry) {
-      originalConfig._retry = true;
-      try {
-        const newToken = await doCustomerRefresh();
-        
-        // Ensure the new token is applied to the retried request
-        if (originalConfig.headers.set) {
-          originalConfig.headers.set('Authorization', `Bearer ${newToken}`);
-        } else {
-          originalConfig.headers.Authorization = `Bearer ${newToken}`;
-        }
-        
-        return await customerAxios(originalConfig);
-      } catch (e) {
-        setCustomerAccessToken(null);
-        localStorage.removeItem('customerSession');
-        sessionStorage.removeItem('customerSession');
-        window.location.href = '/customer/login';
-        return Promise.reject(e);
-      }
+  (response) => response,
+
+  async (error) => {
+    const originalConfig =
+      error?.config || {};
+
+    const status =
+      error?.response?.status;
+
+    const errorCode =
+      getApiErrorCode(error);
+
+    const isRefreshRequest =
+      isCustomerRefreshRequest(
+        originalConfig,
+      );
+
+    if (
+      status !== 401 ||
+      originalConfig._retry ||
+      isRefreshRequest
+    ) {
+      return Promise.reject(error);
     }
-    return Promise.reject(err);
-  }
+
+    /*
+     * AUTH_REQUIRED belongs to the Admin JWT guard.
+     * A customer route returning this indicates backend route
+     * configuration is wrong. Refreshing the customer session
+     * will not solve it.
+     */
+    if (errorCode === 'AUTH_REQUIRED') {
+      console.error(
+        'Customer endpoint was rejected by the Admin JWT guard:',
+        originalConfig.url,
+      );
+
+      return Promise.reject(error);
+    }
+
+    originalConfig._retry = true;
+
+    try {
+      const newToken =
+        await doCustomerRefresh();
+
+      if (originalConfig.headers?.set) {
+        originalConfig.headers.set(
+          'Authorization',
+          `Bearer ${newToken}`,
+        );
+      } else {
+        originalConfig.headers = {
+          ...(originalConfig.headers || {}),
+          Authorization:
+            `Bearer ${newToken}`,
+        };
+      }
+
+      return await customerAxios(
+        originalConfig,
+      );
+    } catch (refreshError) {
+      /*
+       * Do not log the customer out for:
+       * - Network failure
+       * - Backend 500/502/503
+       * - Temporary timeout
+       *
+       * Clear the session only when the refresh token/session
+       * is confirmed invalid.
+       */
+      if (
+        shouldClearCustomerSession(
+          refreshError,
+        )
+      ) {
+        clearCustomerSession();
+
+        window.location.replace(
+          '/customer/login',
+        );
+      }
+
+      return Promise.reject(
+        refreshError,
+      );
+    }
+  },
 );
 
 async function apiRequest(endpoint, options = {}) {

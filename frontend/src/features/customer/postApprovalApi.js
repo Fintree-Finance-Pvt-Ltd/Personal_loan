@@ -1,6 +1,7 @@
+import { getCustomerApiBaseUrl, doCustomerRefresh, getCustomerAccessToken } from './customerApi';
+
 function getFullApiUrl(endpoint) {
-  const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const cleanBase = rawBaseUrl.replace(/\/+$/, '');
+  const cleanBase = getCustomerApiBaseUrl().replace(/\/+$/, '');
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
   if (cleanEndpoint.startsWith('/api/')) {
@@ -230,4 +231,3 @@ export const getDisbursalStatus = async (lan) => {
 
 
 
-import { doCustomerRefresh, getCustomerAccessToken } from './customerApi';

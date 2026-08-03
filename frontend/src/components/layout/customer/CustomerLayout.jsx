@@ -26,6 +26,8 @@ export default function CustomerLayout() {
       .then(() => setIsInitializing(false))
       .catch(() => {
         setIsInitializing(false);
+        localStorage.removeItem('customerSession');
+        sessionStorage.removeItem('customerSession');
         navigate('/customer/login', { replace: true });
       });
   }, [navigate]);

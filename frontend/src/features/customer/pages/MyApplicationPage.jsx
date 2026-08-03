@@ -548,7 +548,9 @@ export default function MyApplicationPage() {
         err?.message || 'Unable to load your details.',
       );
       if (err?.message?.includes('Customer authentication is required') || err?.message?.includes('Access denied') || err?.message?.includes('Customer details were not found')) {
-          navigate('/customer/sign-in', { replace: true });
+         navigate('/customer/login', {
+  replace: true,
+});
       }
     } finally {
       setIsCustomerLoading(false);

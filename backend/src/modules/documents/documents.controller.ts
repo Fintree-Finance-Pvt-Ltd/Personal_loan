@@ -12,14 +12,11 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { DocumentsService } from './documents.service';
 
-import { Public } from '../../common/decorators/public.decorator';
-
 @Controller('documents')
-@Public()
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 

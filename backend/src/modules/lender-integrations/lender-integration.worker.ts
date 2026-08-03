@@ -94,7 +94,8 @@ export class LenderIntegrationWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async claimNextEvent(): Promise<any | null> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(
+      async (tx) => {
       const rows = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id
         FROM LenderIntegrationOutbox
@@ -113,7 +114,8 @@ export class LenderIntegrationWorker implements OnModuleInit, OnModuleDestroy {
       });
       if (updated.count !== 1) return null;
       return tx.lenderIntegrationOutbox.findUnique({ where: { id: rows[0].id } });
-    });
+    },
+    { maxWait: 15000, timeout: 20000 });
   }
 
   private async retryPolicy(applicationId: bigint): Promise<{ maximumAttempts: number; scheduleSeconds: number[] }> {

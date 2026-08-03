@@ -8,7 +8,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { CustomerAadhaarKycService } from './customer-aadhaar-kyc.service';
 import { UseGuards } from '@nestjs/common';
@@ -17,7 +17,7 @@ import { UseGuards } from '@nestjs/common';
 export class CustomerAadhaarKycController {
   constructor(private readonly kycService: CustomerAadhaarKycService) {}
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('initiate')
   async initiate(
     @CurrentCustomer() customer: any,
@@ -26,7 +26,7 @@ export class CustomerAadhaarKycController {
     return this.kycService.initiate(customer, body);
   }
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Get('status')
   async getStatus(
     @CurrentCustomer() customer: any,
@@ -34,7 +34,7 @@ export class CustomerAadhaarKycController {
     return this.kycService.getStatus(customer);
   }
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('refresh')
   async refresh(
     @CurrentCustomer() customer: any,
@@ -42,7 +42,7 @@ export class CustomerAadhaarKycController {
     return this.kycService.refreshStatus(customer);
   }
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('current-address/same-as-aadhaar')
   async saveCurrentAddressSameAsAadhaar(
     @CurrentCustomer() customer: any,

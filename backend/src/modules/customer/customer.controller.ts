@@ -11,13 +11,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
-import { Public } from '../../common/decorators/public.decorator';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { CustomerService } from './customer.service';
 
 @Controller('customer')
-@Public()
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 export class CustomerController {
   constructor(
     private readonly customerService: CustomerService,

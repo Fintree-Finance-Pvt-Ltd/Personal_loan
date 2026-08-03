@@ -15,12 +15,12 @@ import {
 import { Request, Response } from 'express';
 import { ElectronicSignService } from './electronic-sign.service';
 import { SigningIpService } from './services/signing-ip.service';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 import { UseGuards } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 @Controller('customer/loans/:lan/electronic-sign')
 export class ElectronicSignController {
   constructor(

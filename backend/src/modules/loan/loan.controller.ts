@@ -1,10 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { LoanService } from './loan.service';
 
 @Controller('customer/loans')
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 export class LoanController {
   constructor(private readonly loanService: LoanService) {}
 

@@ -13,11 +13,11 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { LoanAgreementService } from './services/loan-agreement.service';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 @Controller('customer/loans/:lan/agreement')
 export class LoanAgreementController {
   constructor(

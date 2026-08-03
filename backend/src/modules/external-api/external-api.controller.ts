@@ -10,8 +10,9 @@ import {
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
-import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
-import { UseGuards } from '@nestjs/common';
+// import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+// import { UseGuards } from '@nestjs/common';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { ExternalApiService } from './external-api.service';
 import { PlPaymentsService } from './pl-payments.service';
 
@@ -22,7 +23,7 @@ export class ExternalApiController {
     private readonly plPaymentsService: PlPaymentsService,
   ) {}
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('verify-pan')
   @HttpCode(HttpStatus.OK)
   verifyPan(@Body() body: any, @CurrentCustomer() customer: any) {
@@ -32,7 +33,7 @@ export class ExternalApiController {
     });
   }
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('face-liveness')
   @HttpCode(HttpStatus.OK)
   checkFaceLiveness(@Body() body: any, @CurrentCustomer() customer: any) {
@@ -44,7 +45,7 @@ export class ExternalApiController {
     });
   }
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('reverse-geocode')
   @HttpCode(HttpStatus.OK)
   reverseGeocode(@Body() body: any) {
@@ -55,7 +56,7 @@ export class ExternalApiController {
   }
 
 @Public()
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 @Post('initiate-payment')
 @HttpCode(HttpStatus.OK)
 initiatePayment(
@@ -78,7 +79,7 @@ initiatePayment(
 }
 
 @Public()
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 @Post('create-payment-link')
 @HttpCode(HttpStatus.OK)
 createPaymentLink(
@@ -96,7 +97,7 @@ createPaymentLink(
 }
 
 @Public()
-@UseGuards(CustomerAuthGuard)
+@CustomerProtected()
 @Post('payment-status')
 @HttpCode(HttpStatus.OK)
 getPaymentStatus(
@@ -154,7 +155,7 @@ handleEasebuzzPaymentSuccess(
       );
   }
 
-  @UseGuards(CustomerAuthGuard)
+  @CustomerProtected()
   @Post('customer/loans/:lan/bank-accounts/verify')
   @HttpCode(HttpStatus.OK)
   verifyCustomerBankAccount(
