@@ -135,4 +135,9 @@ export class LoanController {
   ) {
     return this.loanService.processRepayment(lan, body);
   }
+
+  @Post(':lan/reset-rps')
+  resetRps(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.resetLoanRpsAndDisbursal(lan, this.customerId(customer));
+  }
 }

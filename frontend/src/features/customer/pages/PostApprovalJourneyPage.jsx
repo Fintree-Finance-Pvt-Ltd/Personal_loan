@@ -390,7 +390,7 @@ function ApprovalSummaryStep({ data, onNext }) {
             <p className="mt-1 text-base font-bold text-slate-900">{data?.offer?.acceptedTenureDays} Days</p>
           </div>
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Monthly EMI</p>
+            <p className="text-xs font-semibold text-slate-500">Bullet Repayment Dues</p>
             <p className="mt-1 text-base font-bold text-slate-900">{formatCurrency(data?.offer?.acceptedEmiAmount)}</p>
           </div>
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">

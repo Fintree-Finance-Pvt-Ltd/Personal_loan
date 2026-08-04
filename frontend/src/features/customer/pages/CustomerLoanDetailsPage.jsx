@@ -466,7 +466,7 @@ export function CustomerLoanDetailsPage() {
           </div>
 
           <div className="rounded-xl bg-amber-50/60 p-4 border border-amber-100">
-            <span className="text-xs font-bold uppercase text-amber-700">Next EMI Dues</span>
+            <span className="text-xs font-bold uppercase text-amber-700">Bullet Repayment Dues</span>
             <p className="mt-1 text-xl font-black text-amber-900">{formatCurrency(summary.nextEmiAmount)}</p>
             <p className="mt-2 text-xs text-amber-700">Due: {formatDate(summary.nextDueDate)}</p>
           </div>
@@ -484,9 +484,9 @@ export function CustomerLoanDetailsPage() {
         <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
           <div className="flex items-center gap-2.5">
             <FileText className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-base font-bold text-slate-900">Repayment Schedule (RPS)</h2>
+            <h2 className="text-base font-bold text-slate-900">Repayment Schedule (RPS) — Bullet Repayment</h2>
           </div>
-          <span className="text-xs text-slate-500 font-medium">{rps.length} Installments</span>
+          <span className="text-xs text-slate-500 font-medium">{rps.length} Installment (Bullet)</span>
         </div>
 
         {rps.length === 0 ? (
@@ -504,11 +504,11 @@ export function CustomerLoanDetailsPage() {
                 <tr>
                   <th className="py-3 px-3">Inst. #</th>
                   <th className="py-3 px-3">Due Date</th>
-                  <th className="py-3 px-3 text-right">Opening Principal</th>
-                  <th className="py-3 px-3 text-right">EMI Dues</th>
-                  <th className="py-3 px-3 text-right">Interest</th>
-                  <th className="py-3 px-3 text-right">Principal</th>
-                  <th className="py-3 px-3 text-right">Closing Principal</th>
+                  <th className="py-3 px-3 text-right font-bold text-slate-700">Principal</th>
+                  <th className="py-3 px-3 text-right font-bold text-slate-700">Interest</th>
+                  <th className="py-3 px-3 text-right font-bold text-slate-900">Total Bullet EMI</th>
+                  <th className="py-3 px-3 text-right">Opening Balance</th>
+                  <th className="py-3 px-3 text-right">Closing Balance</th>
                   <th className="py-3 px-3 text-center">Status</th>
                   <th className="py-3 px-3 text-right">Paid Amount</th>
                   <th className="py-3 px-3 text-right">Remaining</th>
@@ -519,12 +519,12 @@ export function CustomerLoanDetailsPage() {
                 {rps.map((row) => (
                   <tr key={row.installmentNumber} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-3 font-bold text-slate-900">#{row.installmentNumber}</td>
-                    <td className="py-3 px-3">{formatDate(row.dueDate)}</td>
-                    <td className="py-3 px-3 text-right font-mono">{formatCurrency(row.openingPrincipal)}</td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">{formatCurrency(row.emi)}</td>
-                    <td className="py-3 px-3 text-right font-mono text-slate-500">{formatCurrency(row.interest)}</td>
+                    <td className="py-3 px-3 font-medium">{formatDate(row.dueDate)}</td>
                     <td className="py-3 px-3 text-right font-mono text-slate-700">{formatCurrency(row.principal)}</td>
-                    <td className="py-3 px-3 text-right font-mono">{formatCurrency(row.closingPrincipal)}</td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-500">{formatCurrency(row.interest)}</td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">{formatCurrency(row.emi)}</td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-600">{formatCurrency(row.openingPrincipal)}</td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-600">{formatCurrency(row.closingPrincipal)}</td>
                     <td className="py-3 px-3 text-center">
                       <span
                         className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${

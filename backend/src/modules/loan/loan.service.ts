@@ -375,16 +375,15 @@ export class LoanService {
       }
     }
 
-    // Dummy pricing calculation
+    // Bullet Payment Pricing Calculation
+    // Formula from Excel: Interest = ROUND(loan amount * interest rate * 1/365 * tenure, 0)
     const principal = Number(loan.approvedAmount) || 0;
     const interestRate = 18.0;
-    const processingFee = principal * 0.02;
-    const months = tenureDays / 30;
-    const ratePerMonth = interestRate / 12 / 100;
-    const emi = months > 0
-      ? (principal * ratePerMonth * Math.pow(1 + ratePerMonth, months)) / (Math.pow(1 + ratePerMonth, months) - 1)
-      : 0;
-    const totalRepayment = emi * months;
+    const processingFee = Math.round(principal * 0.02);
+    const tenureFraction = tenureDays / 365;
+    const interestAmount = Math.round(principal * (interestRate / 100) * tenureFraction);
+    const totalRepayment = principal + interestAmount;
+    const emi = totalRepayment;
 
     await this.prisma.plLoan.update({
       where: { id: loan.id },
@@ -2047,72 +2046,34 @@ export class LoanService {
   ): Prisma.PlRepaymentScheduleCreateInput[] {
     const rows: Prisma.PlRepaymentScheduleCreateInput[] = [];
 
-    if (tenureDays <= 30) {
-      const tenureFraction = tenureDays / 365;
-      const interestVal = Number((principal * (annualRate / 100) * tenureFraction).toFixed(2));
-      const emiVal = Number((principal + interestVal).toFixed(2));
+    // Personal Loan (PL) Bullet Repayment calculation
+    // Excel formula: ROUND(loan amount * interest rate * 1/365 * tenure, 0)
+    const tenureFraction = tenureDays / 365;
+    const interestVal = Math.round(principal * (annualRate / 100) * tenureFraction);
+    const emiVal = principal + interestVal;
 
-      rows.push({
-        loan: { connect: { id: loanId } },
-        lan,
-        installmentNumber: 1,
-        dueDate: firstRepaymentDate,
-        openingPrincipal: new Prisma.Decimal(principal),
-        emi: new Prisma.Decimal(emiVal),
-        interest: new Prisma.Decimal(interestVal),
-        principal: new Prisma.Decimal(principal),
-        closingPrincipal: new Prisma.Decimal(0.00),
-        outstandingPrincipal: new Prisma.Decimal(principal),
-        paymentStatus: 'PENDING',
-        dpd: 0,
-        paidAmount: new Prisma.Decimal(0.00),
-        remainingAmount: new Prisma.Decimal(emiVal),
-      });
-    } else {
-      const n = Math.max(1, Math.round(tenureDays / 30));
-      const monthlyRate = annualRate / 12 / 100;
-
-      const emiCalc = monthlyRate > 0
-        ? (principal * monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
-        : principal / n;
-      const emiVal = Number(emiCalc.toFixed(2));
-
-      let currentOpening = principal;
-      for (let i = 1; i <= n; i++) {
-        const dueDate = new Date(firstRepaymentDate);
-        dueDate.setMonth(dueDate.getMonth() + (i - 1));
-
-        let interestVal = Number((currentOpening * monthlyRate).toFixed(2));
-        let principalVal = Number((emiVal - interestVal).toFixed(2));
-
-        if (i === n || currentOpening - principalVal <= 0) {
-          principalVal = Number(currentOpening.toFixed(2));
-          interestVal = Number((emiVal - principalVal).toFixed(2));
-          if (interestVal < 0) interestVal = 0;
-        }
-
-        const closingVal = Math.max(0, Number((currentOpening - principalVal).toFixed(2)));
-
-        rows.push({
-          loan: { connect: { id: loanId } },
-          lan,
-          installmentNumber: i,
-          dueDate,
-          openingPrincipal: new Prisma.Decimal(currentOpening),
-          emi: new Prisma.Decimal(principalVal + interestVal),
-          interest: new Prisma.Decimal(interestVal),
-          principal: new Prisma.Decimal(principalVal),
-          closingPrincipal: new Prisma.Decimal(closingVal),
-          outstandingPrincipal: new Prisma.Decimal(currentOpening),
-          paymentStatus: 'PENDING',
-          dpd: 0,
-          paidAmount: new Prisma.Decimal(0.00),
-          remainingAmount: new Prisma.Decimal(principalVal + interestVal),
-        });
-
-        currentOpening = closingVal;
-      }
+    let dueDate = firstRepaymentDate;
+    if (!dueDate || isNaN(new Date(dueDate).getTime())) {
+      dueDate = new Date(disbursalDate);
+      dueDate.setDate(dueDate.getDate() + tenureDays);
     }
+
+    rows.push({
+      loan: { connect: { id: loanId } },
+      lan,
+      installmentNumber: 1,
+      dueDate,
+      openingPrincipal: new Prisma.Decimal(principal),
+      emi: new Prisma.Decimal(emiVal),
+      interest: new Prisma.Decimal(interestVal),
+      principal: new Prisma.Decimal(principal),
+      closingPrincipal: new Prisma.Decimal(0.00),
+      outstandingPrincipal: new Prisma.Decimal(principal),
+      paymentStatus: 'PENDING',
+      dpd: 0,
+      paidAmount: new Prisma.Decimal(0.00),
+      remainingAmount: new Prisma.Decimal(emiVal),
+    });
 
     return rows;
   }
@@ -2516,5 +2477,42 @@ export class LoanService {
       installmentNumber: instNum,
       amount: payAmount,
     };
+  }
+
+  async resetLoanRpsAndDisbursal(lan: string, customerId?: bigint) {
+    const whereClause: any = { lan };
+    if (customerId) whereClause.customerId = customerId;
+
+    const loan = await this.prisma.plLoan.findFirst({ where: whereClause });
+    if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+
+    return await this.prisma.$transaction(async (tx) => {
+      await tx.plRepaymentAllocation.deleteMany({ where: { loanId: loan.id } });
+      await tx.plRepayment.deleteMany({ where: { loanId: loan.id } });
+      await tx.plRepaymentSchedule.deleteMany({ where: { loanId: loan.id } });
+      try {
+        await (tx as any).plLoanCharge.deleteMany({ where: { loanId: loan.id } });
+      } catch (_e) {}
+      await tx.disbursalWebhookEvent.deleteMany({ where: { lan: loan.lan } });
+
+      await tx.plLoan.update({
+        where: { id: loan.id },
+        data: {
+          disbursalStatus: 'NOT_STARTED',
+          status: PlLoanStatus.READY_FOR_DISBURSAL,
+          currentStep: 'READY_FOR_DISBURSAL',
+          disbursalAmount: null,
+          disbursalUtr: null,
+          disbursalDate: null,
+          firstRepaymentDate: null,
+          disbursalCompletedAt: null,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Loan ${lan} RPS schedules, repayments, allocations, and disbursal webhooks cleared. Ready for fresh disbursal webhook.`,
+      };
+    });
   }
 }
