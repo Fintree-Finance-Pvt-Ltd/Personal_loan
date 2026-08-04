@@ -268,23 +268,23 @@ function deriveCustomerWorkflow(customer) {
   if (empType === 'SALARIED') {
     profileDetailsCompleted = Boolean(
       customer.residenceStatus &&
-        customer.companyType &&
-        customer.companyName &&
-        customer.designation &&
-        customer.monthlyIncome !== null &&
-        customer.monthlyIncome !== undefined &&
-        customer.workPincode,
+      customer.companyType &&
+      customer.companyName &&
+      customer.designation &&
+      customer.monthlyIncome !== null &&
+      customer.monthlyIncome !== undefined &&
+      customer.workPincode,
     );
   } else if (empType === 'SELF_EMPLOYED') {
     profileDetailsCompleted = Boolean(
       customer.residenceStatus &&
-        customer.businessName &&
-        customer.businessConstitution &&
-        customer.monthlyIncome !== null &&
-        customer.monthlyIncome !== undefined &&
-        customer.annualTurnover !== null &&
-        customer.annualTurnover !== undefined &&
-        customer.workPincode,
+      customer.businessName &&
+      customer.businessConstitution &&
+      customer.monthlyIncome !== null &&
+      customer.monthlyIncome !== undefined &&
+      customer.annualTurnover !== null &&
+      customer.annualTurnover !== undefined &&
+      customer.workPincode,
     );
   }
 
@@ -399,7 +399,7 @@ function mapCustomerToForm(customer) {
     designation: customer.designation || '',
     monthlyIncome:
       customer.monthlyIncome !== null &&
-      customer.monthlyIncome !== undefined
+        customer.monthlyIncome !== undefined
         ? String(customer.monthlyIncome)
         : '',
     workPincode: customer.workPincode || '',
@@ -409,7 +409,7 @@ function mapCustomerToForm(customer) {
       customer.businessConstitution || '',
     annualTurnover:
       customer.annualTurnover !== null &&
-      customer.annualTurnover !== undefined
+        customer.annualTurnover !== undefined
         ? String(customer.annualTurnover)
         : '',
 
@@ -441,7 +441,7 @@ export default function MyApplicationPage() {
   const [customer, setCustomer] = useState(null);
   const [isCustomerLoading, setIsCustomerLoading] = useState(true);
   const [customerLoadError, setCustomerLoadError] = useState('');
-  
+
   const [platformProducts, setPlatformProducts] = useState([]);
   const [isLoadingPlatformProducts, setIsLoadingPlatformProducts] = useState(true);
 
@@ -548,9 +548,9 @@ export default function MyApplicationPage() {
         err?.message || 'Unable to load your details.',
       );
       if (err?.message?.includes('Customer authentication is required') || err?.message?.includes('Access denied') || err?.message?.includes('Customer details were not found')) {
-         navigate('/customer/login', {
-  replace: true,
-});
+        navigate('/customer/login', {
+          replace: true,
+        });
       }
     } finally {
       setIsCustomerLoading(false);
@@ -565,7 +565,7 @@ export default function MyApplicationPage() {
     }
 
     fetchCustomer();
-    
+
     // Fetch products
     setIsLoadingPlatformProducts(false);
   }, [customerId, navigate]);
@@ -643,7 +643,7 @@ export default function MyApplicationPage() {
       if (
         name === 'panNumber' &&
         normalizedValue !==
-          currentForm.panNumber
+        currentForm.panNumber
       ) {
         updatedForm.dateOfBirth = '';
         updatedForm.gender = '';
@@ -723,7 +723,7 @@ export default function MyApplicationPage() {
         monthDifference < 0 ||
         (monthDifference === 0 &&
           today.getDate() <
-            birthDate.getDate())
+          birthDate.getDate())
       ) {
         age -= 1;
       }
@@ -1093,8 +1093,8 @@ export default function MyApplicationPage() {
 
       const verifiedPan = String(
         panData.panNumber ||
-          responsePayload?.panNumber ||
-          '',
+        responsePayload?.panNumber ||
+        '',
       )
         .trim()
         .toUpperCase();
@@ -1111,8 +1111,8 @@ export default function MyApplicationPage() {
       const providerName =
         normalizePersonName(
           panData.fullName ||
-            responsePayload?.fullName ||
-            '',
+          responsePayload?.fullName ||
+          '',
         );
 
       if (!providerName) {
@@ -1135,15 +1135,15 @@ export default function MyApplicationPage() {
       const normalizedDateOfBirth =
         normalizeDateForInput(
           panData.dateOfBirth ||
-            responsePayload?.dateOfBirth ||
-            '',
+          responsePayload?.dateOfBirth ||
+          '',
         );
 
       const normalizedGender =
         normalizeGender(
           panData.gender ||
-            responsePayload?.gender ||
-            '',
+          responsePayload?.gender ||
+          '',
         );
 
       if (!normalizedDateOfBirth) {
@@ -1173,12 +1173,12 @@ export default function MyApplicationPage() {
 
         pincode: isValidPincode(
           panData.pincode ||
-            responsePayload?.pincode ||
-            '',
+          responsePayload?.pincode ||
+          '',
         )
           ? panData.pincode ||
-            responsePayload?.pincode ||
-            ''
+          responsePayload?.pincode ||
+          ''
           : form.pincode,
       };
 
@@ -1320,7 +1320,7 @@ export default function MyApplicationPage() {
         });
 
         const appRes = await resumeApplication(customerId);
-        
+
         if (appRes?.applicationNumber) {
           setApplicationNumber(appRes.applicationNumber);
         }
@@ -1358,7 +1358,7 @@ export default function MyApplicationPage() {
       setBrePassed(true);
       setCurrentStep('assessment_fee');
       setErrors({});
-      
+
       // Refresh customer profile to load allocated lender and fee snapshot
       await fetchCustomer();
 
@@ -1406,10 +1406,10 @@ export default function MyApplicationPage() {
 
     try {
       const result = await initiateAssessmentPayment({
-          purpose: 'ASSESSMENT_FEE',
-          consentTemplateId: 'LENDER_DATA_SHARING_V1',
-          consentVersion: '1.0',
-          consentText: `I consent to share my application data with ${customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner'} for eligibility assessment and final decision.`,
+        purpose: 'ASSESSMENT_FEE',
+        consentTemplateId: 'LENDER_DATA_SHARING_V1',
+        consentVersion: '1.0',
+        consentText: `I consent to share my application data with ${customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner'} for eligibility assessment and final decision.`,
       });
 
       const paymentData =
@@ -1563,15 +1563,7 @@ export default function MyApplicationPage() {
   }, []);
 
   const handleProceedToProfile = () => {
-    if (!feePaid) {
-      showMessage(
-        'Complete the assessment fee payment first.',
-        'error',
-      );
-      return;
-    }
-
-    fetchCustomer();
+    goToStep('profile_details');
   };
 
   const handleProfileContinue = async () => {
@@ -1598,6 +1590,7 @@ export default function MyApplicationPage() {
       await updateCustomerProfile(customerId, form);
       showMessage('Profile details and live photograph saved successfully.');
       await fetchCustomer();
+      goToStep('aadhaar_kyc');
     } catch (err) {
       console.error('Failed to save profile details:', err);
       showMessage(
@@ -1773,59 +1766,59 @@ export default function MyApplicationPage() {
         />
       )}
 
-          {currentStep ===
+      {currentStep ===
         'basic_details' && (
-        <BasicDetailsStep
-          customerId={customerId}
-          form={form}
-          errors={errors}
-          mobileNumber={mobileNumber}
-          emailVerified={
-            emailVerified
-          }
-          isEmailVerifying={
-            isEmailVerifying
-          }
-          isEmailOtpSent={
-            isEmailOtpSent
-          }
-          emailOtp={emailOtp}
-          developmentEmailOtp={
-            developmentEmailOtp
-          }
-          panVerified={panVerified}
-          isPanVerifying={
-            isPanVerifying
-          }
-          isBreRunning={isBreRunning}
-          isSaving={isSaving}
-          onChange={handleChange}
-          onVerifyEmail={
-            handleVerifyEmail
-          }
-          onSendEmailOtp={
-            handleSendEmailOtp
-          }
-          onVerifyEmailOtp={
-            handleVerifyEmailOtp
-          }
-          onEmailOtpChange={
-            setEmailOtp
-          }
-          onVerifyPan={
-            handleVerifyPan
-          }
-          onSaveDraft={
-            handleSaveDraft
-          }
-          onContinue={
-            handleBasicDetailsContinue
-          }
-          platformProducts={platformProducts}
-          isLoadingPlatformProducts={isLoadingPlatformProducts}
-          applicationNumber={applicationNumber}
-        />
-      )}
+          <BasicDetailsStep
+            customerId={customerId}
+            form={form}
+            errors={errors}
+            mobileNumber={mobileNumber}
+            emailVerified={
+              emailVerified
+            }
+            isEmailVerifying={
+              isEmailVerifying
+            }
+            isEmailOtpSent={
+              isEmailOtpSent
+            }
+            emailOtp={emailOtp}
+            developmentEmailOtp={
+              developmentEmailOtp
+            }
+            panVerified={panVerified}
+            isPanVerifying={
+              isPanVerifying
+            }
+            isBreRunning={isBreRunning}
+            isSaving={isSaving}
+            onChange={handleChange}
+            onVerifyEmail={
+              handleVerifyEmail
+            }
+            onSendEmailOtp={
+              handleSendEmailOtp
+            }
+            onVerifyEmailOtp={
+              handleVerifyEmailOtp
+            }
+            onEmailOtpChange={
+              setEmailOtp
+            }
+            onVerifyPan={
+              handleVerifyPan
+            }
+            onSaveDraft={
+              handleSaveDraft
+            }
+            onContinue={
+              handleBasicDetailsContinue
+            }
+            platformProducts={platformProducts}
+            isLoadingPlatformProducts={isLoadingPlatformProducts}
+            applicationNumber={applicationNumber}
+          />
+        )}
 
       {currentStep === 'assessment_fee' && (
         <AssessmentFeeStep
@@ -1845,25 +1838,25 @@ export default function MyApplicationPage() {
       {currentStep === 'rejection_screen' && (
         <StepCard>
           <div className="flex flex-col items-center justify-center p-8 text-center">
-             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-red-100 text-red-600 mb-6">
-                <AlertCircle size={32} />
-             </div>
-             <h2 className="text-2xl font-bold text-slate-900 mb-3">Application Unsuccessful</h2>
-             <p className="text-slate-600 max-w-md mx-auto mb-8">
-                Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
-                {customer?.eligibilityReason && customer.eligibilityReason !== 'Platform policy rejection' && (
-                  <span className="block mt-4 p-3 bg-red-50 text-sm text-red-700 rounded border border-red-100 font-medium text-left">
-                    {customer.eligibilityReason}
-                  </span>
-                )}
-             </p>
-             <button
-                type="button"
-                onClick={() => navigate('/')}
-                className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition"
-             >
-                Return to Home
-             </button>
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-red-100 text-red-600 mb-6">
+              <AlertCircle size={32} />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-3">Application Unsuccessful</h2>
+            <p className="text-slate-600 max-w-md mx-auto mb-8">
+              Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
+              {customer?.eligibilityReason && customer.eligibilityReason !== 'Platform policy rejection' && (
+                <span className="block mt-4 p-3 bg-red-50 text-sm text-red-700 rounded border border-red-100 font-medium text-left">
+                  {customer.eligibilityReason}
+                </span>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition"
+            >
+              Return to Home
+            </button>
           </div>
         </StepCard>
       )}
@@ -2212,11 +2205,10 @@ function ApplicationProgress({ currentStep, workflow }) {
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              workflow?.mobileVerified
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.mobileVerified
                 ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
                 : 'bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             {workflow?.mobileVerified ? (
               <CheckCircle2 size={14} className="text-emerald-300" />
@@ -2225,11 +2217,10 @@ function ApplicationProgress({ currentStep, workflow }) {
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              workflow?.panVerified
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.panVerified
                 ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
                 : 'bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             {workflow?.panVerified ? (
               <CheckCircle2 size={14} className="text-emerald-300" />
@@ -2238,11 +2229,10 @@ function ApplicationProgress({ currentStep, workflow }) {
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              workflow?.emailVerified
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.emailVerified
                 ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
                 : 'bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             {workflow?.emailVerified ? (
               <CheckCircle2 size={14} className="text-emerald-300" />
@@ -2274,25 +2264,23 @@ function ApplicationProgress({ currentStep, workflow }) {
               <div key={step.id} className="flex flex-1 items-center">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${
-                      isCompleted
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${isCompleted
                         ? 'bg-emerald-600 text-white'
                         : isActive
                           ? 'bg-blue-600 text-white ring-4 ring-blue-100'
                           : 'bg-slate-100 text-slate-400'
-                    }`}
+                      }`}
                   >
                     {isCompleted ? <Check size={17} /> : index + 1}
                   </div>
 
                   <span
-                    className={`whitespace-nowrap text-xs font-semibold ${
-                      isActive
+                    className={`whitespace-nowrap text-xs font-semibold ${isActive
                         ? 'text-blue-700'
                         : isCompleted
                           ? 'text-emerald-700'
                           : 'text-slate-400'
-                    }`}
+                      }`}
                   >
                     {step.label}
                   </span>
@@ -2300,9 +2288,8 @@ function ApplicationProgress({ currentStep, workflow }) {
 
                 {index < FLOW_STEPS.length - 1 && (
                   <div
-                    className={`mx-3 h-0.5 flex-1 ${
-                      isCompleted ? 'bg-emerald-500' : 'bg-slate-200'
-                    }`}
+                    className={`mx-3 h-0.5 flex-1 ${isCompleted ? 'bg-emerald-500' : 'bg-slate-200'
+                      }`}
                   />
                 )}
               </div>
@@ -2320,11 +2307,10 @@ function MessageBanner({
 }) {
   return (
     <div
-      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-        type === 'error'
+      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${type === 'error'
           ? 'border-red-200 bg-red-50 text-red-700'
           : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      }`}
+        }`}
     >
       {message}
     </div>
@@ -2442,13 +2428,12 @@ function BasicDetailsStep({
           </label>
 
           <div
-            className={`flex overflow-hidden rounded-xl border bg-white ${
-              errors.panNumber
+            className={`flex overflow-hidden rounded-xl border bg-white ${errors.panNumber
                 ? 'border-red-400 ring-4 ring-red-50'
                 : panVerified
                   ? 'border-emerald-400 ring-4 ring-emerald-50'
                   : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-            }`}
+              }`}
           >
             <input
               type="text"
@@ -2478,11 +2463,10 @@ function BasicDetailsStep({
                 form.panNumber
                   .length !== 10
               }
-              className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${
-                panVerified
+              className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${panVerified
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   : 'border-slate-200 text-blue-700 hover:bg-blue-50'
-              } disabled:cursor-not-allowed disabled:opacity-60`}
+                } disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {isPanVerifying ? (
                 <>
@@ -2599,7 +2583,7 @@ function BasicDetailsStep({
                 error={
                   errors.gender
                 }
-                onChange={() => {}}
+                onChange={() => { }}
                 disabled
                 options={[
                   ['MALE', 'Male'],
@@ -2707,13 +2691,12 @@ function BasicDetailsStep({
               </label>
 
               <div
-                className={`flex overflow-hidden rounded-xl border bg-white ${
-                  errors.email
+                className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
                     ? 'border-red-400 ring-4 ring-red-50'
                     : emailVerified
                       ? 'border-emerald-400 ring-4 ring-emerald-50'
                       : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-                }`}
+                  }`}
               >
                 <input
                   type="email"
@@ -2767,11 +2750,10 @@ function BasicDetailsStep({
               {isEmailOtpSent && !emailVerified && (
                 <div className="mt-3">
                   <div
-                    className={`flex overflow-hidden rounded-xl border bg-white ${
-                      errors.email
+                    className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
                         ? 'border-red-400 ring-4 ring-red-50'
                         : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-                    }`}
+                      }`}
                   >
                     <input
                       type="text"
@@ -3029,7 +3011,7 @@ function AssessmentFeeStep({
         onBack={onBack}
         onNext={onContinue}
         nextLabel="Complete Profile"
-        nextDisabled={!feePaid}
+        nextDisabled={false}
         hideSave
       />
     </StepCard>
@@ -4027,7 +4009,7 @@ function ProfileDetailsStep({
         onSave={onSaveDraft}
         isSaving={isSaving}
         onNext={onContinue}
-        nextLabel="Review Application"
+        nextLabel="Continue to Aadhaar KYC"
       />
     </StepCard>
   );
@@ -4071,9 +4053,9 @@ function SubmitApplicationStep({
               <p className="mt-1 text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
                 {isApproved
                   ? 'Fintree Finance has approved your loan application. You can now continue your post-approval journey.'
-                  : isRejected 
-                  ? 'Unfortunately, your application did not meet the lender criteria at this time.'
-                  : 'Your loan application is currently under final evaluation by our credit underwriting team. Once final approval comes, the next flow will start automatically.'}
+                  : isRejected
+                    ? 'Unfortunately, your application did not meet the lender criteria at this time.'
+                    : 'Your loan application is currently under final evaluation by our credit underwriting team. Once final approval comes, the next flow will start automatically.'}
               </p>
             </div>
           </div>
@@ -4182,7 +4164,7 @@ function SubmitApplicationStep({
               label="Employment"
               value={
                 form.employmentType ===
-                'SALARIED'
+                  'SALARIED'
                   ? 'Salaried'
                   : 'Self-employed'
               }
@@ -4191,13 +4173,13 @@ function SubmitApplicationStep({
             <ReviewItem
               label={
                 form.employmentType ===
-                'SALARIED'
+                  'SALARIED'
                   ? 'Company'
                   : 'Business'
               }
               value={
                 form.employmentType ===
-                'SALARIED'
+                  'SALARIED'
                   ? form.companyName
                   : form.businessName
               }
@@ -4624,15 +4606,13 @@ function FormInput({
       </label>
 
       <div
-        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition ${
-          error
+        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition ${error
             ? 'border-red-400 ring-4 ring-red-50'
             : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-        } ${
-          disabled
+          } ${disabled
             ? 'bg-slate-100'
             : 'bg-white'
-        }`}
+          }`}
       >
         {prefix && (
           <span className="border-r border-slate-200 px-4 text-sm font-bold text-slate-600">
@@ -4699,13 +4679,12 @@ function FormSelect({
         value={value || ''}
         onChange={onChange}
         disabled={disabled}
-        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition ${
-          disabled
+        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition ${disabled
             ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500'
             : error
               ? 'border-red-400 bg-white text-slate-900 ring-4 ring-red-50'
               : 'border-slate-300 bg-white text-slate-900 focus:border-blue-600 focus:ring-4 focus:ring-blue-50'
-        }`}
+          }`}
       >
         <option value="">
           Select {label}
