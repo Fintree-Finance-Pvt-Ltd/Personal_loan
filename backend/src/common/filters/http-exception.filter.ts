@@ -47,9 +47,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       'REQUEST_FAILED';
 
     if (status >= 500) {
+      const errorMessage = exception instanceof Error ? exception.message : String(exception);
+      const stack = exception instanceof Error ? exception.stack : undefined;
       this.logger.error(
-        { event: 'unhandled_exception', requestId: request.requestId, status },
-        exception instanceof Error ? exception.stack : undefined,
+        { event: 'unhandled_exception', requestId: request.requestId, status, errorMessage },
+        stack,
       );
     }
     response.status(status).json({

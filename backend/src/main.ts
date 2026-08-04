@@ -8,6 +8,11 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { Logger } from "@nestjs/common";
 
+// Enable JSON.stringify serialization for BigInt values returned by Prisma
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');

@@ -19,7 +19,7 @@ export class JsonLoggerService implements LoggerService {
     this.write('info', message, context);
   }
   error(message: unknown, trace?: string, context?: string): void {
-    this.write('error', { message, trace: process.env.NODE_ENV === 'development' ? trace : undefined }, context);
+    this.write('error', { message, trace: trace || undefined }, context);
   }
   warn(message: unknown, context?: string): void {
     this.write('warn', message, context);
