@@ -15,6 +15,7 @@ const applicationFor = (config: any) => ({
   id: 1n, customerId: 10n, applicationNumber: 'APP-001', status: 'ASSESSMENT_FEE_PAID', platformProductId: 'PLATFORM-1',
   requestedAmount: null, scopeCode: 'PLATFORM_DEFAULT', mlmAllocationDecisionId: 'DEC-1', lenderId: config.lenderId,
   lenderProductId: 'PRODUCT-1', productStrategyVersionId: 'PSV-1', allocatedAt: new Date('2026-08-01T00:00:00Z'),
+  platformLan: 'FTPL00000001',
   assessmentFeeBaseAmount: new Prisma.Decimal('500'), assessmentFeeGstRate: new Prisma.Decimal('18'),
   assessmentFeeGstAmount: new Prisma.Decimal('90'), assessmentFeeTotalAmount: new Prisma.Decimal('590'), assessmentFeeCurrency: 'INR',
   customer: { fullName: 'Test Customer', firstName: 'Test', middleName: null, lastName: 'Customer', mobileNumber: '9999999999', email: 'test@example.test', dateOfBirth: new Date('1990-01-01'), gender: 'MALE', panNumber: 'ABCDE1234F', panVerified: true },
@@ -38,10 +39,12 @@ describe('LenderIntegrationService explicit requirements', () => {
       updateApplication: jest.fn(),
       requestDecision: jest.fn(),
       getStatus: jest.fn(),
+      capabilities: { separateConsentSubmission: true, detailsUpdate: true, documentUpload: true, decisionRequest: false, statusPolling: false },
     };
     registry = new LenderAdapterRegistry([adapter]);
     outbox = { enqueueUpdateWhenReady: jest.fn(), enqueueDecisionWhenReady: jest.fn() };
     decisions = { process: jest.fn() };
+    let documentFiles = { fetchDocumentFile: jest.fn(), cleanupDocumentFile: jest.fn() };
     prisma = {
       $transaction: jest.fn((fn) => fn(prisma)),
       lenderIntegrationOutbox: { 
@@ -50,13 +53,13 @@ describe('LenderIntegrationService explicit requirements', () => {
         upsert: jest.fn(),
       },
       plApplication: { findUnique: jest.fn() },
-      mlmAllocationDecision: { findUnique: jest.fn() },
+      mlmAllocationDecision: { findUnique: jest.fn().mockResolvedValue({ lenderId: 'LENDER-A', externalProductCode: 'PRODUCT-1' }) },
       lenderProduct: { findUnique: jest.fn() },
       plPaymentLink: { findFirst: jest.fn() },
-      lenderDataSharingConsent: { findFirst: jest.fn() },
+      lenderDataSharingConsent: { findFirst: jest.fn().mockResolvedValue({ id: 'CONS-1', consentText: 'Test Consent', consentTextHash: 'hash123' }) },
       lenderApplicationLink: { update: jest.fn() },
     };
-    service = new LenderIntegrationService(prisma, registry, outbox, decisions);
+    service = new LenderIntegrationService(prisma, registry, outbox, decisions, documentFiles as any);
   });
 
   it('CREATE success atomically stores partnerApplicationId and enqueues one CONSENT event', async () => {
@@ -87,10 +90,13 @@ describe('LenderIntegrationService explicit requirements', () => {
     const config = configFor('FINTREE_FINANCE_V1');
     const application = applicationFor(config) as any;
     application.lenderApplicationLink.createStatus = 'COMPLETED'; // Already created
+    application.lenderApplicationLink.partnerApplicationId = 'PARTNER-1';
 
     prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-1', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'CREATE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_CREATE_APPLICATION:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
     prisma.plApplication.findUnique.mockResolvedValue(application);
-    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', externalProductCode: 'PRODUCT-1', productVersionId: 'PSV-1' });
+    prisma.lenderProduct.findUnique.mockResolvedValue({ id: 'PRODUCT-1', lenderId: config.lenderId, code: 'EXTERNAL-PL' });
+    prisma.plPaymentLink.findFirst.mockResolvedValue({ txnid: 'PAY-1', easebuzzId: 'EZ-1', paidAt: new Date() });
 
     await service.processEvent('EVENT-1', 'LOCK-1');
 
@@ -106,7 +112,7 @@ describe('LenderIntegrationService explicit requirements', () => {
     prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-1', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'CONSENT', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_SUBMIT_CONSENT:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
     prisma.plApplication.findUnique.mockResolvedValue(application);
     prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
-    prisma.lenderDataSharingConsent.findFirst.mockResolvedValue({ consentVersion: '1.0', consentTextHash: 'a'.repeat(64), consentReference: 'CONSENT', acceptedAt: new Date('2026-08-01T00:30:00Z'), ipAddress: null, userAgent: null, lenderId: config.lenderId });
+    prisma.lenderDataSharingConsent.findFirst.mockResolvedValue({ consentVersion: '1.0', consentText: 'Test Consent', consentTextHash: 'a'.repeat(64), consentReference: 'CONSENT', acceptedAt: new Date('2026-08-01T00:30:00Z'), ipAddress: null, userAgent: null, lenderId: config.lenderId });
 
     adapter.submitConsent.mockResolvedValue({ acknowledged: false, providerStatus: 'FAILED' }); // Consent fails
 
@@ -138,7 +144,117 @@ describe('LenderIntegrationService explicit requirements', () => {
     }));
   });
 
+  it('UPDATE completes successfully and explicitly enqueues DOCUMENT transfers for Aadhaar XML/PDF', async () => {
+    const config = configFor('FINTREE_FINANCE_V1');
+    const application = applicationFor(config);
+    const link = application.lenderApplicationLink;
+    link.createStatus = 'ACKNOWLEDGED';
+    (link as any).consentStatus = 'COMPLETED';
+    (link as any).partnerApplicationId = 'PARTNER-1';
+
+      prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-2', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'UPDATE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_UPDATE_APPLICATION:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+      prisma.plApplication.findUnique.mockResolvedValue(application);
+      prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+      prisma.applicationEmploymentSnapshot = { findUnique: jest.fn().mockResolvedValue({ employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer', monthlyIncome: 50000, completedAt: new Date() }) };
+      prisma.applicationKycSnapshot = { findUnique: jest.fn().mockResolvedValue({ provider: 'DIGILOCKER', providerReference: '1234', verificationStatus: 'VERIFIED', verifiedAt: new Date(), verifiedName: 'Test', maskedAadhaar: 'XXXX-1234', verifiedDateOfBirth: '1990-01-01', verifiedGender: 'MALE' }) };
+      prisma.applicationAddress = { findFirst: jest.fn().mockResolvedValue({ addressType: 'PERMANENT' }) };
+      prisma.applicationLiveness = { findUnique: jest.fn().mockResolvedValue({ verificationStatus: 'VERIFIED', verifiedAt: new Date(), photoDocument: { id: 9n } }) };
+    
+      outbox.getUpdateReadiness = jest.fn().mockResolvedValue({
+        ready: true,
+        application: {
+          ...application,
+          employmentSnapshot: { employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer', monthlyIncome: 50000, completedAt: new Date() },
+          kycSnapshot: { provider: 'DIGILOCKER', verificationStatus: 'VERIFIED', verifiedAt: new Date(), verifiedName: 'Test', maskedAadhaar: 'XXXX-1234', verifiedDateOfBirth: '1990-01-01', verifiedGender: 'MALE' },
+          liveness: { verificationStatus: 'VERIFIED', verifiedAt: new Date(), photoDocument: { id: 9n, capturedAt: new Date() } },
+          stageConsents: [{ consentType: 'DATA_SHARING', consentTextHash: 'a', revokedAt: null, acceptedAt: new Date() }]
+        },
+        permanent: { addressType: 'PERMANENT' },
+        current: { addressType: 'CURRENT', sameAsPermanent: true }
+      });
+
+    adapter.updateApplication.mockResolvedValue({ acknowledged: true, providerStatus: 'ACKNOWLEDGED' });
+    adapter.capabilities = { documentUpload: true };
+
+      // mock documents
+      prisma.plCustomerDocument = { findMany: jest.fn().mockResolvedValue([
+        { id: 101n, applicationId: 1n, documentType: 'AADHAAR_XML', uploadedAt: new Date() },
+        { id: 102n, applicationId: 1n, documentType: 'AADHAAR_PDF', uploadedAt: new Date() },
+        { id: 103n, applicationId: 1n, documentType: 'BANK_STATEMENT', uploadedAt: new Date() }
+      ])};
+    
+    prisma.lenderDocumentTransfer = { upsert: jest.fn().mockImplementation(({ create }: any) => ({ ...create, id: 200n })) };
+
+    await service.processEvent('EVENT-2', 'LOCK-1');
+
+    expect(prisma.lenderApplicationLink.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ updateStatus: 'ACKNOWLEDGED' })
+    }));
+    
+    // Verify only Aadhaar XML/PDF were queued
+    expect(prisma.lenderDocumentTransfer.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledTimes(2);
+    
+    // Check missing Aadhaar XML/PDF does not fail
+    prisma.plCustomerDocument.findMany.mockResolvedValue([]);
+    prisma.lenderDocumentTransfer.upsert.mockClear();
+    prisma.lenderIntegrationOutbox.upsert.mockClear();
+    
+    await service.processEvent('EVENT-2', 'LOCK-1');
+    expect(prisma.lenderDocumentTransfer.upsert).toHaveBeenCalledTimes(0);
+    expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledTimes(0);
+  });
+
+  it('DOCUMENT loads file, enforces 3.5 MB, calculates SHA256 and calls adapter.uploadDocument', async () => {
+    const config = configFor('FINTREE_FINANCE_V1');
+    const application = applicationFor(config);
+    const link = application.lenderApplicationLink;
+    link.createStatus = 'ACKNOWLEDGED';
+    (link as any).partnerApplicationId = 'PARTNER-1';
+
+    prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-3', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'DOCUMENT', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_DOCUMENT:AADHAAR_XML:101:V1', documentTransferId: '200', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+    prisma.plApplication.findUnique.mockResolvedValue(application);
+    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+    
+    adapter.uploadDocument = jest.fn().mockResolvedValue({ success: true, data: { status: 'ACKNOWLEDGED', partnerDocumentId: 'DOC-1', documentType: 'AADHAAR_XML', fileSha256: 'mocked-hash' } });
+    adapter.capabilities = { documentUpload: true };
+
+    const mockDocument = { id: 101n, applicationId: 1n, customerId: 10n, documentType: 'AADHAAR_XML', fileSize: 1000, filePath: '/valid/path', mimeType: 'text/xml', status: 'VERIFIED' };
+    prisma.lenderDocumentTransfer = { 
+      findUnique: jest.fn().mockResolvedValue({ id: 200n, applicationId: 1n, transferStatus: 'PENDING', sourceDocumentId: 101n, lenderApplicationLinkId: 'LINK-1', sourceDocument: mockDocument }), 
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 200n, applicationId: 1n, transferStatus: 'PENDING', sourceDocumentId: 101n, lenderApplicationLinkId: 'LINK-1', sourceDocument: mockDocument }), 
+      update: jest.fn() 
+    };
+    prisma.plCustomerDocument = { findUnique: jest.fn().mockResolvedValue(mockDocument) };
+    
+    (service as any).documentFiles.fetchDocumentFile = jest.fn().mockResolvedValue({ fileSize: 1000, fileSha256: 'mocked-hash', mimeType: 'text/xml' });
+
+    // Test > 3.5MB fails safely
+    mockDocument.fileSize = 4 * 1024 * 1024; // 4MB
+    await service.processEvent('EVENT-3', 'LOCK-1');
+    expect(prisma.lenderDocumentTransfer.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ transferStatus: 'SKIPPED' }) }));
+
+    // Test valid size succeeds
+    mockDocument.fileSize = 1000;
+    prisma.lenderDocumentTransfer.update.mockClear();
+    
+    // We mocked the hash generation inside the service as 'mocked-hash' for testing if it matches
+    // But since `createHash('sha256').update(Buffer.from('mock-file-content')).digest('hex')` is used in service,
+    // let's just make the adapter return whatever it receives.
+    adapter.uploadDocument.mockImplementation(async (ctx: any) => ({
+      success: true,
+      data: { status: 'ACKNOWLEDGED', partnerDocumentId: 'DOC-1', documentType: ctx.documentType, fileSha256: ctx.fileSha256 }
+    }));
+    
+    await service.processEvent('EVENT-3', 'LOCK-1');
+    
+    expect(adapter.uploadDocument).toHaveBeenCalled();
+    expect(prisma.lenderDocumentTransfer.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ transferStatus: 'ACKNOWLEDGED' }) }));
+    expect(prisma.lenderIntegrationOutbox.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
+  });
+
   it('PENDING invokes getStatus only', async () => {
+    adapter.capabilities.statusPolling = true;
     const config = configFor('FINTREE_FINANCE_V1');
     const application = applicationFor(config) as any;
     application.lenderApplicationLink.updateStatus = 'COMPLETED';

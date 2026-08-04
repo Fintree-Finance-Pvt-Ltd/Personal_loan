@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 describe('LenderIntegrationOutboxService', () => {
   it('creates an identifier-only idempotent CREATE event', async () => {
     const tx: any = {
-      plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, customerId: 2n, applicationNumber: 'APP-001', status: 'ASSESSMENT_FEE_PAID', mlmAllocationDecisionId: 'DEC-1', lenderId: 'L1', lenderProductId: 'P1', productStrategyVersionId: 'PV1' }) },
+      plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, customerId: 2n, applicationNumber: 'APP-001', status: 'ASSESSMENT_FEE_PAID', mlmAllocationDecisionId: 'DEC-1', lenderId: 'L1', lenderProductId: 'P1', productStrategyVersionId: 'PV1', platformLan: 'FTPL00000001' }), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 1n, customerId: 2n, applicationNumber: 'APP-001', status: 'ASSESSMENT_FEE_PAID', mlmAllocationDecisionId: 'DEC-1', lenderId: 'L1', lenderProductId: 'P1', productStrategyVersionId: 'PV1', platformLan: 'FTPL00000001' }), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       mlmAllocationDecision: { findUnique: jest.fn().mockResolvedValue({ status: 'ASSIGNED', lenderId: 'L1', productId: 'P1', productVersionId: 'PV1' }) },
       plPaymentLink: { findFirst: jest.fn().mockResolvedValue({ id: 10n }) },
       lenderDataSharingConsent: { findFirst: jest.fn().mockResolvedValue({ id: 'CONSENT-1', consentText: 'Exact consent evidence', consentTextHash: createHash('sha256').update('Exact consent evidence', 'utf8').digest('hex') }) },
@@ -51,13 +51,17 @@ describe('LenderIntegrationOutboxService', () => {
       id: 1n, applicationNumber: 'APP-001', lenderId: 'L1',
       lenderApplicationLink: { createStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1', lastSyncedStage: 'CONSENT' },
       employmentSnapshot: { completedAt: new Date(), monthlyIncome: 50000, employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer' },
-      kycSnapshot: { verificationStatus: 'VERIFIED', verifiedAt: new Date() },
+      kycSnapshot: { verificationStatus: 'VERIFIED', verifiedAt: new Date(), verifiedName: 'Test Customer' },
       addresses: [
         { addressType: 'PERMANENT' },
         { addressType: 'CURRENT', sameAsPermanent: true },
       ],
       liveness: { verificationStatus: 'VERIFIED', verifiedAt: new Date(), photoDocument: { id: 9n } },
-      stageConsents: [{ consentType: 'DATA_SHARING', consentText, consentTextHash: createHash('sha256').update(consentText).digest('hex'), revokedAt: null }],
+      stageConsents: [
+        { consentType: 'DATA_SHARING', consentText, consentTextHash: createHash('sha256').update(consentText).digest('hex'), revokedAt: null },
+        { consentType: 'DOCUMENT_SHARING', consentText, consentTextHash: createHash('sha256').update(consentText).digest('hex'), revokedAt: null },
+        { consentType: 'TERMS_AND_CONDITIONS', consentText, consentTextHash: createHash('sha256').update(consentText).digest('hex'), revokedAt: null }
+      ],
     };
     const tx: any = {
       lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },

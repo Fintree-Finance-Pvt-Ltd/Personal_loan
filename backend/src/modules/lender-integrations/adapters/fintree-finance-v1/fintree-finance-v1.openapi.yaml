@@ -1,0 +1,436 @@
+openapi: 3.0.3
+info:
+  title: Fintree Finance Lender Integration API
+  version: "1.0.0"
+  description: |
+    API specifications for the Personal Loan Platform (PLP) to communicate with Fintree Finance.
+    Implements a strict zero-trust model utilizing HMAC authentication.
+servers:
+  - url: https://api.fintree.local
+    description: Local Development Server
+  - url: https://api.fintree.staging
+    description: Staging Environment Server
+
+paths:
+  /create:
+    post:
+      summary: Create Application
+      operationId: createApplication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        "200":
+          description: Acknowledged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateApplicationResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /consent:
+    post:
+      summary: Submit Consent
+      operationId: submitConsent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitConsentRequest'
+      responses:
+        "200":
+          description: Consent recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitConsentResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /details/{partnerApplicationId}:
+    put:
+      summary: Update Application Details
+      operationId: updateDetails
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDetailsRequest'
+      responses:
+        "200":
+          description: Details accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateDetailsResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /docs/{partnerApplicationId}:
+    post:
+      summary: Upload Document
+      operationId: uploadDocument
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadDocumentRequest'
+      responses:
+        "200":
+          description: Document received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadDocumentResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+    CreateApplicationRequest:
+      type: object
+      required:
+        - externalApplicationReference
+        - lan
+        - sourceSystem
+        - productCode
+        - customer
+        - panVerification
+      properties:
+        externalApplicationReference:
+          type: string
+        lan:
+          type: string
+        sourceSystem:
+          type: string
+          enum: [FINTREE_PLP]
+        productCode:
+          type: string
+        customer:
+          type: object
+          properties:
+            fullName:
+              type: string
+            firstName:
+              type: string
+            lastName:
+              type: string
+            fatherName:
+              type: string
+            panNumber:
+              type: string
+            dateOfBirth:
+              type: string
+              format: date
+        panVerification:
+          type: object
+          properties:
+            verified:
+              type: boolean
+            providerReference:
+              type: string
+            verifiedAt:
+              type: string
+              format: date-time
+
+    CreateApplicationResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - externalApplicationReference
+            - lan
+            - status
+            - partnerApplicationId
+            - partnerApplicationNumber
+            - correlationId
+            - createdAt
+          properties:
+            externalApplicationReference:
+              type: string
+            lan:
+              type: string
+            status:
+              type: string
+              enum: [ACKNOWLEDGED]
+            partnerApplicationId:
+              type: string
+            partnerApplicationNumber:
+              type: string
+            correlationId:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+
+    SubmitConsentRequest:
+      type: object
+      required:
+        - externalApplicationReference
+        - lan
+        - partnerApplicationId
+        - consentVersion
+        - termsAcceptance
+        - dataSharing
+        - documentSharing
+      properties:
+        externalApplicationReference:
+          type: string
+        lan:
+          type: string
+        partnerApplicationId:
+          type: string
+        consentVersion:
+          type: number
+        termsAcceptance:
+          type: object
+        dataSharing:
+          type: object
+        documentSharing:
+          type: object
+
+    SubmitConsentResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - status
+            - consentReference
+            - correlationId
+            - recordedAt
+          properties:
+            status:
+              type: string
+              enum: [RECORDED]
+            consentReference:
+              type: string
+            correlationId:
+              type: string
+            recordedAt:
+              type: string
+              format: date-time
+
+    UpdateDetailsRequest:
+      type: object
+      required:
+        - externalApplicationReference
+        - lan
+        - detailsVersion
+        - customer
+        - employment
+        - aadhaarKyc
+        - permanentAddress
+        - currentAddress
+        - currentAddressEvidence
+      properties:
+        externalApplicationReference:
+          type: string
+        lan:
+          type: string
+        detailsVersion:
+          type: number
+        customer:
+          type: object
+        employment:
+          type: object
+        aadhaarKyc:
+          type: object
+        permanentAddress:
+          type: object
+        currentAddress:
+          type: object
+        currentAddressEvidence:
+          type: object
+
+    UpdateDetailsResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - detailsVersion
+            - status
+            - correlationId
+            - updatedAt
+          properties:
+            detailsVersion:
+              type: number
+            status:
+              type: string
+              enum: [DETAILS_ACCEPTED]
+            correlationId:
+              type: string
+            updatedAt:
+              type: string
+              format: date-time
+
+    UploadDocumentRequest:
+      type: object
+      required:
+        - externalApplicationReference
+        - lan
+        - documentType
+        - sourceDocumentId
+        - fileName
+        - mimeType
+        - fileSize
+        - fileSha256
+        - contentBase64
+        - source
+        - capturedAt
+      properties:
+        externalApplicationReference:
+          type: string
+        lan:
+          type: string
+        documentType:
+          type: string
+        sourceDocumentId:
+          type: string
+        fileName:
+          type: string
+        mimeType:
+          type: string
+        fileSize:
+          type: number
+        fileSha256:
+          type: string
+        contentBase64:
+          type: string
+        source:
+          type: string
+        capturedAt:
+          type: string
+
+    UploadDocumentResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - documentType
+            - fileSha256
+            - status
+            - partnerDocumentId
+            - correlationId
+            - receivedAt
+          properties:
+            documentType:
+              type: string
+            fileSha256:
+              type: string
+            status:
+              type: string
+              enum: [RECEIVED]
+            partnerDocumentId:
+              type: string
+            correlationId:
+              type: string
+            receivedAt:
+              type: string
+              format: date-time
