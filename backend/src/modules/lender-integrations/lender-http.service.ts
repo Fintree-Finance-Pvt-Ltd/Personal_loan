@@ -1,124 +1,535 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { isIP } from 'net';
 import { URL } from 'url';
-import { LenderIntegrationTransportConfig } from './lender-integration.types';
-import { LenderIntegrationError, normalizeLenderIntegrationError } from './lender-integration.errors';
+
+import {
+  LenderHttpMethod,
+  LenderIntegrationTransportConfig,
+} from './lender-integration.types';
+
+import {
+  LenderIntegrationError,
+  normalizeLenderIntegrationError,
+} from './lender-integration.errors';
+
+const DEFAULT_REQUEST_LIMIT =
+  1_048_576;
+
+const DEFAULT_RESPONSE_LIMIT =
+  1_048_576;
 
 @Injectable()
 export class LenderHttpService {
-  private readonly logger = new Logger(LenderHttpService.name);
+  private readonly logger =
+    new Logger(
+      LenderHttpService.name,
+    );
 
-  constructor(private readonly http: HttpService, private readonly config: ConfigService) {}
+  constructor(
+    private readonly http:
+      HttpService,
 
-  async requestJson<T>(input: {
-    transport: LenderIntegrationTransportConfig;
-    endpointName: string;
-    path: string;
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH';
-    correlationId: string;
-    idempotencyKey?: string;
-    body?: unknown;
-    headers?: Record<string, string>;
-  }): Promise<{ status: number; data: T }> {
-    if (!input.transport.baseUrl || !input.path) {
-      throw new LenderIntegrationError('LENDER_ENDPOINT_NOT_CONFIGURED', `${input.endpointName} endpoint is not configured.`, 'AUTHENTICATION_CONFIGURATION');
+    private readonly config:
+      ConfigService,
+  ) {}
+
+  resolveRequestUrl(
+    transport:
+      LenderIntegrationTransportConfig,
+
+    requestPath:
+      string,
+  ): URL {
+    if (!transport.baseUrl) {
+      throw new LenderIntegrationError(
+        'LENDER_BASE_URL_NOT_CONFIGURED',
+        'Lender base URL is not configured.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
     }
 
-    const validatedUrl = this.validateUrlStrict(input.transport.baseUrl, input.path);
-    const startedAt = Date.now();
-    const headers = {
-      'content-type': 'application/json',
-      'x-correlation-id': input.correlationId,
-      ...(input.idempotencyKey ? { 'idempotency-key': input.idempotencyKey } : {}),
-      ...this.authenticationHeaders(input.transport),
+    if (
+      !requestPath ||
+      !requestPath.startsWith('/') ||
+      requestPath.startsWith('//') ||
+      requestPath.includes('://')
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_ENDPOINT_PATH_INVALID',
+        'Lender endpoint must be a relative path starting with one slash.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    if (
+      requestPath.includes('{') ||
+      requestPath.includes('}')
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_ENDPOINT_PLACEHOLDER_UNRESOLVED',
+        'Lender endpoint contains an unresolved placeholder.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    let baseUrl: URL;
+
+    try {
+      baseUrl =
+        new URL(
+          transport.baseUrl,
+        );
+    } catch {
+      throw new LenderIntegrationError(
+        'LENDER_BASE_URL_INVALID',
+        'Lender base URL is invalid.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    if (
+      baseUrl.username ||
+      baseUrl.password
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_BASE_URL_CREDENTIALS_BLOCKED',
+        'Embedded URL credentials are not permitted.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    if (
+      baseUrl.hash ||
+      baseUrl.search
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_BASE_URL_INVALID',
+        'Lender base URL must not contain a query or fragment.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    const environment =
+      this.config.get<string>(
+        'NODE_ENV',
+      ) ?? 'development';
+
+    const isLocalDevelopment =
+      environment === 'development' &&
+      (
+        baseUrl.hostname === 'localhost' ||
+        baseUrl.hostname === '127.0.0.1' ||
+        baseUrl.hostname === '::1'
+      );
+
+    if (
+      !isLocalDevelopment &&
+      baseUrl.protocol !== 'https:'
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_HTTPS_REQUIRED',
+        'HTTPS is required for lender integrations.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    this.validateHost(
+      baseUrl.hostname,
+      isLocalDevelopment,
+    );
+
+    const pathUrl =
+      new URL(
+        requestPath,
+        'https://path.invalid',
+      );
+
+    const basePath =
+      baseUrl.pathname
+        .replace(/\/+$/, '');
+
+    const endpointPath =
+      pathUrl.pathname
+        .replace(/^\/+/, '');
+
+    baseUrl.pathname =
+      [
+        basePath,
+        endpointPath,
+      ]
+        .filter(Boolean)
+        .join('/')
+        .replace(/\/{2,}/g, '/');
+
+    baseUrl.search =
+      pathUrl.search;
+
+    return baseUrl;
+  }
+
+  async requestJson<T>(
+    input: {
+      transport:
+        LenderIntegrationTransportConfig;
+
+      endpointName:
+        string;
+
+      path:
+        string;
+
+      method:
+        LenderHttpMethod;
+
+      correlationId:
+        string;
+
+      idempotencyKey?:
+        string;
+
+      body?:
+        string;
+
+      headers?:
+        Record<string, string>;
+
+      maxRequestBytes?:
+        number;
+
+      maxResponseBytes?:
+        number;
+    },
+  ): Promise<{
+    status: number;
+    data: T;
+  }> {
+    const url =
+      this.resolveRequestUrl(
+        input.transport,
+        input.path,
+      );
+
+    const requestLimit =
+      input.maxRequestBytes ??
+      DEFAULT_REQUEST_LIMIT;
+
+    const responseLimit =
+      input.maxResponseBytes ??
+      DEFAULT_RESPONSE_LIMIT;
+
+    const body =
+      input.body ?? '';
+
+    const bodySize =
+      Buffer.byteLength(
+        body,
+        'utf8',
+      );
+
+    if (bodySize > requestLimit) {
+      throw new LenderIntegrationError(
+        'LENDER_REQUEST_BODY_TOO_LARGE',
+        'Lender request body exceeds the configured maximum size.',
+        'PERMANENT_VALIDATION',
+      );
+    }
+
+    const headers: Record<
+      string,
+      string
+    > = {
+      'content-type':
+        'application/json',
+
+      'x-correlation-id':
+        input.correlationId,
+
+      ...(input.idempotencyKey
+        ? {
+            'idempotency-key':
+              input.idempotencyKey,
+          }
+        : {}),
+
+      ...this.authenticationHeaders(
+        input.transport,
+      ),
+
       ...(input.headers ?? {}),
     };
+
+    const startedAt =
+      Date.now();
+
     try {
-      const response = await firstValueFrom(this.http.request<T>({
-        url: validatedUrl.toString(),
-        method: input.method,
-        data: input.body,
-        headers,
-        timeout: input.transport.requestTimeoutMs,
-        maxRedirects: 0,
-        maxContentLength: 1_048_576,
-        maxBodyLength: 1_048_576,
-      }));
-      this.logger.log(`Lender endpoint=${input.endpointName} lenderId=${input.transport.lenderId} status=${response.status} durationMs=${Date.now() - startedAt} correlationId=${input.correlationId}`);
-      return { status: response.status, data: response.data };
+      const response =
+        await firstValueFrom(
+          this.http.request<T>({
+            url:
+              url.toString(),
+
+            method:
+              input.method,
+
+            data:
+              input.method === 'GET'
+                ? undefined
+                : body,
+
+            headers,
+
+            timeout:
+              input.transport
+                .requestTimeoutMs,
+
+            maxRedirects:
+              0,
+
+            maxContentLength:
+              responseLimit,
+
+            maxBodyLength:
+              requestLimit,
+
+            transformRequest:
+              input.method === 'GET'
+                ? undefined
+                : [
+                    (
+                      value:
+                        unknown,
+                    ) => value,
+                  ],
+          }),
+        );
+
+      this.logger.log(
+        [
+          `Lender endpoint=${input.endpointName}`,
+          `lenderId=${input.transport.lenderId}`,
+          `status=${response.status}`,
+          `durationMs=${Date.now() - startedAt}`,
+          `correlationId=${input.correlationId}`,
+        ].join(' '),
+      );
+
+      return {
+        status:
+          response.status,
+
+        data:
+          response.data,
+      };
     } catch (error) {
-      const normalized = normalizeLenderIntegrationError(error);
-      this.logger.warn(`Lender endpoint=${input.endpointName} lenderId=${input.transport.lenderId} code=${normalized.code} durationMs=${Date.now() - startedAt} correlationId=${input.correlationId}`);
+      const normalized =
+        normalizeLenderIntegrationError(
+          error,
+        );
+
+      this.logger.warn(
+        [
+          `Lender endpoint=${input.endpointName}`,
+          `lenderId=${input.transport.lenderId}`,
+          `code=${normalized.code}`,
+          `durationMs=${Date.now() - startedAt}`,
+          `correlationId=${input.correlationId}`,
+        ].join(' '),
+      );
+
       throw normalized;
     }
   }
 
-  private authenticationHeaders(transport: LenderIntegrationTransportConfig): Record<string, string> {
-    if (transport.authType === 'NONE') return {};
-    if (!transport.credentialSecretReference) {
-      throw new LenderIntegrationError('LENDER_CREDENTIAL_REFERENCE_MISSING', 'Lender credential secret reference is missing.', 'AUTHENTICATION_CONFIGURATION');
+  private authenticationHeaders(
+    transport:
+      LenderIntegrationTransportConfig,
+  ): Record<string, string> {
+    if (
+      transport.authType === 'NONE' ||
+      transport.authType === 'CUSTOM'
+    ) {
+      return {};
     }
-    const secret = this.config.get<string>(transport.credentialSecretReference);
+
+    const reference =
+      transport
+        .credentialSecretReference;
+
+    if (!reference) {
+      throw new LenderIntegrationError(
+        'LENDER_CREDENTIAL_REFERENCE_MISSING',
+        'Lender credential secret reference is missing.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
+    }
+
+    const secret =
+      this.config.get<string>(
+        reference,
+      );
+
     if (!secret) {
-      throw new LenderIntegrationError('LENDER_CREDENTIAL_NOT_CONFIGURED', 'Referenced lender credential is not configured.', 'AUTHENTICATION_CONFIGURATION');
+      throw new LenderIntegrationError(
+        'LENDER_CREDENTIAL_NOT_CONFIGURED',
+        'Referenced lender credential is not configured.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
     }
-    if (transport.authType === 'BEARER_TOKEN') return { authorization: `Bearer ${secret}` };
-    if (transport.authType === 'BASIC') return { authorization: `Basic ${Buffer.from(secret).toString('base64')}` };
-    if (transport.authType === 'CUSTOM') return {};
-    throw new LenderIntegrationError('LENDER_AUTH_ADAPTER_REQUIRED', `Authentication type ${transport.authType} requires an official adapter-specific header mapping.`, 'AUTHENTICATION_CONFIGURATION');
+
+    if (
+      transport.authType ===
+      'BEARER_TOKEN'
+    ) {
+      return {
+        authorization:
+          `Bearer ${secret}`,
+      };
+    }
+
+    if (
+      transport.authType === 'BASIC'
+    ) {
+      return {
+        authorization:
+          `Basic ${Buffer
+            .from(secret, 'utf8')
+            .toString('base64')}`,
+      };
+    }
+
+    throw new LenderIntegrationError(
+      'LENDER_AUTH_TYPE_NOT_SUPPORTED',
+      `Authentication type ${transport.authType} is not supported by the generic HTTP client.`,
+      'AUTHENTICATION_CONFIGURATION',
+    );
   }
 
-  private validateUrlStrict(baseUrl: string, requestPath: string): URL {
-    if (!requestPath.startsWith('/')) {
-      throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'Path must be relative and start with /');
-    }
-    if (requestPath.startsWith('//')) {
-      throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'Path must not start with //');
-    }
-    
-    // Check for unresolved placeholders
-    if (requestPath.includes('{') && requestPath.includes('}')) {
-      throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'Unresolved path placeholder detected');
+  private validateHost(
+    hostname:
+      string,
+
+    isLocalDevelopment:
+      boolean,
+  ): void {
+    const normalizedHost =
+      hostname
+        .trim()
+        .toLowerCase();
+
+    if (!normalizedHost) {
+      throw new LenderIntegrationError(
+        'LENDER_HOST_INVALID',
+        'Lender host is invalid.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
     }
 
-    const url = new URL(requestPath, baseUrl);
-
-    if (this.config.get('NODE_ENV') !== 'development' && url.protocol !== 'https:') {
-      throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'Only HTTPS is allowed outside development');
+    if (
+      !isLocalDevelopment &&
+      this.isPrivateHost(
+        normalizedHost,
+      )
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_PRIVATE_HOST_BLOCKED',
+        'Private, loopback, or link-local lender hosts are blocked.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
     }
 
-    if (url.username || url.password) {
-      throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'Embedded credentials in URL are blocked');
+    const rawAllowlist =
+      this.config.get<string>(
+        'LENDER_INTEGRATION_ALLOWED_HOSTS',
+      );
+
+    const allowedHosts =
+      (rawAllowlist ?? '')
+        .split(',')
+        .map((host) =>
+          host
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean);
+
+    if (
+      !isLocalDevelopment &&
+      allowedHosts.length === 0
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_HOST_ALLOWLIST_MISSING',
+        'Lender integration host allowlist is not configured.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
     }
 
-    if (url.hash) {
-      throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'URL fragments are not allowed');
+    if (
+      allowedHosts.length > 0 &&
+      !allowedHosts.includes(
+        normalizedHost,
+      )
+    ) {
+      throw new LenderIntegrationError(
+        'LENDER_HOST_NOT_ALLOWED',
+        'Lender host is not present in the configured allowlist.',
+        'AUTHENTICATION_CONFIGURATION',
+      );
     }
+  }
 
-    const hostname = url.hostname;
+  private isPrivateHost(
+    hostname:
+      string,
+  ): boolean {
     if (
       hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === '::1' ||
-      hostname.startsWith('10.') ||
-      hostname.startsWith('192.168.') ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+      hostname === '::1'
     ) {
-      if (this.config.get('NODE_ENV') !== 'development') {
-        throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', 'Private network targets are blocked outside development');
-      }
+      return true;
     }
 
-    const allowlistStr = this.config.get<string>('LENDER_HOST_ALLOWLIST');
-    if (allowlistStr) {
-      const allowedHosts = allowlistStr.split(',').map(h => h.trim());
-      if (!allowedHosts.includes(hostname)) {
-        throw new LenderIntegrationError('SSRF_ATTACK_PREVENTED', `Host ${hostname} is not in the allowlist`);
-      }
+    if (isIP(hostname) === 4) {
+      const parts =
+        hostname
+          .split('.')
+          .map(Number);
+
+      const [a, b] =
+        parts;
+
+      return (
+        a === 10 ||
+        a === 127 ||
+        (
+          a === 169 &&
+          b === 254
+        ) ||
+        (
+          a === 172 &&
+          b >= 16 &&
+          b <= 31
+        ) ||
+        (
+          a === 192 &&
+          b === 168
+        )
+      );
     }
 
-    return url;
+    if (isIP(hostname) === 6) {
+      return (
+        hostname.startsWith('fc') ||
+        hostname.startsWith('fd') ||
+        hostname.startsWith('fe80')
+      );
+    }
+
+    return false;
   }
 }

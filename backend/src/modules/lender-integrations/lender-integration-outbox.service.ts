@@ -88,6 +88,56 @@ export class LenderIntegrationOutboxService {
       throw new BadRequestException('Existing lender application link conflicts with the immutable MLM allocation.');
     }
     const idempotencyKey = `${application.applicationNumber}:LENDER_CREATE_APPLICATION:V1`;
+    
+    let platformLan =
+  application.platformLan;
+
+if (!platformLan) {
+  const generatedLan =
+    `FTPL${application.id
+      .toString()
+      .padStart(8, '0')}`;
+
+  await tx.plApplication
+    .updateMany({
+      where: {
+        id:
+          application.id,
+
+        platformLan:
+          null,
+      },
+
+      data: {
+        platformLan:
+          generatedLan,
+      },
+    });
+
+  const updated =
+    await tx.plApplication
+      .findUniqueOrThrow({
+        where: {
+          id:
+            application.id,
+        },
+
+        select: {
+          platformLan:
+            true,
+        },
+      });
+
+  platformLan =
+    updated.platformLan;
+}
+
+if (!platformLan) {
+  throw new BadRequestException(
+    'Platform LAN could not be generated.',
+  );
+}
+
     return tx.lenderIntegrationOutbox.upsert({
       where: { idempotencyKey },
       create: {
@@ -122,6 +172,7 @@ export class LenderIntegrationOutboxService {
     const application = await this.prisma.plApplication.findUnique({
       where: { id: applicationId },
       include: {
+        customer: true,
         lenderApplicationLink: true,
         employmentSnapshot: true,
         kycSnapshot: true,
@@ -135,7 +186,7 @@ export class LenderIntegrationOutboxService {
     const link = application.lenderApplicationLink;
     if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) reasons.push('CREATE_NOT_ACKNOWLEDGED');
     if (!link?.partnerApplicationId) reasons.push('PARTNER_APPLICATION_ID_MISSING');
-    if (link?.lastSyncedStage === 'CREATE') reasons.push('CONSENT_NOT_ACKNOWLEDGED');
+    if (link?.lastSyncedStage !== 'CONSENT' && link?.lastSyncedStage !== 'UPDATE' && link?.lastSyncedStage !== 'DOCUMENT') reasons.push('CONSENT_NOT_ACKNOWLEDGED');
     const employment = application.employmentSnapshot;
     if (!employment?.completedAt) reasons.push('EMPLOYMENT_SNAPSHOT_MISSING');
     if (!employment?.monthlyIncome || Number(employment.monthlyIncome) <= 0) reasons.push('MONTHLY_INCOME_MISSING');
@@ -143,6 +194,7 @@ export class LenderIntegrationOutboxService {
     if (employment?.employmentType === 'SELF_EMPLOYED' && (!employment.businessName || !employment.businessConstitution)) reasons.push('BUSINESS_DETAILS_INCOMPLETE');
     if (!application.liveness || application.liveness.verificationStatus !== 'VERIFIED' || !application.liveness.verifiedAt || !application.liveness.photoDocument) reasons.push('LIVENESS_NOT_VERIFIED');
     if (!application.kycSnapshot || application.kycSnapshot.verificationStatus !== 'VERIFIED' || !application.kycSnapshot.verifiedAt) reasons.push('DIGILOCKER_KYC_NOT_VERIFIED');
+    if (!application.kycSnapshot?.verifiedName) reasons.push('AADHAAR_VERIFIED_NAME_MISSING');
     const permanent = application.addresses.find((address) => address.addressType === 'PERMANENT');
     const current = application.addresses.find((address) => address.addressType === 'CURRENT');
     if (!permanent) reasons.push('PERMANENT_ADDRESS_MISSING');

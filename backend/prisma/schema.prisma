@@ -1085,8 +1085,9 @@ model PlCustomerDocument {
   createdBy BigInt? @map("created_by") @db.UnsignedBigInt
   updatedBy BigInt? @map("updated_by") @db.UnsignedBigInt
 
-  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt               DateTime                 @updatedAt @map("updated_at") @db.DateTime(6)
+  lenderDocumentTransfers LenderDocumentTransfer[]
 
   @@index([customerId], map: "idx_pl_customer_docs_customer_id")
   @@index([documentType], map: "idx_pl_customer_docs_type")
@@ -1146,6 +1147,7 @@ enum LenderIntegrationStage {
   DECISION
   STATUS
   CONSENT
+  DOCUMENT
 }
 
 enum LenderIntegrationEventType {
@@ -1154,6 +1156,7 @@ enum LenderIntegrationEventType {
   LENDER_REQUEST_DECISION
   LENDER_STATUS_CHECK
   LENDER_SUBMIT_CONSENT
+  LENDER_UPLOAD_DOCUMENT
 }
 
 enum LenderIntegrationOutboxStatus {
@@ -1260,6 +1263,8 @@ model PlApplication {
   assessmentFeeTotalAmount Decimal? @map("assessment_fee_total_amount") @db.Decimal(15, 2)
   assessmentFeeCurrency    String?  @default("INR") @map("assessment_fee_currency") @db.VarChar(10)
 
+  platformLan String? @unique @map("platform_lan") @db.VarChar(50)
+
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
@@ -1297,6 +1302,7 @@ model LenderIntegrationConfig {
   statusPath                String?                   @db.VarChar(255)
   webhookPath               String?                   @db.VarChar(255)
   webhookSecretReference    String?                   @db.VarChar(150)
+  documentUploadPath        String?                   @db.VarChar(255)
   connectTimeoutMs          Int                       @default(5000)
   requestTimeoutMs          Int                       @default(15000)
   maximumRetryAttempts      Int                       @default(5)
@@ -1352,13 +1358,16 @@ model LenderApplicationLink {
   partnerApplicationId     String?                          @db.VarChar(150)
   partnerReference         String?                          @db.VarChar(150)
   createStatus             LenderIntegrationOperationStatus @default(NOT_STARTED)
+  consentStatus            LenderIntegrationOperationStatus @default(NOT_STARTED)
   updateStatus             LenderIntegrationOperationStatus @default(NOT_STARTED)
   decisionStatus           LenderIntegrationOperationStatus @default(NOT_STARTED)
   lastSyncedStage          LenderIntegrationStage?
   createIdempotencyKey     String                           @unique @db.VarChar(191)
+  consentIdempotencyKey    String?                          @unique @db.VarChar(191)
   updateIdempotencyKey     String?                          @unique @db.VarChar(191)
   decisionIdempotencyKey   String?                          @unique @db.VarChar(191)
   createPayloadVersion     Int                              @default(1)
+  consentPayloadVersion    Int                              @default(1)
   updatePayloadVersion     Int                              @default(1)
   decisionPayloadVersion   Int                              @default(1)
   normalizedDecision       LenderNormalizedDecision?
@@ -1372,11 +1381,12 @@ model LenderApplicationLink {
   createdAt                DateTime                         @default(now())
   updatedAt                DateTime                         @updatedAt
 
-  application            PlApplication           @relation(fields: [applicationId], references: [id], onDelete: Restrict)
-  lender                 Lender                  @relation(fields: [lenderId], references: [id], onDelete: Restrict)
-  lenderProduct          LenderProduct           @relation(fields: [lenderProductId], references: [id], onDelete: Restrict)
-  productStrategyVersion LenderProductVersion    @relation(fields: [productStrategyVersionId], references: [id], onDelete: Restrict)
-  integrationConfig      LenderIntegrationConfig @relation(fields: [integrationConfigId], references: [id], onDelete: Restrict)
+  application            PlApplication            @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  lender                 Lender                   @relation(fields: [lenderId], references: [id], onDelete: Restrict)
+  lenderProduct          LenderProduct            @relation(fields: [lenderProductId], references: [id], onDelete: Restrict)
+  productStrategyVersion LenderProductVersion     @relation(fields: [productStrategyVersionId], references: [id], onDelete: Restrict)
+  integrationConfig      LenderIntegrationConfig  @relation(fields: [integrationConfigId], references: [id], onDelete: Restrict)
+  documentTransfers      LenderDocumentTransfer[]
 
   @@index([lenderId, createStatus])
   @@index([adapterKey, adapterVersion])
@@ -1392,6 +1402,7 @@ model LenderIntegrationOutbox {
   integrationStage     LenderIntegrationStage
   payloadVersion       Int
   idempotencyKey       String                        @unique @db.VarChar(191)
+  documentTransferId   BigInt?                       @db.UnsignedBigInt
   status               LenderIntegrationOutboxStatus @default(PENDING)
   attemptCount         Int                           @default(0)
   availableAt          DateTime                      @default(now())
@@ -1439,15 +1450,18 @@ model ApplicationEmploymentSnapshot {
 }
 
 model ApplicationKycSnapshot {
-  id                 String                        @id @default(cuid())
-  applicationId      BigInt                        @unique @db.UnsignedBigInt
-  provider           String                        @db.VarChar(50)
-  providerReference  String                        @db.VarChar(255)
-  verificationStatus ApplicationVerificationStatus
-  verifiedName       String?                       @db.VarChar(200)
-  verifiedAt         DateTime?
-  createdAt          DateTime                      @default(now())
-  updatedAt          DateTime                      @updatedAt
+  id                  String                        @id @default(cuid())
+  applicationId       BigInt                        @unique @db.UnsignedBigInt
+  provider            String                        @db.VarChar(50)
+  providerReference   String                        @db.VarChar(255)
+  verificationStatus  ApplicationVerificationStatus
+  maskedAadhaar       String?                       @db.Char(14)
+  verifiedName        String?                       @db.VarChar(200)
+  verifiedDateOfBirth String?                       @db.VarChar(10)
+  verifiedGender      String?                       @db.VarChar(10)
+  verifiedAt          DateTime?
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
 
   application PlApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
 
@@ -2648,4 +2662,41 @@ model PartnerApiAuditLog {
   @@index([clientId, createdAt])
   @@index([correlationId])
   @@map("partner_api_audit_logs")
+}
+
+enum LenderDocumentTransferStatus {
+  PENDING
+  PROCESSING
+  ACKNOWLEDGED
+  FAILED
+  SKIPPED
+}
+
+model LenderDocumentTransfer {
+  id                      BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  applicationId           BigInt  @map("application_id") @db.UnsignedBigInt
+  lenderApplicationLinkId String  @map("lender_application_link_id")
+  sourceDocumentId        BigInt  @map("source_document_id") @db.UnsignedBigInt
+  documentType            String  @map("document_type") @db.VarChar(50)
+  sourceFileSha256        String? @map("source_file_sha256") @db.Char(64)
+
+  sourceDocument    PlCustomerDocument           @relation(fields: [sourceDocumentId], references: [id], onDelete: Restrict)
+  sourceFileSize    Int?                         @map("source_file_size")
+  sourceMimeType    String?                      @map("source_mime_type") @db.VarChar(100)
+  partnerDocumentId String?                      @map("partner_document_id") @db.VarChar(100)
+  transferStatus    LenderDocumentTransferStatus @default(PENDING) @map("transfer_status")
+  providerStatus    String?                      @map("provider_status") @db.VarChar(50)
+  idempotencyKey    String                       @unique @map("idempotency_key") @db.VarChar(100)
+  acknowledgedAt    DateTime?                    @map("acknowledged_at") @db.DateTime(0)
+  lastErrorCode     String?                      @map("last_error_code") @db.VarChar(100)
+  lastErrorMessage  String?                      @map("last_error_message") @db.Text
+  createdAt         DateTime                     @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt         DateTime                     @updatedAt @map("updated_at") @db.DateTime(0)
+
+  lenderApplicationLink LenderApplicationLink @relation(fields: [lenderApplicationLinkId], references: [id], onDelete: Cascade)
+
+  @@unique([lenderApplicationLinkId, sourceDocumentId, documentType])
+  @@index([applicationId])
+  @@index([transferStatus])
+  @@map("lender_document_transfers")
 }
