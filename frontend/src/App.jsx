@@ -8,7 +8,7 @@ import { PermissionRoute, ProtectedRoute } from './components/ProtectedRoute';
 import CustomerLayout from './components/layout/customer/CustomerLayout';
 import CustomerSignIn from './features/auth/pages/CustomerSignIn';
 import CustomerDashboard from './features/customer/pages/CustomerDashboard';
-import CustomerPlaceholderPage from './features/customer/pages/CustomerPlaceholderPage';
+import CustomerSupportPage from './features/customer/pages/CustomerSupportPage';
 import MyApplicationPage from './features/customer/pages/MyApplicationPage';
 import PostApprovalJourneyPage from './features/customer/pages/PostApprovalJourneyPage';
 import DigiLockerCallbackPage from './features/customer/pages/DigiLockerCallbackPage';
@@ -84,15 +84,7 @@ export default function App() {
         <Route path="/customer/loan/:lan/details" element={<CustomerLoanDetailsPage />} />
         <Route path="/customer/loan-details" element={<CustomerLoanDetailsPage />} />
         <Route path="/customer/profile" element={<CustomerProfilePage />} />
-        <Route
-          path="/customer/support"
-          element={
-            <CustomerPlaceholderPage
-              title="Help & Support"
-              description="Contact the Fintree Finance customer support team."
-            />
-          }
-        />
+        <Route path="/customer/support" element={<CustomerSupportPage />} />
       </Route>
 
       {/* Admin public login */}
