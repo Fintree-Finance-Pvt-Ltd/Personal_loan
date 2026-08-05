@@ -289,100 +289,58 @@ async markStageFailure(
   error: LenderIntegrationError,
   retrying: boolean,
 ): Promise<void> {
-  const event =
-    await this.prisma
-      .lenderIntegrationOutbox
-      .findFirst({
-        where: {
-          id: eventId,
-          status: 'PROCESSING',
-          lockToken,
-        },
-      });
-
-  if (!event) {
-    return;
-  }
-
-  if (
-    event.integrationStage ===
-      'DOCUMENT' &&
-    event.documentTransferId
-  ) {
-    await this.prisma
-      .lenderDocumentTransfer
-      .updateMany({
-        where: {
-          id:
-            event.documentTransferId,
-        },
-
-        data: {
-          transferStatus:
-            retrying
-              ? 'PENDING'
-              : 'FAILED',
-
-          lastErrorCode:
-            error.code,
-
-          lastErrorMessage:
-            error.message,
-        },
-      });
-
-    return;
-  }
-
-  const status = (
-    retrying ? 'RETRY_PENDING' : 'FAILED'
-  ) as LenderIntegrationOperationStatus;
-
-  const data =
-    event.integrationStage ===
-      'CREATE'
-      ? {
-          createStatus:
-            status,
-        }
-      : event.integrationStage ===
-          'CONSENT'
-        ? {
-            consentStatus:
-              status,
-          }
-        : event.integrationStage ===
-            'UPDATE'
-          ? {
-              updateStatus:
-                status,
-            }
-          : {
-              decisionStatus:
-                status,
-            };
-
-  await this.prisma
-    .lenderApplicationLink
-    .updateMany({
+  await this.prisma.$transaction(async (tx) => {
+    const event = await tx.lenderIntegrationOutbox.findFirst({
       where: {
-        applicationId:
-          event.applicationId,
-      },
-
-      data: {
-        ...data,
-
-        lastAttemptAt:
-          new Date(),
-
-        lastErrorCode:
-          error.code,
-
-        lastErrorMessage:
-          error.message,
+        id: eventId,
+        status: 'PROCESSING',
+        lockToken,
       },
     });
+
+    if (!event) {
+      return;
+    }
+
+    if (event.integrationStage === 'DOCUMENT' && event.documentTransferId) {
+      await tx.lenderDocumentTransfer.updateMany({
+        where: {
+          id: event.documentTransferId,
+        },
+        data: {
+          transferStatus: retrying ? 'PENDING' : 'FAILED',
+          lastErrorCode: error.code,
+          lastErrorMessage: error.message,
+        },
+      });
+      return;
+    }
+
+    const status = (
+      retrying ? 'RETRY_PENDING' : 'FAILED'
+    ) as LenderIntegrationOperationStatus;
+
+    const data =
+      event.integrationStage === 'CREATE'
+        ? { createStatus: status }
+        : event.integrationStage === 'CONSENT'
+          ? { consentStatus: status }
+          : event.integrationStage === 'UPDATE'
+            ? { updateStatus: status }
+            : { decisionStatus: status };
+
+    await tx.lenderApplicationLink.updateMany({
+      where: {
+        applicationId: event.applicationId,
+      },
+      data: {
+        ...data,
+        lastAttemptAt: new Date(),
+        lastErrorCode: error.code,
+        lastErrorMessage: error.message,
+      },
+    });
+  });
 }
 
   private async createLink(application: any): Promise<any> {
@@ -1629,18 +1587,25 @@ async markStageFailure(
     transfer.sourceDocument;
 
   if (
-    document.applicationId !==
-      application.id ||
-    document.customerId !==
-      application.customerId ||
-    document.status !==
-      'VERIFIED'
+    document.applicationId !== application.id ||
+    document.customerId !== application.customerId ||
+    document.status !== 'VERIFIED' ||
+    document.applicantType !== 'BORROWER' ||
+    document.documentType !== 'AADHAAR_CARD'
   ) {
     throw new LenderIntegrationError(
       'LENDER_DOCUMENT_OWNERSHIP_MISMATCH',
-      'Source document is not a verified document for this application.',
+      'Source document is not a verified borrower Aadhaar document for this application.',
       'PERMANENT_VALIDATION',
     );
+  }
+
+  const mimeType = document.mimeType.trim().toLowerCase();
+  if (transfer.documentType === 'AADHAAR_XML' && mimeType !== 'application/xml' && mimeType !== 'text/xml') {
+    throw new LenderIntegrationError('LENDER_DOCUMENT_MIME_MISMATCH', 'AADHAAR_XML requires XML mime type', 'PERMANENT_VALIDATION');
+  }
+  if (transfer.documentType === 'AADHAAR_PDF' && mimeType !== 'application/pdf') {
+    throw new LenderIntegrationError('LENDER_DOCUMENT_MIME_MISMATCH', 'AADHAAR_PDF requires PDF mime type', 'PERMANENT_VALIDATION');
   }
 
   if (

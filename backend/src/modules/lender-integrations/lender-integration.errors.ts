@@ -23,7 +23,10 @@ export function normalizeLenderIntegrationError(error: unknown): LenderIntegrati
   if (error instanceof LenderIntegrationError) return error;
   const status = Number((error as any)?.response?.status ?? (error as any)?.status);
   const code = String((error as any)?.code ?? 'LENDER_INTEGRATION_UNKNOWN');
-  if (['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'].includes(code) || [429, 502, 503, 504].includes(status)) {
+  if (
+    ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'ECONNREFUSED'].includes(code) ||
+    [429, 500, 502, 503, 504].includes(status)
+  ) {
     return new LenderIntegrationError(code, redactLenderIntegrationText(error), 'TEMPORARY', true);
   }
   if (status === 401 || status === 403) {

@@ -5,9 +5,14 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 type TransactionClient = Prisma.TransactionClient;
 
+import { LenderAdapterRegistry } from './lender-adapter.registry';
+
 @Injectable()
 export class LenderIntegrationOutboxService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly adapters: LenderAdapterRegistry,
+  ) {}
 
   async recordDataSharingConsent(input: {
     customerId: bigint;
@@ -38,16 +43,31 @@ export class LenderIntegrationOutboxService {
     const consentTextHash = createHash('sha256').update(consentText, 'utf8').digest('hex');
     const acceptedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
-      const consent = await tx.lenderDataSharingConsent.upsert({
+      let consent = await tx.lenderDataSharingConsent.findUnique({
         where: { applicationId_lenderId_consentVersion: { applicationId: application.id, lenderId, consentVersion } },
-        create: { applicationId: application.id, customerId: application.customerId, lenderId, consentTemplateId, consentVersion, consentText, consentTextHash, consentReference, acceptedAt, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
-        update: { consentTemplateId, consentText, consentTextHash, consentReference, acceptedAt, revokedAt: null, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
       });
-      await tx.applicationStageConsent.upsert({
+      if (consent) {
+        if (consent.revokedAt) {
+          throw new BadRequestException('Consent was revoked and cannot be overwritten.');
+        }
+      } else {
+        consent = await tx.lenderDataSharingConsent.create({
+          data: { applicationId: application.id, customerId: application.customerId, lenderId, consentTemplateId, consentVersion, consentText, consentTextHash, consentReference, acceptedAt, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
+        });
+      }
+
+      let stageConsent = await tx.applicationStageConsent.findUnique({
         where: { applicationId_lenderId_consentType_consentVersion: { applicationId: application.id, lenderId, consentType: 'DATA_SHARING', consentVersion } },
-        create: { applicationId: application.id, lenderId, consentType: 'DATA_SHARING', consentTemplateId, consentVersion, consentText, consentTextHash, acceptedAt, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
-        update: { consentTemplateId, consentText, consentTextHash, acceptedAt, revokedAt: null, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
       });
+      if (stageConsent) {
+        if (stageConsent.revokedAt) {
+          throw new BadRequestException('Stage consent was revoked and cannot be overwritten.');
+        }
+      } else {
+        stageConsent = await tx.applicationStageConsent.create({
+          data: { applicationId: application.id, lenderId, consentType: 'DATA_SHARING', consentTemplateId, consentVersion, consentText, consentTextHash, acceptedAt, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
+        });
+      }
       return consent;
     });
   }
@@ -184,9 +204,10 @@ if (!platformLan) {
     if (!application) throw new BadRequestException('Canonical application was not found.');
     const reasons: string[] = [];
     const link = application.lenderApplicationLink;
-    if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) reasons.push('CREATE_NOT_ACKNOWLEDGED');
+    if (!application.platformLan) reasons.push('PLATFORM_LAN_MISSING');
+    if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) reasons.push('CREATE_NOT_COMPLETED');
     if (!link?.partnerApplicationId) reasons.push('PARTNER_APPLICATION_ID_MISSING');
-    if (link?.lastSyncedStage !== 'CONSENT' && link?.lastSyncedStage !== 'UPDATE' && link?.lastSyncedStage !== 'DOCUMENT') reasons.push('CONSENT_NOT_ACKNOWLEDGED');
+    if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.consentStatus)) reasons.push('CONSENT_NOT_COMPLETED');
     const employment = application.employmentSnapshot;
     if (!employment?.completedAt) reasons.push('EMPLOYMENT_SNAPSHOT_MISSING');
     if (!employment?.monthlyIncome || Number(employment.monthlyIncome) <= 0) reasons.push('MONTHLY_INCOME_MISSING');
@@ -236,11 +257,18 @@ if (!platformLan) {
         const expected = templates[submitted.consentType];
         if (!expected || submitted.consentTemplateId !== expected.id || submitted.consentVersion !== expected.version || submitted.consentText !== expected.text) throw new BadRequestException(`Invalid ${submitted.consentType} consent evidence.`);
         const consentTextHash = createHash('sha256').update(expected.text, 'utf8').digest('hex');
-        await tx.applicationStageConsent.upsert({
+        let stageConsent = await tx.applicationStageConsent.findUnique({
           where: { applicationId_lenderId_consentType_consentVersion: { applicationId: application.id, lenderId: application.lenderId!, consentType: submitted.consentType, consentVersion: expected.version } },
-          create: { applicationId: application.id, lenderId: application.lenderId!, consentType: submitted.consentType, consentTemplateId: expected.id, consentVersion: expected.version, consentText: expected.text, consentTextHash, acceptedAt: new Date(), ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
-          update: { consentTemplateId: expected.id, consentText: expected.text, consentTextHash, acceptedAt: new Date(), revokedAt: null, ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
         });
+        if (stageConsent) {
+          if (stageConsent.revokedAt) {
+            throw new BadRequestException(`${submitted.consentType} consent was revoked and cannot be overwritten.`);
+          }
+        } else {
+          stageConsent = await tx.applicationStageConsent.create({
+            data: { applicationId: application.id, lenderId: application.lenderId!, consentType: submitted.consentType, consentTemplateId: expected.id, consentVersion: expected.version, consentText: expected.text, consentTextHash, acceptedAt: new Date(), ipAddress: input.ipAddress?.slice(0, 64), userAgent: input.userAgent?.slice(0, 512) },
+          });
+        }
       }
     });
     try {
@@ -258,6 +286,14 @@ if (!platformLan) {
     const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId }, include: { lenderApplicationLink: true, stageConsents: true } });
     if (!application?.lenderId || !application.lenderApplicationLink) throw new BadRequestException('Lender application link is missing.');
     if (!['ACKNOWLEDGED', 'COMPLETED'].includes(application.lenderApplicationLink.updateStatus)) throw new BadRequestException('Lender UPDATE must be acknowledged before requesting a decision.');
+    
+    const config = await this.prisma.lenderIntegrationConfig.findFirst({ where: { lenderId: application.lenderId } });
+    if (!config) throw new BadRequestException('Lender integration config not found.');
+    
+    const adapter = this.adapters.resolve(config.adapterKey, config.adapterVersion);
+    if (!adapter.capabilities.decisionRequest && !adapter.capabilities.statusPolling) {
+      throw new BadRequestException('The selected lender adapter does not support decision request or status polling.');
+    }
     const required = ['BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'] as const;
     for (const type of required) {
       const consent = application.stageConsents.find((item) => item.consentType === type && !item.revokedAt);

@@ -27,11 +27,7 @@ export class LoanService {
     private readonly configService: ConfigService,
   ) { }
 
-  private generateLan(): string {
-    const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, ''); // YYMMDD
-    const sequence = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-    return `PL${dateStr}${sequence}`;
-  }
+
 
   async findLoanByLanAndCustomer(lan: string, customerId: bigint) {
     if (!customerId || customerId <= 0n) {
@@ -83,7 +79,10 @@ export class LoanService {
       throw new BadRequestException('Application is not approved by lender');
     }
 
-    const lan = this.generateLan();
+    const lan = application.platformLan;
+    if (!lan) {
+      throw new BadRequestException('Platform LAN is missing on the application');
+    }
 
     // Create the offer valid for 30 days
     const offerValidUntil = new Date();

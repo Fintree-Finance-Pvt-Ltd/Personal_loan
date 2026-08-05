@@ -32,7 +32,7 @@ export class LenderDecisionProcessor {
         await tx.customer.update({ where: { id: application.customerId }, data: { onboardingStatus: 'LENDER_APPROVED', lastActivityAt: decidedAt } });
         await tx.plLoan.upsert({
           where: { applicationId: application.id },
-          create: { lan: this.generateLan(), customerId: application.customerId, applicationId: application.id, lenderCode: application.lenderCode || application.lenderId || 'LENDER', status: 'LENDER_APPROVED', currentStep: 'APPROVAL_SUMMARY', approvedAmount: new Prisma.Decimal(result.approvedAmount), lenderApprovedAt: decidedAt, offerStatus: 'AVAILABLE', offerAllowedTenures: JSON.stringify([result.approvedTenure]), offerValidUntil: new Date(decidedAt.getTime() + 30 * 24 * 60 * 60 * 1000) },
+          create: { lan: application.platformLan!, customerId: application.customerId, applicationId: application.id, lenderCode: application.lenderCode || application.lenderId || 'LENDER', status: 'LENDER_APPROVED', currentStep: 'APPROVAL_SUMMARY', approvedAmount: new Prisma.Decimal(result.approvedAmount), lenderApprovedAt: decidedAt, offerStatus: 'AVAILABLE', offerAllowedTenures: JSON.stringify([result.approvedTenure]), offerValidUntil: new Date(decidedAt.getTime() + 30 * 24 * 60 * 60 * 1000) },
           update: {},
         });
       } else if (result.decision === 'REJECTED') {
@@ -63,7 +63,5 @@ export class LenderDecisionProcessor {
     if (completed.count !== 1) throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Lender event lease was lost before decision completion.', 'TEMPORARY', true);
   }
 
-  private generateLan(): string {
-    return `LAN${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${randomBytes(5).toString('hex').toUpperCase()}`;
-  }
+
 }

@@ -11,7 +11,7 @@ describe('LenderIntegrationOutboxService', () => {
       lenderApplicationLink: { findUnique: jest.fn().mockResolvedValue(null) },
       lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
     };
-    const service = new LenderIntegrationOutboxService({} as any);
+    const service = new LenderIntegrationOutboxService({} as any, {} as any);
     const result: any = await service.enqueueCreateAfterVerifiedPayment(tx, 1n);
     expect(result.idempotencyKey).toBe('APP-001:LENDER_CREATE_APPLICATION:V1');
     expect(result).toEqual(expect.objectContaining({ applicationId: 1n, applicationReference: 'APP-001', lenderId: 'L1', integrationStage: 'CREATE' }));
@@ -23,6 +23,7 @@ describe('LenderIntegrationOutboxService', () => {
   it('returns structured reason codes and does not enqueue an incomplete UPDATE', async () => {
     const application: any = {
       id: 1n,
+      platformLan: 'FTPL123',
       lenderApplicationLink: { createStatus: 'PENDING', partnerApplicationId: null },
       employmentSnapshot: null,
       kycSnapshot: null,
@@ -34,12 +35,13 @@ describe('LenderIntegrationOutboxService', () => {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application) },
       $transaction: jest.fn(),
     };
-    const service = new LenderIntegrationOutboxService(prisma);
+    const service = new LenderIntegrationOutboxService(prisma, {} as any);
     const result = await service.enqueueUpdateWhenReady(1n);
     expect(result.enqueued).toBe(false);
     expect(result.readiness.reasons).toEqual(expect.arrayContaining([
-      'CREATE_NOT_ACKNOWLEDGED', 'PARTNER_APPLICATION_ID_MISSING', 'EMPLOYMENT_SNAPSHOT_MISSING',
-      'MONTHLY_INCOME_MISSING', 'LIVENESS_NOT_VERIFIED', 'DIGILOCKER_KYC_NOT_VERIFIED',
+      'PLATFORM_LAN_MISSING', 'CREATE_NOT_COMPLETED', 'PARTNER_APPLICATION_ID_MISSING',
+      'CONSENT_NOT_COMPLETED', 'EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING',
+      'LIVENESS_NOT_VERIFIED', 'DIGILOCKER_KYC_NOT_VERIFIED', 'AADHAAR_VERIFIED_NAME_MISSING',
       'PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'UPDATE_CONSENT_MISSING',
     ]));
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -48,7 +50,7 @@ describe('LenderIntegrationOutboxService', () => {
   it('creates one stable UPDATE event when all prerequisites are complete', async () => {
     const consentText = 'Exact update consent';
     const application: any = {
-      id: 1n, applicationNumber: 'APP-001', lenderId: 'L1',
+      id: 1n, applicationNumber: 'APP-001', lenderId: 'L1', platformLan: 'FTPL123',
       lenderApplicationLink: { createStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1', lastSyncedStage: 'CONSENT' },
       employmentSnapshot: { completedAt: new Date(), monthlyIncome: 50000, employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer' },
       kycSnapshot: { verificationStatus: 'VERIFIED', verifiedAt: new Date(), verifiedName: 'Test Customer' },
@@ -71,7 +73,7 @@ describe('LenderIntegrationOutboxService', () => {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application) },
       $transaction: jest.fn(async (callback: any) => callback(tx)),
     };
-    const service = new LenderIntegrationOutboxService(prisma);
+    const service = new LenderIntegrationOutboxService(prisma, {} as any);
     const first = await service.enqueueUpdateWhenReady(1n);
     const second = await service.enqueueUpdateWhenReady(1n);
     expect(first.enqueued).toBe(true);
@@ -88,8 +90,10 @@ describe('LenderIntegrationOutboxService', () => {
       plApplication: { findUnique: jest.fn().mockResolvedValue({
         id: 1n, lenderId: 'L1', lenderApplicationLink: { updateStatus: 'PENDING' }, stageConsents: [],
       }) },
+      lenderIntegrationConfig: { findFirst: jest.fn().mockResolvedValue({ adapterKey: 'FINTREE_FINANCE', adapterVersion: '1' }) },
     };
-    const service = new LenderIntegrationOutboxService(prisma);
+    const adapters: any = { resolve: jest.fn().mockReturnValue({ capabilities: { decisionRequest: true } }) };
+    const service = new LenderIntegrationOutboxService(prisma, adapters);
     await expect(service.enqueueDecisionWhenReady(1n)).rejects.toThrow('Lender UPDATE must be acknowledged');
 
     prisma.plApplication.findUnique.mockResolvedValue({

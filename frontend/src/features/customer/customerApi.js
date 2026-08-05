@@ -501,6 +501,14 @@ export async function refreshCustomerAadhaarKycStatus() {
   return result?.data?.data || result?.data || result;
 }
 
+export async function retryLenderSubmission(applicationId) {
+  const result = await apiRequest('/customer/application/retry-lender-submission', {
+    method: 'POST',
+    body: JSON.stringify(applicationId ? { applicationId } : {}),
+  });
+  return result?.data?.data || result?.data || result;
+}
+
 export async function runEligibility(customerId) {
   const result = await apiRequest(`/customer/${customerId}/run-eligibility`, {
     method: 'POST',
@@ -539,6 +547,7 @@ export const customerApi = {
   getCustomerAadhaarKycStatus,
   refreshCustomerAadhaarKycStatus,
   runEligibility,
+  retryLenderSubmission,
 };
 
 

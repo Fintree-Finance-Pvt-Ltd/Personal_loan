@@ -62,51 +62,45 @@ describe('FintreeFinanceV1Adapter', () => {
   });
 
   describe('Authentication flows', () => {
-    it('throws if clientId is missing', async () => {
-      const context = getBaseContext();
-      context.transport.clientId = '';
+    it('throws if API key secret reference is missing', async () => {
+      const context = getBaseContext('API_KEY' as any);
+      context.transport.credentialSecretReference = '';
 
       await expect(adapter.createApplication(context as any)).rejects.toThrow(
-        new LenderIntegrationError('AUTHENTICATION_CONFIGURATION', 'Fintree client ID is required for HMAC authentication.')
+        new LenderIntegrationError('FINTREE_SECRET_REFERENCE_MISSING', 'Fintree secret reference is missing.', 'AUTHENTICATION_CONFIGURATION')
       );
     });
 
-    it('handles CUSTOM auth (HMAC) accurately by hashing serialized bytes exactly once', async () => {
-      const context = getBaseContext('CUSTOM');
-      configService.get.mockReturnValue('my-secret-key');
-      httpService.requestJson.mockResolvedValue({ status: 200, data: { success: true, data: { status: 'ACKNOWLEDGED', partnerApplicationId: 'P-123', partnerApplicationNumber: 'PN-123', externalApplicationReference: 'APP-123', lan: 'FTPL123', correlationId: 'corr-1', createdAt: '2026-08-04T00:00:00Z' } } });
+    it('throws if API key secret is not configured', async () => {
+      const context = getBaseContext('API_KEY' as any);
+      configService.get.mockReturnValue(undefined);
+
+      await expect(adapter.createApplication(context as any)).rejects.toThrow(
+        new LenderIntegrationError('FINTREE_SECRET_NOT_CONFIGURED', 'Fintree authentication secret is not configured.', 'AUTHENTICATION_CONFIGURATION')
+      );
+    });
+
+    it('injects API key header correctly', async () => {
+      const context = getBaseContext('API_KEY' as any);
+      configService.get.mockReturnValue('my-api-key');
+      httpService.requestJson.mockResolvedValue({ status: 200, data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'CREATED', partnerApplicationId: 'P-123', partnerApplicationNumber: 'PN-123', externalApplicationReference: 'APP-123', lan: 'FTPL123', createdAt: '2026-08-04T00:00:00Z' } } });
 
       await adapter.createApplication(context as any);
 
       expect(configService.get).toHaveBeenCalledWith('FINTREE_SECRET');
       expect(httpService.requestJson).toHaveBeenCalledWith(expect.objectContaining({
         headers: expect.objectContaining({
-          'X-Client-Id': 'fintree-client-123',
-          'X-Signature': expect.any(String),
-          'X-Nonce': expect.any(String),
-          'X-Request-Timestamp': expect.any(String)
+          'x-api-key': 'my-api-key'
         }),
       }));
-    });
-
-    it('handles BEARER_TOKEN seamlessly without adding HMAC headers', async () => {
-      const context = getBaseContext('BEARER_TOKEN');
-      configService.get.mockReturnValue('bearer-token-val'); // But adapter doesn't call it for BEARER_TOKEN
-      httpService.requestJson.mockResolvedValue({ status: 200, data: { success: true, data: { status: 'ACKNOWLEDGED', partnerApplicationId: 'P-123', partnerApplicationNumber: 'PN-123', externalApplicationReference: 'APP-123', lan: 'FTPL123', correlationId: 'corr-1', createdAt: '2026-08-04T00:00:00Z' } } });
-
-      await adapter.createApplication(context as any);
-
-      expect(httpService.requestJson).toHaveBeenCalledWith(expect.objectContaining({
-        headers: { 'X-Client-Id': 'fintree-client-123' } // No HMAC headers added
-      }));
-      // Note: LenderHttpService will inject the Authorization header separately!
     });
   });
 
   describe('Payload and Schema constraints', () => {
     it('creates an application and parses ACKNOWLEDGED successfully', async () => {
-      const context = getBaseContext('BEARER_TOKEN');
-      httpService.requestJson.mockResolvedValue({ status: 200, data: { success: true, data: { status: 'ACKNOWLEDGED', partnerApplicationId: 'P-123', partnerApplicationNumber: 'PN-123', externalApplicationReference: 'APP-123', lan: 'FTPL123', correlationId: 'corr-1', createdAt: '2026-08-04T00:00:00Z' } } });
+      const context = getBaseContext('API_KEY' as any);
+      configService.get.mockReturnValue('my-api-key');
+      httpService.requestJson.mockResolvedValue({ status: 200, data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'CREATED', partnerApplicationId: 'P-123', partnerApplicationNumber: 'PN-123', externalApplicationReference: 'APP-123', lan: 'FTPL123', createdAt: '2026-08-04T00:00:00Z' } } });
 
       const result = await adapter.createApplication(context as any);
       expect(result.acknowledged).toBe(true);
@@ -114,12 +108,14 @@ describe('FintreeFinanceV1Adapter', () => {
     });
 
     it('rejects requestDecision explicitly for Fintree V1', async () => {
-      const context = getBaseContext('BEARER_TOKEN');
+      const context = getBaseContext('API_KEY' as any);
+      configService.get.mockReturnValue('my-api-key');
       await expect(adapter.requestDecision(context as any)).rejects.toThrow('Fintree decision contract is not enabled for adapter version 1.');
     });
 
     it('throws LENDER_VALIDATION_ERROR if required Fintree field is missing', async () => {
-      const context = getBaseContext('BEARER_TOKEN');
+      const context = getBaseContext('API_KEY' as any);
+      configService.get.mockReturnValue('my-api-key');
       httpService.requestJson.mockResolvedValue({ status: 200, data: { status: 'UNKNOWN' } });
 
       await expect(adapter.createApplication(context as any)).rejects.toThrow(LenderIntegrationError);

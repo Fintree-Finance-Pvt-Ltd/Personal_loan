@@ -4,153 +4,42 @@ info:
   version: "1.0.0"
   description: |
     API specifications for the Personal Loan Platform (PLP) to communicate with Fintree Finance.
-    Implements a strict zero-trust model utilizing HMAC authentication.
+    Implements a strict zero-trust model utilizing x-api-key authentication.
+    Constraints:
+      - Document size strictly limited to 3.5 MiB.
+      - Masked Aadhaar details only.
+      - Allowed Document MIME types: application/xml, text/xml, application/pdf.
 servers:
-  - url: https://api.fintree.local
-    description: Local Development Server
-  - url: https://api.fintree.staging
-    description: Staging Environment Server
-
-paths:
-  /create:
-    post:
-      summary: Create Application
-      operationId: createApplication
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateApplicationRequest'
-      responses:
-        "200":
-          description: Acknowledged successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreateApplicationResponse'
-        "400":
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /consent:
-    post:
-      summary: Submit Consent
-      operationId: submitConsent
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SubmitConsentRequest'
-      responses:
-        "200":
-          description: Consent recorded successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SubmitConsentResponse'
-        "400":
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /details/{partnerApplicationId}:
-    put:
-      summary: Update Application Details
-      operationId: updateDetails
-      parameters:
-        - name: partnerApplicationId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateDetailsRequest'
-      responses:
-        "200":
-          description: Details accepted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UpdateDetailsResponse'
-        "400":
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /docs/{partnerApplicationId}:
-    post:
-      summary: Upload Document
-      operationId: uploadDocument
-      parameters:
-        - name: partnerApplicationId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadDocumentRequest'
-      responses:
-        "200":
-          description: Document received
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UploadDocumentResponse'
-        "400":
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+  - url: https://uat.fintreelms.com/
+    description: UAT Environment Server
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+  parameters:
+    CorrelationIdHeader:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
   schemas:
     ErrorResponse:
       type: object
       required:
         - success
         - error
+        - correlationId
       properties:
         success:
           type: boolean
@@ -165,6 +54,11 @@ components:
               type: string
             message:
               type: string
+            details:
+              type: object
+        correlationId:
+          type: string
+          format: uuid
 
     CreateApplicationRequest:
       type: object
@@ -187,36 +81,15 @@ components:
           type: string
         customer:
           type: object
-          properties:
-            fullName:
-              type: string
-            firstName:
-              type: string
-            lastName:
-              type: string
-            fatherName:
-              type: string
-            panNumber:
-              type: string
-            dateOfBirth:
-              type: string
-              format: date
         panVerification:
           type: object
-          properties:
-            verified:
-              type: boolean
-            providerReference:
-              type: string
-            verifiedAt:
-              type: string
-              format: date-time
 
     CreateApplicationResponse:
       type: object
       required:
         - success
         - data
+        - correlationId
       properties:
         success:
           type: boolean
@@ -229,7 +102,6 @@ components:
             - status
             - partnerApplicationId
             - partnerApplicationNumber
-            - correlationId
             - createdAt
           properties:
             externalApplicationReference:
@@ -238,48 +110,60 @@ components:
               type: string
             status:
               type: string
-              enum: [ACKNOWLEDGED]
+              enum: [CREATED]
             partnerApplicationId:
               type: string
             partnerApplicationNumber:
               type: string
-            correlationId:
-              type: string
             createdAt:
               type: string
               format: date-time
+        correlationId:
+          type: string
+          format: uuid
 
     SubmitConsentRequest:
       type: object
       required:
         - externalApplicationReference
         - lan
-        - partnerApplicationId
+        - consentType
+        - consentId
+        - consentTemplateId
         - consentVersion
-        - termsAcceptance
-        - dataSharing
-        - documentSharing
+        - consentTextHash
+        - acceptedAt
       properties:
         externalApplicationReference:
           type: string
         lan:
           type: string
-        partnerApplicationId:
+        consentType:
+          type: string
+        consentId:
+          type: string
+        consentTemplateId:
           type: string
         consentVersion:
-          type: number
-        termsAcceptance:
-          type: object
-        dataSharing:
-          type: object
-        documentSharing:
-          type: object
+          type: string
+        consentTextHash:
+          type: string
+        consentReference:
+          type: string
+        acceptedAt:
+          type: string
+          format: date-time
+        ipAddress:
+          type: string
+        userAgentHash:
+          type: string
 
     SubmitConsentResponse:
       type: object
       required:
         - success
         - data
+        - correlationId
       properties:
         success:
           type: boolean
@@ -289,7 +173,6 @@ components:
           required:
             - status
             - consentReference
-            - correlationId
             - recordedAt
           properties:
             status:
@@ -297,11 +180,12 @@ components:
               enum: [RECORDED]
             consentReference:
               type: string
-            correlationId:
-              type: string
             recordedAt:
               type: string
               format: date-time
+        correlationId:
+          type: string
+          format: uuid
 
     UpdateDetailsRequest:
       type: object
@@ -340,6 +224,7 @@ components:
       required:
         - success
         - data
+        - correlationId
       properties:
         success:
           type: boolean
@@ -349,7 +234,6 @@ components:
           required:
             - detailsVersion
             - status
-            - correlationId
             - updatedAt
           properties:
             detailsVersion:
@@ -357,11 +241,12 @@ components:
             status:
               type: string
               enum: [DETAILS_ACCEPTED]
-            correlationId:
-              type: string
             updatedAt:
               type: string
               format: date-time
+        correlationId:
+          type: string
+          format: uuid
 
     UploadDocumentRequest:
       type: object
@@ -400,12 +285,14 @@ components:
           type: string
         capturedAt:
           type: string
+          format: date-time
 
     UploadDocumentResponse:
       type: object
       required:
         - success
         - data
+        - correlationId
       properties:
         success:
           type: boolean
@@ -417,7 +304,6 @@ components:
             - fileSha256
             - status
             - partnerDocumentId
-            - correlationId
             - receivedAt
           properties:
             documentType:
@@ -429,8 +315,161 @@ components:
               enum: [RECEIVED]
             partnerDocumentId:
               type: string
-            correlationId:
-              type: string
             receivedAt:
               type: string
               format: date-time
+        correlationId:
+          type: string
+          format: uuid
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /applications:
+    post:
+      summary: Create Application
+      operationId: createApplication
+      parameters:
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        "200":
+          description: Acknowledged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateApplicationResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /applications/{partnerApplicationId}/consents:
+    post:
+      summary: Submit Consent
+      operationId: submitConsent
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitConsentRequest'
+      responses:
+        "200":
+          description: Consent recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitConsentResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /applications/{partnerApplicationId}/details:
+    put:
+      summary: Update Application Details
+      operationId: updateDetails
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDetailsRequest'
+      responses:
+        "200":
+          description: Details accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateDetailsResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /applications/{partnerApplicationId}/documents:
+    post:
+      summary: Upload Document
+      operationId: uploadDocument
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadDocumentRequest'
+      responses:
+        "200":
+          description: Document received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadDocumentResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+

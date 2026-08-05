@@ -21,7 +21,11 @@ export class LenderIntegrationWorker implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!this.config.get<boolean>('LENDER_INTEGRATION_WORKER_ENABLED') || this.config.get<string>('NODE_ENV') === 'test') return;
-    await this.recoverStaleEvents();
+    try {
+      await this.recoverStaleEvents();
+    } catch (error) {
+      this.logger.error(`Lender worker startup recovery failed: ${(error as Error).message}`);
+    }
     const intervalMs = this.config.get<number>('LENDER_INTEGRATION_WORKER_POLL_MS') ?? 5000;
     this.timer = setInterval(() => void this.drainOnce(), intervalMs);
     this.timer.unref();
@@ -80,6 +84,9 @@ export class LenderIntegrationWorker implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`Lender event=${event.id} stage=${event.integrationStage} code=${error.code} retrying=${retrying}`);
       }
       return true;
+    } catch (error) {
+      this.logger.error(`Lender worker poll failed: ${(error as Error).message}`);
+      return false;
     } finally {
       this.draining = false;
     }
