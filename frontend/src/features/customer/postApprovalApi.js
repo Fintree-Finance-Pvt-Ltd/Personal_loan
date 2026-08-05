@@ -250,5 +250,20 @@ export const confirmRepayment = async (lan, payload) => {
   return extractApiData(response);
 };
 
+export const simulateTestApproval = async () => {
+  const response = await apiRequest(`/customer/test-simulate-approval`, { method: 'POST' });
+  return extractApiData(response);
+};
+
+export const simulateTestMandate = async () => {
+  const response = await apiRequest(`/customer/test-simulate-mandate`, { method: 'POST' });
+  return extractApiData(response);
+};
+
+export const simulateTestDisbursal = async () => {
+  const response = await apiRequest(`/customer/test-simulate-disbursal`, { method: 'POST' });
+  return extractApiData(response);
+};
+
 
 

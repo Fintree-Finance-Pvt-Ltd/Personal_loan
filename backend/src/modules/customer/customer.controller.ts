@@ -115,4 +115,25 @@ export class CustomerController {
     if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
     return this.customerService.simulateLenderApproval(BigInt(customer.customerId), body);
   }
+
+  @Post('test-simulate-approval')
+  async testSimulateApproval(
+    @CurrentCustomer() customer: any,
+  ) {
+    return this.customerService.simulateLenderApproval(BigInt(customer.customerId), { approved: true });
+  }
+
+  @Post('test-simulate-mandate')
+  async testSimulateMandate(
+    @CurrentCustomer() customer: any,
+  ) {
+    return this.customerService.testSimulateMandate(BigInt(customer.customerId));
+  }
+
+  @Post('test-simulate-disbursal')
+  async testSimulateDisbursal(
+    @CurrentCustomer() customer: any,
+  ) {
+    return this.customerService.testSimulateDisbursal(BigInt(customer.customerId));
+  }
 }

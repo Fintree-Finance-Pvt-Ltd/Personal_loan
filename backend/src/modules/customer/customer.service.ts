@@ -15,7 +15,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 import { LoanService } from '../loan/loan.service';
-import { PlApplicationStatus, PolicyDecisionOutcome } from '@prisma/client';
+import { PlApplicationStatus, PolicyDecisionOutcome, PlMandateStatus, PlMandateType, PlMandateProvider } from '@prisma/client';
 import { ACTIVE_APPLICATION_STATUSES } from '../../common/constants/application.constants';
 import { PlatformPoliciesService } from '../platform-policies/platform-policies.service';
 import { PolicyEvaluationService } from '../platform-policies/policy-evaluation.service';
@@ -1137,6 +1137,150 @@ export class CustomerService {
     }
 
     return date;
+  }
+
+  async testSimulateMandate(customerId: bigint) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Route not found.');
+    }
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        applications: { orderBy: { id: 'desc' }, take: 1 },
+        loans: { orderBy: { id: 'desc' }, take: 1 },
+      },
+    });
+
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    let loan = customer.loans?.[0];
+    const latestApp = customer.applications?.[0];
+
+    if (!loan) {
+      if (!latestApp) throw new BadRequestException('Customer has no applications');
+      loan = await this.loanService.createLoanAfterApproval(latestApp.id, customerId, 15000);
+    }
+
+    const transactionId = `PLM_TEST_${Date.now()}`;
+    const providerMandateId = `EM_TEST_${Date.now()}`;
+
+    const existingMandate = await this.prisma.plLoanMandate.findFirst({
+      where: { loanId: loan.id },
+      orderBy: { id: 'desc' },
+    });
+
+    if (existingMandate) {
+      await this.prisma.plLoanMandate.update({
+        where: { id: existingMandate.id },
+        data: {
+          status: PlMandateStatus.AUTHORIZED,
+          providerStatus: 'AUTHORIZED',
+          providerMandateId,
+          authorizedAt: new Date(),
+          lastStatusCheckedAt: new Date(),
+        },
+      });
+    } else {
+      await this.prisma.plLoanMandate.create({
+        data: {
+          loanId: loan.id,
+          customerId: customerId.toString(),
+          lan: loan.lan,
+          merchantTransactionId: transactionId,
+          providerMandateId,
+          mandateType: PlMandateType.ENACH,
+          provider: PlMandateProvider.EASEBUZZ,
+          status: PlMandateStatus.AUTHORIZED,
+          providerStatus: 'AUTHORIZED',
+          amount: loan.approvedAmount || 15000,
+          frequency: 'MONTHLY',
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          authorizedAt: new Date(),
+          lastStatusCheckedAt: new Date(),
+        },
+      });
+    }
+
+    await this.prisma.plLoan.update({
+      where: { id: loan.id },
+      data: {
+        mandateCompleted: true,
+        mandateCompletedAt: new Date(),
+        mandateStatus: 'AUTHORIZED',
+        mandateProviderRef: providerMandateId,
+        currentStep: 'ESIGN',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'e-Mandate setup bypassed and authorized successfully for testing.',
+      lan: loan.lan,
+    };
+  }
+
+  async testSimulateDisbursal(customerId: bigint) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Route not found.');
+    }
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        applications: { orderBy: { id: 'desc' }, take: 1 },
+        loans: { orderBy: { id: 'desc' }, take: 1 },
+      },
+    });
+
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    let loan = customer.loans?.[0];
+    const latestApp = customer.applications?.[0];
+
+    if (!loan) {
+      if (!latestApp) throw new BadRequestException('Customer has no applications');
+      loan = await this.loanService.createLoanAfterApproval(latestApp.id, customerId, 15000);
+    }
+
+    // Auto-complete post-approval prerequisites if missing so force disbursal test works seamlessly
+    if (!loan.acceptedTenureDays || !loan.kfsAccepted || !loan.mandateCompleted || !loan.esignCompleted) {
+      loan = await this.prisma.plLoan.update({
+        where: { id: loan.id },
+        data: {
+          acceptedTenureDays: loan.acceptedTenureDays || 30,
+          kfsAccepted: true,
+          kfsAcceptedAt: loan.kfsAcceptedAt || new Date(),
+          mandateCompleted: true,
+          mandateCompletedAt: loan.mandateCompletedAt || new Date(),
+          mandateStatus: loan.mandateStatus || 'AUTHORIZED',
+          esignCompleted: true,
+          esignCompletedAt: loan.esignCompletedAt || new Date(),
+        },
+      });
+    }
+
+    const payload = {
+      lan: loan.lan,
+      disbursalUtr: `UTR${Date.now()}`,
+      disbursalDate: new Date().toISOString(),
+      disbursedAmount: Number(loan.approvedAmount || 15000),
+      firstRepaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      status: 'SUCCESS',
+    };
+
+    const webhookResult = await this.loanService.processDisbursalWebhook(
+      loan.lenderCode || 'FTF',
+      payload,
+      '127.0.0.1',
+      'TestDisbursalSimulation',
+    );
+
+    return {
+      success: true,
+      message: 'Disbursal processed successfully and RPS generated.',
+      lan: loan.lan,
+      webhookResult,
+    };
   }
 
   private serializeCustomer<

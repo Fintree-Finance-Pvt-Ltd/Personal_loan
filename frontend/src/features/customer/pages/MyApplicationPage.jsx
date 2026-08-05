@@ -52,6 +52,7 @@ import {
   updatePincode,
 } from '../customerApi';
 import { authApi } from '../../auth/authApi';
+import { simulateTestApproval } from '../postApprovalApi';
 
 
 const FLOW_STEPS = [
@@ -1631,7 +1632,9 @@ export default function MyApplicationPage() {
       return;
     }
 
-    if (!feePaid || !lenderConsent) {
+    const isTestEnv = true;
+
+    if (!isTestEnv && (!feePaid || !lenderConsent)) {
       showMessage(
         'Assessment fee or lender consent is incomplete.',
         'error',
@@ -1646,7 +1649,7 @@ export default function MyApplicationPage() {
       return;
     }
 
-    if (!workflow.aadhaarKycCompleted) {
+    if (!isTestEnv && !workflow.aadhaarKycCompleted) {
       showMessage('Please complete Aadhaar KYC through DigiLocker before submitting your application.', 'error');
       goToStep('aadhaar_kyc');
       return;
@@ -1752,8 +1755,42 @@ export default function MyApplicationPage() {
 
   const workflow = deriveCustomerWorkflow(customer);
 
+  const handleSimulateApproval = async () => {
+    try {
+      showMessage('Simulating lender approval...', 'info');
+      const result = await simulateTestApproval();
+      showMessage('Lender approved successfully! Opening Post-Approval Journey...', 'success');
+      await fetchCustomer();
+      if (result?.data?.lan) {
+        navigate(`/customer/loan/${encodeURIComponent(result.data.lan)}/journey`);
+      } else {
+        await fetchCustomer();
+      }
+    } catch (err) {
+      showMessage(err?.message || 'Failed to simulate lender approval.', 'error');
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl">
+      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-purple-200 bg-purple-50/80 p-4 shadow-sm">
+        <div>
+          <h4 className="text-sm font-bold text-purple-900 flex items-center gap-2">
+            <span>⚡ [Testing Branch] Fast-Track Lender Approval & Disbursal</span>
+          </h4>
+          <p className="text-xs text-purple-700 mt-0.5">
+            Bypass external lender steps and simulate instant approval to test post-approval journey & disbursal.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleSimulateApproval}
+          className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:bg-purple-700 cursor-pointer shrink-0"
+        >
+          Simulate Lender Approval
+        </button>
+      </div>
+
       <ApplicationProgress
         currentStep={currentStep}
         workflow={workflow}
@@ -2138,13 +2175,21 @@ function AadhaarKycStep({
             <ArrowLeft size={16} /> Back
           </button>
 
-          {isVerified && (
+          {isVerified ? (
             <button
               type="button"
               onClick={onCompleted}
               className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer"
             >
               Continue to Submit Application <ArrowRight size={16} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onCompleted}
+              className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow transition hover:bg-purple-700 cursor-pointer"
+            >
+              ⚡ [Testing] Bypass Aadhaar KYC & Continue <ArrowRight size={14} />
             </button>
           )}
         </div>

@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Eye,
   X,
+  Zap,
 } from 'lucide-react';
 import { getCustomerAccessToken } from '../customerApi';
 import {
@@ -39,6 +40,8 @@ import {
   sendSigningOtp,
   verifySigningOtp,
   getElectronicSignStatus,
+  simulateTestMandate,
+  simulateTestDisbursal,
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 
@@ -1352,6 +1355,21 @@ function MandateStep({ lan, data, onNext }) {
     }
   };
 
+  const handleTestBypassMandate = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    setStatusMsg('');
+    try {
+      await simulateTestMandate();
+      setStatusMsg('⚡ e-Mandate authorized via test bypass!');
+      await onNext();
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to bypass e-Mandate setup');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleManualCheckStatus = async () => {
     setIsLoading(true);
     setErrorMsg('');
@@ -1505,17 +1523,15 @@ function MandateStep({ lan, data, onNext }) {
 
           {/* Action Buttons */}
           <div className="mt-8 flex flex-wrap justify-between items-center gap-4 pt-2">
-            {portalUrl ? (
-              <button
-                type="button"
-                onClick={() => handleInitiate(true)}
-                disabled={isLoading || isCheckingStatus || !consent}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
-              >
-                <RotateCcw size={14} />
-                <span>Start New Authorization Session</span>
-              </button>
-            ) : <div />}
+            <button
+              type="button"
+              onClick={handleTestBypassMandate}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-100 text-purple-700 border border-purple-200 px-4 py-2.5 text-xs font-bold hover:bg-purple-200 transition cursor-pointer disabled:opacity-50"
+            >
+              <Zap size={14} />
+              <span>⚡ [Testing] Bypass e-Mandate Setup</span>
+            </button>
 
             <div className="flex items-center gap-3">
               {portalUrl && isAllowedEasebuzzUrl(portalUrl) && (
@@ -1967,6 +1983,19 @@ function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
 
   const allCompleted = missingSteps.length === 0;
 
+  const handleTestDisbursal = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      await simulateTestDisbursal();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to simulate disbursal.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRequest = async () => {
     if (!allCompleted) {
       setErrorMsg('Please complete all preceding steps before requesting disbursal.');
@@ -2059,6 +2088,17 @@ function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
                 </li>
               ))}
             </ul>
+
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={handleTestDisbursal}
+                disabled={isLoading}
+                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow hover:bg-purple-700 cursor-pointer disabled:opacity-50"
+              >
+                <Landmark size={15} /> ⚡ [Testing] Bypass & Force Disbursal Webhook + Repayment Schedule (RPS)
+              </button>
+            </div>
           </div>
         ) : (
           /* Case C: All Completed & Ready for Disbursal */
@@ -2095,10 +2135,19 @@ function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
               </div>
             )}
 
-            <div className="mt-8 flex justify-center">
+            <div className="mt-8 flex justify-center gap-4">
               <ActionButton onClick={handleRequest} loading={isLoading}>
                 Request Disbursal
               </ActionButton>
+
+              <button
+                type="button"
+                onClick={handleTestDisbursal}
+                disabled={isLoading}
+                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow hover:bg-purple-700 cursor-pointer disabled:opacity-50"
+              >
+                <Landmark size={15} /> ⚡ [Testing] Force Disbursal Webhook + RPS
+              </button>
             </div>
           </div>
         )}

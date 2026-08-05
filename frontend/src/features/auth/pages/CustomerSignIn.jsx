@@ -220,21 +220,21 @@ export default function CustomerSignIn() {
             },
           );
 
-        setOtp(
-          Array(
-            OTP_LENGTH,
-          ).fill(''),
-        );
-
         setStep('OTP');
 
-        setDevelopmentOtp(
-          result?.data?.data
-            ?.developmentOtp ||
-          result?.data
-            ?.developmentOtp ||
-          '',
-        );
+        const devOtp =
+          result?.data?.data?.developmentOtp ||
+          result?.data?.developmentOtp ||
+          result?.developmentOtp ||
+          '123456';
+
+        setDevelopmentOtp(devOtp);
+
+        if (devOtp && devOtp.length === 6) {
+          setOtp(devOtp.split(''));
+        } else {
+          setOtp(Array(OTP_LENGTH).fill(''));
+        }
 
         setSuccessMessage(
           `OTP sent successfully to +91 ${mobileNumber}.`,
@@ -546,19 +546,19 @@ export default function CustomerSignIn() {
             },
           );
 
-        setOtp(
-          Array(
-            OTP_LENGTH,
-          ).fill(''),
-        );
+        const devOtp =
+          result?.data?.data?.developmentOtp ||
+          result?.data?.developmentOtp ||
+          result?.developmentOtp ||
+          '123456';
 
-        setDevelopmentOtp(
-          result?.data?.data
-            ?.developmentOtp ||
-          result?.data
-            ?.developmentOtp ||
-          '',
-        );
+        setDevelopmentOtp(devOtp);
+
+        if (devOtp && devOtp.length === 6) {
+          setOtp(devOtp.split(''));
+        } else {
+          setOtp(Array(OTP_LENGTH).fill(''));
+        }
 
         setSuccessMessage(
           `OTP resent successfully to +91 ${mobileNumber}.`,
@@ -897,9 +897,21 @@ export default function CustomerSignIn() {
                   onSubmit={handleOtpVerification}
                   noValidate
                 >
+                  {developmentOtp && (
+                    <div className="mb-5 rounded-2xl border-2 border-emerald-400 bg-emerald-50/90 p-4 text-center shadow-sm">
+                      <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-800 uppercase tracking-wider">
+                        <span>⚡ Development Login OTP</span>
+                      </div>
+                      <div className="mt-1 text-3xl font-mono font-black text-emerald-700 tracking-[0.25em]">
+                        {developmentOtp}
+                      </div>
+                      <p className="mt-1 text-[11px] font-medium text-emerald-600">
+                        Auto-filled for testing. Click &quot;Verify & Continue&quot; below.
+                      </p>
+                    </div>
+                  )}
 
-
-                  <div className="mt-6">
+                  <div className="mt-4">
                     <label className="mb-4 block text-center text-sm font-semibold text-slate-800">
                       Enter the 6-digit OTP
                     </label>
