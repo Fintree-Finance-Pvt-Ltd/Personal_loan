@@ -41,6 +41,7 @@ import {
   verifySigningOtp,
   getElectronicSignStatus,
   simulateTestMandate,
+  simulateTestEsign,
   simulateTestDisbursal,
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
@@ -1756,6 +1757,21 @@ function EsignStep({ lan, data, onNext }) {
     }
   };
 
+  const handleTestBypassEsign = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    setStatusMsg('');
+    try {
+      await simulateTestEsign();
+      setStatusMsg('⚡ e-Sign Loan Agreement accepted via test bypass!');
+      await onNext();
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to bypass e-Sign setup');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // const previewUrl = `/api/customer/loans/${lan}/electronic-sign/document`;
   // const acceptedDocUrl = `/api/customer/loans/${lan}/electronic-sign/accepted-document`;
   // const auditCertUrl = `/api/customer/loans/${lan}/electronic-sign/audit-certificate`;
@@ -1860,7 +1876,17 @@ function EsignStep({ lan, data, onNext }) {
 
           {/* OTP Generation & Entry Form */}
           {!otpSent ? (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleTestBypassEsign}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-purple-100 text-purple-700 border border-purple-200 px-4 py-2.5 text-xs font-bold hover:bg-purple-200 transition cursor-pointer disabled:opacity-50"
+              >
+                <Zap size={14} />
+                <span>⚡ [Testing] Bypass e-Sign Agreement</span>
+              </button>
+
               <ActionButton
                 onClick={handleSendOtp}
                 loading={isLoading}

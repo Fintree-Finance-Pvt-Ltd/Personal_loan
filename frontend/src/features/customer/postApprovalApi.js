@@ -260,6 +260,11 @@ export const simulateTestMandate = async () => {
   return extractApiData(response);
 };
 
+export const simulateTestEsign = async () => {
+  const response = await apiRequest(`/customer/test-simulate-esign`, { method: 'POST' });
+  return extractApiData(response);
+};
+
 export const simulateTestDisbursal = async () => {
   const response = await apiRequest(`/customer/test-simulate-disbursal`, { method: 'POST' });
   return extractApiData(response);

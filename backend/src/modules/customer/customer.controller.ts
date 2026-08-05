@@ -130,6 +130,13 @@ export class CustomerController {
     return this.customerService.testSimulateMandate(BigInt(customer.customerId));
   }
 
+  @Post('test-simulate-esign')
+  async testSimulateEsign(
+    @CurrentCustomer() customer: any,
+  ) {
+    return this.customerService.testSimulateEsign(BigInt(customer.customerId));
+  }
+
   @Post('test-simulate-disbursal')
   async testSimulateDisbursal(
     @CurrentCustomer() customer: any,

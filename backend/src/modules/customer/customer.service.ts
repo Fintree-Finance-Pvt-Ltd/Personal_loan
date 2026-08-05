@@ -1220,6 +1220,44 @@ export class CustomerService {
     };
   }
 
+  async testSimulateEsign(customerId: bigint) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Route not found.');
+    }
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        applications: { orderBy: { id: 'desc' }, take: 1 },
+        loans: { orderBy: { id: 'desc' }, take: 1 },
+      },
+    });
+
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    let loan = customer.loans?.[0];
+    const latestApp = customer.applications?.[0];
+
+    if (!loan) {
+      if (!latestApp) throw new BadRequestException('Customer has no applications');
+      loan = await this.loanService.createLoanAfterApproval(latestApp.id, customerId, 15000);
+    }
+
+    await this.prisma.plLoan.update({
+      where: { id: loan.id },
+      data: {
+        esignCompleted: true,
+        esignCompletedAt: new Date(),
+        currentStep: 'READY_FOR_DISBURSAL',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'e-Sign Loan Agreement bypassed successfully for testing.',
+      lan: loan.lan,
+    };
+  }
+
   async testSimulateDisbursal(customerId: bigint) {
     if (process.env.NODE_ENV === 'production') {
       throw new NotFoundException('Route not found.');
