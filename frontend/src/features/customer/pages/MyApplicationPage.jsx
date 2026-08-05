@@ -353,7 +353,7 @@ function deriveCustomerWorkflow(customer) {
     ASSESSMENT_FEE: 'assessment_fee',
     PROFILE_DETAILS: 'profile_details',
     AADHAAR_KYC: 'aadhaar_kyc',
-    ADDRESS_DETAILS: 'submit_application',
+    ADDRESS_DETAILS: 'aadhaar_kyc',
     LENDER_CREATE_PROCESSING: 'integration_processing',
     LENDER_UPDATE_PROCESSING: 'integration_processing',
     LENDER_DECISION_PROCESSING: 'integration_processing',
@@ -1981,6 +1981,19 @@ function AadhaarKycStep({
   const [polling, setPolling] = useState(false);
   const pollTimerRef = useRef(null);
 
+  const [sameAsPermanent, setSameAsPermanent] = useState(true);
+  const [addressForm, setAddressForm] = useState({
+    addressLine1: '',
+    addressLine2: '',
+    locality: '',
+    landmark: '',
+    pincode: '',
+    city: '',
+    state: '',
+  });
+  const [addressErrors, setAddressErrors] = useState({});
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+
   const fetchStatus = async () => {
     try {
       const res = await getCustomerAadhaarKycStatus();
@@ -2004,7 +2017,6 @@ function AadhaarKycStep({
       if (res?.aadhaarVerified || res?.status === 'VERIFIED') {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         setPolling(false);
-        onCompleted?.();
       }
     } catch (err) {
       setError(err?.message || 'Failed to refresh status.');
@@ -2070,6 +2082,40 @@ function AadhaarKycStep({
     customer?.digilockerStatus === 'VERIFIED'
   );
 
+  const validateAddress = () => {
+    const errors = {};
+    if (!sameAsPermanent) {
+      if (!addressForm.addressLine1?.trim()) errors.addressLine1 = 'Address Line 1 is required';
+      if (!addressForm.city?.trim()) errors.city = 'City is required';
+      if (!addressForm.state?.trim()) errors.state = 'State is required';
+      if (!/^[1-9][0-9]{5}$/.test(addressForm.pincode)) errors.pincode = 'Valid 6-digit Pincode is required';
+    }
+    setAddressErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveAddress = async () => {
+    if (!validateAddress()) return;
+    setIsSavingAddress(true);
+    setError('');
+    try {
+      if (sameAsPermanent) {
+        await saveApplicationAddress({ addressType: 'CURRENT', sameAsPermanent: true });
+      } else {
+        await saveApplicationAddress({
+          addressType: 'CURRENT',
+          sameAsPermanent: false,
+          ...addressForm,
+        });
+      }
+      onCompleted?.();
+    } catch (err) {
+      setError(err?.message || 'Failed to save address details.');
+    } finally {
+      setIsSavingAddress(false);
+    }
+  };
+
   return (
     <StepCard>
       <StepHeading
@@ -2100,19 +2146,138 @@ function AadhaarKycStep({
         </div>
 
         {isVerified ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center">
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500 text-white">
-              <CheckCircle2 size={24} />
-            </div>
-            <h3 className="mt-3 text-lg font-bold text-emerald-900">Aadhaar KYC Verified</h3>
-            <p className="mt-1 text-sm text-emerald-700">
-              Your identity has been verified via DigiLocker.
-              {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
-            </p>
-            {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
-              <p className="mt-2 text-sm font-semibold text-emerald-900">
-                Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500 text-white">
+                <CheckCircle2 size={24} />
+              </div>
+              <h3 className="mt-3 text-lg font-bold text-emerald-900">Aadhaar KYC Verified</h3>
+              <p className="mt-1 text-sm text-emerald-700">
+                Your identity has been verified via DigiLocker.
+                {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
               </p>
+              {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
+                <p className="mt-2 text-sm font-semibold text-emerald-900">
+                  Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-6">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">Aadhaar Permanent Address</h4>
+                <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  {kycStatus?.permanentAddress?.formattedAddress || customer?.permanentAddress || 'Address details missing from Aadhaar profile.'}
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                <h4 className="text-sm font-bold text-slate-900 mb-3">Is your current address the same as your permanent address?</h4>
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sameAsPermanent"
+                      checked={sameAsPermanent}
+                      onChange={() => setSameAsPermanent(true)}
+                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm text-slate-700">Yes, it is the same</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sameAsPermanent"
+                      checked={!sameAsPermanent}
+                      onChange={() => setSameAsPermanent(false)}
+                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm text-slate-700">No, it is different</span>
+                  </label>
+                </div>
+              </div>
+
+              {!sameAsPermanent && (
+                <div className="pt-4 border-t border-slate-100 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address Line 1 <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addressForm.addressLine1}
+                      onChange={(e) => setAddressForm({ ...addressForm, addressLine1: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.addressLine1 ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                      placeholder="Flat, House no., Building, Company, Apartment"
+                    />
+                    {addressErrors.addressLine1 && <p className="mt-1 text-xs text-red-500">{addressErrors.addressLine1}</p>}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address Line 2 (Optional)</label>
+                    <input
+                      type="text"
+                      value={addressForm.addressLine2}
+                      onChange={(e) => setAddressForm({ ...addressForm, addressLine2: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      placeholder="Area, Street, Sector, Village"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Locality (Optional)</label>
+                    <input
+                      type="text"
+                      value={addressForm.locality}
+                      onChange={(e) => setAddressForm({ ...addressForm, locality: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Landmark (Optional)</label>
+                    <input
+                      type="text"
+                      value={addressForm.landmark}
+                      onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pincode <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={addressForm.pincode}
+                      onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, '') })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.pincode ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                    />
+                    {addressErrors.pincode && <p className="mt-1 text-xs text-red-500">{addressErrors.pincode}</p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">City <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addressForm.city}
+                      onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.city ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                    />
+                    {addressErrors.city && <p className="mt-1 text-xs text-red-500">{addressErrors.city}</p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">State <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addressForm.state}
+                      onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.state ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                    />
+                    {addressErrors.state && <p className="mt-1 text-xs text-red-500">{addressErrors.state}</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
             )}
           </div>
         ) : (
@@ -2181,10 +2346,11 @@ function AadhaarKycStep({
           {isVerified && (
             <button
               type="button"
-              onClick={onCompleted}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer"
+              onClick={handleSaveAddress}
+              disabled={isSavingAddress}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
             >
-              Continue to Submit Application <ArrowRight size={16} />
+              {isSavingAddress ? <LoaderCircle size={16} className="animate-spin" /> : 'Save & Continue'} <ArrowRight size={16} />
             </button>
           )}
         </div>

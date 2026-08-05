@@ -32,6 +32,9 @@ import CreatePlatformPolicyPage from './features/platform-policies/pages/CreateP
 import PlatformPolicyDetailsPage from './features/platform-policies/pages/PlatformPolicyDetailsPage';
 import EditPlatformPolicyVersionPage from './features/platform-policies/pages/EditPlatformPolicyVersionPage';
 
+// Credit Review
+import CreditReviewPage from './features/credit-review/pages/CreditReviewPage';
+
 // MLM
 import MlmPoliciesPage from './features/mlm/pages/MlmPoliciesPage';
 import CreateMlmPolicyPage from './features/mlm/pages/CreateMlmPolicyPage';
@@ -159,6 +162,16 @@ export default function App() {
             element={
               <PermissionRoute permission="LENDER_UPDATE">
                 <EditLenderPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Credit Review */}
+          <Route
+            path="/admin-master/credit-review"
+            element={
+              <PermissionRoute permission="APPLICATION_VIEW_MASKED">
+                <CreditReviewPage />
               </PermissionRoute>
             }
           />

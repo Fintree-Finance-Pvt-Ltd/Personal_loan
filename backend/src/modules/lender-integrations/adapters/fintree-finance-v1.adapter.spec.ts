@@ -107,18 +107,103 @@ describe('FintreeFinanceV1Adapter', () => {
       expect(result.partnerApplicationId).toBe('P-123');
     });
 
-    it('rejects requestDecision explicitly for Fintree V1', async () => {
-      const context = getBaseContext('API_KEY' as any);
-      configService.get.mockReturnValue('my-api-key');
-      await expect(adapter.requestDecision(context as any)).rejects.toThrow('Fintree decision contract is not enabled for adapter version 1.');
-    });
-
     it('throws LENDER_VALIDATION_ERROR if required Fintree field is missing', async () => {
       const context = getBaseContext('API_KEY' as any);
       configService.get.mockReturnValue('my-api-key');
       httpService.requestJson.mockResolvedValue({ status: 200, data: { status: 'UNKNOWN' } });
 
       await expect(adapter.createApplication(context as any)).rejects.toThrow(LenderIntegrationError);
+    });
+  });
+
+  describe('requestDecision', () => {
+    const getDecisionContext = () => ({
+      ...getBaseContext('API_KEY' as any),
+      partnerApplicationId: 'P-123',
+      applicationReference: 'APP-123',
+      externalProductCode: 'PL-FINTREE',
+      profileComplete: true,
+      bureauConsentReference: 'BUREAU-1',
+      bureauConsentHash: 'hash-1',
+      lenderDecisionConsentReference: 'DECISION-1',
+      lenderDecisionConsentHash: 'hash-2',
+    });
+
+    beforeEach(() => {
+      configService.get.mockReturnValue('my-api-key');
+    });
+
+    it('maps a new-customer approval to the new-customer credit limit', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          status: 'Approved',
+          CREDIT_LIMIT_CHECK_RPM: {
+            derived_values: {
+              LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 8000,
+              LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0,
+            },
+          },
+        },
+      });
+
+      const result = await adapter.requestDecision(getDecisionContext() as any);
+      expect(result.decision).toBe('APPROVED');
+      expect(result.approvedAmount).toBe('8000');
+    });
+
+    it('maps a repeat-customer approval to the repeat-customer credit limit', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          status: 'Approved',
+          CREDIT_LIMIT_CHECK_RPM: {
+            derived_values: {
+              LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 0,
+              LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 15000,
+            },
+          },
+        },
+      });
+
+      const result = await adapter.requestDecision(getDecisionContext() as any);
+      expect(result.decision).toBe('APPROVED');
+      expect(result.approvedAmount).toBe('15000');
+    });
+
+    it('maps a Rejected status to a REJECTED decision', async () => {
+      httpService.requestJson.mockResolvedValue({ status: 200, data: { status: 'Rejected' } });
+
+      const result = await adapter.requestDecision(getDecisionContext() as any);
+      expect(result.decision).toBe('REJECTED');
+      expect(result.rejectionReasonCode).toBe('LENDER_CRITERIA_NOT_MET');
+    });
+
+    it('throws if Approved but no non-zero credit limit is present', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          status: 'Approved',
+          CREDIT_LIMIT_CHECK_RPM: {
+            derived_values: {
+              LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 0,
+              LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0,
+            },
+          },
+        },
+      });
+
+      await expect(adapter.requestDecision(getDecisionContext() as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_CREDIT_LIMIT_MISSING' }),
+      );
+    });
+
+    it('throws on an unrecognized decision status', async () => {
+      httpService.requestJson.mockResolvedValue({ status: 200, data: { status: 'Pending' } });
+
+      await expect(adapter.requestDecision(getDecisionContext() as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_DECISION_STATUS_UNRECOGNIZED' }),
+      );
     });
   });
 });

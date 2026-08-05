@@ -5,7 +5,7 @@ describe('LenderDecisionProcessor', () => {
   const base = (normalizedDecision: string | null = null) => {
     const event = { id: 'EVENT-1', applicationId: 1n, integrationStage: 'DECISION', payloadVersion: 1 };
     const link = { id: 'LINK-1', partnerApplicationId: 'PARTNER-1', normalizedDecision };
-    const application = { id: 1n, customerId: 2n, applicationNumber: 'APP-1', lenderId: 'L1', lenderCode: 'L1', lenderApplicationLink: link };
+    const application = { id: 1n, customerId: 2n, applicationNumber: 'APP-1', lenderId: 'L1', lenderCode: 'L1', productStrategyVersionId: 'PSV-1', lenderApplicationLink: link };
     const tx: any = {
       lenderIntegrationOutbox: {
         findFirst: jest.fn().mockResolvedValue(event),
@@ -15,13 +15,13 @@ describe('LenderDecisionProcessor', () => {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application), update: jest.fn() },
       lenderApplicationLink: { update: jest.fn() },
       customer: { update: jest.fn() },
-      plLoan: { upsert: jest.fn() },
+      lenderProductVersion: { findUnique: jest.fn() },
     };
     const prisma: any = { $transaction: jest.fn(async (callback: any) => callback(tx)) };
     return { processor: new LenderDecisionProcessor(prisma), tx };
   };
 
-  it('persists APPROVED terms separately and creates the loan idempotently', async () => {
+  it('parks an APPROVED decision in credit review instead of finalizing it', async () => {
     const { processor, tx } = base();
     await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
       decision: 'APPROVED', providerStatus: 'APPROVED', decisionReference: 'DEC-1',
@@ -30,13 +30,38 @@ describe('LenderDecisionProcessor', () => {
 
     const data = tx.plApplication.update.mock.calls[0][0].data;
     expect(data).toEqual(expect.objectContaining({
-      status: 'LENDER_APPROVED',
+      status: 'PENDING_CREDIT_REVIEW',
       lenderApprovedAmount: new Prisma.Decimal('125000'),
       lenderApprovedTenure: 18,
       lenderApprovedRoi: new Prisma.Decimal('13.5'),
     }));
     expect(data).not.toHaveProperty('requestedAmount');
-    expect(tx.plLoan.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { applicationId: 1n } }));
+    expect(tx.customer.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ onboardingStatus: 'PENDING_CREDIT_REVIEW' }),
+    }));
+    expect(tx.lenderProductVersion.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('defaults tenure/ROI from the allocated product version when the lender omits them', async () => {
+    const { processor, tx } = base();
+    tx.lenderProductVersion.findUnique.mockResolvedValue({
+      annualRoiPercent: new Prisma.Decimal('14.25'),
+      tenures: [{ tenure: 6, sortOrder: 0 }],
+    });
+
+    await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
+      decision: 'APPROVED', providerStatus: 'APPROVED', decisionReference: 'DEC-1',
+      approvedAmount: '8000',
+    });
+
+    expect(tx.lenderProductVersion.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'PSV-1' } }));
+    const data = tx.plApplication.update.mock.calls[0][0].data;
+    expect(data).toEqual(expect.objectContaining({
+      status: 'PENDING_CREDIT_REVIEW',
+      lenderApprovedAmount: new Prisma.Decimal('8000'),
+      lenderApprovedTenure: 6,
+      lenderApprovedRoi: new Prisma.Decimal('14.25'),
+    }));
   });
 
   it('persists a safe REJECTED outcome and cooling-off date', async () => {
@@ -52,7 +77,6 @@ describe('LenderDecisionProcessor', () => {
     expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'LENDER_REJECTED', lenderCoolingOffDays: 30, lenderCoolingOffUntil: expect.any(Date) }),
     }));
-    expect(tx.plLoan.upsert).not.toHaveBeenCalled();
   });
 
   it('persists PENDING and creates only the stable first status event', async () => {

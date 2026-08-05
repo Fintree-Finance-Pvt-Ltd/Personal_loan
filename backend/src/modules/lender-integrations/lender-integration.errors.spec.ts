@@ -26,6 +26,16 @@ describe('lender integration error safety', () => {
     expect(redacted).toContain('[REDACTED]');
   });
 
+  it('includes the lender response body in the message for a 400 validation error', () => {
+    const error = normalizeLenderIntegrationError({
+      response: { status: 400, data: { errorCode: 'FIELD_INVALID', message: 'employment.designation is required' } },
+      message: 'Request failed with status code 400',
+    });
+    expect(error.classification).toBe('PERMANENT_VALIDATION');
+    expect(error.message).toContain('FIELD_INVALID');
+    expect(error.message).toContain('employment.designation is required');
+  });
+
   it('redacts JSON-shaped bank and customer PII without logging complete values', () => {
     const redacted = redactLenderIntegrationText('{accountNumber:123456789012,ifsc:ABCD0123456,mobileNumber:9999999999,email:person@example.test,umrn:UMRN-1}');
     expect(redacted).not.toContain('123456789012');

@@ -40,6 +40,7 @@ import {
 import {
   FintreeConsentResponseSchema,
   FintreeCreateResponseSchema,
+  FintreeDecisionResponseSchema,
   FintreeDetailsResponseSchema,
   FintreeDocumentResponseSchema,
 } from './fintree-finance-v1/fintree-finance-v1.schemas';
@@ -47,6 +48,7 @@ import {
 import {
   mapFintreeConsentPayload,
   mapFintreeCreatePayload,
+  mapFintreeDecisionPayload,
   mapFintreeDetailsPayload,
   mapFintreeDocumentPayload,
   selectFintreeDocuments,
@@ -74,7 +76,7 @@ export class FintreeFinanceV1Adapter
     separateConsentSubmission: true,
     detailsUpdate: true,
     documentUpload: true,
-    decisionRequest: false,
+    decisionRequest: true,
     statusPolling: false,
   } as const;
 
@@ -403,15 +405,97 @@ export class FintreeFinanceV1Adapter
   }
 
   async requestDecision(
-    _context:
+    context:
       LenderDecisionContext,
   ): Promise<LenderDecisionResult> {
-    throw new LenderIntegrationError(
-      'FINTREE_DECISION_CONTRACT_NOT_ENABLED',
-      'Fintree decision contract is not enabled for adapter version 1.',
-      'PERMANENT_VALIDATION',
-      false,
-    );
+    const payload =
+      mapFintreeDecisionPayload(
+        context,
+      );
+
+    const response =
+      await this.callFintree({
+        context,
+
+        endpointName:
+          'DECISION',
+
+        method:
+          'POST',
+
+        path:
+          this.resolvePartnerPath(
+            this.requirePath(
+              context.transport
+                .decisionPath,
+              'decisionPath',
+            ),
+
+            context
+              .partnerApplicationId,
+          ),
+
+        payload,
+
+        schema:
+          FintreeDecisionResponseSchema,
+      });
+
+    const status =
+      response.status
+        .trim()
+        .toLowerCase();
+
+    if (status === 'rejected') {
+      return {
+        decision: 'REJECTED',
+        providerStatus: response.status,
+        decisionReference: context.idempotencyKey,
+        rejectionReasonCode: 'LENDER_CRITERIA_NOT_MET',
+      };
+    }
+
+    if (status !== 'approved') {
+      throw new LenderIntegrationError(
+        'FINTREE_DECISION_STATUS_UNRECOGNIZED',
+        `Fintree returned an unrecognized decision status: ${response.status}`,
+        'PERMANENT_VALIDATION',
+      );
+    }
+
+    const derivedValues =
+      response.CREDIT_LIMIT_CHECK_RPM
+        ?.derived_values;
+
+    const newCustomerLimit =
+      derivedValues
+        ?.LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM ??
+      0;
+
+    const repeatCustomerLimit =
+      derivedValues
+        ?.LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM ??
+      0;
+
+    const approvedAmount =
+      newCustomerLimit > 0
+        ? newCustomerLimit
+        : repeatCustomerLimit;
+
+    if (!(approvedAmount > 0)) {
+      throw new LenderIntegrationError(
+        'FINTREE_CREDIT_LIMIT_MISSING',
+        'Fintree approved the application but did not return a usable credit limit.',
+        'PERMANENT_VALIDATION',
+      );
+    }
+
+    return {
+      decision: 'APPROVED',
+      providerStatus: response.status,
+      decisionReference: context.idempotencyKey,
+      approvedAmount: String(approvedAmount),
+    };
   }
 
   async getStatus(

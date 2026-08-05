@@ -58,6 +58,17 @@ export const ADMIN_NAVIGATION = [
     ],
   },
   {
+    group: 'Operations',
+    items: [
+      {
+        label: 'Credit Review',
+        shortLabel: 'CR',
+        path: '/admin-master/credit-review',
+        permission: 'APPLICATION_VIEW_MASKED',
+      },
+    ],
+  },
+  {
     group: 'Access Management',
     items: [
       {

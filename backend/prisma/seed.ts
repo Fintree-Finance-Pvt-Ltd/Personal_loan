@@ -46,6 +46,8 @@ const permissions = [
   ["APPLICATION_VIEW_MASKED", "APPLICATION"],
   ["CUSTOMER_PII_VIEW_FULL", "CUSTOMER"],
   ["CUSTOMER_PII_EXPORT", "CUSTOMER"],
+  ["CREDIT_APPROVE", "CREDIT"],
+  ["CREDIT_REJECT", "CREDIT"],
   ["POLICY_READ", "POLICY"],
   ["POLICY_CREATE", "POLICY"],
   ["POLICY_UPDATE", "POLICY"],
@@ -145,6 +147,8 @@ const grants: Record<string, string[]> = {
     ...ownSession,
     "APPLICATION_VIEW_MASKED",
     "CUSTOMER_PII_VIEW_FULL",
+    "CREDIT_APPROVE",
+    "CREDIT_REJECT",
   ],
   POLICY_MAKER: [
     ...ownSession,

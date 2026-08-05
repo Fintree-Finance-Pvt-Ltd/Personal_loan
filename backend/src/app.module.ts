@@ -35,6 +35,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ElectronicSignModule } from './modules/electronic-sign/electronic-sign.module';
 import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
 import { LenderIntegrationModule } from './modules/lender-integrations/lender-integration.module';
+import { CreditReviewModule } from './modules/credit-review/credit-review.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { LenderIntegrationModule } from './modules/lender-integrations/lender-in
     ElectronicSignModule,
     LoanAgreementModule,
     LenderIntegrationModule,
+    CreditReviewModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

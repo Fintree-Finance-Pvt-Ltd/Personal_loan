@@ -2,6 +2,7 @@ import { LenderIntegrationError } from '../../lender-integration.errors';
 import {
   LenderConsentContext,
   LenderCreateApplicationContext,
+  LenderDecisionContext,
   LenderDocumentCandidate,
   LenderDocumentSelection,
   LenderDocumentUploadContext,
@@ -399,6 +400,52 @@ export function mapFintreeDetailsPayload(
 
       verifiedAt:
         context.liveness.verifiedAt,
+    },
+  };
+}
+
+export function mapFintreeDecisionPayload(
+  context: LenderDecisionContext,
+) {
+  return {
+    externalApplicationReference:
+      requireString(
+        context.applicationReference,
+        'externalApplicationReference',
+      ),
+
+    productCode:
+      requireString(
+        context.externalProductCode,
+        'productCode',
+      ),
+
+    bureauConsent: {
+      reference:
+        requireString(
+          context.bureauConsentReference,
+          'bureauConsentReference',
+        ),
+
+      hash:
+        requireString(
+          context.bureauConsentHash,
+          'bureauConsentHash',
+        ),
+    },
+
+    decisionConsent: {
+      reference:
+        requireString(
+          context.lenderDecisionConsentReference,
+          'lenderDecisionConsentReference',
+        ),
+
+      hash:
+        requireString(
+          context.lenderDecisionConsentHash,
+          'lenderDecisionConsentHash',
+        ),
     },
   };
 }
