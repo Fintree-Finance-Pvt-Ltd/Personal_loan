@@ -1,8 +1,20 @@
 import { normalizeLenderIntegrationError, redactLenderIntegrationText } from './lender-integration.errors';
 
 describe('lender integration error safety', () => {
-  it.each([429, 502, 503, 504])('classifies HTTP %s as temporary', (status) => {
+  it.each([429, 500, 502, 503, 504])('classifies HTTP %s as temporary', (status) => {
     const error = normalizeLenderIntegrationError({ response: { status }, message: 'temporary' });
+    expect(error.retryable).toBe(true);
+    expect(error.classification).toBe('TEMPORARY');
+  });
+
+  it.each(['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'ECONNREFUSED'])('classifies network code %s as temporary', (code) => {
+    const error = normalizeLenderIntegrationError({ code, message: 'network failure' });
+    expect(error.retryable).toBe(true);
+    expect(error.classification).toBe('TEMPORARY');
+  });
+
+  it('classifies an axios timeout (ECONNABORTED) as temporary', () => {
+    const error = normalizeLenderIntegrationError({ code: 'ECONNABORTED', message: 'timeout of 15000ms exceeded' });
     expect(error.retryable).toBe(true);
     expect(error.classification).toBe('TEMPORARY');
   });

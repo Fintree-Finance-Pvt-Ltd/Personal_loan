@@ -106,6 +106,11 @@ export class CustomerController {
     });
   }
 
+  @Post('application/retry-lender-submission')
+  async retryLenderSubmission(@CurrentCustomer() customer: any, @Body() body: any) {
+    return this.customerService.retryLenderSubmission(BigInt(customer.customerId), body);
+  }
+
   @Post(':id/simulate-lender-approval')
   async simulateLenderApproval(
     @CurrentCustomer() customer: any,

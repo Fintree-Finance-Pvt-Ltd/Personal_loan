@@ -47,6 +47,7 @@ const schema = z
     LENDER_DATA_SHARING_CONSENT_VERSION: z.string().min(1).max(50).default('1.0'),
     LENDER_DATA_SHARING_CONSENT_REFERENCE: z.string().min(1).max(150).default('CUSTOMER_LENDER_DATA_SHARING'),
     LENDER_INTEGRATION_ALLOWED_HOSTS: z.string().optional().default(''),
+    FINTREE_API_KEY: z.string().optional().default(''),
   })
   .superRefine((env, context) => {
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {

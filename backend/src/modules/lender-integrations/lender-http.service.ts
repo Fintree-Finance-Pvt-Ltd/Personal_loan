@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { isIP } from 'net';
 import { URL } from 'url';
+import { promises as dns } from 'dns';
 
 import {
   LenderHttpMethod,
@@ -39,13 +40,13 @@ export class LenderHttpService {
       ConfigService,
   ) {}
 
-  resolveRequestUrl(
+  async resolveRequestUrl(
     transport:
       LenderIntegrationTransportConfig,
 
     requestPath:
       string,
-  ): URL {
+  ): Promise<URL> {
     if (!transport.baseUrl) {
       throw new LenderIntegrationError(
         'LENDER_BASE_URL_NOT_CONFIGURED',
@@ -139,7 +140,7 @@ export class LenderHttpService {
       );
     }
 
-    this.validateHost(
+    await this.validateHost(
       baseUrl.hostname,
       isLocalDevelopment,
     );
@@ -210,7 +211,7 @@ export class LenderHttpService {
     data: T;
   }> {
     const url =
-      this.resolveRequestUrl(
+      await this.resolveRequestUrl(
         input.transport,
         input.path,
       );
@@ -352,7 +353,8 @@ export class LenderHttpService {
   ): Record<string, string> {
     if (
       transport.authType === 'NONE' ||
-      transport.authType === 'CUSTOM'
+      transport.authType === 'CUSTOM' ||
+      transport.authType === 'API_KEY'
     ) {
       return {};
     }
@@ -410,17 +412,11 @@ export class LenderHttpService {
     );
   }
 
-  private validateHost(
-    hostname:
-      string,
-
-    isLocalDevelopment:
-      boolean,
-  ): void {
-    const normalizedHost =
-      hostname
-        .trim()
-        .toLowerCase();
+  private async validateHost(
+    hostname: string,
+    isLocalDevelopment: boolean,
+  ): Promise<void> {
+    const normalizedHost = hostname.trim().toLowerCase();
 
     if (!normalizedHost) {
       throw new LenderIntegrationError(
@@ -430,17 +426,32 @@ export class LenderHttpService {
       );
     }
 
-    if (
-      !isLocalDevelopment &&
-      this.isPrivateHost(
-        normalizedHost,
-      )
-    ) {
-      throw new LenderIntegrationError(
-        'LENDER_PRIVATE_HOST_BLOCKED',
-        'Private, loopback, or link-local lender hosts are blocked.',
-        'AUTHENTICATION_CONFIGURATION',
-      );
+    let resolvedIps: string[] = [];
+    if (isIP(normalizedHost)) {
+      resolvedIps.push(normalizedHost);
+    } else {
+      try {
+        const addresses = await dns.lookup(normalizedHost, { all: true });
+        resolvedIps = addresses.map((addr) => addr.address);
+      } catch (error) {
+        throw new LenderIntegrationError(
+          'LENDER_HOST_UNRESOLVABLE',
+          'Lender host could not be resolved.',
+          'AUTHENTICATION_CONFIGURATION',
+        );
+      }
+    }
+
+    if (!isLocalDevelopment) {
+      for (const ip of resolvedIps) {
+        if (this.isPrivateHost(ip)) {
+          throw new LenderIntegrationError(
+            'LENDER_PRIVATE_HOST_BLOCKED',
+            'Private, loopback, or link-local lender hosts are blocked.',
+            'AUTHENTICATION_CONFIGURATION',
+          );
+        }
+      }
     }
 
     const rawAllowlist =

@@ -488,6 +488,8 @@ export default function MyApplicationPage() {
   const [savedPhotoDocument, setSavedPhotoDocument] = useState(null);
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [submissionData, setSubmissionData] = useState(null);
+  const [isRetryingLenderSubmission, setIsRetryingLenderSubmission] = useState(false);
+  const [retryLenderSubmissionError, setRetryLenderSubmissionError] = useState('');
 
   const mobileNumber =
     customer?.mobileNumber ||
@@ -574,6 +576,24 @@ export default function MyApplicationPage() {
     // Fetch products
     setIsLoadingPlatformProducts(false);
   }, [customerId, navigate]);
+
+  const handleRetryLenderSubmission = async () => {
+    setIsRetryingLenderSubmission(true);
+    setRetryLenderSubmissionError('');
+
+    try {
+      await customerApi.retryLenderSubmission(customer?.latestApplicationId);
+      await fetchCustomer();
+    } catch (error) {
+      setRetryLenderSubmissionError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to retry right now. Please try again in a moment.',
+      );
+    } finally {
+      setIsRetryingLenderSubmission(false);
+    }
+  };
 
   const currentStepIndex = FLOW_STEPS.findIndex(
     (step) => step.id === currentStep,
@@ -1924,6 +1944,26 @@ export default function MyApplicationPage() {
             <AlertCircle className="mx-auto h-10 w-10 text-amber-600" />
             <h2 className="mt-4 text-xl font-bold text-slate-900">We need to retry this application securely</h2>
             <p className="mt-2 text-sm text-slate-600">Your data and payment remain recorded. Please contact support and quote error code {customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW'}.</p>
+
+            {retryLenderSubmissionError && (
+              <p className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">
+                {retryLenderSubmissionError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleRetryLenderSubmission}
+              disabled={isRetryingLenderSubmission}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRetryingLenderSubmission ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4" />
+              )}
+              {isRetryingLenderSubmission ? 'Retrying…' : 'Retry Now'}
+            </button>
           </div>
         </StepCard>
       )}

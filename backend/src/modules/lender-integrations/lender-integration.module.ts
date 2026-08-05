@@ -13,6 +13,10 @@ import {
 } from './adapters/fintree-finance-v1.adapter';
 
 import {
+  FintreeMockAdapter,
+} from './adapters/fintree-mock.adapter';
+
+import {
   LENDER_ADAPTERS,
   LenderAdapterRegistry,
 } from './lender-adapter.registry';
@@ -60,6 +64,7 @@ import {
 
   providers: [
     FintreeFinanceV1Adapter,
+    FintreeMockAdapter,
 
     {
       provide:
@@ -67,13 +72,17 @@ import {
 
       inject: [
         FintreeFinanceV1Adapter,
+        FintreeMockAdapter,
       ],
 
       useFactory: (
         fintree:
           FintreeFinanceV1Adapter,
+        fintreeMock:
+          FintreeMockAdapter,
       ) => [
         fintree,
+        fintreeMock,
       ],
     },
 

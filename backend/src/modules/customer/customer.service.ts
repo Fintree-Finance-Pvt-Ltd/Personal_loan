@@ -1077,6 +1077,33 @@ export class CustomerService {
     return { success: true, data: { decisionEnqueued: result.enqueued, eventId: result.event?.id ?? null } };
   }
 
+  async retryLenderSubmission(customerId: bigint, body: any) {
+    const application = body?.applicationId
+      ? await this.prisma.plApplication.findUnique({ where: { id: BigInt(body.applicationId) } })
+      : await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+
+    if (!application) throw new NotFoundException('No application found to retry.');
+    if (application.customerId !== customerId) throw new ForbiddenException('Application ownership verification failed');
+
+    const event = await this.prisma.lenderIntegrationOutbox.findFirst({
+      where: { applicationId: application.id, status: 'FAILED' },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!event) {
+      throw new BadRequestException('There is no failed lender submission to retry for this application.');
+    }
+
+    const cooldownMs = 60_000;
+    const sinceLastAttempt = Date.now() - new Date(event.updatedAt).getTime();
+    if (sinceLastAttempt < cooldownMs) {
+      throw new BadRequestException(`Please wait ${Math.ceil((cooldownMs - sinceLastAttempt) / 1000)} seconds before retrying again.`);
+    }
+
+    await this.lenderIntegrationOutbox.replayFailedEvent(event.id);
+    return { success: true, message: 'Your application has been resubmitted. This may take a moment.' };
+  }
+
   private calculateCompletedYears(dobStr: string): number {
     const dob = new Date(dobStr);
     const today = new Date();

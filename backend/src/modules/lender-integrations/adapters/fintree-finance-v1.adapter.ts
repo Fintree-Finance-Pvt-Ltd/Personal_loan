@@ -230,7 +230,7 @@ export class FintreeFinanceV1Adapter
           .consentReference,
 
       acknowledgedAt:
-        response.data.recordedAt.toISOString(),
+        response.data.recordedAt,
     };
   }
 
@@ -302,7 +302,7 @@ export class FintreeFinanceV1Adapter
           .detailsVersion,
 
       acknowledgedAt:
-        response.data.updatedAt.toISOString(),
+        response.data.updatedAt,
     };
   }
 
@@ -398,8 +398,7 @@ export class FintreeFinanceV1Adapter
           .fileSha256,
 
       acknowledgedAt:
-        response.data
-          .receivedAt.toISOString(),
+          response.data.receivedAt,
     };
   }
 
@@ -468,20 +467,8 @@ export class FintreeFinanceV1Adapter
     if (
       input.context
         .transport.authType ===
-      'CUSTOM'
+      'CUSTOM' || input.context.transport.authType === 'API_KEY'
     ) {
-      const clientId =
-        input.context
-          .transport.clientId;
-
-      if (!clientId) {
-        throw new LenderIntegrationError(
-          'FINTREE_CLIENT_ID_MISSING',
-          'Fintree client ID is required for HMAC authentication.',
-          'AUTHENTICATION_CONFIGURATION',
-        );
-      }
-
       const secret =
         this.resolveSecret(
           input.context
@@ -489,62 +476,13 @@ export class FintreeFinanceV1Adapter
             .credentialSecretReference,
         );
 
-      const timestamp =
-        new Date().toISOString();
+      headers['x-api-key'] = secret;
+    }
 
-      const nonce =
-        randomUUID();
-
-      const resolvedUrl =
-        this.http.resolveRequestUrl(
-          input.context.transport,
-          input.path,
-        );
-
-      const canonicalPath =
-        `${resolvedUrl.pathname}${resolvedUrl.search}`;
-
-      const bodyHash =
-        createHash('sha256')
-          .update(
-            serializedBody,
-            'utf8',
-          )
-          .digest('hex');
-
-      const canonicalInput =
-        [
-          input.method,
-          canonicalPath,
-          timestamp,
-          nonce,
-          input.context
-            .idempotencyKey,
-          bodyHash,
-        ].join('\n');
-
-      const signature =
-        createHmac(
-          'sha256',
-          secret,
-        )
-          .update(
-            canonicalInput,
-            'utf8',
-          )
-          .digest('hex');
-
-      headers[
-        'X-Request-Timestamp'
-      ] = timestamp;
-
-      headers[
-        'X-Nonce'
-      ] = nonce;
-
-      headers[
-        'X-Signature'
-      ] = signature;
+    headers['X-Correlation-Id'] = input.context.correlationId;
+    
+    if (input.context.idempotencyKey) {
+      headers['Idempotency-Key'] = input.context.idempotencyKey;
     }
 
     const response =

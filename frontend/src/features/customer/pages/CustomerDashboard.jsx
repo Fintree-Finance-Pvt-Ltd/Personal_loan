@@ -31,6 +31,7 @@ import {
 } from 'react-router-dom';
 import {
   customerApi,
+  doCustomerRefresh,
   getCustomerAccessToken,
 } from '../customerApi';
 
@@ -100,48 +101,55 @@ export default function CustomerDashboard() {
     };
 
   useEffect(() => {
-    const hasAccessToken =
-      Boolean(
-        getCustomerAccessToken(),
-      );
+    let cancelled = false;
 
-    const hasStoredSession =
-      Boolean(
-        getStoredSession() ||
-        localStorage.getItem(
+    const bootstrap = async () => {
+      let hasAccessToken =
+        Boolean(
+          getCustomerAccessToken(),
+        );
+
+      // A hard page refresh always wipes the in-memory access token.
+      // Before treating that as "logged out", try a silent refresh
+      // against the httpOnly cookie -- the session may still be valid
+      // even if no local marker survived the reload.
+      if (!hasAccessToken) {
+        try {
+          await doCustomerRefresh();
+          hasAccessToken =
+            Boolean(
+              getCustomerAccessToken(),
+            );
+        } catch {
+          hasAccessToken = false;
+        }
+      }
+
+      if (cancelled) return;
+
+      if (!hasAccessToken) {
+        localStorage.removeItem(
           'customerSession',
-        ) ||
-        sessionStorage.getItem(
+        );
+
+        sessionStorage.removeItem(
           'customerSession',
-        ),
-      );
+        );
 
-    if (
-      !hasAccessToken &&
-      !hasStoredSession
-    ) {
-      localStorage.removeItem(
-        'customerSession',
-      );
+        navigate(
+          '/customer/login',
+          {
+            replace: true,
+          },
+        );
 
-      sessionStorage.removeItem(
-        'customerSession',
-      );
+        return;
+      }
 
-      navigate(
-        '/customer/login',
-        {
-          replace: true,
-        },
-      );
-
-      return;
-    }
-
-    if (
-      !customerId &&
-      hasAccessToken
-    ) {
+      if (
+        !customerId &&
+        hasAccessToken
+      ) {
       setIsLoadingCustomer(
         true,
       );
@@ -181,9 +189,16 @@ export default function CustomerDashboard() {
         });
 
       return;
-    }
+      }
 
-    fetchCustomerData();
+      fetchCustomerData();
+    };
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     customerId,
     navigate,

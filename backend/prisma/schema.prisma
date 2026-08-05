@@ -1416,8 +1416,9 @@ model LenderIntegrationOutbox {
   createdAt            DateTime                      @default(now())
   updatedAt            DateTime                      @updatedAt
 
-  application PlApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
-  lender      Lender        @relation(fields: [lenderId], references: [id], onDelete: Restrict)
+  application      PlApplication           @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  lender           Lender                  @relation(fields: [lenderId], references: [id], onDelete: Restrict)
+  documentTransfer LenderDocumentTransfer? @relation(fields: [documentTransferId], references: [id], onDelete: SetNull)
 
   @@index([status, availableAt, createdAt])
   @@index([applicationId, integrationStage])
@@ -2693,7 +2694,8 @@ model LenderDocumentTransfer {
   createdAt         DateTime                     @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt         DateTime                     @updatedAt @map("updated_at") @db.DateTime(0)
 
-  lenderApplicationLink LenderApplicationLink @relation(fields: [lenderApplicationLinkId], references: [id], onDelete: Cascade)
+  lenderApplicationLink LenderApplicationLink     @relation(fields: [lenderApplicationLinkId], references: [id], onDelete: Cascade)
+  outboxEvents          LenderIntegrationOutbox[]
 
   @@unique([lenderApplicationLinkId, sourceDocumentId, documentType])
   @@index([applicationId])

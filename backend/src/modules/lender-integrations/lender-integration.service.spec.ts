@@ -51,6 +51,7 @@ describe('LenderIntegrationService explicit requirements', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
         upsert: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       plApplication: { findUnique: jest.fn() },
       mlmAllocationDecision: { findUnique: jest.fn().mockResolvedValue({ lenderId: 'LENDER-A', externalProductCode: 'PRODUCT-1' }) },
@@ -178,9 +179,9 @@ describe('LenderIntegrationService explicit requirements', () => {
 
       // mock documents
       prisma.plCustomerDocument = { findMany: jest.fn().mockResolvedValue([
-        { id: 101n, applicationId: 1n, documentType: 'AADHAAR_XML', uploadedAt: new Date() },
-        { id: 102n, applicationId: 1n, documentType: 'AADHAAR_PDF', uploadedAt: new Date() },
-        { id: 103n, applicationId: 1n, documentType: 'BANK_STATEMENT', uploadedAt: new Date() }
+        { id: 101n, applicationId: 1n, documentType: 'AADHAAR_XML', uploadedAt: new Date(), status: 'VERIFIED', applicantType: 'BORROWER' },
+        { id: 102n, applicationId: 1n, documentType: 'AADHAAR_PDF', uploadedAt: new Date(), status: 'VERIFIED', applicantType: 'BORROWER' },
+        { id: 103n, applicationId: 1n, documentType: 'BANK_STATEMENT', uploadedAt: new Date(), status: 'VERIFIED', applicantType: 'BORROWER' }
       ])};
     
     prisma.lenderDocumentTransfer = { upsert: jest.fn().mockImplementation(({ create }: any) => ({ ...create, id: 200n })) };
@@ -188,7 +189,7 @@ describe('LenderIntegrationService explicit requirements', () => {
     await service.processEvent('EVENT-2', 'LOCK-1');
 
     expect(prisma.lenderApplicationLink.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ updateStatus: 'ACKNOWLEDGED' })
+      data: expect.objectContaining({ updateStatus: 'COMPLETED' })
     }));
     
     // Verify only Aadhaar XML/PDF were queued
@@ -219,7 +220,7 @@ describe('LenderIntegrationService explicit requirements', () => {
     adapter.uploadDocument = jest.fn().mockResolvedValue({ success: true, data: { status: 'ACKNOWLEDGED', partnerDocumentId: 'DOC-1', documentType: 'AADHAAR_XML', fileSha256: 'mocked-hash' } });
     adapter.capabilities = { documentUpload: true };
 
-    const mockDocument = { id: 101n, applicationId: 1n, customerId: 10n, documentType: 'AADHAAR_XML', fileSize: 1000, filePath: '/valid/path', mimeType: 'text/xml', status: 'VERIFIED' };
+    const mockDocument = { id: 101n, applicationId: 1n, customerId: 10n, documentType: 'AADHAAR_CARD', fileSize: 1000, filePath: '/valid/path', mimeType: 'text/xml', status: 'VERIFIED', applicantType: 'BORROWER' };
     prisma.lenderDocumentTransfer = { 
       findUnique: jest.fn().mockResolvedValue({ id: 200n, applicationId: 1n, transferStatus: 'PENDING', sourceDocumentId: 101n, lenderApplicationLinkId: 'LINK-1', sourceDocument: mockDocument }), 
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 200n, applicationId: 1n, transferStatus: 'PENDING', sourceDocumentId: 101n, lenderApplicationLinkId: 'LINK-1', sourceDocument: mockDocument }), 
@@ -242,8 +243,10 @@ describe('LenderIntegrationService explicit requirements', () => {
     // But since `createHash('sha256').update(Buffer.from('mock-file-content')).digest('hex')` is used in service,
     // let's just make the adapter return whatever it receives.
     adapter.uploadDocument.mockImplementation(async (ctx: any) => ({
-      success: true,
-      data: { status: 'ACKNOWLEDGED', partnerDocumentId: 'DOC-1', documentType: ctx.documentType, fileSha256: ctx.fileSha256 }
+      acknowledged: true,
+      providerStatus: 'RECEIVED',
+      partnerDocumentId: 'DOC-1',
+      fileSha256: ctx.fileSha256
     }));
     
     await service.processEvent('EVENT-3', 'LOCK-1');
