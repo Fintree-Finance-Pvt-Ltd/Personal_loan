@@ -7,7 +7,10 @@ import {
   Param,
   Post,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 // import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
@@ -30,6 +33,22 @@ export class ExternalApiController {
     return this.externalApiService.verifyPan({
       customerId: customer.customerId,
       panNumber: body?.panNumber,
+    });
+  }
+
+  @CustomerProtected()
+  @Post('pan-ocr')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  processPanOcr(
+    @UploadedFile() file: any,
+    @Body() body: any,
+    @CurrentCustomer() customer: any,
+  ) {
+    return this.externalApiService.processPanOcr({
+      customerId: BigInt(customer.customerId),
+      file,
+      image: body?.image || body?.imageUrl || body?.file,
     });
   }
 

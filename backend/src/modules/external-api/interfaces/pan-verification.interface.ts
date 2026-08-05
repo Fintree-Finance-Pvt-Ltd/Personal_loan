@@ -51,6 +51,7 @@ export interface NormalizedPanVerificationData {
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
+  fatherName?: string | null;
   gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
   dateOfBirth: string | null;
   maskedAadhaar: string | null;
