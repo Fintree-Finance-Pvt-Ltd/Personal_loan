@@ -25,6 +25,10 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
+  Upload,
+  ScanLine,
+  Sparkles,
+  FileText,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -38,6 +42,7 @@ import {
   submitCustomerApplication,
   reverseGeocode,
   verifyCustomerPan,
+  processPanOcr,
   verifyFaceLiveness,
   initiateAssessmentPayment,
   getAssessmentPaymentStatus,
@@ -2583,6 +2588,111 @@ function BasicDetailsStep({
     }
   }, [customerId, form.pincode, pincodeCity, pincodeState]);
 
+  const [isOcrScanning, setIsOcrScanning] = useState(false);
+  const [ocrSuccessMsg, setOcrSuccessMsg] = useState('');
+  const [ocrError, setOcrError] = useState('');
+  const [isPanCameraOpen, setIsPanCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+
+  const panFileInputRef = useRef(null);
+  const panCameraInputRef = useRef(null);
+  const panVideoRef = useRef(null);
+
+  const handlePanOcrFile = async (file) => {
+    if (!file) return;
+    setIsOcrScanning(true);
+    setOcrError('');
+    setOcrSuccessMsg('');
+
+    try {
+      const result = await processPanOcr(file);
+      const data = result?.data || result || {};
+      const extractedPan = (data.panNumber || data.pan_number || '').trim().toUpperCase();
+      const extractedName = (data.fullName || data.name || '').trim();
+      const extractedFatherName = (data.fatherName || data.father_name || '').trim();
+
+      if (!extractedPan && !extractedName) {
+        throw new Error('Could not extract PAN details from the image. Please enter details manually or try a clearer image.');
+      }
+
+      if (extractedName) {
+        onChange({ target: { name: 'fullName', value: extractedName } });
+      }
+      if (extractedPan) {
+        onChange({ target: { name: 'panNumber', value: extractedPan } });
+      }
+      if (extractedFatherName) {
+        onChange({ target: { name: 'fatherName', value: extractedFatherName } });
+      }
+
+      setOcrSuccessMsg(
+        `Auto-populated Name: "${extractedName || '—'}", PAN: "${extractedPan || '—'}"${extractedFatherName ? `, & Father's Name: "${extractedFatherName}"` : ''}. Please review details and click "Verify PAN".`
+      );
+    } catch (err) {
+      setOcrError(err?.message || 'PAN OCR processing failed. Please enter details manually or try uploading a clearer image.');
+    } finally {
+      setIsOcrScanning(false);
+    }
+  };
+
+  const handlePanFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handlePanOcrFile(file);
+      e.target.value = '';
+    }
+  };
+
+  const handleOpenPanCamera = async () => {
+    setOcrError('');
+    setOcrSuccessMsg('');
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        setCameraStream(stream);
+        setIsPanCameraOpen(true);
+      } else {
+        panCameraInputRef.current?.click();
+      }
+    } catch {
+      panCameraInputRef.current?.click();
+    }
+  };
+
+  const handleClosePanCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+    setIsPanCameraOpen(false);
+  };
+
+  useEffect(() => {
+    if (isPanCameraOpen && panVideoRef.current && cameraStream) {
+      panVideoRef.current.srcObject = cameraStream;
+    }
+  }, [isPanCameraOpen, cameraStream]);
+
+  const handleCapturePanPhoto = () => {
+    if (!panVideoRef.current) return;
+    const video = panVideoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const capturedFile = new File([blob], `pan_camera_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        handleClosePanCamera();
+        handlePanOcrFile(capturedFile);
+      }
+    }, 'image/jpeg', 0.92);
+  };
+
   return (
     <StepCard>
       <StepHeading
@@ -2607,6 +2717,143 @@ function BasicDetailsStep({
         title="PAN verification"
         description="The entered name must match the PAN holder name."
       />
+
+      {!panVerified && (
+        <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 via-slate-50 to-indigo-50/50 p-5 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-200">
+                <ScanLine size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  Auto-fill details via PAN Card OCR
+                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold text-blue-700 uppercase tracking-wider">AI Scan</span>
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Upload or capture your PAN card image to auto-fill your Name as per PAN and PAN Number
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="file"
+              ref={panFileInputRef}
+              accept="image/*,.pdf"
+              onChange={handlePanFileChange}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => panFileInputRef.current?.click()}
+              disabled={isOcrScanning}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:border-slate-400 transition cursor-pointer disabled:opacity-60"
+            >
+              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin text-blue-600" /> : <Upload size={15} className="text-blue-600" />}
+              <span>Upload PAN Photo</span>
+            </button>
+
+            <input
+              type="file"
+              ref={panCameraInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handlePanFileChange}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={handleOpenPanCamera}
+              disabled={isOcrScanning}
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer disabled:opacity-60"
+            >
+              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin" /> : <Camera size={15} />}
+              <span>Take Photo (Camera)</span>
+            </button>
+          </div>
+
+          {isOcrScanning && (
+            <div className="mt-3.5 flex items-center gap-2.5 rounded-xl bg-blue-100/80 p-3 text-xs font-semibold text-blue-900 border border-blue-200">
+              <LoaderCircle size={16} className="animate-spin text-blue-600 shrink-0" />
+              <span>Scanning PAN Card with AI OCR... Extracting Full Name and PAN Number...</span>
+            </div>
+          )}
+
+          {ocrSuccessMsg && !isOcrScanning && (
+            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-emerald-50 p-3.5 text-xs font-medium text-emerald-900 border border-emerald-200">
+              <Sparkles size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-emerald-800">PAN OCR Success!</span> {ocrSuccessMsg}
+              </div>
+            </div>
+          )}
+
+          {ocrError && !isOcrScanning && (
+            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-red-50 p-3 text-xs font-medium text-red-800 border border-red-200">
+              <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+              <div>{ocrError}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Camera Capture Modal */}
+      {isPanCameraOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Camera className="h-5 w-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Capture PAN Card Photo</h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleClosePanCamera}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="relative overflow-hidden rounded-2xl bg-black mb-4">
+              <video
+                ref={panVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="h-64 w-full object-cover"
+              />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+                <div className="h-44 w-full rounded-2xl border-2 border-dashed border-white/80 bg-blue-500/10 shadow-2xl flex flex-col items-center justify-center text-white/90 text-xs font-semibold">
+                  <span>Align PAN Card inside frame</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleClosePanCamera}
+                className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCapturePanPhoto}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+              >
+                <Camera size={16} />
+                <span>Capture & Scan PAN</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5 md:grid-cols-2">
         <FormInput
@@ -2708,6 +2955,17 @@ function BasicDetailsStep({
             </p>
           )}
         </div>
+
+        <FormInput
+          label="Father's name"
+          name="fatherName"
+          value={form.fatherName}
+          error={errors.fatherName}
+          onChange={onChange}
+          placeholder="Enter father's full name"
+          helperText="Auto-filled via PAN OCR or enter manually"
+          required
+        />
       </div>
 
       {!panVerified && (

@@ -726,14 +726,26 @@ export class CustomerAadhaarKycService {
     formattedAddress: string | null,
     address: any,
   ): Promise<void> {
+    const model = providerData?.model || providerData?.data || providerData || {};
+    const innerData = model?.aadhaarData || model?.kycData || model?.data || model;
     const files = Array.isArray(providerData?.digilockerFiles)
       ? providerData.digilockerFiles
-      : Array.isArray(providerData?.digilockerFileInfos) ? providerData.digilockerFileInfos : [];
+      : Array.isArray(model?.digilockerFiles)
+        ? model.digilockerFiles
+        : Array.isArray(innerData?.digilockerFiles)
+          ? innerData.digilockerFiles
+          : Array.isArray(providerData?.digilockerFileInfos)
+            ? providerData.digilockerFileInfos
+            : Array.isArray(model?.digilockerFileInfos)
+              ? model.digilockerFileInfos
+              : Array.isArray(innerData?.digilockerFileInfos)
+                ? innerData.digilockerFileInfos
+                : [];
     const xml = files.find((item: any) => String(item?.docExtension || '').toLowerCase() === 'xml');
     const pdf = files.find((item: any) => String(item?.docExtension || '').toLowerCase() === 'pdf');
     const documents = [
-      { type: PlDocumentType.OTHER, extension: 'xml', mimeType: 'application/xml', source: xml?.docLink || providerData?.xmlLink || providerData?.xmlResponse || null },
-      { type: PlDocumentType.AADHAAR_CARD, extension: 'pdf', mimeType: 'application/pdf', source: pdf?.docLink || providerData?.pdfLink || null },
+      { type: PlDocumentType.OTHER, extension: 'xml', mimeType: 'application/xml', source: xml?.docLink || providerData?.xmlLink || model?.xmlLink || innerData?.xmlLink || providerData?.xmlResponse || model?.xmlResponse || innerData?.xmlResponse || null },
+      { type: PlDocumentType.AADHAAR_CARD, extension: 'pdf', mimeType: 'application/pdf', source: pdf?.docLink || providerData?.pdfLink || model?.pdfLink || innerData?.pdfLink || null },
     ];
     const now = new Date();
     const relativeDir = path.join('uploads', 'customer-documents', 'digilocker', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'));
@@ -894,6 +906,15 @@ export class CustomerAadhaarKycService {
     });
 
     await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr);
+
+    // Download and store DigiLocker documents (PDF & XML) into disk & database pl_customer_documents
+    await this.storeDigitapDocuments(
+      customerId,
+      String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`),
+      providerResponse,
+      aadhaarAddressStr,
+      addr,
+    );
 
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
   }

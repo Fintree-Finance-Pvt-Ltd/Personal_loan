@@ -314,6 +314,37 @@ export async function verifyCustomerPan(panNumber) {
   });
 }
 
+export async function processPanOcr(fileOrData) {
+  let body = fileOrData;
+  let headers = {};
+
+  if (fileOrData instanceof FormData) {
+    body = fileOrData;
+    headers = { 'Content-Type': 'multipart/form-data' };
+  } else if (fileOrData instanceof File || fileOrData instanceof Blob) {
+    const formData = new FormData();
+    formData.append('file', fileOrData);
+    body = formData;
+    headers = { 'Content-Type': 'multipart/form-data' };
+  } else if (typeof fileOrData === 'object' && fileOrData.file) {
+    const formData = new FormData();
+    formData.append('file', fileOrData.file);
+    body = formData;
+    headers = { 'Content-Type': 'multipart/form-data' };
+  } else {
+    body = JSON.stringify(fileOrData);
+    headers = { 'Content-Type': 'application/json' };
+  }
+
+  const result = await apiRequest('/external-api/pan-ocr', {
+    method: 'POST',
+    body,
+    headers,
+  });
+
+  return result?.data?.data || result?.data || result;
+}
+
 export async function verifyFaceLiveness(applicationId, inputImage) {
   return apiRequest('/external-api/face-liveness', {
     method: 'POST',
