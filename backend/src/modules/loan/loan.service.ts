@@ -92,6 +92,16 @@ export class LoanService {
     const offerValidUntil = new Date();
     offerValidUntil.setDate(offerValidUntil.getDate() + 30);
 
+    // Dev/UAT-only shortcut (see simulateLenderApproval) — mirrors the same onboarding
+    // KYC/address carry-over as CreditReviewService.approve(), the real loan-creation
+    // path, so a loan created here doesn't get stuck behind DigiLocker/address gates
+    // that the customer already satisfied during onboarding.
+    const [kycStatus, permanentAddress, currentAddress] = await Promise.all([
+      this.prisma.kycVerificationStatus.findUnique({ where: { customerId } }),
+      this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId, addressType: 'PERMANENT' } } }),
+      this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId, addressType: 'CURRENT' } } }),
+    ]);
+
     const loan = await this.prisma.plLoan.create({
       data: {
         lan,
@@ -105,6 +115,49 @@ export class LoanService {
         offerStatus: 'AVAILABLE',
         offerAllowedTenures: JSON.stringify([3, 6, 9, 12, 18, 24]),
         offerValidUntil,
+        ...(kycStatus?.aadhaarStatus === 'VERIFIED'
+          ? {
+              digilockerStatus: 'VERIFIED',
+              digilockerVerifiedAt: kycStatus.updatedAt,
+              aadhaarMaskedNumber: kycStatus.aadhaarMaskedNumber,
+              aadhaarLastFour: kycStatus.aadhaarMaskedNumber?.slice(-4) ?? null,
+              aadhaarVerifiedName: kycStatus.aadhaarName,
+              aadhaarDateOfBirth: kycStatus.aadhaarDob,
+              ...(permanentAddress
+                ? {
+                    aadhaarAddrLine1: permanentAddress.addressLine1,
+                    aadhaarAddrLine2: permanentAddress.addressLine2,
+                    aadhaarLandmark: permanentAddress.landmark,
+                    aadhaarLocality: permanentAddress.locality,
+                    aadhaarDistrict: permanentAddress.district,
+                    aadhaarCity: permanentAddress.city,
+                    aadhaarState: permanentAddress.state,
+                    aadhaarCountry: permanentAddress.country,
+                    aadhaarPincode: permanentAddress.pincode,
+                    aadhaarFormattedAddr: [permanentAddress.addressLine1, permanentAddress.addressLine2, permanentAddress.landmark, permanentAddress.locality, permanentAddress.city, permanentAddress.state, permanentAddress.pincode].filter(Boolean).join(', '),
+                  }
+                : kycStatus.aadhaarAddress
+                  ? { aadhaarFormattedAddr: kycStatus.aadhaarAddress }
+                  : {}),
+            }
+          : {}),
+        ...(currentAddress
+          ? {
+              addressConfirmed: true,
+              addressConfirmedAt: new Date(),
+              addressSameAsPermanent: currentAddress.sameAsPermanent ?? false,
+              currentAddrLine1: currentAddress.addressLine1,
+              currentAddrLine2: currentAddress.addressLine2,
+              currentAddrLandmark: currentAddress.landmark,
+              currentAddrLocality: currentAddress.locality,
+              currentAddrDistrict: currentAddress.district,
+              currentAddrCity: currentAddress.city,
+              currentAddrState: currentAddress.state,
+              currentAddrCountry: currentAddress.country,
+              currentAddrPincode: currentAddress.pincode,
+              currentAddrProofType: currentAddress.source === 'DIGILOCKER' ? 'AADHAAR' : null,
+            }
+          : {}),
       },
     });
 
