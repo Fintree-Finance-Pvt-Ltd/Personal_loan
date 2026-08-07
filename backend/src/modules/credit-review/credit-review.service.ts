@@ -69,11 +69,14 @@ export class CreditReviewService {
       // The customer already completed Aadhaar verification during onboarding — that
       // result lives in KycVerificationStatus (one row per customer; the same table
       // loan.service.ts's own DigiLocker flow reads/writes), not ApplicationKycSnapshot.
-      // Carry it + their DIGILOCKER-sourced permanent address onto the new loan record
-      // so the customer is not asked to re-verify via DigiLocker post-approval.
-      const [kycStatus, permanentAddress] = await Promise.all([
+      // Carry it + their DIGILOCKER-sourced permanent address, and their already-confirmed
+      // current address, onto the new loan record so the customer is not asked to redo
+      // DigiLocker verification or address confirmation post-approval (see
+      // LoanService.saveAddress()/initiateMandate() for the fields this mirrors).
+      const [kycStatus, permanentAddress, currentAddress] = await Promise.all([
         tx.kycVerificationStatus.findUnique({ where: { customerId: application.customerId } }),
         tx.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } }),
+        tx.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'CURRENT' } } }),
       ]);
 
       const loan = await tx.plLoan.upsert({
@@ -116,6 +119,25 @@ export class CreditReviewService {
                   : kycStatus.aadhaarAddress
                     ? { aadhaarFormattedAddr: kycStatus.aadhaarAddress }
                     : {}),
+              }
+            : {}),
+          // Mirrors LoanService.saveAddress(): the customer already confirmed a current
+          // address during onboarding, so carry it over instead of asking again.
+          ...(currentAddress
+            ? {
+                addressConfirmed: true,
+                addressConfirmedAt: decidedAt,
+                addressSameAsPermanent: currentAddress.sameAsPermanent ?? false,
+                currentAddrLine1: currentAddress.addressLine1,
+                currentAddrLine2: currentAddress.addressLine2,
+                currentAddrLandmark: currentAddress.landmark,
+                currentAddrLocality: currentAddress.locality,
+                currentAddrDistrict: currentAddress.district,
+                currentAddrCity: currentAddress.city,
+                currentAddrState: currentAddress.state,
+                currentAddrCountry: currentAddress.country,
+                currentAddrPincode: currentAddress.pincode,
+                currentAddrProofType: currentAddress.source === 'DIGILOCKER' ? 'AADHAAR' : null,
               }
             : {}),
         },

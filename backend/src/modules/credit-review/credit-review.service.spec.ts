@@ -17,14 +17,17 @@ describe('CreditReviewService', () => {
     lenderApprovedRoi: new Prisma.Decimal('14.25'),
   };
 
-  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25') }, kycStatus: any = null, permanentAddress: any = null) => {
+  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25') }, kycStatus: any = null, permanentAddress: any = null, currentAddress: any = null) => {
     const tx: any = {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application), update: jest.fn().mockImplementation(({ data }: any) => ({ ...application, ...data })) },
       customer: { update: jest.fn() },
       plLoan: { upsert: jest.fn().mockResolvedValue({ id: 10n }) },
       lenderProductVersion: { findUnique: jest.fn().mockResolvedValue(productVersion) },
       kycVerificationStatus: { findUnique: jest.fn().mockResolvedValue(kycStatus) },
-      applicationAddress: { findUnique: jest.fn().mockResolvedValue(permanentAddress) },
+      applicationAddress: {
+        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+          Promise.resolve(where.applicationId_addressType.addressType === 'PERMANENT' ? permanentAddress : currentAddress)),
+      },
     };
     const prisma: any = { $transaction: jest.fn(async (callback: any) => callback(tx)) };
     return { service: new CreditReviewService(prisma), tx };
@@ -78,6 +81,34 @@ describe('CreditReviewService', () => {
           aadhaarPincode: '400001',
         }),
       }));
+    });
+
+    it('carries the already-confirmed current address onto the new loan so address confirmation is not required again', async () => {
+      const currentAddress = {
+        addressLine1: 'Flat 2', addressLine2: 'Wing B', landmark: 'Near Park', locality: 'Locality',
+        district: 'District', city: 'Pune', state: 'Maharashtra', country: 'India', pincode: '411001',
+        sameAsPermanent: false, source: 'CUSTOMER',
+      };
+      const { service, tx } = buildService(pendingApplication, undefined, null, null, currentAddress);
+      await service.approve(1n, 'USER-1');
+
+      expect(tx.plLoan.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({
+          addressConfirmed: true,
+          addressSameAsPermanent: false,
+          currentAddrLine1: 'Flat 2',
+          currentAddrCity: 'Pune',
+          currentAddrPincode: '411001',
+          currentAddrProofType: null,
+        }),
+      }));
+    });
+
+    it('does not set addressConfirmed when no onboarding current address exists', async () => {
+      const { service, tx } = buildService();
+      await service.approve(1n, 'USER-1');
+      const createData = tx.plLoan.upsert.mock.calls[0][0].create;
+      expect(createData).not.toHaveProperty('addressConfirmed');
     });
 
     it('does not set digilockerStatus when no onboarding KYC verification exists', async () => {
