@@ -47,7 +47,7 @@ describe('FintreeFinanceV1Adapter', () => {
       requestTimeoutMs: 5000,
       options: {},
     },
-    application: { applicationReference: 'APP-123', platformLan: 'FTPL123' },
+    application: { applicationReference: 'APP-123', platformLan: 'FTPL123', requestedAmount: '25000', requestedTenure: 90, tenureType: 'DAYS' },
     allocation: { externalProductCode: 'PL-FINTREE' },
     customer: { 
       panNumber: 'ABCDE1234F',
@@ -216,12 +216,22 @@ describe('FintreeFinanceV1Adapter', () => {
     it('throws on an unrecognized decision status', async () => {
       httpService.requestJson.mockResolvedValue({
         status: 200,
-        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'Pending' } },
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'SomeUnknownStatus' } },
       });
 
       await expect(adapter.requestDecision(getDecisionContext() as any)).rejects.toThrow(
         expect.objectContaining({ code: 'FINTREE_DECISION_STATUS_UNRECOGNIZED' }),
       );
+    });
+
+    it('maps a credit-queue/processing status to a PENDING decision (expected on the final approval call)', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'Pending' } },
+      });
+
+      const result = await adapter.requestDecision(getDecisionContext() as any);
+      expect(result.decision).toBe('PENDING');
     });
 
     it('throws a partner error when Fintree responds with success:false', async () => {

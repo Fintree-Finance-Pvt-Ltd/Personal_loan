@@ -11,31 +11,31 @@ describe('CreditReviewService', () => {
     lenderId: 'LENDER-1',
     productStrategyVersionId: 'PSV-1',
     status: 'PENDING_CREDIT_REVIEW',
-    lenderApprovedAmount: new Prisma.Decimal('8000'),
+    selectedAmount: new Prisma.Decimal('8000'),
+    selectedTenure: 12,
+    lenderApprovedAmount: new Prisma.Decimal('10000'),
     lenderApprovedRoi: new Prisma.Decimal('14.25'),
   };
 
-  const configuredTenures = [{ tenure: 6, sortOrder: 0 }, { tenure: 12, sortOrder: 1 }, { tenure: 24, sortOrder: 2 }];
-
-  const buildService = (application: any = pendingApplication, tenures: any = configuredTenures) => {
+  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25') }) => {
     const tx: any = {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application), update: jest.fn().mockImplementation(({ data }: any) => ({ ...application, ...data })) },
       customer: { update: jest.fn() },
       plLoan: { upsert: jest.fn().mockResolvedValue({ id: 10n }) },
-      lenderProductVersion: { findUnique: jest.fn().mockResolvedValue(tenures === null ? null : { tenures }) },
+      lenderProductVersion: { findUnique: jest.fn().mockResolvedValue(productVersion) },
     };
     const prisma: any = { $transaction: jest.fn(async (callback: any) => callback(tx)) };
     return { service: new CreditReviewService(prisma), tx };
   };
 
   describe('approve', () => {
-    it('finalizes approval, updates onboarding status and creates the loan with all admin-configured tenures', async () => {
+    it('finalizes approval using the customer-selected offer and creates the loan on the existing LAN', async () => {
       const { service, tx } = buildService();
       const result = await service.approve(1n, 'USER-1');
 
       expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 1n },
-        data: { status: 'LENDER_APPROVED' },
+        data: expect.objectContaining({ status: 'LENDER_APPROVED', lenderApprovedRoi: pendingApplication.lenderApprovedRoi }),
       }));
       expect(tx.customer.update).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ onboardingStatus: 'LENDER_APPROVED' }),
@@ -44,14 +44,24 @@ describe('CreditReviewService', () => {
         where: { applicationId: 1n },
         create: expect.objectContaining({
           lan: 'FTPL00000001',
-          approvedAmount: pendingApplication.lenderApprovedAmount,
-          offerAllowedTenures: JSON.stringify([6, 12, 24]),
+          approvedAmount: pendingApplication.selectedAmount,
+          acceptedTenureDays: 12,
+          offerAllowedTenures: JSON.stringify([12]),
         }),
       }));
       expect(result.decidedByUserId).toBe('USER-1');
     });
 
-    it('rejects approving an application that is not pending credit review', async () => {
+    it('defaults ROI from the allocated product version when not already persisted', async () => {
+      const { service, tx } = buildService({ ...pendingApplication, lenderApprovedRoi: null }, { annualRoiPercent: new Prisma.Decimal('16.5') });
+      await service.approve(1n, 'USER-1');
+      expect(tx.lenderProductVersion.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'PSV-1' } }));
+      expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ lenderApprovedRoi: new Prisma.Decimal('16.5') }),
+      }));
+    });
+
+    it('rejects approving an application that is not pending final approval', async () => {
       const { service } = buildService({ ...pendingApplication, status: 'LENDER_APPROVED' });
       await expect(service.approve(1n, 'USER-1')).rejects.toThrow(BadRequestException);
     });
@@ -62,13 +72,8 @@ describe('CreditReviewService', () => {
       await expect(service.approve(1n, 'USER-1')).rejects.toThrow(NotFoundException);
     });
 
-    it('rejects approval when the lender-approved terms are incomplete', async () => {
-      const { service } = buildService({ ...pendingApplication, lenderApprovedRoi: null });
-      await expect(service.approve(1n, 'USER-1')).rejects.toThrow(BadRequestException);
-    });
-
-    it('rejects approval when the allocated product has no configured tenures', async () => {
-      const { service } = buildService(pendingApplication, []);
+    it('rejects approval when no offer has been selected yet', async () => {
+      const { service } = buildService({ ...pendingApplication, selectedAmount: null, selectedTenure: null });
       await expect(service.approve(1n, 'USER-1')).rejects.toThrow(BadRequestException);
     });
   });
@@ -89,7 +94,7 @@ describe('CreditReviewService', () => {
       }));
     });
 
-    it('rejects rejecting an application that is not pending credit review', async () => {
+    it('rejects rejecting an application that is not pending final approval', async () => {
       const { service } = buildService({ ...pendingApplication, status: 'LENDER_REJECTED' });
       await expect(service.reject(1n, 'USER-1')).rejects.toThrow(BadRequestException);
     });

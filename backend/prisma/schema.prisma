@@ -378,6 +378,7 @@ enum CustomerOnboardingStatus {
   PLATFORM_INELIGIBLE
   APPLICATION_IN_PROGRESS
   APPLICATION_SUBMITTED
+  LENDER_PRE_APPROVED
   PENDING_CREDIT_REVIEW
   LENDER_APPROVED
   LENDER_REJECTED
@@ -1119,6 +1120,7 @@ enum PlApplicationStatus {
   ALLOCATION_PENDING
   LENDER_ALLOCATED
   LENDER_REVIEW
+  LENDER_PRE_APPROVED
   PENDING_CREDIT_REVIEW
   LENDER_APPROVED
   LENDER_REJECTED
@@ -1229,6 +1231,14 @@ model PlApplication {
   scopeCode       String?  @map("scope_code") @db.VarChar(60)
   requestedAmount Decimal? @map("requested_amount") @db.Decimal(15, 2)
   requestedTenure Int?     @map("requested_tenure")
+
+  // Customer's chosen offer within the lender's pre-approval credit limit, selected
+  // after the first (pre-approval) lender decision and sent as the input to the
+  // second (final) lender decision. Kept separate from lenderApprovedAmount (the
+  // lender's pre-approval credit limit) since the two represent different things.
+  selectedAmount Decimal?  @map("selected_amount") @db.Decimal(15, 2)
+  selectedTenure Int?      @map("selected_tenure")
+  selectedAt     DateTime? @map("selected_at") @db.DateTime(0)
 
   lenderCode String? @map("lender_code") @db.VarChar(30)
 

@@ -13,6 +13,8 @@ import { EasebuzzAutocollectService } from '../../integrations/easebuzz-autocoll
 import { initiateEasebuzzIframePayment } from '../../integrations/easebuzz-iframe.integration';
 import { decryptBankAccountNumber } from '../../common/utils/bank-security.helper';
 import { normalizeDigitapDetails, sanitizeDigitapPayload } from './digilocker-normalizer';
+import { ProductCalculationService } from '../products/product-calculation.service';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 @Injectable()
 export class LoanService {
@@ -25,6 +27,8 @@ export class LoanService {
     private readonly externalApiService: ExternalApiService,
     private readonly easebuzzAutocollectService: EasebuzzAutocollectService,
     private readonly configService: ConfigService,
+    private readonly productCalculationService: ProductCalculationService,
+    private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
   ) { }
 
 
@@ -411,6 +415,111 @@ export class LoanService {
     }).catch(() => { /* non-critical */ });
 
     return { success: true, message: 'Offer accepted successfully.', nextStep: 'BANK_VERIFICATION' };
+  }
+
+  // Pre-approval offer selection (spec sections 6/7): the customer picks a tenure from
+  // the admin-configured LenderProductTenure list, and the amount is derived — via the
+  // existing ProductCalculationService, not a parallel calculation — from the same
+  // multiplier/rounding rules used everywhere else, capped at the lender's pre-approval
+  // credit limit (application.lenderApprovedAmount). No PlLoan exists yet at this point.
+  async getPreApprovalOffer(lan: string, customerId: bigint) {
+    const application = await this.prisma.plApplication.findFirst({ where: { platformLan: lan, customerId } });
+    if (!application) throw new NotFoundException('Application not found or does not belong to this customer.');
+    if (application.status !== PlApplicationStatus.LENDER_PRE_APPROVED) {
+      throw new BadRequestException('No pre-approved offer is available for this application.');
+    }
+    const { config, multipliers, validTenures, completedLoans } = await this.loadOfferCalculationInputs(application);
+    const simulation = this.productCalculationService.simulate(
+      completedLoans,
+      validTenures[0],
+      application.lenderApprovedAmount!.toString(),
+      config,
+      multipliers,
+      validTenures,
+    );
+    return {
+      lan,
+      lenderApprovedAmount: application.lenderApprovedAmount!.toNumber(),
+      amount: Number(simulation.finalPrincipalAmount),
+      allowedTenures: validTenures,
+      alreadySelected: Boolean(application.selectedAmount && application.selectedTenure),
+      selectedAmount: application.selectedAmount ? application.selectedAmount.toNumber() : null,
+      selectedTenure: application.selectedTenure,
+    };
+  }
+
+  async selectPreApprovalOffer(lan: string, customerId: bigint, tenureDays: number) {
+    const application = await this.prisma.plApplication.findFirst({ where: { platformLan: lan, customerId } });
+    if (!application) throw new NotFoundException('Application not found or does not belong to this customer.');
+    if (application.status !== PlApplicationStatus.LENDER_PRE_APPROVED) {
+      throw new BadRequestException('No pre-approved offer is available to select for this application.');
+    }
+    if (application.selectedAmount && application.selectedTenure) {
+      throw new BadRequestException('An offer has already been selected for this application.');
+    }
+
+    const { config, multipliers, validTenures, completedLoans } = await this.loadOfferCalculationInputs(application);
+    const simulation = this.productCalculationService.simulate(
+      completedLoans,
+      tenureDays,
+      application.lenderApprovedAmount!.toString(),
+      config,
+      multipliers,
+      validTenures,
+    );
+
+    // application.status intentionally stays LENDER_PRE_APPROVED here — selectedAmount/
+    // selectedTenure being set is what tells nextPermittedStep the offer has already been
+    // picked (see customer.service.ts) and to show "processing" instead of the offer picker.
+    // The final decision (async lender result) is what moves status to PENDING_CREDIT_REVIEW.
+    const selectedAt = new Date();
+    await this.prisma.plApplication.update({
+      where: { id: application.id },
+      data: {
+        selectedAmount: new Prisma.Decimal(simulation.finalPrincipalAmount),
+        selectedTenure: tenureDays,
+        selectedAt,
+      },
+    });
+
+    this.auditLogs.record({
+      actorUserId: null,
+      module: 'LOAN',
+      action: 'PRE_APPROVAL_OFFER_SELECTED',
+      entityType: 'PlApplication',
+      entityId: application.id.toString(),
+      outcome: 'SUCCESS',
+      newValue: { selectedAmount: simulation.finalPrincipalAmount, selectedTenure: tenureDays },
+      requestId: randomBytes(16).toString('hex'),
+    }).catch(() => { /* non-critical */ });
+
+    // Stage a fresh profile push (V2) carrying the selected offer; once acknowledged,
+    // the outbox worker auto-requests the final (second) lender decision — see
+    // LenderIntegrationService.processUpdate().
+    const update = await this.lenderIntegrationOutbox.enqueueUpdateWhenReady(application.id, 2);
+
+    return {
+      success: true,
+      message: 'Offer selected. Final approval is being requested from the lender.',
+      selectedAmount: Number(simulation.finalPrincipalAmount),
+      selectedTenure: tenureDays,
+      updateEnqueued: update.enqueued,
+    };
+  }
+
+  private async loadOfferCalculationInputs(application: { id: bigint; customerId: bigint; lenderApprovedAmount: Prisma.Decimal | null; productStrategyVersionId: string | null }) {
+    if (!application.lenderApprovedAmount || !application.productStrategyVersionId) {
+      throw new BadRequestException('Pre-approval credit limit is missing for this application.');
+    }
+    const productVersion = await this.prisma.lenderProductVersion.findUnique({
+      where: { id: application.productStrategyVersionId },
+      include: { multipliers: true, tenures: { orderBy: { sortOrder: 'asc' } } },
+    });
+    if (!productVersion) throw new BadRequestException('Allocated product configuration is missing.');
+    const validTenures = productVersion.tenures.map((t) => t.tenure);
+    if (validTenures.length === 0) throw new BadRequestException('The allocated product has no configured tenure options.');
+    const completedLoans = await this.prisma.plLoan.count({ where: { customerId: application.customerId, status: 'DISBURSED' } });
+    return { config: productVersion as any, multipliers: productVersion.multipliers, validTenures, completedLoans };
   }
 
   async saveAddress(lan: string, customerId: bigint, payload: any) {
@@ -1577,7 +1686,7 @@ export class LoanService {
     }
 
     // Exact-once processing via interactive transaction and row-level locking
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       if (typeof tx.plWebhookInbox?.create === 'function') {
         try {
           await tx.plWebhookInbox.create({
@@ -1673,6 +1782,8 @@ export class LoanService {
           userAgent: metadata?.userAgent,
           requestId: randomBytes(16).toString('hex'),
         }).catch(() => {});
+
+        return { success: true, acknowledged: true, processed: true, mandateJustAuthorized: true, applicationId: mandate.loan.applicationId };
       } else {
         await tx.plLoanMandate.update({
           where: { id: mandate.id },
@@ -1687,8 +1798,18 @@ export class LoanService {
         });
       }
 
-      return { success: true, acknowledged: true, processed: true };
+      return { success: true, acknowledged: true, processed: true, mandateJustAuthorized: false, applicationId: mandate.loan.applicationId };
     });
+
+    // Staged profile push (V4) carrying the webhook-verified UMRN to the lender —
+    // reuses the same profile/UPDATE integration as every other stage.
+    if (result.mandateJustAuthorized && result.applicationId) {
+      this.lenderIntegrationOutbox.enqueueUpdateWhenReady(result.applicationId, 4).catch((err) => {
+        this.logger.warn(`Failed to enqueue mandate profile update for application ${result.applicationId}: ${err?.message || err}`);
+      });
+    }
+
+    return result;
   }
 
   async initiateEsign(lan: string, customerId: bigint) {

@@ -9,6 +9,8 @@ describe('LoanService customer ownership', () => {
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
+    {} as any,
   );
 
   it('never falls back to an unscoped LAN lookup', async () => {

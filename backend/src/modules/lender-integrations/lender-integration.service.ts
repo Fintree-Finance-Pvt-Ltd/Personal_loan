@@ -45,6 +45,10 @@ import {
   LenderIntegrationOutboxService,
 } from './lender-integration-outbox.service';
 
+import {
+  decryptBankAccountNumber,
+} from '../../common/utils/bank-security.helper';
+
 @Injectable()
 export class LenderIntegrationService {
   constructor(
@@ -897,7 +901,9 @@ async markStageFailure(
 ): Promise<boolean> {
   if (
     ['ACKNOWLEDGED', 'COMPLETED']
-      .includes(link.updateStatus)
+      .includes(link.updateStatus) &&
+    link.updatePayloadVersion >=
+      event.payloadVersion
   ) {
     return false;
   }
@@ -1045,6 +1051,9 @@ async markStageFailure(
 
               updateIdempotencyKey:
                 event.idempotencyKey,
+
+              updatePayloadVersion:
+                event.payloadVersion,
 
               lastSyncedStage:
                 'UPDATE',
@@ -1206,13 +1215,20 @@ async markStageFailure(
       },
     );
 
+  // Only the onboarding-profile UPDATE (V1, pre-approval) and the offer-selection
+  // UPDATE (V2, final approval) should ever trigger a decision request. Later staged
+  // pushes (bank V3, mandate V4, ...) must never re-request a lender decision.
   if (
     adapter.capabilities
-      .decisionRequest
+      .decisionRequest &&
+    event.payloadVersion <= 2 &&
+    (link.decisionPayloadVersion ?? 0) <
+      event.payloadVersion
   ) {
     await this.outbox
       .enqueueDecisionWhenReady(
         application.id,
+        event.payloadVersion,
       );
   }
 
@@ -1279,6 +1295,28 @@ async markStageFailure(
 
   const current =
     readiness.current!;
+
+  const bankVerification =
+    await this.prisma
+      .plBankVerification
+      .findFirst({
+        where: {
+          applicationId: canonical.id,
+          status: 'VERIFIED',
+        },
+        orderBy: { verifiedAt: 'desc' },
+      });
+
+  const mandate =
+    await this.prisma
+      .plLoanMandate
+      .findFirst({
+        where: {
+          loan: { applicationId: canonical.id },
+          status: 'AUTHORIZED',
+        },
+        orderBy: { authorizedAt: 'desc' },
+      });
 
   const mapAddress =
     (address: any) => ({
@@ -1507,6 +1545,36 @@ async markStageFailure(
         current
           .sameAsPermanent!,
     },
+
+    selectedOffer:
+      canonical.selectedAmount && canonical.selectedTenure
+        ? {
+            amount: canonical.selectedAmount.toString(),
+            tenure: canonical.selectedTenure,
+            selectedAt: (canonical.selectedAt ?? new Date()).toISOString(),
+          }
+        : null,
+
+    bankDetails: bankVerification
+      ? {
+          accountHolderName: bankVerification.accountHolderName,
+          accountNumber: decryptBankAccountNumber(bankVerification.accountNumberEncrypted),
+          accountNumberMasked: bankVerification.accountNumberMasked,
+          ifscCode: bankVerification.ifscCode,
+          bankName: bankVerification.bankName || '',
+          accountType: bankVerification.accountType,
+          verifiedAt: (bankVerification.verifiedAt ?? bankVerification.updatedAt).toISOString(),
+        }
+      : null,
+
+    mandate: mandate?.umrn
+      ? {
+          umrn: mandate.umrn,
+          provider: mandate.provider,
+          mandateType: mandate.mandateType,
+          authorizedAt: (mandate.authorizedAt ?? mandate.updatedAt).toISOString(),
+        }
+      : null,
   };
 }
 
@@ -1878,6 +1946,17 @@ async markStageFailure(
         },
       });
 
+  const productVersion =
+    await this.prisma
+      .lenderProductVersion
+      .findUnique({
+        where: {
+          id:
+            application
+              .productStrategyVersionId,
+        },
+      });
+
   const payment =
     await this.prisma
       .plPaymentLink
@@ -1991,6 +2070,14 @@ async markStageFailure(
         application
           .requestedAmount
           ?.toString() ??
+        null,
+
+      requestedTenure:
+        application.requestedTenure ??
+        null,
+
+      tenureType:
+        productVersion?.tenureType ??
         null,
 
       scopeCode:

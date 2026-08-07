@@ -87,6 +87,19 @@ export const acceptLoanOffer = async (lan, payload) => {
   return extractApiData(response);
 };
 
+export const getPreApprovalOffer = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/pre-approval-offer`, { method: 'GET' });
+  return extractApiData(response);
+};
+
+export const selectPreApprovalOffer = async (lan, payload) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/pre-approval-offer/select`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return extractApiData(response);
+};
+
 export const initiateDigilocker = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/digilocker/initiate`, {
     method: 'POST',

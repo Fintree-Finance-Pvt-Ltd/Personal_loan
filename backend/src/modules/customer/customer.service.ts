@@ -23,6 +23,7 @@ import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engin
 
 import { ApplicationTransitionService } from '../loan/services/application-transition.service';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
+import { ProductCalculationService } from '../products/product-calculation.service';
 
 @Injectable()
 export class CustomerService {
@@ -36,6 +37,7 @@ export class CustomerService {
     private readonly mlmAllocationEngineService: MlmAllocationEngineService,
     private readonly applicationTransitionService: ApplicationTransitionService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
+    private readonly productCalculationService: ProductCalculationService,
   ) {}
 
   async findOrCreateAfterOtpVerification(
@@ -543,6 +545,8 @@ export class CustomerService {
           applicationId: latestApp.id.toString(),
           applicationReference: latestApp.applicationNumber,
           applicationStatus: latestApp.status,
+          platformLan: latestApp.platformLan,
+          lenderApprovedAmount: latestApp.lenderApprovedAmount ? Number(latestApp.lenderApprovedAmount) : null,
           platformBreResult: latestApp.platformDecisionOutcome,
           allocatedLender: latestApp.lenderId ? { id: latestApp.lenderId, code: latestApp.lenderCode, name: allocatedLenderName, productId: latestApp.lenderProductId, productStrategyVersionId: latestApp.productStrategyVersionId } : null,
           assessmentFee: { paid: Boolean(latestSuccessPayment), paymentStatus: latestSuccessPayment?.status ?? null, paidAt: latestSuccessPayment?.paidAt ?? null },
@@ -973,16 +977,35 @@ export class CustomerService {
                  throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
                }
                const productVersion = await tx.lenderProductVersion.findUnique({
-                 where: { id: decision.productVersionId }
+                 where: { id: decision.productVersionId },
+                 include: { multipliers: true, tenures: { orderBy: { sortOrder: 'asc' } } },
                });
                if (!productVersion || productVersion.productId !== decision.productId) {
                  throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
                }
-               
+
                const baseAmount = productVersion?.assessmentFeeAmount ? new Prisma.Decimal(productVersion.assessmentFeeAmount) : new Prisma.Decimal(0);
                const gstRate = productVersion?.assessmentFeeGstPercent ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent) : new Prisma.Decimal(18);
                const gstAmount = baseAmount.mul(gstRate).dividedBy(100);
                const totalAmount = baseAmount.add(gstAmount);
+
+               // Deterministic initial amount/tenure requested from the lender at CREATE
+               // time (spec section 1): reuse the same multiplier/rounding logic as every
+               // other offer calculation, with no lender-approved cap yet (use the
+               // product's own cap) and the lowest-sortOrder configured tenure.
+               const validTenures = productVersion.tenures.map((t) => t.tenure);
+               if (validTenures.length === 0) {
+                 throw new BadRequestException('The allocated product has no configured tenure options.');
+               }
+               const completedLoans = await tx.plLoan.count({ where: { customerId, status: 'DISBURSED' } });
+               const initialSimulation = this.productCalculationService.simulate(
+                 completedLoans,
+                 validTenures[0],
+                 productVersion.maximumAmountCap.toString(),
+                 productVersion as any,
+                 productVersion.multipliers,
+                 validTenures,
+               );
 
                updatedApp = await tx.plApplication.update({
                   where: { id: application.id },
@@ -996,6 +1019,8 @@ export class CustomerService {
                      lenderProductId: decision.productId,
                      productStrategyVersionId: decision.productVersionId,
                      allocatedAt: new Date(),
+                     requestedAmount: new Prisma.Decimal(initialSimulation.finalPrincipalAmount),
+                     requestedTenure: validTenures[0],
                      assessmentFeeBaseAmount: baseAmount,
                      assessmentFeeGstRate: gstRate,
                      assessmentFeeGstAmount: gstAmount,
@@ -1044,8 +1069,18 @@ export class CustomerService {
   private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean }): string {
     const { application, payment, link, outbox, updateReadiness, loan, hasDecisionConsents } = input;
     if (!application) return 'BASIC_DETAILS';
-    if (link?.normalizedDecision === 'APPROVED' || application.status === 'LENDER_APPROVED') return loan ? 'BANK_DETAILS' : 'APPROVAL_PROCESSING';
-    if (link?.normalizedDecision === 'REJECTED' || application.status === 'LENDER_REJECTED') return 'LENDER_REJECTED';
+    // application.status (not link.normalizedDecision, which is shared across both
+    // lender decision calls) is authoritative for which of the two approval stages
+    // the application is in — see LenderDecisionProcessor.process().
+    if (application.status === 'LENDER_APPROVED') return loan ? 'BANK_DETAILS' : 'APPROVAL_PROCESSING';
+    if (application.status === 'LENDER_REJECTED') return 'LENDER_REJECTED';
+    // Once the customer has selected an offer, selectedAmount is set but status stays
+    // LENDER_PRE_APPROVED until the final decision resolves — show "processing" instead
+    // of sending them back to the offer picker they already completed.
+    if (application.status === 'LENDER_PRE_APPROVED') return application.selectedAmount ? 'APPROVAL_PROCESSING' : 'PRE_APPROVAL_OFFER_SELECTION';
+    // "Final approval processing" — offer selected, second lender decision requested,
+    // awaiting the async result (or a manual credit-review override).
+    if (application.status === 'PENDING_CREDIT_REVIEW') return 'APPROVAL_PROCESSING';
     if (outbox?.status === 'FAILED') return 'INTEGRATION_SUPPORT';
     if (application.platformDecisionOutcome !== 'PASS') return application.status === 'PLATFORM_REJECTED' ? 'PLATFORM_REJECTED' : 'BASIC_DETAILS';
     if (!payment) return 'ASSESSMENT_FEE';

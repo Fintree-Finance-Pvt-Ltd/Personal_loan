@@ -6,5 +6,6 @@ export const ACTIVE_APPLICATION_STATUSES = [
   PlApplicationStatus.ALLOCATION_PENDING,
   PlApplicationStatus.LENDER_ALLOCATED,
   PlApplicationStatus.LENDER_REVIEW,
+  PlApplicationStatus.LENDER_PRE_APPROVED,
   PlApplicationStatus.LENDER_APPROVED,
 ];

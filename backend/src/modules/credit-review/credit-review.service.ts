@@ -8,7 +8,7 @@ export class CreditReviewService {
   async listPending() {
     const applications = await this.prisma.plApplication.findMany({
       where: { status: 'PENDING_CREDIT_REVIEW' },
-      orderBy: { lenderDecisionAt: 'asc' },
+      orderBy: { selectedAt: 'asc' },
       include: { customer: true },
     });
 
@@ -21,40 +21,44 @@ export class CreditReviewService {
       lenderId: application.lenderId,
       lenderCode: application.lenderCode,
       lenderApprovedAmount: application.lenderApprovedAmount?.toNumber() ?? null,
-      lenderApprovedRoi: application.lenderApprovedRoi?.toNumber() ?? null,
+      selectedAmount: application.selectedAmount?.toNumber() ?? null,
+      selectedTenure: application.selectedTenure,
+      selectedAt: application.selectedAt,
       lenderDecisionAt: application.lenderDecisionAt,
     }));
   }
 
+  // Manual override for the final (second) lender decision: the async lender webhook
+  // is the primary path (see LenderDecisionProcessor.process()) — this lets a credit
+  // team member finalize the same outcome by hand while that result is still pending.
   async approve(applicationId: bigint, decidedByUserId: string) {
     return this.prisma.$transaction(async (tx) => {
       const application = await tx.plApplication.findUnique({ where: { id: applicationId } });
       if (!application) throw new NotFoundException('Application not found.');
       if (application.status !== 'PENDING_CREDIT_REVIEW') {
-        throw new BadRequestException('Application is not pending credit review.');
+        throw new BadRequestException('Application is not pending final lender approval.');
       }
-      if (!application.lenderApprovedAmount || !application.lenderApprovedRoi || !application.platformLan) {
-        throw new BadRequestException('Application is missing the lender-approved terms required to finalize approval.');
+      if (!application.selectedAmount || !application.selectedTenure || !application.platformLan) {
+        throw new BadRequestException('Application is missing the customer-selected offer required to finalize approval.');
       }
 
-      // Tenure options come from the admin-configured product, not the lender —
-      // the customer picks one of these post-approval (LoanService.acceptOffer).
-      const productVersion = application.productStrategyVersionId
-        ? await tx.lenderProductVersion.findUnique({
-            where: { id: application.productStrategyVersionId },
-            include: { tenures: { orderBy: { sortOrder: 'asc' } } },
-          })
-        : null;
-      const allowedTenures = productVersion?.tenures.map((t) => t.tenure) ?? [];
-      if (allowedTenures.length === 0) {
-        throw new BadRequestException('The allocated product has no configured tenure options to offer the customer.');
+      let approvedRoi = application.lenderApprovedRoi;
+      if (!approvedRoi && application.productStrategyVersionId) {
+        const productVersion = await tx.lenderProductVersion.findUnique({
+          where: { id: application.productStrategyVersionId },
+          select: { annualRoiPercent: true },
+        });
+        approvedRoi = productVersion?.annualRoiPercent ?? null;
+      }
+      if (!approvedRoi) {
+        throw new BadRequestException('Unable to determine the applicable interest rate for this product.');
       }
 
       const decidedAt = new Date();
 
       const updatedApplication = await tx.plApplication.update({
         where: { id: application.id },
-        data: { status: 'LENDER_APPROVED' },
+        data: { status: 'LENDER_APPROVED', lenderApprovedRoi: approvedRoi, lenderDecisionAt: decidedAt },
       });
 
       await tx.customer.update({
@@ -71,11 +75,13 @@ export class CreditReviewService {
           lenderCode: application.lenderCode || application.lenderId || 'LENDER',
           status: 'LENDER_APPROVED',
           currentStep: 'APPROVAL_SUMMARY',
-          approvedAmount: application.lenderApprovedAmount,
+          approvedAmount: application.selectedAmount,
           lenderApprovedAt: decidedAt,
-          offerStatus: 'AVAILABLE',
-          offerAllowedTenures: JSON.stringify(allowedTenures),
-          offerValidUntil: new Date(decidedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+          offerStatus: 'ACCEPTED',
+          offerAllowedTenures: JSON.stringify([application.selectedTenure]),
+          acceptedTenureDays: application.selectedTenure,
+          acceptedAt: decidedAt,
+          acceptedInterestRate: approvedRoi,
         },
         update: {},
       });

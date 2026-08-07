@@ -59,9 +59,9 @@ export default function CreditReviewPage() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Credit Review</h1>
+          <h1 className="text-2xl font-bold">Final Approval Review</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Applications the lender has approved, awaiting internal credit sign-off before the customer sees an approval.
+            Applications where the customer has selected an offer and the final lender decision is pending. Use Approve/Reject to override manually instead of waiting for the lender's async result.
           </p>
         </div>
       </div>
@@ -79,9 +79,9 @@ export default function CreditReviewPage() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Application</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lender</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved Amount</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ROI</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision At</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Selected Amount</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Selected Tenure</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Selected At</th>
               <th className="px-6 py-3"></th>
             </tr>
           </thead>
@@ -100,10 +100,10 @@ export default function CreditReviewPage() {
                       <div className="text-xs text-gray-500">{application.customerMobile}</div>
                     </td>
                     <td className="px-6 py-4">{application.lenderCode || application.lenderId}</td>
-                    <td className="px-6 py-4">{formatCurrency(application.lenderApprovedAmount)}</td>
-                    <td className="px-6 py-4">{application.lenderApprovedRoi ?? '-'}%</td>
+                    <td className="px-6 py-4">{formatCurrency(application.selectedAmount)}</td>
+                    <td className="px-6 py-4">{application.selectedTenure ?? '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {application.lenderDecisionAt ? new Date(application.lenderDecisionAt).toLocaleString('en-IN') : '-'}
+                      {application.selectedAt ? new Date(application.selectedAt).toLocaleString('en-IN') : '-'}
                     </td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <button

@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { AxiosError, AxiosResponse } from 'axios';
 import * as FormData from 'form-data';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigioBankService } from './integrations/digio-bank.service';
@@ -64,6 +65,7 @@ export class ExternalApiService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly digioBankService: DigioBankService,
+    private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
   ) {
     // PAN API Setup
     this.panApiUrl = this.configService.getOrThrow<string>('PAN_API_URL');
@@ -1212,6 +1214,14 @@ export class ExternalApiService {
 
       return record;
     });
+
+    if (status === PlBankVerificationStatus.VERIFIED && loan.applicationId) {
+      // Staged profile push (V3) carrying the backend-verified bank details to the
+      // lender — reuses the same profile/UPDATE integration as every other stage.
+      this.lenderIntegrationOutbox.enqueueUpdateWhenReady(loan.applicationId, 3).catch((err) => {
+        this.logger.warn(`Failed to enqueue bank profile update for application ${loan.applicationId}: ${err?.message || err}`);
+      });
+    }
 
     if (status === PlBankVerificationStatus.VERIFIED) {
       return {

@@ -463,6 +463,23 @@ export class FintreeFinanceV1Adapter
       };
     }
 
+    // The final (post-offer-selection) decision call commonly comes back as a
+    // credit-queue/processing state before the async final outcome — recognized
+    // generically since Fintree's exact wording for this state isn't yet confirmed.
+    if (
+      status === 'pending' ||
+      status === 'processing' ||
+      status === 'under_review' ||
+      status === 'in_review' ||
+      status === 'queued'
+    ) {
+      return {
+        decision: 'PENDING',
+        providerStatus: response.data.status,
+        decisionReference: context.idempotencyKey,
+      };
+    }
+
     if (status !== 'approved') {
       throw new LenderIntegrationError(
         'FINTREE_DECISION_STATUS_UNRECOGNIZED',

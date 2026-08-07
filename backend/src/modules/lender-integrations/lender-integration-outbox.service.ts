@@ -226,22 +226,24 @@ if (!platformLan) {
     return { ready: reasons.length === 0, reasons, application, permanent, current };
   }
 
-  async enqueueUpdateWhenReady(applicationId: bigint) {
+  async enqueueUpdateWhenReady(applicationId: bigint, version: number = 1) {
     const readiness = await this.getUpdateReadiness(applicationId);
     if (!readiness.ready) return { enqueued: false, readiness: { ready: false, reasons: readiness.reasons } };
     const application = readiness.application;
-    const idempotencyKey = `${application.applicationNumber}:LENDER_UPDATE_APPLICATION:V1`;
+    const idempotencyKey = `${application.applicationNumber}:LENDER_UPDATE_APPLICATION:V${version}`;
     const event = await this.prisma.$transaction(async (tx) => {
       const created = await tx.lenderIntegrationOutbox.upsert({
         where: { idempotencyKey },
-        create: { eventType: 'LENDER_UPDATE_APPLICATION', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId!, integrationStage: 'UPDATE', payloadVersion: 1, idempotencyKey },
+        create: { eventType: 'LENDER_UPDATE_APPLICATION', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId!, integrationStage: 'UPDATE', payloadVersion: version, idempotencyKey },
         update: {},
       });
-      // Don't regress a stage that already succeeded — re-saving the same address
-      // (or any other trigger of this method) must not undo a completed UPDATE.
-      const existingLink = await tx.lenderApplicationLink.findUnique({ where: { applicationId }, select: { updateStatus: true } });
-      if (!existingLink || !['ACKNOWLEDGED', 'COMPLETED'].includes(existingLink.updateStatus)) {
-        await tx.lenderApplicationLink.update({ where: { applicationId }, data: { updateStatus: 'PENDING', updateIdempotencyKey: idempotencyKey, updatePayloadVersion: 1 } });
+      // Don't regress a stage that already succeeded at this same version — re-saving
+      // the same address (or any other trigger of this method) must not undo a
+      // completed UPDATE. A higher version (staged offer/bank/mandate push) must still
+      // go out even though a lower version already completed.
+      const existingLink = await tx.lenderApplicationLink.findUnique({ where: { applicationId }, select: { updateStatus: true, updatePayloadVersion: true } });
+      if (!existingLink || !['ACKNOWLEDGED', 'COMPLETED'].includes(existingLink.updateStatus) || existingLink.updatePayloadVersion < version) {
+        await tx.lenderApplicationLink.update({ where: { applicationId }, data: { updateStatus: 'PENDING', updateIdempotencyKey: idempotencyKey, updatePayloadVersion: version } });
       }
       return created;
     });
@@ -287,14 +289,18 @@ if (!platformLan) {
     }
   }
 
-  async enqueueDecisionWhenReady(applicationId: bigint) {
+  async enqueueDecisionWhenReady(applicationId: bigint, version: number = 1) {
     const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId }, include: { lenderApplicationLink: true, stageConsents: true } });
     if (!application?.lenderId || !application.lenderApplicationLink) throw new BadRequestException('Lender application link is missing.');
-    if (!['ACKNOWLEDGED', 'COMPLETED'].includes(application.lenderApplicationLink.updateStatus)) throw new BadRequestException('Lender UPDATE must be acknowledged before requesting a decision.');
-    
+    const link = application.lenderApplicationLink;
+    if (!['ACKNOWLEDGED', 'COMPLETED'].includes(link.updateStatus)) throw new BadRequestException('Lender UPDATE must be acknowledged before requesting a decision.');
+    // A later-generation decision (e.g. the final approval call after offer selection)
+    // must not be requested before its own prerequisite UPDATE version has landed.
+    if (link.updatePayloadVersion < version) throw new BadRequestException('Lender UPDATE for this stage must be acknowledged before requesting a decision.');
+
     const config = await this.prisma.lenderIntegrationConfig.findFirst({ where: { lenderId: application.lenderId } });
     if (!config) throw new BadRequestException('Lender integration config not found.');
-    
+
     const adapter = this.adapters.resolve(config.adapterKey, config.adapterVersion);
     if (!adapter.capabilities.decisionRequest && !adapter.capabilities.statusPolling) {
       throw new BadRequestException('The selected lender adapter does not support decision request or status polling.');
@@ -304,14 +310,16 @@ if (!platformLan) {
       const consent = application.stageConsents.find((item) => item.consentType === type && !item.revokedAt);
       if (!consent || createHash('sha256').update(consent.consentText, 'utf8').digest('hex') !== consent.consentTextHash) throw new BadRequestException(`${type} consent evidence is missing or invalid.`);
     }
-    const idempotencyKey = `${application.applicationNumber}:LENDER_REQUEST_DECISION:V1`;
+    const idempotencyKey = `${application.applicationNumber}:LENDER_REQUEST_DECISION:V${version}`;
     return this.prisma.$transaction(async (tx) => {
       const event = await tx.lenderIntegrationOutbox.upsert({
         where: { idempotencyKey },
-        create: { eventType: 'LENDER_REQUEST_DECISION', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId!, integrationStage: 'DECISION', payloadVersion: 1, idempotencyKey },
+        create: { eventType: 'LENDER_REQUEST_DECISION', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId!, integrationStage: 'DECISION', payloadVersion: version, idempotencyKey },
         update: {},
       });
-      await tx.lenderApplicationLink.update({ where: { applicationId }, data: { decisionStatus: 'PENDING', decisionIdempotencyKey: idempotencyKey, decisionPayloadVersion: 1 } });
+      if ((link.decisionPayloadVersion ?? 0) <= version) {
+        await tx.lenderApplicationLink.update({ where: { applicationId }, data: { decisionStatus: 'PENDING', decisionIdempotencyKey: idempotencyKey, decisionPayloadVersion: version } });
+      }
       return event;
     });
   }

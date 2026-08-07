@@ -56,6 +56,8 @@ export interface LenderCreateApplicationContext {
     platformLan: string;
     platformProductId: string;
     requestedAmount: string | null;
+    requestedTenure: number | null;
+    tenureType: string | null;
     scopeCode: string | null;
   };
 
@@ -201,6 +203,36 @@ export interface LenderUpdateApplicationContext {
     current: LenderCanonicalAddress;
     currentAddressSameAsPermanent: boolean;
   };
+
+  // Populated only once the customer has selected an offer within the lender's
+  // pre-approval credit limit (staged profile update ahead of the final decision call).
+  selectedOffer: {
+    amount: string;
+    tenure: number;
+    selectedAt: string;
+  } | null;
+
+  // Populated only after backend-verified bank details exist for this application
+  // (never sourced from raw frontend input — see LoanService/ExternalApiService).
+  // accountNumber is decrypted from the stored ciphertext only when this context is
+  // built, immediately before being sent to the lender — it must never be logged.
+  bankDetails: {
+    accountHolderName: string;
+    accountNumber: string;
+    accountNumberMasked: string;
+    ifscCode: string;
+    bankName: string;
+    accountType: string;
+    verifiedAt: string;
+  } | null;
+
+  // Populated only after the eNACH/mandate webhook has authorized the mandate.
+  mandate: {
+    umrn: string;
+    provider: string;
+    mandateType: string;
+    authorizedAt: string;
+  } | null;
 }
 
 export interface LenderUpdateApplicationResult {

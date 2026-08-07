@@ -28,6 +28,16 @@ export class LoanController {
     return this.loanService.acceptOffer(lan, this.customerId(customer), body.tenureDays);
   }
 
+  @Get(':lan/pre-approval-offer')
+  getPreApprovalOffer(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
+    return this.loanService.getPreApprovalOffer(lan, this.customerId(customer));
+  }
+
+  @Post(':lan/pre-approval-offer/select')
+  selectPreApprovalOffer(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: { tenureDays: number }) {
+    return this.loanService.selectPreApprovalOffer(lan, this.customerId(customer), body.tenureDays);
+  }
+
   @Post(':lan/digilocker/initiate')
   initiateDigilocker(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
     return this.loanService.initiateDigilocker(lan, this.customerId(customer));

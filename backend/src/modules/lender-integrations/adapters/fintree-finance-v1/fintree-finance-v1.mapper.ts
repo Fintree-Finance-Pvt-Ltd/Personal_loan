@@ -71,6 +71,18 @@ export function mapFintreeCreatePayload(
         'productCode',
       ),
 
+    requestedAmount:
+      requireString(
+        context.application.requestedAmount,
+        'requestedAmount',
+      ),
+
+    requestedTenure:
+      context.application.requestedTenure,
+
+    tenureType:
+      context.application.tenureType,
+
     customer: {
       fullName:
         requireString(
@@ -401,6 +413,34 @@ export function mapFintreeDetailsPayload(
       verifiedAt:
         context.liveness.verifiedAt,
     },
+
+    selectedOffer: context.selectedOffer
+      ? {
+          amount: context.selectedOffer.amount,
+          tenure: context.selectedOffer.tenure,
+          selectedAt: context.selectedOffer.selectedAt,
+        }
+      : null,
+
+    bankDetails: context.bankDetails
+      ? {
+          accountHolderName: context.bankDetails.accountHolderName,
+          accountNumber: context.bankDetails.accountNumber,
+          ifscCode: context.bankDetails.ifscCode,
+          bankName: context.bankDetails.bankName,
+          accountType: context.bankDetails.accountType,
+          verifiedAt: context.bankDetails.verifiedAt,
+        }
+      : null,
+
+    mandate: context.mandate
+      ? {
+          umrn: context.mandate.umrn,
+          provider: context.mandate.provider,
+          mandateType: context.mandate.mandateType,
+          authorizedAt: context.mandate.authorizedAt,
+        }
+      : null,
   };
 }
 

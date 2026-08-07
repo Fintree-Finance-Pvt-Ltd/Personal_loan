@@ -67,6 +67,7 @@ components:
         - lan
         - sourceSystem
         - productCode
+        - requestedAmount
         - customer
         - panVerification
       properties:
@@ -79,6 +80,17 @@ components:
           enum: [FINTREE_PLP]
         productCode:
           type: string
+        requestedAmount:
+          type: string
+          description: Deterministic initial amount requested from the lender, computed from the allocated product's multiplier/rounding rules before any lender decision exists.
+        requestedTenure:
+          type: number
+          nullable: true
+          description: Initial tenure requested, taken from the allocated product's configured tenure list (lowest sort order).
+        tenureType:
+          type: string
+          nullable: true
+          enum: [DAYS, MONTHS]
         customer:
           type: object
         panVerification:
@@ -189,6 +201,15 @@ components:
 
     UpdateDetailsRequest:
       type: object
+      description: |
+        Staged/versioned profile update. This same endpoint is called multiple times over an
+        application's lifecycle, once per stage, with detailsVersion strictly increasing and
+        never reused: V1 (onboarding profile, before the first/pre-approval decision), V2 (after
+        the customer selects an offer within the lender's pre-approval credit limit, before the
+        final decision call), V3 (after backend bank-account verification succeeds), V4 (after
+        the eNACH mandate is authorized). selectedOffer/bankDetails/mandate are included only once
+        the corresponding stage's data exists — earlier snapshots are never overwritten, each
+        version is sent and tracked independently.
       required:
         - externalApplicationReference
         - lan
@@ -218,6 +239,50 @@ components:
           type: object
         currentAddressEvidence:
           type: object
+        selectedOffer:
+          type: object
+          nullable: true
+          description: Present from V2 onward, once the customer has selected an amount/tenure within the pre-approval credit limit.
+          properties:
+            amount:
+              type: string
+            tenure:
+              type: number
+            selectedAt:
+              type: string
+              format: date-time
+        bankDetails:
+          type: object
+          nullable: true
+          description: Present from V3 onward, once backend bank-account verification has succeeded. Sourced only from the verified backend record, never raw customer input.
+          properties:
+            accountHolderName:
+              type: string
+            accountNumber:
+              type: string
+            ifscCode:
+              type: string
+            bankName:
+              type: string
+            accountType:
+              type: string
+            verifiedAt:
+              type: string
+              format: date-time
+        mandate:
+          type: object
+          nullable: true
+          description: Present from V4 onward, once the eNACH mandate webhook has authorized the mandate. UMRN is sourced only from the verified webhook/provider record.
+          properties:
+            umrn:
+              type: string
+            provider:
+              type: string
+            mandateType:
+              type: string
+            authorizedAt:
+              type: string
+              format: date-time
 
     UpdateDetailsResponse:
       type: object
@@ -322,6 +387,86 @@ components:
           type: string
           format: uuid
 
+    DecisionRequest:
+      type: object
+      description: |
+        This same endpoint is called twice per application, distinguished only by
+        Idempotency-Key (…:LENDER_REQUEST_DECISION:V1 for the pre-approval call, …:V2 for the
+        final approval call made after the customer selects an offer) — the request body shape
+        is identical for both calls; the amount/tenure/offer context Fintree needs comes from the
+        profile (details) updates, not from this payload.
+      required:
+        - externalApplicationReference
+        - productCode
+        - bureauConsent
+        - decisionConsent
+      properties:
+        externalApplicationReference:
+          type: string
+        productCode:
+          type: string
+        bureauConsent:
+          type: object
+          required: [reference, hash]
+          properties:
+            reference:
+              type: string
+            hash:
+              type: string
+        decisionConsent:
+          type: object
+          required: [reference, hash]
+          properties:
+            reference:
+              type: string
+            hash:
+              type: string
+
+    DecisionResponse:
+      type: object
+      required:
+        - success
+        - data
+        - correlationId
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - status
+          description: |
+            On the pre-approval (V1) call, an "approved" status carries the credit limit in
+            CREDIT_LIMIT_CHECK_RPM and is persisted as a pre-approval only (no loan created yet).
+            On the final (V2) call, "approved" finalizes the loan using the customer's
+            already-selected amount/tenure. Either call may return a pending/processing status
+            (recognized values: pending, processing, under_review, in_review, queued) — for V2
+            this is the expected initial response, with the final outcome delivered later via the
+            existing async decision/status mechanism. "rejected" is terminal at either stage.
+          properties:
+            status:
+              type: string
+              enum: [approved, rejected, pending, processing, under_review, in_review, queued]
+            CREDIT_LIMIT_CHECK_RPM:
+              type: object
+              nullable: true
+              description: Present only when status is "approved". Exactly one of the two derived values is populated depending on whether Fintree treats the applicant as new or repeat.
+              properties:
+                derived_values:
+                  type: object
+                  required:
+                    - LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM
+                    - LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM
+                  properties:
+                    LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM:
+                      type: number
+                    LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM:
+                      type: number
+        correlationId:
+          type: string
+          format: uuid
+
 security:
   - ApiKeyAuth: []
 
@@ -422,6 +567,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UpdateDetailsResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /applications/{partnerApplicationId}/decision:
+    post:
+      summary: Request Lender Decision (called twice — pre-approval, then final approval)
+      operationId: requestDecision
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      responses:
+        "200":
+          description: Decision recorded (approved/rejected/pending — see DecisionResponse for stage-specific semantics)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionResponse'
         "400":
           description: Validation Error
           content:

@@ -23,7 +23,7 @@ describe('LenderIntegrationOutboxService', () => {
   it('returns structured reason codes and does not enqueue an incomplete UPDATE', async () => {
     const application: any = {
       id: 1n,
-      platformLan: 'FTPL123',
+      platformLan: null,
       lenderApplicationLink: { createStatus: 'PENDING', partnerApplicationId: null },
       employmentSnapshot: null,
       kycSnapshot: null,
@@ -51,7 +51,7 @@ describe('LenderIntegrationOutboxService', () => {
     const consentText = 'Exact update consent';
     const application: any = {
       id: 1n, applicationNumber: 'APP-001', lenderId: 'L1', platformLan: 'FTPL123',
-      lenderApplicationLink: { createStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1', lastSyncedStage: 'CONSENT' },
+      lenderApplicationLink: { createStatus: 'ACKNOWLEDGED', consentStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1', lastSyncedStage: 'CONSENT' },
       employmentSnapshot: { completedAt: new Date(), monthlyIncome: 50000, employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer' },
       kycSnapshot: { verificationStatus: 'VERIFIED', verifiedAt: new Date(), verifiedName: 'Test Customer' },
       addresses: [
@@ -67,7 +67,7 @@ describe('LenderIntegrationOutboxService', () => {
     };
     const tx: any = {
       lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
-      lenderApplicationLink: { update: jest.fn() },
+      lenderApplicationLink: { update: jest.fn(), findUnique: jest.fn().mockResolvedValue({ updateStatus: 'PENDING', updatePayloadVersion: 0 }) },
     };
     const prisma: any = {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application) },

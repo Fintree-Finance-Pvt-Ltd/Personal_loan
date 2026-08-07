@@ -56,6 +56,7 @@ import {
   runEligibility,
   updatePincode,
 } from '../customerApi';
+import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi';
 import { authApi } from '../../auth/authApi';
 
 
@@ -364,6 +365,7 @@ function deriveCustomerWorkflow(customer) {
     LENDER_UPDATE_PROCESSING: 'integration_processing',
     LENDER_DECISION_PROCESSING: 'integration_processing',
     APPROVAL_PROCESSING: 'integration_processing',
+    PRE_APPROVAL_OFFER_SELECTION: 'pre_approval_offer_selection',
     INTEGRATION_SUPPORT: 'integration_support',
     LENDER_REJECTED: 'submit_application',
     BANK_DETAILS: 'submit_application',
@@ -1928,6 +1930,12 @@ export default function MyApplicationPage() {
           isSubmitting={isSubmitting}
           onBack={() => goToStep('aadhaar_kyc')}
           onSubmit={handleSubmitApplication}
+        />
+      )}
+      {currentStep === 'pre_approval_offer_selection' && (
+        <PreApprovalOfferStep
+          lan={customer?.journey?.platformLan}
+          onSelected={() => fetchCustomer()}
         />
       )}
       {currentStep === 'integration_processing' && (
@@ -4903,6 +4911,101 @@ function StepCard({ children }) {
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       {children}
     </section>
+  );
+}
+
+function PreApprovalOfferStep({ lan, onSelected }) {
+  const [offer, setOffer] = useState(null);
+  const [selectedTenure, setSelectedTenure] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!lan) return;
+    setLoading(true);
+    getPreApprovalOffer(lan)
+      .then((data) => {
+        setOffer(data);
+        setSelectedTenure(data?.selectedTenure || (Array.isArray(data?.allowedTenures) ? data.allowedTenures[0] : null));
+      })
+      .catch((err) => setError(err.message || 'Unable to load your pre-approved offer.'))
+      .finally(() => setLoading(false));
+  }, [lan]);
+
+  const formatCurrency = (val) => (val || val === 0) ? Number(val).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }) : '—';
+
+  const handleSelect = async () => {
+    if (!selectedTenure) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await selectPreApprovalOffer(lan, { tenureDays: selectedTenure });
+      onSelected();
+    } catch (err) {
+      setError(err.message || 'Unable to select this offer.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <StepCard>
+      <div className="p-2 sm:p-4">
+        <h2 className="text-xl font-bold text-slate-900">You're Pre-Approved!</h2>
+        <p className="mt-1 text-sm text-slate-600">Select a repayment tenure to proceed to final lender approval.</p>
+
+        {loading ? (
+          <div className="mt-8 flex justify-center"><LoaderCircle className="h-8 w-8 animate-spin text-emerald-600" /></div>
+        ) : error ? (
+          <p className="mt-6 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>
+        ) : (
+          <>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold text-slate-500">Pre-Approved Amount</p>
+                <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(offer?.amount)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs font-semibold text-slate-500">Lender Credit Limit</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{formatCurrency(offer?.lenderApprovedAmount)}</p>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <p className="mb-3 text-sm font-bold text-slate-900">Select Repayment Tenure</p>
+              <div className="flex flex-wrap gap-3">
+                {(offer?.allowedTenures || []).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSelectedTenure(t)}
+                    className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+                      : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
+                      }`}
+                  >
+                    {t} Days
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSelect}
+                disabled={submitting || !selectedTenure}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                {submitting ? 'Submitting…' : 'Confirm Offer & Continue'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </StepCard>
   );
 }
 

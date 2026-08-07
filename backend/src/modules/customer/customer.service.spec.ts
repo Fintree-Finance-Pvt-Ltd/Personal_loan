@@ -8,6 +8,7 @@ import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engin
 import { PlPaymentsService } from '../external-api/pl-payments.service';
 import { ApplicationTransitionService } from '../loan/services/application-transition.service';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
+import { ProductCalculationService } from '../products/product-calculation.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 describe('CustomerService Integration', () => {
@@ -65,6 +66,7 @@ describe('CustomerService Integration', () => {
           provide: PolicyEvaluationService,
           useValue: { evaluate: jest.fn() },
         },
+        { provide: ProductCalculationService, useValue: new ProductCalculationService() },
         { provide: 'AuditLogsService', useValue: { record: jest.fn() } },
         { provide: 'FilesService', useValue: {} },
         { provide: 'DigilockerService', useValue: {} },
@@ -140,12 +142,19 @@ describe('CustomerService Integration', () => {
       } as any);
       (prisma as any).lenderProductVersion.findUnique.mockResolvedValue({
         id: 'HISTORICAL-PV-7', productId: 'PRODUCT-1', assessmentFeeAmount: 500, assessmentFeeGstPercent: 18,
+        minimumAmount: 1000, firstLoanBaseAmount: 5000, maximumAmountCap: 50000,
+        roundingMethod: 'NONE', roundingUnit: null,
+        interestMethod: 'FLAT_RATE', annualRoiPercent: 18, processingFeePercent: 2, processingFeeGstPercent: 18,
+        penalChargeAmount: 0, bounceChargeAmount: 0, emiDueDay: 5, includeAssessmentFeeInApr: false, tenureType: 'DAYS',
+        multipliers: [{ minimumCompletedLoans: 0, multiplier: '1.0000' }],
+        tenures: [{ tenure: 90, sortOrder: 0 }],
       });
       (prisma as any).lender.findUnique.mockResolvedValue({ id: 'LENDER-1', code: 'L1' });
+      (prisma as any).plLoan.count.mockResolvedValue(0);
 
       await service.runEligibility(1n, {});
 
-      expect((prisma as any).lenderProductVersion.findUnique).toHaveBeenCalledWith({ where: { id: 'HISTORICAL-PV-7' } });
+      expect((prisma as any).lenderProductVersion.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'HISTORICAL-PV-7' } }));
       expect((prisma as any).lenderProductVersion.findFirst).not.toHaveBeenCalled();
       expect(prisma.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ productStrategyVersionId: 'HISTORICAL-PV-7' }),
