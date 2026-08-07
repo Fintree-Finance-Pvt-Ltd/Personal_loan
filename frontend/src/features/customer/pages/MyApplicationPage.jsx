@@ -359,6 +359,7 @@ function deriveCustomerWorkflow(customer) {
     PROFILE_DETAILS: 'profile_details',
     AADHAAR_KYC: 'aadhaar_kyc',
     ADDRESS_DETAILS: 'aadhaar_kyc',
+    SUBMIT_APPLICATION: 'submit_application',
     LENDER_CREATE_PROCESSING: 'integration_processing',
     LENDER_UPDATE_PROCESSING: 'integration_processing',
     LENDER_DECISION_PROCESSING: 'integration_processing',

@@ -237,7 +237,12 @@ if (!platformLan) {
         create: { eventType: 'LENDER_UPDATE_APPLICATION', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId!, integrationStage: 'UPDATE', payloadVersion: 1, idempotencyKey },
         update: {},
       });
-      await tx.lenderApplicationLink.update({ where: { applicationId }, data: { updateStatus: 'PENDING', updateIdempotencyKey: idempotencyKey, updatePayloadVersion: 1 } });
+      // Don't regress a stage that already succeeded — re-saving the same address
+      // (or any other trigger of this method) must not undo a completed UPDATE.
+      const existingLink = await tx.lenderApplicationLink.findUnique({ where: { applicationId }, select: { updateStatus: true } });
+      if (!existingLink || !['ACKNOWLEDGED', 'COMPLETED'].includes(existingLink.updateStatus)) {
+        await tx.lenderApplicationLink.update({ where: { applicationId }, data: { updateStatus: 'PENDING', updateIdempotencyKey: idempotencyKey, updatePayloadVersion: 1 } });
+      }
       return created;
     });
     return { enqueued: true, event, readiness: { ready: true, reasons: [] } };

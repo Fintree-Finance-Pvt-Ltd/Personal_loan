@@ -31,6 +31,7 @@ import {
 
 import {
   LenderIntegrationError,
+  redactLenderIntegrationText,
 } from '../lender-integration.errors';
 
 import {
@@ -441,15 +442,22 @@ export class FintreeFinanceV1Adapter
           FintreeDecisionResponseSchema,
       });
 
+    if (!response.success) {
+      throw this.partnerError(
+        response.error.code,
+        response.error.message,
+      );
+    }
+
     const status =
-      response.status
+      response.data.status
         .trim()
         .toLowerCase();
 
     if (status === 'rejected') {
       return {
         decision: 'REJECTED',
-        providerStatus: response.status,
+        providerStatus: response.data.status,
         decisionReference: context.idempotencyKey,
         rejectionReasonCode: 'LENDER_CRITERIA_NOT_MET',
       };
@@ -458,13 +466,13 @@ export class FintreeFinanceV1Adapter
     if (status !== 'approved') {
       throw new LenderIntegrationError(
         'FINTREE_DECISION_STATUS_UNRECOGNIZED',
-        `Fintree returned an unrecognized decision status: ${response.status}`,
+        `Fintree returned an unrecognized decision status: ${response.data.status}`,
         'PERMANENT_VALIDATION',
       );
     }
 
     const derivedValues =
-      response.CREDIT_LIMIT_CHECK_RPM
+      response.data.CREDIT_LIMIT_CHECK_RPM
         ?.derived_values;
 
     const newCustomerLimit =
@@ -492,7 +500,7 @@ export class FintreeFinanceV1Adapter
 
     return {
       decision: 'APPROVED',
-      providerStatus: response.status,
+      providerStatus: response.data.status,
       decisionReference: context.idempotencyKey,
       approvedAmount: String(approvedAmount),
     };
@@ -613,6 +621,8 @@ export class FintreeFinanceV1Adapter
           'Invalid Fintree response schema',
           `endpoint=${input.endpointName}`,
           `correlationId=${input.context.correlationId}`,
+          `rawResponse=${redactLenderIntegrationText(JSON.stringify(response.data))}`,
+          `zodErrors=${redactLenderIntegrationText(JSON.stringify(parsed.error.issues))}`,
         ].join(' '),
       );
 

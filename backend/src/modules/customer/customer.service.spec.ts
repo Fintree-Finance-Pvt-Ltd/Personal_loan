@@ -35,6 +35,7 @@ describe('CustomerService Integration', () => {
             platformPolicy: { findMany: jest.fn() },
             plLoan: { count: jest.fn() },
             kycVerificationStatus: { upsert: jest.fn(), findFirst: jest.fn() },
+            applicationStageConsent: { findMany: jest.fn().mockResolvedValue([]) },
           },
         },
         { provide: LoanService, useValue: {} },

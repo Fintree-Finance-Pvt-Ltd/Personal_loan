@@ -444,7 +444,15 @@ export class CustomerService {
     }
     const link = latestApp?.lenderApplicationLink ?? null;
     const currentOutbox = latestApp?.lenderIntegrationOutbox?.[0] ?? null;
-    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan });
+    let hasDecisionConsents = false;
+    if (latestApp) {
+      const requiredConsentTypes = ['BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'];
+      const decisionConsents = await this.prisma.applicationStageConsent.findMany({
+        where: { applicationId: latestApp.id, consentType: { in: requiredConsentTypes as any }, revokedAt: null },
+      });
+      hasDecisionConsents = requiredConsentTypes.every((type) => decisionConsents.some((c) => c.consentType === type));
+    }
+    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan, hasDecisionConsents });
 
     // Explicitly build response — never spread raw Prisma objects with BigInt fields
     return {
@@ -1033,8 +1041,8 @@ export class CustomerService {
     });
   }
 
-  private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any }): string {
-    const { application, payment, link, outbox, updateReadiness, loan } = input;
+  private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean }): string {
+    const { application, payment, link, outbox, updateReadiness, loan, hasDecisionConsents } = input;
     if (!application) return 'BASIC_DETAILS';
     if (link?.normalizedDecision === 'APPROVED' || application.status === 'LENDER_APPROVED') return loan ? 'BANK_DETAILS' : 'APPROVAL_PROCESSING';
     if (link?.normalizedDecision === 'REJECTED' || application.status === 'LENDER_REJECTED') return 'LENDER_REJECTED';
@@ -1045,6 +1053,10 @@ export class CustomerService {
     if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';
     if (updateReadiness.reasons.includes('DIGILOCKER_KYC_NOT_VERIFIED')) return 'AADHAAR_KYC';
     if (updateReadiness.reasons.some((reason) => ['PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'SAME_ADDRESS_DECISION_MISSING'].includes(reason))) return 'ADDRESS_DETAILS';
+    // The customer must explicitly consent to a lender decision request before we
+    // proceed automatically in the background — without this, CREATE/UPDATE can
+    // race ahead of the customer ever seeing the Submit Application screen.
+    if (!hasDecisionConsents) return 'SUBMIT_APPLICATION';
     if (!['ACKNOWLEDGED', 'COMPLETED'].includes(link.updateStatus)) return 'LENDER_UPDATE_PROCESSING';
     if (link.normalizedDecision === 'PENDING' || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.decisionStatus)) return 'LENDER_DECISION_PROCESSING';
     return 'LENDER_DECISION_PROCESSING';

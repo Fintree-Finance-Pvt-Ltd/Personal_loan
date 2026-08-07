@@ -79,20 +79,30 @@ export const FintreeDocumentResponseSchema = z.discriminatedUnion('success', [
   }).strict(),
 ]);
 
-// Fintree's real pre-approval/BRE decision API does not use the {success,data,correlationId}
-// envelope the other (internally mocked) endpoints use above. It responds flat, e.g.:
-// { status: "Approved", CREDIT_LIMIT_CHECK_RPM: { derived_values: { LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 8000, LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0 } } }
-export const FintreeDecisionResponseSchema = z.object({
-  status: z.string().min(1),
-  CREDIT_LIMIT_CHECK_RPM: z
-    .object({
-      derived_values: z.object({
-        LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: z.number(),
-        LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: z.number(),
-      }),
-    })
-    .optional(),
-}).passthrough();
+// Confirmed against Fintree's real UAT response (2026-08-07): the pre-approval/BRE decision
+// API uses the same {success,data,correlationId} envelope as every other Fintree endpoint.
+export const FintreeDecisionResponseSchema = z.discriminatedUnion('success', [
+  z.object({
+    success: z.literal(true),
+    data: z.object({
+      status: z.string().min(1),
+      CREDIT_LIMIT_CHECK_RPM: z
+        .object({
+          derived_values: z.object({
+            LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: z.number(),
+            LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: z.number(),
+          }),
+        })
+        .optional(),
+    }).passthrough(),
+    correlationId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    success: z.literal(false),
+    error: FintreeErrorSchema,
+    correlationId: z.string().uuid(),
+  }).strict(),
+]);
 
 export type FintreeCreateResponse = z.infer<typeof FintreeCreateResponseSchema>;
 export type FintreeConsentResponse = z.infer<typeof FintreeConsentResponseSchema>;

@@ -561,7 +561,7 @@ export class CustomerAadhaarKycService {
           },
         });
       });
-      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr);
+      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar);
 
       // Audit log (non-blocking)
       this.auditLogs
@@ -905,7 +905,7 @@ export class CustomerAadhaarKycService {
       }
     });
 
-    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr);
+    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null);
 
     // Download and store DigiLocker documents (PDF & XML) into disk & database pl_customer_documents
     await this.storeDigitapDocuments(
@@ -919,14 +919,14 @@ export class CustomerAadhaarKycService {
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
   }
 
-  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>) {
+  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null) {
     const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
     if (!application) return;
     const verifiedAt = new Date();
     await this.prisma.applicationKycSnapshot.upsert({
       where: { applicationId: application.id },
-      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, verifiedAt },
-      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, verifiedAt },
+      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt },
+      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt },
     });
     const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
     const city = String(address.vtc || address.city || address.dist || '').trim();

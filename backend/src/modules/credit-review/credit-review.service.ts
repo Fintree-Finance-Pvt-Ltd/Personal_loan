@@ -21,7 +21,6 @@ export class CreditReviewService {
       lenderId: application.lenderId,
       lenderCode: application.lenderCode,
       lenderApprovedAmount: application.lenderApprovedAmount?.toNumber() ?? null,
-      lenderApprovedTenure: application.lenderApprovedTenure,
       lenderApprovedRoi: application.lenderApprovedRoi?.toNumber() ?? null,
       lenderDecisionAt: application.lenderDecisionAt,
     }));
@@ -34,8 +33,21 @@ export class CreditReviewService {
       if (application.status !== 'PENDING_CREDIT_REVIEW') {
         throw new BadRequestException('Application is not pending credit review.');
       }
-      if (!application.lenderApprovedAmount || !application.lenderApprovedTenure || !application.lenderApprovedRoi || !application.platformLan) {
+      if (!application.lenderApprovedAmount || !application.lenderApprovedRoi || !application.platformLan) {
         throw new BadRequestException('Application is missing the lender-approved terms required to finalize approval.');
+      }
+
+      // Tenure options come from the admin-configured product, not the lender —
+      // the customer picks one of these post-approval (LoanService.acceptOffer).
+      const productVersion = application.productStrategyVersionId
+        ? await tx.lenderProductVersion.findUnique({
+            where: { id: application.productStrategyVersionId },
+            include: { tenures: { orderBy: { sortOrder: 'asc' } } },
+          })
+        : null;
+      const allowedTenures = productVersion?.tenures.map((t) => t.tenure) ?? [];
+      if (allowedTenures.length === 0) {
+        throw new BadRequestException('The allocated product has no configured tenure options to offer the customer.');
       }
 
       const decidedAt = new Date();
@@ -62,7 +74,7 @@ export class CreditReviewService {
           approvedAmount: application.lenderApprovedAmount,
           lenderApprovedAt: decidedAt,
           offerStatus: 'AVAILABLE',
-          offerAllowedTenures: JSON.stringify([application.lenderApprovedTenure]),
+          offerAllowedTenures: JSON.stringify(allowedTenures),
           offerValidUntil: new Date(decidedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
         },
         update: {},

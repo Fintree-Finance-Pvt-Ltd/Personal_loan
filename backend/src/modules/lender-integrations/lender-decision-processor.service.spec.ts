@@ -21,20 +21,20 @@ describe('LenderDecisionProcessor', () => {
     return { processor: new LenderDecisionProcessor(prisma), tx };
   };
 
-  it('parks an APPROVED decision in credit review instead of finalizing it', async () => {
+  it('parks an APPROVED decision in credit review instead of finalizing it, ignoring any lender-sent tenure', async () => {
     const { processor, tx } = base();
     await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
       decision: 'APPROVED', providerStatus: 'APPROVED', decisionReference: 'DEC-1',
-      approvedAmount: '125000', approvedTenure: 18, approvedRoi: '13.5',
+      approvedAmount: '125000', approvedRoi: '13.5',
     });
 
     const data = tx.plApplication.update.mock.calls[0][0].data;
     expect(data).toEqual(expect.objectContaining({
       status: 'PENDING_CREDIT_REVIEW',
       lenderApprovedAmount: new Prisma.Decimal('125000'),
-      lenderApprovedTenure: 18,
       lenderApprovedRoi: new Prisma.Decimal('13.5'),
     }));
+    expect(data).not.toHaveProperty('lenderApprovedTenure');
     expect(data).not.toHaveProperty('requestedAmount');
     expect(tx.customer.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ onboardingStatus: 'PENDING_CREDIT_REVIEW' }),
@@ -42,11 +42,10 @@ describe('LenderDecisionProcessor', () => {
     expect(tx.lenderProductVersion.findUnique).not.toHaveBeenCalled();
   });
 
-  it('defaults tenure/ROI from the allocated product version when the lender omits them', async () => {
+  it('defaults ROI from the allocated product version when the lender omits it (tenure is never sourced from the lender)', async () => {
     const { processor, tx } = base();
     tx.lenderProductVersion.findUnique.mockResolvedValue({
       annualRoiPercent: new Prisma.Decimal('14.25'),
-      tenures: [{ tenure: 6, sortOrder: 0 }],
     });
 
     await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
@@ -59,9 +58,9 @@ describe('LenderDecisionProcessor', () => {
     expect(data).toEqual(expect.objectContaining({
       status: 'PENDING_CREDIT_REVIEW',
       lenderApprovedAmount: new Prisma.Decimal('8000'),
-      lenderApprovedTenure: 6,
       lenderApprovedRoi: new Prisma.Decimal('14.25'),
     }));
+    expect(data).not.toHaveProperty('lenderApprovedTenure');
   });
 
   it('persists a safe REJECTED outcome and cooling-off date', async () => {

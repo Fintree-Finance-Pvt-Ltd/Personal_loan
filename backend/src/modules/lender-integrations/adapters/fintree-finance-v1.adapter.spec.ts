@@ -137,11 +137,15 @@ describe('FintreeFinanceV1Adapter', () => {
       httpService.requestJson.mockResolvedValue({
         status: 200,
         data: {
-          status: 'Approved',
-          CREDIT_LIMIT_CHECK_RPM: {
-            derived_values: {
-              LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 8000,
-              LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0,
+          success: true,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          data: {
+            status: 'Approved',
+            CREDIT_LIMIT_CHECK_RPM: {
+              derived_values: {
+                LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 8000,
+                LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0,
+              },
             },
           },
         },
@@ -156,11 +160,15 @@ describe('FintreeFinanceV1Adapter', () => {
       httpService.requestJson.mockResolvedValue({
         status: 200,
         data: {
-          status: 'Approved',
-          CREDIT_LIMIT_CHECK_RPM: {
-            derived_values: {
-              LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 0,
-              LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 15000,
+          success: true,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          data: {
+            status: 'Approved',
+            CREDIT_LIMIT_CHECK_RPM: {
+              derived_values: {
+                LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 0,
+                LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 15000,
+              },
             },
           },
         },
@@ -172,7 +180,10 @@ describe('FintreeFinanceV1Adapter', () => {
     });
 
     it('maps a Rejected status to a REJECTED decision', async () => {
-      httpService.requestJson.mockResolvedValue({ status: 200, data: { status: 'Rejected' } });
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'Rejected' } },
+      });
 
       const result = await adapter.requestDecision(getDecisionContext() as any);
       expect(result.decision).toBe('REJECTED');
@@ -183,11 +194,15 @@ describe('FintreeFinanceV1Adapter', () => {
       httpService.requestJson.mockResolvedValue({
         status: 200,
         data: {
-          status: 'Approved',
-          CREDIT_LIMIT_CHECK_RPM: {
-            derived_values: {
-              LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 0,
-              LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0,
+          success: true,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          data: {
+            status: 'Approved',
+            CREDIT_LIMIT_CHECK_RPM: {
+              derived_values: {
+                LIMIT_ASSIGNMENT_IS_NEW_CUSTOMER_RPM: 0,
+                LIMIT_ASSIGNMENT_IS_REPEAT_CUSTOMER_RPM: 0,
+              },
             },
           },
         },
@@ -199,10 +214,28 @@ describe('FintreeFinanceV1Adapter', () => {
     });
 
     it('throws on an unrecognized decision status', async () => {
-      httpService.requestJson.mockResolvedValue({ status: 200, data: { status: 'Pending' } });
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'Pending' } },
+      });
 
       await expect(adapter.requestDecision(getDecisionContext() as any)).rejects.toThrow(
         expect.objectContaining({ code: 'FINTREE_DECISION_STATUS_UNRECOGNIZED' }),
+      );
+    });
+
+    it('throws a partner error when Fintree responds with success:false', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          success: false,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          error: { code: 'VALIDATION_ERROR', message: 'aadhaarKyc.maskedAadhaar is required.' },
+        },
+      });
+
+      await expect(adapter.requestDecision(getDecisionContext() as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'VALIDATION_ERROR' }),
       );
     });
   });

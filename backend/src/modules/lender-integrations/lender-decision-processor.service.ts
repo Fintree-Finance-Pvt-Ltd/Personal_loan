@@ -26,25 +26,24 @@ export class LenderDecisionProcessor {
 
       const decidedAt = new Date();
       if (result.decision === 'APPROVED') {
-        let approvedTenure = result.approvedTenure;
+        // The lender only sends back an approved credit limit — never a tenure. Tenure options
+        // come entirely from the admin-configured LenderProductTenure list and are presented to
+        // the customer to choose from post-approval (see CreditReviewService.approve()). ROI is
+        // a single product-wide value (not per-tenure), so it's still fine to default it here.
         let approvedRoi = result.approvedRoi;
-        // The lender's decision response does not always include tenure/ROI (e.g. Fintree's
-        // pre-approval API only returns a credit limit). Fall back to the allocated product's
-        // configured ROI and its lowest configured tenure in that case.
-        if ((!approvedTenure || !approvedRoi) && application.productStrategyVersionId) {
+        if (!approvedRoi && application.productStrategyVersionId) {
           const productVersion = await tx.lenderProductVersion.findUnique({
             where: { id: application.productStrategyVersionId },
-            include: { tenures: { orderBy: { sortOrder: 'asc' }, take: 1 } },
+            select: { annualRoiPercent: true },
           });
-          if (!approvedRoi && productVersion) approvedRoi = productVersion.annualRoiPercent.toString();
-          if (!approvedTenure && productVersion?.tenures[0]) approvedTenure = productVersion.tenures[0].tenure;
+          if (productVersion) approvedRoi = productVersion.annualRoiPercent.toString();
         }
-        if (!result.approvedAmount || !approvedTenure || !approvedRoi) throw new LenderIntegrationError('LENDER_APPROVAL_TERMS_MISSING', 'Approved amount, tenure and ROI are required for an approved decision.', 'PERMANENT_VALIDATION');
+        if (!result.approvedAmount || !approvedRoi) throw new LenderIntegrationError('LENDER_APPROVAL_TERMS_MISSING', 'Approved amount and ROI are required for an approved decision.', 'PERMANENT_VALIDATION');
         await tx.lenderApplicationLink.update({ where: { id: link.id }, data: { normalizedDecision: 'APPROVED', decisionStatus: 'COMPLETED', lastSyncedStage: event.integrationStage, lastResponseStatus: result.providerStatus, lastSuccessAt: decidedAt, lastErrorCode: null, lastErrorMessage: null, rejectionReasonCode: null } });
         // Lender approval is not customer-visible yet: park the application in internal
         // credit review instead of jumping straight to LENDER_APPROVED / creating the loan.
         // See CreditReviewService.approve() for the step that finalizes this.
-        await tx.plApplication.update({ where: { id: application.id }, data: { status: 'PENDING_CREDIT_REVIEW', lenderDecisionReference: result.decisionReference, lenderDecisionAt: decidedAt, lenderApprovedAmount: new Prisma.Decimal(result.approvedAmount), lenderApprovedTenure: approvedTenure, lenderApprovedRoi: new Prisma.Decimal(approvedRoi), lenderDecisionReason: null, lenderCoolingOffDays: null, lenderCoolingOffUntil: null, lenderNextStatusCheckAt: null } });
+        await tx.plApplication.update({ where: { id: application.id }, data: { status: 'PENDING_CREDIT_REVIEW', lenderDecisionReference: result.decisionReference, lenderDecisionAt: decidedAt, lenderApprovedAmount: new Prisma.Decimal(result.approvedAmount), lenderApprovedRoi: new Prisma.Decimal(approvedRoi), lenderDecisionReason: null, lenderCoolingOffDays: null, lenderCoolingOffUntil: null, lenderNextStatusCheckAt: null } });
         await tx.customer.update({ where: { id: application.customerId }, data: { onboardingStatus: 'PENDING_CREDIT_REVIEW', lastActivityAt: decidedAt } });
       } else if (result.decision === 'REJECTED') {
         const coolingOffDays = Math.max(0, result.coolingOffDays ?? 0);

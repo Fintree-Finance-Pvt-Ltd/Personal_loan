@@ -80,7 +80,6 @@ export default function CreditReviewPage() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lender</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved Amount</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tenure</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ROI</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision At</th>
               <th className="px-6 py-3"></th>
@@ -88,9 +87,9 @@ export default function CreditReviewPage() {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {loading ? (
-              <tr><td colSpan="8" className="px-6 py-4 text-center">Loading...</td></tr>
+              <tr><td colSpan="7" className="px-6 py-4 text-center">Loading...</td></tr>
             ) : applications.length === 0 ? (
-              <tr><td colSpan="8" className="px-6 py-4 text-center text-gray-500">No applications pending credit review</td></tr>
+              <tr><td colSpan="7" className="px-6 py-4 text-center text-gray-500">No applications pending credit review</td></tr>
             ) : (
               applications.map((application) => (
                 <React.Fragment key={application.applicationId}>
@@ -102,7 +101,6 @@ export default function CreditReviewPage() {
                     </td>
                     <td className="px-6 py-4">{application.lenderCode || application.lenderId}</td>
                     <td className="px-6 py-4">{formatCurrency(application.lenderApprovedAmount)}</td>
-                    <td className="px-6 py-4">{application.lenderApprovedTenure ?? '-'}</td>
                     <td className="px-6 py-4">{application.lenderApprovedRoi ?? '-'}%</td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {application.lenderDecisionAt ? new Date(application.lenderDecisionAt).toLocaleString('en-IN') : '-'}
@@ -132,7 +130,7 @@ export default function CreditReviewPage() {
                   </tr>
                   {rejectingId === application.applicationId && (
                     <tr className="bg-gray-50">
-                      <td colSpan="8" className="px-6 py-4">
+                      <td colSpan="7" className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <input
                             type="text"
