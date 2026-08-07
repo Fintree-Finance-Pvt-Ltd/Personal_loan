@@ -36,7 +36,7 @@ export class CustomerService {
     private readonly mlmAllocationEngineService: MlmAllocationEngineService,
     private readonly applicationTransitionService: ApplicationTransitionService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
-  ) {}
+  ) { }
 
   async findOrCreateAfterOtpVerification(
     mobileNumber: string,
@@ -415,14 +415,14 @@ export class CustomerService {
     const latestApp = customer.applications[0] ?? null;
     const latestSuccessPayment = latestApp
       ? await this.prisma.plPaymentLink.findFirst({
-          where: {
-            customerId,
-            applicationId: latestApp.id,
-            purpose: 'ASSESSMENT_FEE',
-            status: 'SUCCESS',
-          },
-          orderBy: { paidAt: 'desc' },
-        })
+        where: {
+          customerId,
+          // applicationId: latestApp.id,
+          purpose: 'ASSESSMENT_FEE',
+          status: 'SUCCESS',
+        },
+        orderBy: { paidAt: 'desc' },
+      })
       : null;
     const latestLoan = latestApp?.loans[0] ?? null;
 
@@ -693,11 +693,11 @@ export class CustomerService {
     if (!customer) {
       throw new NotFoundException('Customer not found.');
     }
-    
+
     if (!customer.applications || customer.applications.length === 0) {
       throw new BadRequestException('Customer has no applications');
     }
-    
+
     const latestApp = customer.applications[0];
 
     const status = body?.approved === false ? CustomerOnboardingStatus.LENDER_REJECTED : CustomerOnboardingStatus.LENDER_APPROVED;
@@ -766,7 +766,7 @@ export class CustomerService {
           },
           orderBy: { id: 'desc' }
         }) as any;
-        
+
         if (!application) {
           throw new BadRequestException('No active application found to run eligibility.');
         }
@@ -774,23 +774,23 @@ export class CustomerService {
 
       // If already PASS and LENDER_ALLOCATED, return idempotent response
       if (application.status === 'LENDER_ALLOCATED' && application.platformDecisionOutcome === 'PASS') {
-         return {
-            success: true,
-            message: 'Eligibility already passed.',
-            data: {
-               outcome: 'PASS',
-               lenderId: application.lenderId,
-               lenderProductId: application.lenderProductId,
-               applicationNumber: application.applicationNumber,
-               assessmentFee: {
-                 baseAmount: application.assessmentFeeBaseAmount ? application.assessmentFeeBaseAmount.toNumber() : null,
-                 gstRate: application.assessmentFeeGstRate ? application.assessmentFeeGstRate.toNumber() : null,
-                 gstAmount: application.assessmentFeeGstAmount ? application.assessmentFeeGstAmount.toNumber() : null,
-                 totalAmount: application.assessmentFeeTotalAmount ? application.assessmentFeeTotalAmount.toNumber() : null,
-                 currency: application.assessmentFeeCurrency
-               }
+        return {
+          success: true,
+          message: 'Eligibility already passed.',
+          data: {
+            outcome: 'PASS',
+            lenderId: application.lenderId,
+            lenderProductId: application.lenderProductId,
+            applicationNumber: application.applicationNumber,
+            assessmentFee: {
+              baseAmount: application.assessmentFeeBaseAmount ? application.assessmentFeeBaseAmount.toNumber() : null,
+              gstRate: application.assessmentFeeGstRate ? application.assessmentFeeGstRate.toNumber() : null,
+              gstAmount: application.assessmentFeeGstAmount ? application.assessmentFeeGstAmount.toNumber() : null,
+              totalAmount: application.assessmentFeeTotalAmount ? application.assessmentFeeTotalAmount.toNumber() : null,
+              currency: application.assessmentFeeCurrency
             }
-         };
+          }
+        };
       }
 
       // 3. Resolve ACTIVE Platform Eligibility Policy
@@ -803,7 +803,7 @@ export class CustomerService {
         application.scopeCode,
         tx
       );
-      
+
       // Requested amount is intentionally not part of the current customer flow.
       // Keep the persisted column for future use, but do not run amount-based BRE rules.
       const eligibilityRules = policyVersion.rules.filter(
@@ -811,14 +811,14 @@ export class CustomerService {
       );
       const activeRules = eligibilityRules.filter((r: any) => r.isActive);
       const requiredKeys = new Set(activeRules.map((r: any) => r.inputKey));
-      
+
       // 4. Build dynamic inputs
       const inputs: Record<string, any> = {};
 
       if (requiredKeys.has('dateOfBirth')) inputs.dateOfBirth = customer.dateOfBirth ? customer.dateOfBirth.toISOString() : null;
       if (requiredKeys.has('isPanVerified')) inputs.isPanVerified = customer.panVerified;
       if (requiredKeys.has('residentialPincode')) inputs.residentialPincode = customer.residentialPincode;
-      
+
       // Alias declaredMonthlyIncome to monthlyIncome
       if (requiredKeys.has('declaredMonthlyIncome')) {
         inputs.declaredMonthlyIncome = customer.monthlyIncome ? Number(customer.monthlyIncome) : null;
@@ -837,7 +837,7 @@ export class CustomerService {
 
       if (requiredKeys.has('hasFraudFlag')) {
         // No persisted fraud source exists. Return null to trigger controlled missing input error.
-        inputs.hasFraudFlag = null; 
+        inputs.hasFraudFlag = null;
       }
 
       if (requiredKeys.has('activeLoanCount')) {
@@ -858,10 +858,10 @@ export class CustomerService {
           },
           orderBy: { updatedAt: 'desc' }
         });
-        
+
         if (lastRejection) {
-          const decisionTimestamp = lastRejection.status === 'PLATFORM_REJECTED' 
-            ? lastRejection.platformDecisionAt 
+          const decisionTimestamp = lastRejection.status === 'PLATFORM_REJECTED'
+            ? lastRejection.platformDecisionAt
             : lastRejection.lenderDecisionAt;
 
           if (!decisionTimestamp) {
@@ -895,16 +895,16 @@ export class CustomerService {
       }
 
       if (evalResult.finalOutcome === 'POLICY_INPUT_MISSING') {
-         const missingRules = evalResult.ruleResults
-            .filter((r: any) => r.outcome === 'POLICY_INPUT_MISSING')
-            .map((r: any) => r.ruleName || r.ruleCode)
-            .join(', ');
-         throw new BadRequestException(`Missing required inputs for eligibility check. Missing data for: ${missingRules}`);
+        const missingRules = evalResult.ruleResults
+          .filter((r: any) => r.outcome === 'POLICY_INPUT_MISSING')
+          .map((r: any) => r.ruleName || r.ruleCode)
+          .join(', ');
+        throw new BadRequestException(`Missing required inputs for eligibility check. Missing data for: ${missingRules}`);
       }
 
       // 6. Handle Binary Outcome
       const isPass = evalResult.finalOutcome === PolicyDecisionOutcome.PASS;
-      
+
       const updatedData: any = {
         platformDecisionOutcome: evalResult.finalOutcome,
         platformPolicyVersionId: policyVersion.id,
@@ -928,7 +928,7 @@ export class CustomerService {
           .map((r: any) => r.ruleCode || r.ruleName)
           .join(', ');
         if (failedRules) {
-           failReason = `Failed rules: ${failedRules}`;
+          failReason = `Failed rules: ${failedRules}`;
         }
       }
 
@@ -948,95 +948,95 @@ export class CustomerService {
 
       // 7. Invoke MLM Allocation
       try {
-         const activeMlmPolicies = await tx.mlmPolicy.findMany({
-            where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
-            include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
-         });
+        const activeMlmPolicies = await tx.mlmPolicy.findMany({
+          where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
+          include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
+        });
 
-         if (activeMlmPolicies.length === 1 && activeMlmPolicies[0].versions.length === 1) {
-            const mlmVersion = activeMlmPolicies[0].versions[0];
-            const mlmDto = {
-               applicationReference: application.applicationNumber,
-               requestedAmount: application.requestedAmount == null
-                 ? null
-                 : Number(application.requestedAmount),
-               platformDecisionOutcome: 'PASS',
-               platformProductId: application.platformProductId,
-               customerSegment: 'NEW'
-            };
+        if (activeMlmPolicies.length === 1 && activeMlmPolicies[0].versions.length === 1) {
+          const mlmVersion = activeMlmPolicies[0].versions[0];
+          const mlmDto = {
+            applicationReference: application.applicationNumber,
+            requestedAmount: application.requestedAmount == null
+              ? null
+              : Number(application.requestedAmount),
+            platformDecisionOutcome: 'PASS',
+            platformProductId: application.platformProductId,
+            customerSegment: 'NEW'
+          };
 
-            const allocationDecision = await this.mlmAllocationEngineService.executeWithTx(tx, mlmDto, mlmVersion as any);
-            
-            if (allocationDecision && allocationDecision.status === 'ASSIGNED') {
-               const decision = allocationDecision;
-               if (!decision.productVersionId) {
-                 throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
-               }
-               const productVersion = await tx.lenderProductVersion.findUnique({
-                 where: { id: decision.productVersionId }
-               });
-               if (!productVersion || productVersion.productId !== decision.productId) {
-                 throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
-               }
-               
-               const baseAmount = productVersion?.assessmentFeeAmount ? new Prisma.Decimal(productVersion.assessmentFeeAmount) : new Prisma.Decimal(0);
-               const gstRate = productVersion?.assessmentFeeGstPercent ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent) : new Prisma.Decimal(18);
-               const gstAmount = baseAmount.mul(gstRate).dividedBy(100);
-               const totalAmount = baseAmount.add(gstAmount);
+          const allocationDecision = await this.mlmAllocationEngineService.executeWithTx(tx, mlmDto, mlmVersion as any);
 
-               updatedApp = await tx.plApplication.update({
-                  where: { id: application.id },
-                  data: {
-                     status: PlApplicationStatus.LENDER_ALLOCATED,
-                     lenderCode: decision.lenderId, // Assuming lenderId is code, or fetch from Lender table
-                     mlmAllocationDecisionId: decision.id,
-                     mlmPolicyId: decision.policyId,
-                     mlmPolicyVersionId: decision.policyVersionId,
-                     lenderId: decision.lenderId,
-                     lenderProductId: decision.productId,
-                     productStrategyVersionId: decision.productVersionId,
-                     allocatedAt: new Date(),
-                     assessmentFeeBaseAmount: baseAmount,
-                     assessmentFeeGstRate: gstRate,
-                     assessmentFeeGstAmount: gstAmount,
-                     assessmentFeeTotalAmount: totalAmount,
-                     assessmentFeeCurrency: 'INR'
-                  }
-               });
-               
-               // Attempt to find lender code
-               const lender = await tx.lender.findUnique({ where: { id: decision.lenderId! } });
-               if (lender) {
-                  await tx.plApplication.update({
-                     where: { id: application.id },
-                     data: { lenderCode: lender.code }
-                  });
-               }
-
-               return {
-                 outcome: 'PASS',
-                 lenderId: decision.lenderId,
-                 lenderProductId: decision.productId,
-                 applicationNumber: application.applicationNumber,
-                   assessmentFee: {
-                     baseAmount: baseAmount.toNumber(),
-                     gstRate: gstRate.toNumber(),
-                     gstAmount: gstAmount.toNumber(),
-                     totalAmount: totalAmount.toNumber(),
-                     currency: 'INR'
-                   }
-               };
+          if (allocationDecision && allocationDecision.status === 'ASSIGNED') {
+            const decision = allocationDecision;
+            if (!decision.productVersionId) {
+              throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
             }
-         }
-       } catch (err: any) {
-          this.logger.error(`MLM Error: ${err.message}`, err.stack);
-          this.logger.error(`MLM Full Error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
-          // Keep BRE as PASS, status as ALLOCATION_PENDING
-          throw new BadRequestException('Eligibility passed but we could not allocate a lender at this moment. Please try again.');
-       }
+            const productVersion = await tx.lenderProductVersion.findUnique({
+              where: { id: decision.productVersionId }
+            });
+            if (!productVersion || productVersion.productId !== decision.productId) {
+              throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
+            }
 
-       // If we reach here, MLM didn't assign
-       throw new BadRequestException('Eligibility passed but no lender route available. Please try again later.');
+            const baseAmount = productVersion?.assessmentFeeAmount ? new Prisma.Decimal(productVersion.assessmentFeeAmount) : new Prisma.Decimal(0);
+            const gstRate = productVersion?.assessmentFeeGstPercent ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent) : new Prisma.Decimal(18);
+            const gstAmount = baseAmount.mul(gstRate).dividedBy(100);
+            const totalAmount = baseAmount.add(gstAmount);
+
+            updatedApp = await tx.plApplication.update({
+              where: { id: application.id },
+              data: {
+                status: PlApplicationStatus.LENDER_ALLOCATED,
+                lenderCode: decision.lenderId, // Assuming lenderId is code, or fetch from Lender table
+                mlmAllocationDecisionId: decision.id,
+                mlmPolicyId: decision.policyId,
+                mlmPolicyVersionId: decision.policyVersionId,
+                lenderId: decision.lenderId,
+                lenderProductId: decision.productId,
+                productStrategyVersionId: decision.productVersionId,
+                allocatedAt: new Date(),
+                assessmentFeeBaseAmount: baseAmount,
+                assessmentFeeGstRate: gstRate,
+                assessmentFeeGstAmount: gstAmount,
+                assessmentFeeTotalAmount: totalAmount,
+                assessmentFeeCurrency: 'INR'
+              }
+            });
+
+            // Attempt to find lender code
+            const lender = await tx.lender.findUnique({ where: { id: decision.lenderId! } });
+            if (lender) {
+              await tx.plApplication.update({
+                where: { id: application.id },
+                data: { lenderCode: lender.code }
+              });
+            }
+
+            return {
+              outcome: 'PASS',
+              lenderId: decision.lenderId,
+              lenderProductId: decision.productId,
+              applicationNumber: application.applicationNumber,
+              assessmentFee: {
+                baseAmount: baseAmount.toNumber(),
+                gstRate: gstRate.toNumber(),
+                gstAmount: gstAmount.toNumber(),
+                totalAmount: totalAmount.toNumber(),
+                currency: 'INR'
+              }
+            };
+          }
+        }
+      } catch (err: any) {
+        this.logger.error(`MLM Error: ${err.message}`, err.stack);
+        this.logger.error(`MLM Full Error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
+        // Keep BRE as PASS, status as ALLOCATION_PENDING
+        throw new BadRequestException('Eligibility passed but we could not allocate a lender at this moment. Please try again.');
+      }
+
+      // If we reach here, MLM didn't assign
+      throw new BadRequestException('Eligibility passed but no lender route available. Please try again later.');
 
     });
   }
@@ -1134,7 +1134,7 @@ export class CustomerService {
 
     const tenDigitMobile =
       normalized.length === 12 &&
-      normalized.startsWith('91')
+        normalized.startsWith('91')
         ? normalized.slice(2)
         : normalized;
 
