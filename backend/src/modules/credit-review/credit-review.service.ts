@@ -66,6 +66,16 @@ export class CreditReviewService {
         data: { onboardingStatus: 'LENDER_APPROVED', lastActivityAt: decidedAt },
       });
 
+      // The customer already completed Aadhaar verification during onboarding — that
+      // result lives in KycVerificationStatus (one row per customer; the same table
+      // loan.service.ts's own DigiLocker flow reads/writes), not ApplicationKycSnapshot.
+      // Carry it + their DIGILOCKER-sourced permanent address onto the new loan record
+      // so the customer is not asked to re-verify via DigiLocker post-approval.
+      const [kycStatus, permanentAddress] = await Promise.all([
+        tx.kycVerificationStatus.findUnique({ where: { customerId: application.customerId } }),
+        tx.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } }),
+      ]);
+
       const loan = await tx.plLoan.upsert({
         where: { applicationId: application.id },
         create: {
@@ -82,6 +92,32 @@ export class CreditReviewService {
           acceptedTenureDays: application.selectedTenure,
           acceptedAt: decidedAt,
           acceptedInterestRate: approvedRoi,
+          ...(kycStatus?.aadhaarStatus === 'VERIFIED'
+            ? {
+                digilockerStatus: 'VERIFIED',
+                digilockerVerifiedAt: kycStatus.updatedAt,
+                aadhaarMaskedNumber: kycStatus.aadhaarMaskedNumber,
+                aadhaarLastFour: kycStatus.aadhaarMaskedNumber?.slice(-4) ?? null,
+                aadhaarVerifiedName: kycStatus.aadhaarName,
+                aadhaarDateOfBirth: kycStatus.aadhaarDob,
+                ...(permanentAddress
+                  ? {
+                      aadhaarAddrLine1: permanentAddress.addressLine1,
+                      aadhaarAddrLine2: permanentAddress.addressLine2,
+                      aadhaarLandmark: permanentAddress.landmark,
+                      aadhaarLocality: permanentAddress.locality,
+                      aadhaarDistrict: permanentAddress.district,
+                      aadhaarCity: permanentAddress.city,
+                      aadhaarState: permanentAddress.state,
+                      aadhaarCountry: permanentAddress.country,
+                      aadhaarPincode: permanentAddress.pincode,
+                      aadhaarFormattedAddr: [permanentAddress.addressLine1, permanentAddress.addressLine2, permanentAddress.landmark, permanentAddress.locality, permanentAddress.city, permanentAddress.state, permanentAddress.pincode].filter(Boolean).join(', '),
+                    }
+                  : kycStatus.aadhaarAddress
+                    ? { aadhaarFormattedAddr: kycStatus.aadhaarAddress }
+                    : {}),
+              }
+            : {}),
         },
         update: {},
       });

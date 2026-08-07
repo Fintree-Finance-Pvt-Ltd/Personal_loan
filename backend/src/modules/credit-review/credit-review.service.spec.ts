@@ -17,12 +17,14 @@ describe('CreditReviewService', () => {
     lenderApprovedRoi: new Prisma.Decimal('14.25'),
   };
 
-  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25') }) => {
+  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25') }, kycStatus: any = null, permanentAddress: any = null) => {
     const tx: any = {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application), update: jest.fn().mockImplementation(({ data }: any) => ({ ...application, ...data })) },
       customer: { update: jest.fn() },
       plLoan: { upsert: jest.fn().mockResolvedValue({ id: 10n }) },
       lenderProductVersion: { findUnique: jest.fn().mockResolvedValue(productVersion) },
+      kycVerificationStatus: { findUnique: jest.fn().mockResolvedValue(kycStatus) },
+      applicationAddress: { findUnique: jest.fn().mockResolvedValue(permanentAddress) },
     };
     const prisma: any = { $transaction: jest.fn(async (callback: any) => callback(tx)) };
     return { service: new CreditReviewService(prisma), tx };
@@ -50,6 +52,39 @@ describe('CreditReviewService', () => {
         }),
       }));
       expect(result.decidedByUserId).toBe('USER-1');
+    });
+
+    it('carries the onboarding-verified Aadhaar KYC and permanent address onto the new loan so DigiLocker is not required again', async () => {
+      const kycStatus = {
+        aadhaarStatus: 'VERIFIED', aadhaarMaskedNumber: 'XXXX-XXXX-1234', aadhaarName: 'Test Customer',
+        aadhaarDob: new Date('1990-05-15'), aadhaarAddress: null, updatedAt: new Date('2026-08-01T00:00:00Z'),
+      };
+      const permanentAddress = {
+        addressLine1: 'Flat 1', addressLine2: null, landmark: null, locality: 'Locality',
+        district: 'District', city: 'City', state: 'State', country: 'India', pincode: '400001',
+      };
+      const { service, tx } = buildService(pendingApplication, undefined, kycStatus, permanentAddress);
+      await service.approve(1n, 'USER-1');
+
+      expect(tx.kycVerificationStatus.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { customerId: 2n } }));
+      expect(tx.plLoan.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({
+          digilockerStatus: 'VERIFIED',
+          aadhaarMaskedNumber: 'XXXX-XXXX-1234',
+          aadhaarLastFour: '1234',
+          aadhaarVerifiedName: 'Test Customer',
+          aadhaarDateOfBirth: kycStatus.aadhaarDob,
+          aadhaarCity: 'City',
+          aadhaarPincode: '400001',
+        }),
+      }));
+    });
+
+    it('does not set digilockerStatus when no onboarding KYC verification exists', async () => {
+      const { service, tx } = buildService();
+      await service.approve(1n, 'USER-1');
+      const createData = tx.plLoan.upsert.mock.calls[0][0].create;
+      expect(createData).not.toHaveProperty('digilockerStatus');
     });
 
     it('defaults ROI from the allocated product version when not already persisted', async () => {
