@@ -226,6 +226,87 @@ export class LoanService {
       requestId: randomBytes(16).toString('hex'),
     }).catch(() => { /* non-critical — never fail the request */ });
 
+
+    let effectiveDigilockerVerified = loan.digilockerStatus === 'VERIFIED';
+    if (!effectiveDigilockerVerified) {
+      const kycRecord = await this.prisma.kycVerificationStatus.findUnique({
+        where: { customerId },
+        select: { aadhaarStatus: true, aadhaarName: true, aadhaarMaskedNumber: true, aadhaarDob: true, aadhaarAddress: true, updatedAt: true },
+      });
+      if (kycRecord?.aadhaarStatus === 'VERIFIED') {
+        effectiveDigilockerVerified = true;
+        // Back-fill the loan so subsequent calls (and mandate gate) see it immediately.
+        await this.prisma.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            digilockerStatus: 'VERIFIED',
+            digilockerVerifiedAt: kycRecord.updatedAt ?? new Date(),
+            ...(kycRecord.aadhaarName ? { aadhaarVerifiedName: kycRecord.aadhaarName } : {}),
+            ...(kycRecord.aadhaarMaskedNumber
+              ? { aadhaarMaskedNumber: kycRecord.aadhaarMaskedNumber, aadhaarLastFour: kycRecord.aadhaarMaskedNumber.slice(-4) }
+              : {}),
+            ...(kycRecord.aadhaarDob ? { aadhaarDateOfBirth: kycRecord.aadhaarDob } : {}),
+            ...(kycRecord.aadhaarAddress ? { aadhaarFormattedAddr: kycRecord.aadhaarAddress } : {}),
+          },
+        });
+        // Patch in-memory so downstream code sees the updated values.
+        (loan as any).digilockerStatus = 'VERIFIED';
+        (loan as any).digilockerVerifiedAt = kycRecord.updatedAt ?? new Date();
+        if (kycRecord.aadhaarName) (loan as any).aadhaarVerifiedName = kycRecord.aadhaarName;
+        if (kycRecord.aadhaarMaskedNumber) (loan as any).aadhaarMaskedNumber = kycRecord.aadhaarMaskedNumber;
+        this.logger.log(`[getPostApprovalJourney] Back-filled digilockerStatus=VERIFIED on loan ${loan.id} (${lan}) from kycVerificationStatus for customerId=${customerId}`);
+      }
+    }
+
+    // Address auto-confirm: if address isn't confirmed yet but KYC is verified + address data exists,
+    // silently confirm it (same logic as in initiateMandate) so the journey shows the correct state.
+    if (!loan.addressConfirmed && loan.digilockerStatus === 'VERIFIED') {
+      const hasLoanAadhaarAddr = !!(loan.aadhaarAddrLine1 || loan.aadhaarCity || loan.aadhaarFormattedAddr);
+      if (hasLoanAadhaarAddr) {
+        await this.prisma.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            addressConfirmed: true,
+            addressConfirmedAt: new Date(),
+            addressSameAsPermanent: true,
+            currentAddrProofType: 'AADHAAR',
+            currentAddrLine1: loan.aadhaarAddrLine1 ?? loan.aadhaarFormattedAddr ?? null,
+            currentAddrLine2: loan.aadhaarAddrLine2 ?? null,
+            currentAddrLandmark: loan.aadhaarLandmark ?? null,
+            currentAddrLocality: loan.aadhaarLocality ?? null,
+            currentAddrDistrict: loan.aadhaarDistrict ?? null,
+            currentAddrCity: loan.aadhaarCity ?? null,
+            currentAddrState: loan.aadhaarState ?? null,
+            currentAddrCountry: loan.aadhaarCountry ?? 'India',
+            currentAddrPincode: loan.aadhaarPincode ?? null,
+          },
+        });
+        (loan as any).addressConfirmed = true;
+        this.logger.log(`[getPostApprovalJourney] Auto-confirmed address (same as Aadhaar) for loan ${loan.id} (${lan}), customerId=${customerId}`);
+      } else {
+        // No structured address — try formatted string from kycVerificationStatus
+        const kycAddr = await this.prisma.kycVerificationStatus.findUnique({
+          where: { customerId },
+          select: { aadhaarAddress: true },
+        });
+        if (kycAddr?.aadhaarAddress) {
+          await this.prisma.plLoan.update({
+            where: { id: loan.id },
+            data: {
+              addressConfirmed: true,
+              addressConfirmedAt: new Date(),
+              addressSameAsPermanent: true,
+              currentAddrProofType: 'AADHAAR',
+              currentAddrLine1: kycAddr.aadhaarAddress,
+              currentAddrCountry: 'India',
+            },
+          });
+          (loan as any).addressConfirmed = true;
+          this.logger.log(`[getPostApprovalJourney] Auto-confirmed address from kycVerificationStatus for loan ${loan.id} (${lan}), customerId=${customerId}`);
+        }
+      }
+    }
+
     // Derive stable workflow state
     const currentStep = this.deriveCurrentStep(loan);
 
@@ -383,6 +464,8 @@ export class LoanService {
       workflow: {
         lenderApproved: loan.status !== PlLoanStatus.FAILED && loan.status !== PlLoanStatus.CANCELLED,
         offerAccepted: !!loan.acceptedTenureDays,
+        // loan.digilockerStatus is patched in-memory above when the KYC fallback fires,
+        // so this check covers both the normal and the onboarding-sync-missed cases.
         digilockerVerified: loan.digilockerStatus === 'VERIFIED',
         addressConfirmed: loan.addressConfirmed,
         bankVerified: loan.bankVerified,
@@ -1320,12 +1403,99 @@ export class LoanService {
     if (!loan.acceptedTenureDays) {
       throw new BadRequestException('Please accept loan offer before setting up e-Mandate.');
     }
-    if (loan.digilockerStatus !== 'VERIFIED') {
+
+    // --- Aadhaar KYC gate ---
+    // Primary check: pl_loans.digilocker_status
+    // Fallback check: kyc_verification_status.aadhaarStatus — covers cases where KYC was
+    // completed during onboarding (stored in kycVerificationStatus) but the loan record's
+    // digilocker_status was never synced (e.g. customer 45 / FTPL00000047).
+    let isKycVerified = loan.digilockerStatus === 'VERIFIED';
+    if (!isKycVerified) {
+      const kycRecord = await this.prisma.kycVerificationStatus.findUnique({
+        where: { customerId },
+        select: { aadhaarStatus: true, aadhaarName: true, aadhaarMaskedNumber: true, aadhaarDob: true, aadhaarAddress: true, updatedAt: true },
+      });
+      if (kycRecord?.aadhaarStatus === 'VERIFIED') {
+        isKycVerified = true;
+        // Back-fill the loan record so future checks (and the journey API) stay consistent.
+        await this.prisma.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            digilockerStatus: 'VERIFIED',
+            digilockerVerifiedAt: kycRecord.updatedAt ?? new Date(),
+            ...(kycRecord.aadhaarName ? { aadhaarVerifiedName: kycRecord.aadhaarName } : {}),
+            ...(kycRecord.aadhaarMaskedNumber ? { aadhaarMaskedNumber: kycRecord.aadhaarMaskedNumber, aadhaarLastFour: kycRecord.aadhaarMaskedNumber.slice(-4) } : {}),
+            ...(kycRecord.aadhaarDob ? { aadhaarDateOfBirth: kycRecord.aadhaarDob } : {}),
+            ...(kycRecord.aadhaarAddress ? { aadhaarFormattedAddr: kycRecord.aadhaarAddress } : {}),
+          },
+        });
+        this.logger.log(`[initiateMandate] Back-filled digilockerStatus=VERIFIED on loan ${loan.id} (${lan}) from kycVerificationStatus for customerId=${customerId}`);
+      }
+    }
+
+    if (!isKycVerified) {
       throw new BadRequestException('Please complete Aadhaar KYC verification before setting up e-Mandate.');
     }
+    // --- end Aadhaar KYC gate ---
+
+    // --- Address confirmation gate ---
+    // If the address hasn't been confirmed via the UI, try to auto-confirm it from the
+    // Aadhaar data that was back-filled above (or was already on the loan). This covers
+    // customers (e.g. customer 45) who have bank+KFS completed but skipped the address screen
+    // because their pl_loans.digilocker_status was NULL at that time.
     if (!loan.addressConfirmed) {
-      throw new BadRequestException('Please confirm your residential address before setting up e-Mandate.');
+      // Determine the best available address data from the loan record or KYC table
+      const hasLoanAadhaarAddr = !!(loan.aadhaarAddrLine1 || loan.aadhaarCity || loan.aadhaarFormattedAddr);
+      let addressAutoConfirmed = false;
+
+      if (isKycVerified && hasLoanAadhaarAddr) {
+        // Build address fields from what's available on the loan (may only have formatted addr)
+        const addrUpdate: Prisma.PlLoanUpdateInput = {
+          addressConfirmed: true,
+          addressConfirmedAt: new Date(),
+          addressSameAsPermanent: true,
+          currentAddrProofType: 'AADHAAR',
+          currentAddrLine1: loan.aadhaarAddrLine1 ?? loan.aadhaarFormattedAddr ?? null,
+          currentAddrLine2: loan.aadhaarAddrLine2 ?? null,
+          currentAddrLandmark: loan.aadhaarLandmark ?? null,
+          currentAddrLocality: loan.aadhaarLocality ?? null,
+          currentAddrDistrict: loan.aadhaarDistrict ?? null,
+          currentAddrCity: loan.aadhaarCity ?? null,
+          currentAddrState: loan.aadhaarState ?? null,
+          currentAddrCountry: loan.aadhaarCountry ?? 'India',
+          currentAddrPincode: loan.aadhaarPincode ?? null,
+        };
+        await this.prisma.plLoan.update({ where: { id: loan.id }, data: addrUpdate });
+        addressAutoConfirmed = true;
+        this.logger.log(`[initiateMandate] Auto-confirmed address (same as Aadhaar) for loan ${loan.id} (${lan}), customerId=${customerId}`);
+      } else if (isKycVerified) {
+        // Loan has no Aadhaar address fields yet — check kycVerificationStatus for the formatted address
+        const kycAddr = await this.prisma.kycVerificationStatus.findUnique({
+          where: { customerId },
+          select: { aadhaarAddress: true },
+        });
+        if (kycAddr?.aadhaarAddress) {
+          await this.prisma.plLoan.update({
+            where: { id: loan.id },
+            data: {
+              addressConfirmed: true,
+              addressConfirmedAt: new Date(),
+              addressSameAsPermanent: true,
+              currentAddrProofType: 'AADHAAR',
+              currentAddrLine1: kycAddr.aadhaarAddress,
+              currentAddrCountry: 'India',
+            },
+          });
+          addressAutoConfirmed = true;
+          this.logger.log(`[initiateMandate] Auto-confirmed address from kycVerificationStatus for loan ${loan.id} (${lan}), customerId=${customerId}`);
+        }
+      }
+
+      if (!addressAutoConfirmed) {
+        throw new BadRequestException('Please confirm your residential address before setting up e-Mandate.');
+      }
     }
+    // --- end Address confirmation gate ---
     if (!loan.bankVerified) {
       throw new BadRequestException('Please verify your bank account before setting up e-Mandate.');
     }
