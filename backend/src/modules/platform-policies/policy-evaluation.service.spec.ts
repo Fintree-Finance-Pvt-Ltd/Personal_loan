@@ -82,24 +82,39 @@ describe('PolicyEvaluationService', () => {
     expect(result.ruleResults[0].outcome).toBe('POLICY_INPUT_MISSING');
   });
 
-  it('should respect FAIL over REFER priority', () => {
+  it('should ignore inactive rules completely', () => {
     const rules = [
-      createRule({ inputKey: 'val1', operator: 'IS_TRUE', failureOutcome: 'REFER', sortOrder: 1 }),
-      createRule({ inputKey: 'val2', operator: 'IS_TRUE', failureOutcome: 'FAIL', sortOrder: 2 })
+      createRule({ ruleCode: 'PAN_VERIFIED', inputKey: 'isPanVerified', operator: 'IS_TRUE', isActive: false }),
+      createRule({ ruleCode: 'OTHER_RULE', inputKey: 'other', operator: 'IS_TRUE', isActive: true })
     ];
     
-    // Both fail, one is REFER, one is FAIL
-    const result = service.evaluate(rules, { val1: false, val2: false });
-    expect(result.finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
+    // Even if isPanVerified is missing, the inactive rule is ignored
+    const result = service.evaluate(rules, { other: true });
+    
+    expect(result.finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+    expect(result.ruleResults.length).toBe(1);
+    expect(result.ruleResults[0].ruleCode).toBe('OTHER_RULE');
   });
 
-  it('should return REFER if only REFER rule fails', () => {
+  it('should fail if active PAN rule receives false status', () => {
     const rules = [
-      createRule({ inputKey: 'val1', operator: 'IS_TRUE', failureOutcome: 'REFER', sortOrder: 1 }),
-      createRule({ inputKey: 'val2', operator: 'IS_TRUE', failureOutcome: 'FAIL', sortOrder: 2 })
+      createRule({ ruleCode: 'PAN_VERIFIED', inputKey: 'isPanVerified', operator: 'IS_TRUE', isActive: true })
     ];
     
-    const result = service.evaluate(rules, { val1: false, val2: true });
-    expect(result.finalOutcome).toBe(PolicyDecisionOutcome.REFER);
+    const result = service.evaluate(rules, { isPanVerified: false });
+    
+    expect(result.finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
+    expect(result.ruleResults[0].outcome).toBe(PolicyDecisionOutcome.FAIL);
+  });
+
+  it('should pass if active PAN rule receives true status', () => {
+    const rules = [
+      createRule({ ruleCode: 'PAN_VERIFIED', inputKey: 'isPanVerified', operator: 'IS_TRUE', isActive: true })
+    ];
+    
+    const result = service.evaluate(rules, { isPanVerified: true });
+    
+    expect(result.finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+    expect(result.ruleResults[0].outcome).toBe(PolicyDecisionOutcome.PASS);
   });
 });

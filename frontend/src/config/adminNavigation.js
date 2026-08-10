@@ -44,10 +44,27 @@ export const ADMIN_NAVIGATION = [
         permission: 'MLM_READ',
       },
       {
+        label: 'Distribution Dashboard',
+        shortLabel: 'DD',
+        path: '/admin-master/mlm-distribution',
+        permission: 'MLM_READ',
+      },
+      {
         label: 'Capacity Dashboard',
         shortLabel: 'CD',
         path: '/admin-master/mlm-capacities',
         permission: 'MLM_CAPACITY_READ',
+      },
+    ],
+  },
+  {
+    group: 'Operations',
+    items: [
+      {
+        label: 'Credit Review',
+        shortLabel: 'CR',
+        path: '/admin-master/credit-review',
+        permission: 'APPLICATION_VIEW_MASKED',
       },
     ],
   },

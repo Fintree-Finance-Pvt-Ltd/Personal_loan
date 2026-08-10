@@ -80,7 +80,8 @@ export default function PlatformPolicyDetailsPage() {
           <p className="text-sm text-gray-500 font-mono">{policy.code}</p>
           <p className="mt-2 text-gray-700">{policy.description}</p>
         </div>
-        <div>
+        <div className="text-right">
+          <p className="text-sm text-gray-500 mb-2">To edit an active policy, create a new version.</p>
           <Button onClick={handleCreateVersion}>Clone New Version</Button>
         </div>
       </div>

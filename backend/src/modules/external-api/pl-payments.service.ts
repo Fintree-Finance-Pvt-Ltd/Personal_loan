@@ -13,10 +13,15 @@ import {
 } from '../../integrations/easebuzz.integration';
 import {
   initiateEasebuzzIframePayment,
+  verifyEasebuzzWebhookHash,
 } from '../../integrations/easebuzz-iframe.integration';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 export type PlPaymentPurpose =
   | 'PROCESSING_FEE'
+  | 'ASSESSMENT_FEE'
   | 'OTHER';
 
 export type PlPaymentStatus =
@@ -39,7 +44,8 @@ export class PlPaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-  ) {}
+    private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
+  ) { }
 
   /**
    * Initialize Easebuzz Payment Gateway checkout.
@@ -54,6 +60,7 @@ export class PlPaymentsService {
       | bigint,
     body: any,
     actor: any,
+    requestMetadata?: { ipAddress?: string | null; userAgent?: string | null },
   ) {
     try {
       const customerId =
@@ -62,16 +69,39 @@ export class PlPaymentsService {
           'Customer ID',
         );
 
-      const amount = Number(
-        body?.amount,
-      );
+      const customer =
+        await this.prisma.customer.findUnique({
+          where: {
+            id: customerId,
+          },
+          include: {
+            applications: {
+              orderBy: { id: 'desc' },
+              take: 1,
+            },
+          }
+        });
 
+      if (!customer) {
+        throw new NotFoundException(
+          'Customer not found.',
+        );
+      }
+
+      const latestApp = customer.applications[0];
+      if (!latestApp) {
+        throw new BadRequestException('No application found for customer.');
+      }
+
+      const amount = latestApp.assessmentFeeTotalAmount
+        ? Number(latestApp.assessmentFeeTotalAmount)
+        : 0; // Strictly from snapshot
       if (
         !Number.isFinite(amount) ||
         amount <= 0
       ) {
         throw new BadRequestException(
-          'A valid payment amount is required.',
+          'A valid payment amount is required from the application snapshot.',
         );
       }
 
@@ -80,12 +110,18 @@ export class PlPaymentsService {
           body?.purpose,
         );
 
-      const customer =
-        await this.prisma.customer.findUnique({
-          where: {
-            id: customerId,
-          },
+      if (purpose === 'ASSESSMENT_FEE') {
+        await this.lenderIntegrationOutbox.recordDataSharingConsent({
+          customerId,
+          applicationId: latestApp.id,
+          consentTemplateId: body?.consentTemplateId,
+          consentVersion: body?.consentVersion,
+          consentText: body?.consentText,
+          ipAddress: requestMetadata?.ipAddress,
+          userAgent: requestMetadata?.userAgent,
         });
+        await this.lenderIntegrationOutbox.assertValidDataSharingConsent(latestApp.id);
+      }
 
       if (!customer) {
         throw new NotFoundException(
@@ -211,9 +247,9 @@ export class PlPaymentsService {
       const actorId =
         actor?.id
           ? this.parsePositiveBigInt(
-              actor.id,
-              'Actor ID',
-            )
+            actor.id,
+            'Actor ID',
+          )
           : null;
 
       const rawRequest = {
@@ -268,9 +304,10 @@ export class PlPaymentsService {
         ).plPaymentLink.create({
           data: {
             customerId,
+            applicationId: latestApp.id,
 
             applicationNumber:
-              customer.customerCode,
+              latestApp.applicationNumber,
 
             customerName,
 
@@ -304,7 +341,7 @@ export class PlPaymentsService {
             rawCreateResponse:
               this.stringifyJson(
                 initiatedPayment.rawResponse ||
-                  {},
+                {},
               ),
 
             createdBy:
@@ -362,27 +399,26 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Easebuzz iFrame initialization failed: ${
-          error?.message ||
-          'Unknown error'
+        `Easebuzz iFrame initialization failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
 
       if (
         error instanceof
-          BadRequestException ||
+        BadRequestException ||
         error instanceof
-          NotFoundException ||
+        NotFoundException ||
         error instanceof
-          BadGatewayException
+        BadGatewayException
       ) {
         throw error;
       }
 
       throw new BadGatewayException(
         error?.message ||
-          'Unable to initialize Easebuzz checkout.',
+        'Unable to initialize Easebuzz checkout.',
       );
     }
   }
@@ -504,16 +540,16 @@ export class PlPaymentsService {
             data: {
               status:
                 existingPayment.status ===
-                'PROCESSING'
+                  'PROCESSING'
                   ? 'PROCESSING'
                   : 'SENT',
 
               updatedBy:
                 actor?.id
                   ? this.parsePositiveBigInt(
-                      actor.id,
-                      'Actor ID',
-                    )
+                    actor.id,
+                    'Actor ID',
+                  )
                   : null,
             },
           });
@@ -574,10 +610,10 @@ export class PlPaymentsService {
 
         description:
           typeof body?.description ===
-          'string'
+            'string'
             ? body.description
-                .trim()
-                .slice(0, 255)
+              .trim()
+              .slice(0, 255)
             : null,
       };
 
@@ -632,9 +668,8 @@ export class PlPaymentsService {
         );
       } catch (error: any) {
         this.logger.error(
-          `Easebuzz EasyCollect link creation failed for ${txnid}: ${
-            error?.message ||
-            'Unknown error'
+          `Easebuzz EasyCollect link creation failed for ${txnid}: ${error?.message ||
+          'Unknown error'
           }`,
           error?.stack,
         );
@@ -655,9 +690,9 @@ export class PlPaymentsService {
       const actorId =
         actor?.id
           ? this.parsePositiveBigInt(
-              actor.id,
-              'Actor ID',
-            )
+            actor.id,
+            'Actor ID',
+          )
           : null;
 
       const createdPayment =
@@ -743,27 +778,26 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Create payment link failed: ${
-          error?.message ||
-          'Unknown error'
+        `Create payment link failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
 
       if (
         error instanceof
-          BadRequestException ||
+        BadRequestException ||
         error instanceof
-          NotFoundException ||
+        NotFoundException ||
         error instanceof
-          BadGatewayException
+        BadGatewayException
       ) {
         throw error;
       }
 
       throw new BadGatewayException(
         error?.message ||
-          'Create payment link failed.',
+        'Create payment link failed.',
       );
     }
   }
@@ -788,9 +822,9 @@ export class PlPaymentsService {
       const transactionId =
         String(
           body?.transactionId ||
-            body?.txnid ||
-            body?.merchantTxn ||
-            '',
+          body?.txnid ||
+          body?.merchantTxn ||
+          '',
         ).trim();
 
       const paymentIdInput =
@@ -856,16 +890,16 @@ export class PlPaymentsService {
 
             ...(paymentId
               ? {
-                  id:
-                    paymentId,
-                }
+                id:
+                  paymentId,
+              }
               : {}),
 
             ...(transactionId
               ? {
-                  txnid:
-                    transactionId,
-                }
+                txnid:
+                  transactionId,
+              }
               : {}),
           },
 
@@ -915,25 +949,24 @@ export class PlPaymentsService {
       };
     } catch (error: any) {
       this.logger.error(
-        `Get payment status failed: ${
-          error?.message ||
-          'Unknown error'
+        `Get payment status failed: ${error?.message ||
+        'Unknown error'
         }`,
         error?.stack,
       );
 
       if (
         error instanceof
-          BadRequestException ||
+        BadRequestException ||
         error instanceof
-          NotFoundException
+        NotFoundException
       ) {
         throw error;
       }
 
       throw new BadGatewayException(
         error?.message ||
-          'Unable to get payment status.',
+        'Unable to get payment status.',
       );
     }
   }
@@ -941,429 +974,142 @@ export class PlPaymentsService {
   /**
    * Process the Easebuzz callback/webhook response.
    */
-  async handleEasebuzzWebhook(
-    body: any,
-    headers: any,
-  ) {
+  async handleEasebuzzWebhook(body: any, headers: any) {
     try {
-      this.logger.log(
-        'Easebuzz webhook received.',
-      );
-
-      const data =
-        body?.data &&
-        typeof body.data ===
-          'object'
-          ? body.data
-          : body;
-
-      const merchantTxn =
-        data?.txnid ||
-        data?.merchant_txn ||
-        data?.merchantTxn ||
-        data?.referenceId ||
-        null;
-
+      const data = body?.data && typeof body.data === 'object' ? body.data : body;
+      const merchantTxn = data?.txnid || data?.merchant_txn || data?.merchantTxn || data?.referenceId || null;
       if (!merchantTxn) {
-        throw new BadRequestException(
-          'Easebuzz transaction ID is missing.',
-        );
+        throw new BadRequestException('Easebuzz transaction ID is missing.');
       }
 
-      const easebuzzId =
-        data?.easepayid ||
-        data?.easebuzzid ||
-        data?.payment_id ||
-        data?.transaction_id ||
-        data?.id ||
-        null;
-
-      const source = String(
-        data?.udf4 || '',
-      )
-        .trim()
-        .toUpperCase();
-
-      if (
-        source &&
-        source !== 'LAP' &&
-        source !== 'PL'
-      ) {
-        return {
-          success: false,
-
-          message:
-            'Webhook ignored. Not a Personal Loan payment.',
-
-          source,
-        };
+      // 1. Hash verification
+      if (!verifyEasebuzzWebhookHash(data)) {
+        throw new BadRequestException('Invalid webhook signature.');
       }
 
-      const rawPaymentStatus =
-        typeof data?.status ===
-        'string'
-          ? data.status
-          : data?.payment_status ||
-            data?.transaction_status ||
-            data?.unmappedstatus ||
-            data?.state ||
-            '';
+      const easebuzzId = data?.easepayid || data?.easebuzzid || data?.payment_id || data?.transaction_id || data?.id || null;
+      const source = String(data?.udf4 || '').trim().toUpperCase();
 
-      const providerStatus =
-        String(rawPaymentStatus)
-          .trim()
-          .toLowerCase();
-
-      const normalizedStatus =
-        this.normalizeWebhookStatus(
-          providerStatus,
-        );
-
-      const customerId =
-        this.parseOptionalPositiveBigInt(
-          data?.udf1,
-        );
-
-      const applicationNumber =
-        data?.udf2 || null;
-
-      const purpose =
-        this.normalizePurpose(
-          data?.udf3 ||
-            data?.productinfo ||
-            'PROCESSING_FEE',
-        );
-
-      const customerName =
-        data?.firstname ||
-        data?.name ||
-        data?.customer_name ||
-        null;
-
-      const mobile =
-        data?.phone ||
-        data?.mobile ||
-        null;
-
-      const email =
-        data?.email || null;
-
-      const parsedAmount =
-        Number(data?.amount);
-
-      const amount =
-        Number.isFinite(
-          parsedAmount,
-        )
-          ? parsedAmount
-          : 0;
-
-      const paymentLink =
-        data?.payment_url ||
-        data?.payment_link ||
-        body?.short_url ||
-        null;
-
-      const errorMessage =
-        data?.error_Message ||
-        data?.error_message ||
-        data?.message ||
-        null;
-
-      const webhookPayload = {
-        provider:
-          'easebuzz',
-
-        module:
-          'pl',
-
-        eventType:
-          'payment-webhook',
-
-        direction:
-          'inbound',
-
-        receivedAt:
-          new Date().toISOString(),
-
-        merchantTxn,
-        easebuzzId,
-
-        providerStatus,
-        normalizedStatus,
-
-        customerId:
-          customerId
-            ? customerId.toString()
-            : null,
-
-        applicationNumber,
-        purpose,
-        customerName,
-        mobile,
-        email,
-        amount,
-        paymentLink,
-
-        bankReferenceNumber:
-          data?.bank_ref_num ||
-          null,
-
-        authorizationReferenceNumber:
-          data?.auth_ref_num ||
-          null,
-
-        upiVirtualAddress:
-          data?.upi_va ||
-          null,
-
-        paymentSource:
-          data?.payment_source ||
-          null,
-
-        paymentGatewayType:
-          data?.PG_TYPE ||
-          null,
-
-        errorMessage,
-
-        udf1:
-          data?.udf1 || null,
-
-        udf2:
-          data?.udf2 || null,
-
-        udf3:
-          data?.udf3 || null,
-
-        udf4:
-          data?.udf4 || null,
-
-        udf5:
-          data?.udf5 || null,
-
-        udf6:
-          data?.udf6 || null,
-
-        udf7:
-          data?.udf7 || null,
-
-        udf10:
-          data?.udf10 || null,
-
-        headers,
-        body,
-      };
-
-      const rawWebhookResponse =
-        this.stringifyJson(
-          webhookPayload,
-        );
-
-      const existingPayment =
-        await (
-          this.prisma as any
-        ).plPaymentLink.findFirst({
-          where: {
-            txnid:
-              String(
-                merchantTxn,
-              ),
-          },
-
-          orderBy: {
-            id: 'desc',
-          },
-        });
-
-      if (existingPayment) {
-        /*
-         * Never downgrade an already successful payment
-         * because of a duplicate or delayed callback.
-         */
-        const nextStatus:
-          PlPaymentStatus =
-          existingPayment.status ===
-            'SUCCESS' &&
-          normalizedStatus !==
-            'SUCCESS'
-            ? 'SUCCESS'
-            : normalizedStatus;
-
-        const updateData: any = {
-          status:
-            nextStatus,
-
-          rawWebhookResponse,
-        };
-
-        if (easebuzzId) {
-          updateData.easebuzzId =
-            String(easebuzzId);
-        }
-
-        if (customerName) {
-          updateData.customerName =
-            customerName;
-        }
-
-        if (mobile) {
-          updateData.mobile =
-            mobile;
-        }
-
-        if (email) {
-          updateData.email =
-            email;
-        }
-
-        if (amount > 0) {
-          updateData.amount =
-            amount;
-        }
-
-        if (paymentLink) {
-          updateData.paymentLink =
-            paymentLink;
-        }
-
-        if (
-          nextStatus ===
-            'SUCCESS' &&
-          !existingPayment.paidAt
-        ) {
-          updateData.paidAt =
-            new Date();
-        }
-
-        const updatedPayment =
-          await (
-            this.prisma as any
-          ).plPaymentLink.update({
-            where: {
-              id:
-                existingPayment.id,
-            },
-
-            data:
-              updateData,
-          });
-
-        this.logger.log(
-          `Easebuzz webhook processed for ${merchantTxn}. Status: ${nextStatus}.`,
-        );
-
-        return {
-          success: true,
-
-          message:
-            'Easebuzz webhook processed successfully.',
-
-          data: {
-            ...this.serializePayment(
-              updatedPayment,
-              updatedPayment.applicationNumber,
-            ),
-
-            previousStatus:
-              existingPayment.status,
-
-            providerStatus,
-
-            errorMessage,
-          },
-        };
+      if (source && source !== 'LAP' && source !== 'PL') {
+        return { success: false, message: 'Webhook ignored. Not a Personal Loan payment.', source };
       }
 
-      if (!customerId) {
-        throw new BadRequestException(
-          `Payment record was not found for transaction ${merchantTxn}, and customer ID is missing in udf1.`,
-        );
+      const rawPaymentStatus = typeof data?.status === 'string' ? data.status : data?.payment_status || data?.transaction_status || data?.unmappedstatus || data?.state || '';
+      const providerStatus = String(rawPaymentStatus).trim().toLowerCase();
+      const normalizedStatus = this.normalizeWebhookStatus(providerStatus);
+
+      // Verify Currency (If provided, ensure it's INR)
+      if (data?.currency && String(data.currency).toUpperCase() !== 'INR') {
+         throw new BadRequestException('Invalid currency. Only INR is supported.');
       }
 
-      const createdPayment =
-        await (
-          this.prisma as any
-        ).plPaymentLink.create({
-          data: {
-            customerId,
+      // Run interactive transaction for atomic lock & update
+      const result = await this.prisma.$transaction(async (tx: any) => {
+         // Idempotency: Insert into WebhookInbox if this model exists on the Prisma client
+         if (typeof tx.plWebhookInbox?.create === 'function') {
+           try {
+             await tx.plWebhookInbox.create({
+               data: {
+                 id: randomUUID(),
+                 providerTransactionId: String(merchantTxn),
+                 provider: 'easebuzz',
+                 eventHash: data.hash || 'NO_HASH',
+                 payload: data,
+               },
+             });
+           } catch (e: any) {
+             // P2002 Unique constraint failed = Replay!
+             if (e.code === 'P2002') {
+               this.logger.warn(`Idempotent webhook replay detected for ${merchantTxn}`);
+               return { success: true, message: 'Webhook already processed (idempotent replay).' };
+             }
+             throw e;
+           }
+         }
 
-            applicationNumber,
+         // Lock Payment Link exactly once using raw SQL
+         const lockedPayments = await tx.$queryRaw`SELECT * FROM pl_payment_links WHERE txnid = ${String(merchantTxn)} FOR UPDATE`;
+         if (!lockedPayments || lockedPayments.length === 0) {
+            throw new BadRequestException(`Payment record was not found for transaction ${merchantTxn}.`);
+         }
+         const payment = lockedPayments[0];
 
-            customerName,
-            mobile,
-            email,
+         const nextStatus = payment.status === 'SUCCESS' && normalizedStatus !== 'SUCCESS' ? 'SUCCESS' : normalizedStatus;
 
-            purpose,
-            amount,
+         let application = null;
+         if (payment.application_number || payment.applicationNumber) {
+            const appNum = payment.application_number || payment.applicationNumber;
+            const lockedApps = await tx.$queryRaw`SELECT * FROM pl_applications WHERE application_number = ${appNum} FOR UPDATE`;
+            if (lockedApps && lockedApps.length > 0) {
+               application = lockedApps[0];
+            }
+         }
 
-            txnid:
-              String(
-                merchantTxn,
-              ),
+         // Strict Prisma.Decimal amount comparison
+         const paymentAmount = new Prisma.Decimal(payment.amount);
+         const webhookAmount = data?.amount ? new Prisma.Decimal(data.amount) : new Prisma.Decimal(0);
+         
+         if (!paymentAmount.equals(webhookAmount)) {
+            throw new BadRequestException('Webhook amount does not match stored payment amount.');
+         }
 
-            easebuzzId:
-              easebuzzId
-                ? String(easebuzzId)
-                : null,
+         if (payment.purpose === 'ASSESSMENT_FEE' && application) {
+            if (payment.application_id == null || BigInt(payment.application_id) !== BigInt(application.id)) {
+              throw new BadRequestException('Assessment-fee payment is not bound to the canonical application.');
+            }
+            if (!['LENDER_ALLOCATED', 'ASSESSMENT_FEE_PAID'].includes(String(application.status))) {
+              throw new BadRequestException(`Application status ${application.status} cannot transition to ASSESSMENT_FEE_PAID.`);
+            }
+            if (application.assessment_fee_total_amount) {
+               const appAssessmentFee = new Prisma.Decimal(application.assessment_fee_total_amount);
+               if (!appAssessmentFee.equals(webhookAmount)) {
+                  throw new BadRequestException('Webhook amount does not match canonical application assessment fee.');
+               }
+            }
+         }
 
-            paymentLink,
+         // Update Payment
+         const updatedPayment = await tx.plPaymentLink.update({
+            where: { id: payment.id },
+            data: {
+              status: nextStatus as any,
+              rawWebhookResponse: JSON.stringify(data),
+              easebuzzId: easebuzzId ? String(easebuzzId) : payment.easebuzzId,
+              paidAt: nextStatus === 'SUCCESS' && !payment.paidAt ? new Date() : payment.paidAt
+            }
+         });
 
-            status:
-              normalizedStatus,
+         // Payment, application transition and lender CREATE event commit atomically.
+         if (nextStatus === 'SUCCESS' && payment.purpose === 'ASSESSMENT_FEE' && application) {
+            if (application.status !== 'ASSESSMENT_FEE_PAID') {
+              await tx.plApplication.update({
+                 where: { id: application.id },
+                 data: {
+                   status: 'ASSESSMENT_FEE_PAID'
+                 }
+              });
+            }
+            await this.lenderIntegrationOutbox.enqueueCreateAfterVerifiedPayment(tx, BigInt(application.id));
+         }
 
-            smsStatus:
-              'NOT_SENT',
+         return { 
+           success: true, 
+           message: 'Easebuzz webhook processed successfully.',
+           data: {
+             ...this.serializePayment(updatedPayment, application?.application_number),
+             providerStatus,
+             errorMessage: data?.error_Message || data?.error_message || data?.message || null,
+           }
+         };
+      });
 
-            rawWebhookResponse,
-
-            paidAt:
-              normalizedStatus ===
-              'SUCCESS'
-                ? new Date()
-                : null,
-          },
-        });
-
-      this.logger.log(
-        `New payment created from Easebuzz webhook for ${merchantTxn}.`,
-      );
-
-      return {
-        success: true,
-
-        message:
-          'Easebuzz webhook stored successfully.',
-
-        data: {
-          ...this.serializePayment(
-            createdPayment,
-            applicationNumber,
-          ),
-
-          providerStatus,
-          errorMessage,
-        },
-      };
+      return result;
     } catch (error: any) {
-      this.logger.error(
-        `Easebuzz webhook processing failed: ${
-          error?.message ||
-          'Unknown error'
-        }`,
-        error?.stack,
-      );
-
+      this.logger.error(`Easebuzz webhook processing failed: ${error?.message || 'Unknown error'}`, error?.stack);
       return {
         success: false,
-
-        message:
-          error?.message ||
-          'Easebuzz webhook processing failed.',
-
-        errorCode:
-          error?.code ||
-          'WEBHOOK_FAILED',
+        message: error?.message || 'Easebuzz webhook processing failed.',
+        errorCode: error?.code || 'WEBHOOK_FAILED',
       };
     }
   }
@@ -1383,14 +1129,14 @@ export class PlPaymentsService {
     return {
       paymentId:
         payment?.id !== undefined &&
-        payment?.id !== null
+          payment?.id !== null
           ? payment.id.toString()
           : null,
 
       customerId:
         payment?.customerId !==
           undefined &&
-        payment?.customerId !==
+          payment?.customerId !==
           null
           ? payment.customerId.toString()
           : null,
@@ -1426,10 +1172,10 @@ export class PlPaymentsService {
       amount:
         payment?.amount !==
           undefined &&
-        payment?.amount !== null
+          payment?.amount !== null
           ? Number(
-              payment.amount,
-            )
+            payment.amount,
+          )
           : null,
 
       status,
@@ -1472,7 +1218,7 @@ export class PlPaymentsService {
     const normalizedValue =
       String(
         value ||
-          'PROCESSING_FEE',
+        'PROCESSING_FEE',
       )
         .trim()
         .toUpperCase();
@@ -1484,6 +1230,10 @@ export class PlPaymentsService {
       return 'PROCESSING_FEE';
     }
 
+    if (normalizedValue === 'ASSESSMENT_FEE') {
+      return 'ASSESSMENT_FEE';
+    }
+
     return 'OTHER';
   }
 
@@ -1493,7 +1243,7 @@ export class PlPaymentsService {
     const normalizedValue =
       String(
         value ||
-          'CREATED',
+        'CREATED',
       )
         .trim()
         .toUpperCase();
@@ -1689,7 +1439,7 @@ export class PlPaymentsService {
       where: {
         OR: [
           { txnid: searchTxn },
-          ...( /^\d+$/.test(searchTxn) ? [{ customerId: BigInt(searchTxn) }] : [] ),
+          ...(/^\d+$/.test(searchTxn) ? [{ customerId: BigInt(searchTxn) }] : []),
         ],
       },
       orderBy: { id: 'desc' },

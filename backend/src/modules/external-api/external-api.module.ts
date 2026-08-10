@@ -5,12 +5,14 @@ import { ExternalApiService } from './external-api.service';
 import { PlPaymentsService } from './pl-payments.service';
 import { DigitapDigilockerService } from './digitap-digilocker.service';
 import { DigioBankService } from './integrations/digio-bank.service';
+import { LenderIntegrationModule } from '../lender-integrations/lender-integration.module';
 
 @Module({
   imports: [
     HttpModule.register({
       maxRedirects: 0,
     }),
+    LenderIntegrationModule,
   ],
   controllers: [ExternalApiController],
   providers: [

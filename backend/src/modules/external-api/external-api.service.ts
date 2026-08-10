@@ -19,7 +19,11 @@ import {
   PlBankAccountType,
   PlLoanStatus,
 } from '@prisma/client';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { AxiosError, AxiosResponse } from 'axios';
+import * as FormData from 'form-data';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigioBankService } from './integrations/digio-bank.service';
@@ -47,6 +51,10 @@ export class ExternalApiService {
   private readonly panApiKey: string;
   private readonly panApiTimeoutMs: number;
 
+  // PAN OCR Configuration
+  private readonly panOcrApiUrl: string;
+  private readonly panOcrApiKey: string;
+
   // Face Liveness Configuration
   private readonly faceLivenessApiUrl: string;
   private readonly faceLivenessAuthHeader: string;
@@ -57,6 +65,7 @@ export class ExternalApiService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly digioBankService: DigioBankService,
+    private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
   ) {
     // PAN API Setup
     this.panApiUrl = this.configService.getOrThrow<string>('PAN_API_URL');
@@ -64,6 +73,9 @@ export class ExternalApiService {
     this.panApiTimeoutMs = Number(
       this.configService.get<string>('PAN_API_TIMEOUT_MS', '15000'),
     );
+
+    this.panOcrApiUrl = this.configService.get<string>('PAN_OCR_API_URL') || 'https://sandbox.fintreelms.com/ocr/v1/pan';
+    this.panOcrApiKey = this.configService.get<string>('PAN_OCR_API_KEY') || 'Fintree@2026';
 
     if (!Number.isFinite(this.panApiTimeoutMs) || this.panApiTimeoutMs <= 0) {
       throw new InternalServerErrorException(
@@ -123,6 +135,14 @@ export class ExternalApiService {
       throw new BadRequestException('Customer account is blocked.');
     }
 
+    const hintedApplicationId = input.applicationId ? BigInt(input.applicationId) : null;
+    const application = hintedApplicationId
+      ? await this.prisma.plApplication.findFirst({ where: { id: hintedApplicationId, customerId } })
+      : await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+    if (!application) {
+      throw new NotFoundException('Canonical application not found for customer.');
+    }
+
     const clientRefNum = input.clientRefNum || `LIVENESS_${customerId}_${Date.now()}`.slice(0, 45);
 
     let base64Image = String(input.inputImage || '').trim();
@@ -165,6 +185,29 @@ export class ExternalApiService {
         `Face liveness verification completed for customer ${customer.customerCode}. Result is_live: ${providerData.result.is_live}`,
       );
 
+      const isVerified = providerData.result.is_live === true;
+      const liveness = await this.prisma.applicationLiveness.upsert({
+        where: { applicationId: application.id },
+        create: {
+          applicationId: application.id,
+          provider: 'DIGITAP',
+          providerTransactionId: providerData.req_id,
+          verificationStatus: isVerified ? 'VERIFIED' : 'FAILED',
+          score: providerData.result.liveness_confidence,
+          verifiedAt: isVerified ? new Date() : null,
+          evidenceReference: providerData.client_ref_num,
+        },
+        update: {
+          photoDocumentId: null,
+          provider: 'DIGITAP',
+          providerTransactionId: providerData.req_id,
+          verificationStatus: isVerified ? 'VERIFIED' : 'FAILED',
+          score: providerData.result.liveness_confidence,
+          verifiedAt: isVerified ? new Date() : null,
+          evidenceReference: providerData.client_ref_num,
+        },
+      });
+
       return {
         success: true,
         message: 'Face liveness check processed successfully.',
@@ -172,6 +215,7 @@ export class ExternalApiService {
           customerId: customer.id.toString(),
           customerCode: customer.customerCode,
           reqId: providerData.req_id,
+          livenessVerificationId: liveness.id,
           clientRefNum: providerData.client_ref_num,
           livenessResult: providerData.result,
         },
@@ -482,6 +526,9 @@ export class ExternalApiService {
           firstName: input.normalizedData.firstName,
           middleName: input.normalizedData.middleName,
           lastName: input.normalizedData.lastName,
+          ...(input.normalizedData.fatherName || (input.rawResponse as any)?.data?.father_name
+            ? { fatherName: input.normalizedData.fatherName || (input.rawResponse as any)?.data?.father_name }
+            : {}),
           dateOfBirth,
           gender,
           residentialPincode: this.isValidPincode(input.normalizedData.pincode)
@@ -933,17 +980,17 @@ export class ExternalApiService {
       throw new BadRequestException('LAN is required.');
     }
 
-    const loan = await this.prisma.plLoan.findUnique({
-      where: { lan },
+    const principalCustomerId = String(authenticatedUser?.customerId || '').trim();
+    if (!/^[1-9][0-9]*$/.test(principalCustomerId)) {
+      throw new NotFoundException('Loan not found or does not belong to this customer.');
+    }
+    const loan = await this.prisma.plLoan.findFirst({
+      where: { lan, customerId: BigInt(principalCustomerId) },
       include: { customer: true, application: true, bankVerification: true },
     });
 
     if (!loan) {
-      throw new NotFoundException(`Loan ${lan} not found.`);
-    }
-
-    if (authenticatedUser?.customerId && String(loan.customerId) !== String(authenticatedUser.customerId)) {
-      throw new BadRequestException('Loan does not belong to this customer.');
+      throw new NotFoundException('Loan not found or does not belong to this customer.');
     }
 
     // Validate request payload
@@ -1168,6 +1215,14 @@ export class ExternalApiService {
       return record;
     });
 
+    if (status === PlBankVerificationStatus.VERIFIED && loan.applicationId) {
+      // Staged profile push (V3) carrying the backend-verified bank details to the
+      // lender — reuses the same profile/UPDATE integration as every other stage.
+      this.lenderIntegrationOutbox.enqueueUpdateWhenReady(loan.applicationId, 3).catch((err) => {
+        this.logger.warn(`Failed to enqueue bank profile update for application ${loan.applicationId}: ${err?.message || err}`);
+      });
+    }
+
     if (status === PlBankVerificationStatus.VERIFIED) {
       return {
         success: true,
@@ -1206,5 +1261,226 @@ export class ExternalApiService {
         },
       };
     }
+  }
+
+  async processPanOcr(input: { customerId: bigint; file?: any; image?: string }) {
+    const customerId = input.customerId;
+
+    let fileBuffer: Buffer | null = null;
+    let fileName = 'pan_card.jpg';
+    let mimeType = 'image/jpeg';
+
+    if (input.file && input.file.buffer) {
+      fileBuffer = input.file.buffer;
+      fileName = input.file.originalname || fileName;
+      mimeType = input.file.mimetype || mimeType;
+    } else if (input.image && typeof input.image === 'string') {
+      const match = input.image.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        const ext = mimeType.split('/')[1] || 'jpg';
+        fileName = `pan_capture.${ext}`;
+        fileBuffer = Buffer.from(match[2], 'base64');
+      } else {
+        fileBuffer = Buffer.from(input.image, 'base64');
+      }
+    }
+
+    if (!fileBuffer || fileBuffer.length === 0) {
+      throw new BadRequestException('Please upload or capture a valid PAN card image.');
+    }
+
+    const clientRefId = `CUST_${customerId}_${Date.now()}`;
+
+    const formData = new FormData();
+    formData.append('imageUrl', fileBuffer, {
+      filename: fileName,
+      contentType: mimeType,
+    });
+    formData.append('clientRefId', clientRefId);
+
+    const requestPayload = {
+      action: 'PAN_OCR',
+      clientRefId,
+      fileName,
+      mimeType,
+      fileSize: fileBuffer.length,
+    };
+
+    let responseData: any = null;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(this.panOcrApiUrl, formData, {
+          headers: {
+            ...formData.getHeaders(),
+            accept: '*/*',
+            'X-API-Key': this.panOcrApiKey,
+          },
+          timeout: this.panApiTimeoutMs,
+        }),
+      );
+      responseData = response.data;
+    } catch (err: any) {
+      const errorData = err?.response?.data || { message: err?.message || 'PAN OCR request failed.' };
+      await this.savePanOcrLog(customerId, requestPayload, errorData, false);
+      this.logger.error(`PAN OCR Error: ${err?.message}`, err?.stack);
+      throw new BadRequestException(
+        errorData?.message || errorData?.error || 'Failed to process PAN OCR. Please upload a clear image or enter details manually.',
+      );
+    }
+
+    if (!responseData || responseData.success === false) {
+      await this.savePanOcrLog(customerId, requestPayload, responseData, false);
+      throw new BadRequestException(
+        responseData?.message || responseData?.error || 'PAN OCR failed to extract details from image.',
+      );
+    }
+
+    // 1. Save physical file to uploads/customer-documents/pan-card/YYYY/MM/
+    const now = new Date();
+    const year = now.getFullYear().toString();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+
+    const uploadsBaseDir = join(process.cwd(), 'uploads', 'customer-documents', 'pan-card', year, month);
+    if (!existsSync(uploadsBaseDir)) {
+      mkdirSync(uploadsBaseDir, { recursive: true });
+    }
+
+    const fileExt = mimeType === 'image/png' ? 'png' : mimeType === 'application/pdf' ? 'pdf' : 'jpg';
+    const savedFileName = `customer-${customerId}-pan-card-${now.getTime()}.${fileExt}`;
+    const fullPath = join(uploadsBaseDir, savedFileName);
+    const relativePath = `uploads/customer-documents/pan-card/${year}/${month}/${savedFileName}`;
+    const fileUrl = `/${relativePath}`;
+
+    try {
+      writeFileSync(fullPath, fileBuffer);
+    } catch (fileErr: any) {
+      this.logger.error('Failed to write PAN card image file to uploads folder:', fileErr);
+    }
+
+    // 2. Save OCR log & extracted data in kyc_verification_status table in DB
+    const extracted = responseData?.data || {};
+    const panNumber = (extracted.pan_number || extracted.panNumber || extracted.pan || '').trim().toUpperCase();
+    const fullName = (extracted.name || extracted.fullName || '').trim();
+    const dob = (extracted.dob || '').trim();
+    const fatherName = (extracted.father_name || extracted.fatherName || '').trim();
+
+    // Store fatherName directly on Customer model in DB
+    if (fatherName) {
+      try {
+        await this.prisma.customer.update({
+          where: { id: customerId },
+          data: { fatherName },
+        });
+        this.logger.log(`Updated customer ${customerId} fatherName to "${fatherName}" from PAN OCR.`);
+      } catch (custErr: any) {
+        this.logger.warn(`Could not update fatherName on customer record: ${custErr?.message}`);
+      }
+    }
+
+    await this.savePanOcrLog(customerId, requestPayload, responseData, true, fullName);
+
+    // 3. Save / Update PAN Card document in pl_customer_documents table in DB
+    try {
+      const latestApp = await this.prisma.plApplication.findFirst({
+        where: { customerId },
+        orderBy: { id: 'desc' },
+        select: { id: true },
+      });
+
+      await this.prisma.plCustomerDocument.updateMany({
+        where: { customerId, documentType: 'PAN_CARD', status: 'VERIFIED' },
+        data: { status: 'REPLACED' },
+      });
+
+      await this.prisma.plCustomerDocument.create({
+        data: {
+          customerId,
+          applicationId: latestApp?.id || null,
+          documentType: 'PAN_CARD',
+          fileName: savedFileName,
+          originalFileName: fileName || savedFileName,
+          filePath: relativePath,
+          fileUrl,
+          mimeType,
+          fileSize: fileBuffer.length,
+          source: 'OCR',
+          status: 'VERIFIED',
+          metadataJson: this.stringifyJson(responseData),
+        },
+      });
+    } catch (docErr: any) {
+      this.logger.warn(`Could not save PAN OCR customer document record in DB: ${docErr?.message}`);
+    }
+
+    return {
+      success: true,
+      message: responseData?.message || 'PAN OCR extracted successfully',
+      data: {
+        panNumber,
+        fullName,
+        dob,
+        fatherName,
+        provider: responseData?.provider || 'FINANALYZ_OCR',
+        filePath: relativePath,
+        fileUrl,
+        rawResponse: responseData,
+      },
+    };
+  }
+
+  private async savePanOcrLog(
+    customerId: bigint,
+    requestPayload: any,
+    responseData: any,
+    success: boolean,
+    fullName?: string,
+  ): Promise<void> {
+    try {
+      const nameParts = this.parsePersonName(fullName);
+
+      const existingKyc = await this.prisma.kycVerificationStatus.findFirst({
+        where: { customerId },
+        select: { id: true },
+      });
+
+      const kycUpdate = {
+        panApiRequest: this.stringifyJson(requestPayload),
+        panApiResponse: this.stringifyJson(responseData),
+        ...(nameParts.firstName ? { firstName: nameParts.firstName } : {}),
+        ...(nameParts.middleName ? { middleName: nameParts.middleName } : {}),
+        ...(nameParts.lastName ? { lastName: nameParts.lastName } : {}),
+      };
+
+      if (existingKyc) {
+        await this.prisma.kycVerificationStatus.update({
+          where: { id: existingKyc.id },
+          data: kycUpdate,
+        });
+      } else {
+        await this.prisma.kycVerificationStatus.create({
+          data: {
+            customerId,
+            mobileStatus: KycStatus.VERIFIED,
+            ...kycUpdate,
+          },
+        });
+      }
+    } catch (dbErr: any) {
+      this.logger.error('Failed to save PAN OCR log in kyc_verification_status DB table', dbErr?.stack);
+    }
+  }
+
+  private parsePersonName(fullName?: string): { firstName: string | null; middleName: string | null; lastName: string | null } {
+    if (!fullName) return { firstName: null, middleName: null, lastName: null };
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return { firstName: null, middleName: null, lastName: null };
+    if (parts.length === 1) return { firstName: parts[0], middleName: null, lastName: null };
+    if (parts.length === 2) return { firstName: parts[0], middleName: null, lastName: parts[1] };
+    return {
+      firstName: parts[0],
+      middleName: parts.slice(1, -1).join(' '),
+      lastName: parts[parts.length - 1],
+    };
   }
 }

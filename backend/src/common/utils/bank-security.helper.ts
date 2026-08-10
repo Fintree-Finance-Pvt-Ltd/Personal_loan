@@ -15,7 +15,7 @@ function getHmacKey(): Buffer {
 }
 
 export function encryptBankAccountNumber(accountNumber: string): string {
-  const cleanAcc = String(accountNumber || '').replace(/\D/g, '');
+  const cleanAcc = String(accountNumber || '').trim();
   if (!cleanAcc) {
     throw new Error('Account number is empty or invalid.');
   }
@@ -52,18 +52,14 @@ export function decryptBankAccountNumber(encryptedString: string): string {
 }
 
 export function createBankAccountFingerprint(accountNumber: string): string {
-  const cleanAcc = String(accountNumber || '').replace(/\D/g, '');
+  const cleanAcc = String(accountNumber || '').trim();
   return createHmac('sha256', getHmacKey())
     .update(cleanAcc)
     .digest('hex');
 }
 
 export function maskBankAccountNumber(accountNumber: string): string {
-  const cleanAcc = String(accountNumber || '').replace(/\D/g, '');
-  if (cleanAcc.length < 4) {
-    return 'XXXXXXXX';
-  }
-  return `XXXXXXXX${cleanAcc.slice(-4)}`;
+  return String(accountNumber || '').trim();
 }
 
 export function maskIfscForAudit(ifsc: string): string {

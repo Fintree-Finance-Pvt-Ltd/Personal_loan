@@ -15,17 +15,10 @@ export class DocumentsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async saveCustomerLivePhoto(file: any, body: any) {
+  async saveCustomerLivePhoto(customerId: bigint, file: any, body: any) {
     if (!file) {
       throw new BadRequestException('No image file provided.');
     }
-
-    const customerIdInput = body?.customerId || body?.customer?.id;
-    if (!customerIdInput) {
-      throw new BadRequestException('Customer ID is required.');
-    }
-
-    const customerId = BigInt(customerIdInput);
 
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -34,6 +27,26 @@ export class DocumentsService {
 
     if (!customer) {
       throw new NotFoundException('Customer not found.');
+    }
+
+    const applicationIdHint = String(body?.applicationId || '').trim();
+    if (!/^[1-9][0-9]*$/.test(applicationIdHint)) {
+      throw new BadRequestException('Canonical application ID is required.');
+    }
+    const application = await this.prisma.plApplication.findFirst({
+      where: { id: BigInt(applicationIdHint), customerId },
+    });
+    if (!application) {
+      throw new NotFoundException('Canonical application not found for customer.');
+    }
+    const livenessVerificationId = String(body?.livenessVerificationId || '').trim();
+    const liveness = livenessVerificationId
+      ? await this.prisma.applicationLiveness.findFirst({
+          where: { id: livenessVerificationId, applicationId: application.id, verificationStatus: 'VERIFIED' },
+        })
+      : null;
+    if (!liveness?.verifiedAt) {
+      throw new BadRequestException('A server-verified liveness result is required before uploading the photo.');
     }
 
     const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -77,24 +90,14 @@ export class DocumentsService {
     const lon = body?.longitude && !isNaN(Number(body.longitude)) ? Number(body.longitude) : null;
     const acc = body?.accuracy && !isNaN(Number(body.accuracy)) ? Number(body.accuracy) : null;
 
-    let appId: bigint | null = null;
-    const rawAppId = String(body?.applicationId || '').trim();
-    if (rawAppId && rawAppId !== 'null' && rawAppId !== 'undefined' && /^\d+$/.test(rawAppId)) {
-      try {
-        appId = BigInt(rawAppId);
-      } catch {
-        appId = null;
-      }
-    }
-
     const capturedAtDate = body?.capturedAt ? new Date(body.capturedAt) : new Date();
 
     try {
       const document = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-          `UPDATE \`pl_customer_documents\` SET \`status\` = 'REPLACED', \`updated_at\` = NOW(6) WHERE \`customer_id\` = ? AND \`document_type\` = 'CUSTOMER_LIVE_PHOTO' AND \`status\` = 'VERIFIED'`,
-          customerId,
-        );
+        await tx.plCustomerDocument.updateMany({
+          where: { customerId, applicationId: application.id, documentType: 'CUSTOMER_LIVE_PHOTO', status: 'VERIFIED' },
+          data: { status: 'REPLACED' },
+        });
 
         const metadataJson = JSON.stringify({
           capturedAt: capturedAtDate.toISOString(),
@@ -108,54 +111,45 @@ export class DocumentsService {
           postalCode: body?.postalCode || null,
         });
 
-        const scoreVal = body?.faceLivenessScore && !isNaN(Number(body.faceLivenessScore))
-          ? Number(body.faceLivenessScore)
-          : null;
-
-        await tx.$executeRawUnsafe(
-          `INSERT INTO \`pl_customer_documents\` (
-            \`customer_id\`, \`application_id\`, \`document_type\`, \`applicant_type\`, \`status\`,
-            \`file_name\`, \`original_file_name\`, \`file_path\`, \`file_url\`, \`mime_type\`, \`file_size\`, \`source\`,
-            \`latitude\`, \`longitude\`, \`accuracy\`, \`formatted_address\`, \`city\`, \`state\`, \`country\`, \`postal_code\`,
-            \`captured_at\`, \`face_liveness_status\`, \`face_liveness_score\`, \`face_liveness_provider_app_id\`, \`metadata_json\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          customerId,
-          appId,
-          'CUSTOMER_LIVE_PHOTO',
-          body?.applicantType || 'BORROWER',
-          'VERIFIED',
-          fileName,
-          file.originalname || fileName,
-          relativePath,
-          fileUrl,
-          'image/jpeg',
-          file.size || 0,
-          body?.source || 'PROFILE_DETAILS',
-          lat,
-          lon,
-          acc,
-          body?.formattedAddress || null,
-          body?.city || null,
-          body?.state || null,
-          body?.country || 'India',
-          body?.postalCode || null,
-          capturedAtDate,
-          body?.faceLivenessStatus || 'VERIFIED',
-          scoreVal,
-          body?.faceLivenessProviderApplicationId || null,
-          metadataJson,
-        );
-
-        const insertedRows: any[] = await tx.$queryRawUnsafe(
-          `SELECT \`id\`, \`customer_id\` AS customerId, \`application_id\` AS applicationId, \`document_type\` AS documentType, \`applicant_type\` AS applicantType, \`status\`, \`file_name\` AS fileName, \`original_file_name\` AS originalFileName, \`file_path\` AS filePath, \`file_url\` AS fileUrl, \`mime_type\` AS mimeType, \`file_size\` AS fileSize, \`source\`, \`latitude\`, \`longitude\`, \`accuracy\`, \`formatted_address\` AS formattedAddress, \`city\`, \`state\`, \`country\`, \`postal_code\` AS postalCode, \`captured_at\` AS capturedAt, \`uploaded_at\` AS uploadedAt, \`face_liveness_status\` AS faceLivenessStatus, \`face_liveness_score\` AS faceLivenessScore, \`face_liveness_provider_app_id\` AS faceLivenessProviderApplicationId, \`metadata_json\` AS metadataJson, \`created_at\` AS createdAt, \`updated_at\` AS updatedAt FROM \`pl_customer_documents\` WHERE \`id\` = LAST_INSERT_ID()`,
-        );
-
-        await tx.$executeRawUnsafe(
-          `UPDATE \`customers\` SET \`last_activity_at\` = NOW(0) WHERE \`id\` = ?`,
-          customerId,
-        );
-
-        return insertedRows[0];
+        const formattedAddress = body?.formattedAddress || null;
+        const city = body?.city || null;
+        const state = body?.state || null;
+        const country = body?.country || 'India';
+        const postalCode = body?.postalCode || null;
+        const originalName = file.originalname || fileName;
+        const fileSize = file.size || 0;
+        const created = await tx.plCustomerDocument.create({
+          data: {
+            customerId,
+            applicationId: application.id,
+            documentType: 'CUSTOMER_LIVE_PHOTO',
+            applicantType: 'BORROWER',
+            status: 'VERIFIED',
+            fileName,
+            originalFileName: originalName,
+            filePath: relativePath,
+            fileUrl,
+            mimeType: file.mimetype,
+            fileSize,
+            source: 'PROFILE_DETAILS',
+            latitude: lat,
+            longitude: lon,
+            accuracy: acc,
+            formattedAddress,
+            city,
+            state,
+            country,
+            postalCode,
+            capturedAt: capturedAtDate,
+            faceLivenessStatus: 'VERIFIED',
+            faceLivenessScore: liveness.score,
+            faceLivenessProviderApplicationId: liveness.providerTransactionId,
+            metadataJson,
+          },
+        });
+        await tx.applicationLiveness.update({ where: { id: liveness.id }, data: { photoDocumentId: created.id } });
+        await tx.customer.update({ where: { id: customerId }, data: { lastActivityAt: new Date() } });
+        return created;
       });
 
       this.logger.log(`Live photo document saved successfully for customer ${customer.customerCode}.`);
@@ -171,15 +165,12 @@ export class DocumentsService {
     }
   }
 
-  async getCustomerLivePhoto(customerIdInput: string | number) {
-    const customerId = BigInt(customerIdInput);
-
-    const rows: any[] = await this.prisma.$queryRawUnsafe(
-      `SELECT \`id\`, \`customer_id\` AS customerId, \`application_id\` AS applicationId, \`document_type\` AS documentType, \`applicant_type\` AS applicantType, \`status\`, \`file_name\` AS fileName, \`original_file_name\` AS originalFileName, \`file_path\` AS filePath, \`file_url\` AS fileUrl, \`mime_type\` AS mimeType, \`file_size\` AS fileSize, \`source\`, \`latitude\`, \`longitude\`, \`accuracy\`, \`formatted_address\` AS formattedAddress, \`city\`, \`state\`, \`country\`, \`postal_code\` AS postalCode, \`captured_at\` AS capturedAt, \`uploaded_at\` AS uploadedAt, \`face_liveness_status\` AS faceLivenessStatus, \`face_liveness_score\` AS faceLivenessScore, \`face_liveness_provider_app_id\` AS faceLivenessProviderApplicationId, \`metadata_json\` AS metadataJson, \`created_at\` AS createdAt, \`updated_at\` AS updatedAt FROM \`pl_customer_documents\` WHERE \`customer_id\` = ? AND \`document_type\` = 'CUSTOMER_LIVE_PHOTO' AND \`status\` = 'VERIFIED' ORDER BY \`created_at\` DESC LIMIT 1`,
-      customerId,
-    );
-
-    if (!rows || rows.length === 0) {
+  async getCustomerLivePhoto(customerId: bigint) {
+    const document = await this.prisma.plCustomerDocument.findFirst({
+      where: { customerId, documentType: 'CUSTOMER_LIVE_PHOTO', status: 'VERIFIED' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!document) {
       return {
         success: true,
         data: null,
@@ -188,7 +179,7 @@ export class DocumentsService {
 
     return {
       success: true,
-      data: this.serializeDocument(rows[0]),
+      data: this.serializeDocument(document),
     };
   }
 

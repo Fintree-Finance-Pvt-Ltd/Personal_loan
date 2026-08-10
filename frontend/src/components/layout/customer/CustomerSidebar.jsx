@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { doCustomerLogout } from '../../../features/customer/customerApi';
 
 const menuItems = [
   {
@@ -61,8 +62,8 @@ export default function CustomerSidebar({ isOpen, onClose }) {
     location.pathname.startsWith('/customer/loan/') &&
     location.pathname.endsWith('/post-approval');
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('customerSession');
+  const handleLogout = async () => {
+    await doCustomerLogout();
     navigate('/customer/login', { replace: true });
   };
 
@@ -79,28 +80,24 @@ export default function CustomerSidebar({ isOpen, onClose }) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-300 lg:translate-x-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
+        {/* Logo */}
         {/* Logo */}
         <div className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 px-6">
           <button
             type="button"
-            onClick={() => navigate('/customer/dashboard')}
-            className="flex items-center gap-3"
+            onClick={() =>
+              navigate('/customer/dashboard')
+            }
+            className="flex items-center"
           >
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-600 text-sm font-bold text-white shadow-lg shadow-emerald-600/20">
-              FL
-            </div>
-            <div className="text-left">
-              <p className="text-xl font-extrabold tracking-tight text-slate-900">
-                FinLeaf
-              </p>
-              <p className="text-[10px] font-medium text-slate-500">
-                Fintree Finance Pvt. Ltd.
-              </p>
-            </div>
+            <img
+              src="/image/IMG_0007-removebg-preview.png"
+              alt="FinLeaf"
+              className="h-17 w-auto max-w-[120px] object-contain"
+            />
           </button>
 
           <button
@@ -144,21 +141,19 @@ export default function CustomerSidebar({ isOpen, onClose }) {
                   to={item.path}
                   onClick={onClose}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
-                      isActive
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${isActive
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`
                   }
                 >
                   {({ isActive }) => (
                     <>
                       <span
-                        className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
-                          isActive
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
+                        className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${isActive
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-slate-100 text-slate-500'
+                          }`}
                       >
                         <Icon size={18} />
                       </span>

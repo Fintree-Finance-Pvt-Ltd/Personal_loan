@@ -8,12 +8,17 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { Logger } from "@nestjs/common";
 
+// Enable JSON.stringify serialization for BigInt values returned by Prisma
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 
 async function bootstrap(): Promise<void> {
-  
+
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const config = app.get(ConfigService);
   const logger = new Logger("UserService");
@@ -24,7 +29,12 @@ async function bootstrap(): Promise<void> {
       crossOriginResourcePolicy: false,
     }),
   );
-  app.use(json({ limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
+  app.use(json({ 
+    limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT'),
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
   app.use(urlencoded({ extended: false, limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
@@ -32,11 +42,14 @@ async function bootstrap(): Promise<void> {
     origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept', 'Origin', 'Idempotency-Key', 'X-Client-Id', 'X-Request-Timestamp', 'X-Nonce', 'X-Signature'],
     exposedHeaders: ['X-Request-ID'],
   });
   const adapter = app.getHttpAdapter().getInstance();
-  adapter.set('trust proxy', config.getOrThrow<boolean>('TRUST_PROXY'));
+  const trustProxy = config.get<boolean>('TRUST_PROXY');
+  if (trustProxy) {
+    adapter.set('trust proxy', 1);
+  }
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -96,6 +96,7 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
             const currentCode = watchRules[index]?.ruleCode;
             const def = getRuleDef(currentCode);
             const isMandatory = def?.isMandatory;
+            const canBeDisabled = def?.canBeDisabled;
             
             return (
               <div key={field.id} className="p-4 border border-gray-200 rounded-lg bg-gray-50 flex gap-4">
@@ -190,28 +191,40 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                   </div>
 
                   {/* Active Toggle */}
-                  <div className="col-span-1 flex items-center pt-6">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="col-span-1 flex flex-col pt-6">
+                    <label className={`flex items-center gap-2 ${canBeDisabled === false ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                       <input
                         type="checkbox"
                         {...register(`rules.${index}.isActive`)}
-                        className="w-4 h-4 text-blue-600 rounded"
+                        className="w-4 h-4 text-blue-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={canBeDisabled === false}
                       />
                       <span className="text-sm font-medium text-gray-700">Active</span>
                     </label>
+                    {isMandatory && watchRules[index]?.isActive === false && (
+                      <span className="text-xs text-amber-600 mt-1 flex items-start gap-1">
+                        ⚠️ Mandatory rule is inactive
+                      </span>
+                    )}
                   </div>
                 </div>
                 
                 {/* Actions */}
                 <div className="flex flex-col items-center justify-start pt-6 border-l border-gray-200 pl-4 ml-2">
-                  <button
-                    type="button"
-                    onClick={() => remove(index)}
-                    className="text-gray-400 hover:text-red-500 transition-colors"
-                    title="Remove Rule"
-                  >
-                    <TrashIcon className="w-5 h-5" />
-                  </button>
+                  {!isMandatory ? (
+                    <button
+                      type="button"
+                      onClick={() => remove(index)}
+                      className="text-gray-400 hover:text-red-500 transition-colors"
+                      title="Remove Rule"
+                    >
+                      <TrashIcon className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <div className="text-gray-300" title="Mandatory rules cannot be removed">
+                      <TrashIcon className="w-5 h-5" />
+                    </div>
+                  )}
                 </div>
               </div>
             );

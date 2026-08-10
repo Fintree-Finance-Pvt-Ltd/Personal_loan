@@ -6,80 +6,118 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { Public } from '../../common/decorators/public.decorator';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { CustomerService } from './customer.service';
 
 @Controller('customer')
+@CustomerProtected()
 export class CustomerController {
   constructor(
     private readonly customerService: CustomerService,
   ) {}
 
-  /**
-   * GET /api/customer/:id
-   *
-   * Returns the full customer profile (excluding sensitive fields).
-   * Currently marked @Public() for the customer-facing flow;
-   * protect with an auth guard when customer JWT session is implemented.
-   */
-  @Public()
-  @Get(':id')
-  async getCustomer(
-    @Param(
-      'id',
-      new ParseIntPipe(),
-    )
-    id: number,
-  ) {
-    return this.customerService.findById(
-      BigInt(id),
-    );
+  @Get('me')
+  async getMe(@CurrentCustomer() customer: any) {
+    return this.customerService.findById(BigInt(customer.customerId));
   }
 
-  @Public()
+  @Get(':id')
+  async getCustomer(
+    @CurrentCustomer() customer: any,
+    @Param('id', new ParseIntPipe()) id: number,
+  ) {
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.findById(BigInt(customer.customerId));
+  }
+
   @Patch(':id/pincode')
   async updatePincode(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: { pincode: string; city?: string; state?: string },
   ) {
-    return this.customerService.updatePincode(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.updatePincode(BigInt(customer.customerId), body);
   }
 
-  @Public()
   @Patch(':id/profile')
   async updateProfile(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.updateProfile(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.updateProfile(BigInt(customer.customerId), body);
   }
 
-  @Public()
   @Patch(':id/basic-details')
   async updateBasicDetails(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.updateBasicDetails(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.updateBasicDetails(BigInt(customer.customerId), body);
   }
 
-  @Public()
+  @Post('resume-application')
+  async resumeApplication(
+    @CurrentCustomer() customer: any,
+    @Body() body: { platformProductId?: string; scopeCode?: string },
+  ) {
+    return this.customerService.resumeApplication(BigInt(customer.customerId), body);
+  }
+
   @Post(':id/submit-application')
   async submitApplication(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.submitApplication(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.submitApplication(BigInt(customer.customerId), body);
   }
 
-  @Public()
-  @Post(':id/simulate-lender-approval')
-  async simulateLenderApproval(
+  @Post(':id/run-eligibility')
+  async runEligibility(
+    @CurrentCustomer() customer: any,
     @Param('id', new ParseIntPipe()) id: number,
     @Body() body: any,
   ) {
-    return this.customerService.simulateLenderApproval(BigInt(id), body);
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.runEligibility(BigInt(customer.customerId), body);
+  }
+
+  @Patch('application/address')
+  async saveApplicationAddress(@CurrentCustomer() customer: any, @Body() body: any) {
+    return this.customerService.saveApplicationAddress(BigInt(customer.customerId), body);
+  }
+
+  @Post('application/decision-consents')
+  async acceptDecisionConsents(@CurrentCustomer() customer: any, @Body() body: any, @Req() req: any) {
+    return this.customerService.acceptDecisionConsents(BigInt(customer.customerId), body, {
+      ipAddress: req?.ip,
+      userAgent: req?.headers?.['user-agent'],
+    });
+  }
+
+  @Post('application/retry-lender-submission')
+  async retryLenderSubmission(@CurrentCustomer() customer: any, @Body() body: any) {
+    return this.customerService.retryLenderSubmission(BigInt(customer.customerId), body);
+  }
+
+  @Post(':id/simulate-lender-approval')
+  async simulateLenderApproval(
+    @CurrentCustomer() customer: any,
+    @Param('id', new ParseIntPipe()) id: number,
+    @Body() body: any,
+  ) {
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.simulateLenderApproval(BigInt(customer.customerId), body);
   }
 }

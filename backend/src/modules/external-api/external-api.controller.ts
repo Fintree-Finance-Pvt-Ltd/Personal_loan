@@ -7,8 +7,15 @@ import {
   Param,
   Post,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../../common/decorators/public.decorator';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+// import { CustomerAuthGuard } from '../auth/guards/customer-auth.guard';
+// import { UseGuards } from '@nestjs/common';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { ExternalApiService } from './external-api.service';
 import { PlPaymentsService } from './pl-payments.service';
 
@@ -19,28 +26,45 @@ export class ExternalApiController {
     private readonly plPaymentsService: PlPaymentsService,
   ) {}
 
-  @Public()
+  @CustomerProtected()
   @Post('verify-pan')
   @HttpCode(HttpStatus.OK)
-  verifyPan(@Body() body: any) {
+  verifyPan(@Body() body: any, @CurrentCustomer() customer: any) {
     return this.externalApiService.verifyPan({
-      customerId: body?.customerId || body?.customer?.id,
+      customerId: customer.customerId,
       panNumber: body?.panNumber,
     });
   }
 
-  @Public()
+  @CustomerProtected()
+  @Post('pan-ocr')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  processPanOcr(
+    @UploadedFile() file: any,
+    @Body() body: any,
+    @CurrentCustomer() customer: any,
+  ) {
+    return this.externalApiService.processPanOcr({
+      customerId: BigInt(customer.customerId),
+      file,
+      image: body?.image || body?.imageUrl || body?.file,
+    });
+  }
+
+  @CustomerProtected()
   @Post('face-liveness')
   @HttpCode(HttpStatus.OK)
-  checkFaceLiveness(@Body() body: any) {
+  checkFaceLiveness(@Body() body: any, @CurrentCustomer() customer: any) {
     return this.externalApiService.checkFaceLiveness({
-      customerId: body?.customerId || body?.customer?.id,
+      customerId: customer.customerId,
+      applicationId: body?.applicationId,
       inputImage: body?.inputImage || body?.input_image,
       clientRefNum: body?.clientRefNum || body?.client_ref_num,
     });
   }
 
-  @Public()
+  @CustomerProtected()
   @Post('reverse-geocode')
   @HttpCode(HttpStatus.OK)
   reverseGeocode(@Body() body: any) {
@@ -51,32 +75,37 @@ export class ExternalApiController {
   }
 
 @Public()
+@CustomerProtected()
 @Post('initiate-payment')
 @HttpCode(HttpStatus.OK)
 initiatePayment(
   @Body() body: any,
+  @CurrentCustomer() customer: any,
+  @Req() req: any,
 ) {
-  const customerId =
-    body?.customerId ||
-    body?.customer?.id;
+  const customerId = BigInt(customer.customerId);
 
   return this.plPaymentsService
     .initiateIframePayment(
       customerId,
       body,
       body?.actor || null,
+      {
+        ipAddress: req?.ip || null,
+        userAgent: req?.headers?.['user-agent'] || null,
+      },
     );
 }
 
 @Public()
+@CustomerProtected()
 @Post('create-payment-link')
 @HttpCode(HttpStatus.OK)
 createPaymentLink(
   @Body() body: any,
+  @CurrentCustomer() customer: any,
 ) {
-  const customerId =
-    body?.customerId ||
-    body?.customer?.id;
+  const customerId = BigInt(customer.customerId);
 
   return this.plPaymentsService
     .createPaymentLink(
@@ -87,14 +116,14 @@ createPaymentLink(
 }
 
 @Public()
+@CustomerProtected()
 @Post('payment-status')
 @HttpCode(HttpStatus.OK)
 getPaymentStatus(
   @Body() body: any,
+  @CurrentCustomer() customer: any,
 ) {
-  const customerId =
-    body?.customerId ||
-    body?.customer?.id;
+  const customerId = BigInt(customer.customerId);
 
   return this.plPaymentsService
     .getPaymentStatus(
@@ -145,27 +174,19 @@ handleEasebuzzPaymentSuccess(
       );
   }
 
-  @Public()
-  @Post('easebuzz-payment-manual-paid')
-  @HttpCode(HttpStatus.OK)
-  markPaymentAsPaid(@Body() body: any) {
-    const identifier = body?.txnid || body?.customerId || body?.id;
-    const status = body?.status || 'SUCCESS';
-    return this.plPaymentsService.markPaymentAsPaid(identifier, status);
-  }
-
-  @Public()
+  @CustomerProtected()
   @Post('customer/loans/:lan/bank-accounts/verify')
   @HttpCode(HttpStatus.OK)
   verifyCustomerBankAccount(
     @Param('lan') lan: string,
     @Body() body: any,
     @Req() req: any,
+    @CurrentCustomer() customer: any,
   ) {
     return this.externalApiService.verifyCustomerBankAccount(
       lan,
       body,
-      req?.user,
+      { customerId: customer.customerId },
       {
         ipAddress: req?.ip,
         userAgent: req?.headers?.['user-agent'],

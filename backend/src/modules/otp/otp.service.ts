@@ -19,10 +19,12 @@ import {
   Prisma,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomInt, randomBytes } from 'crypto';
+import { randomInt, randomBytes, createHash } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EmailService } from './email/email.service';
 import { SmsService } from './sms/sms.service';
+import { deviceLabel } from '../../common/utils/security.utils';
 
 export type SendMobileOtpInput = {
   mobileNumber?: unknown;
@@ -30,11 +32,15 @@ export type SendMobileOtpInput = {
   consentText?: unknown;
   ipAddress?: string | null;
   userAgent?: string | null;
+  requestId?: string;
 };
 
 export type VerifyMobileOtpInput = {
   mobileNumber?: unknown;
   otp?: unknown;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  requestId?: string;
 };
 
 export type SendEmailOtpInput = {
@@ -64,6 +70,7 @@ export class OtpService {
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly jwt: JwtService,
   ) {
     this.otpExpiryMinutes = this.readPositiveNumber('OTP_EXPIRY_MINUTES', 5);
     this.maxAttempts = this.readPositiveNumber('OTP_MAX_ATTEMPTS', 5);
@@ -273,30 +280,71 @@ export class OtpService {
           },
         });
 
-        return verifiedCustomer;
+        const sessionLengthHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 168);
+        const idleLengthMins = this.configService.get<number>('REFRESH_IDLE_TIMEOUT_MINUTES', 30);
+        const absoluteExpiresAt = new Date(now.getTime() + sessionLengthHours * 3600000);
+        const idleExpiresAt = new Date(now.getTime() + idleLengthMins * 60000);
+
+        const customerSession = await transaction.customerSession.create({
+          data: {
+            customerId: verifiedCustomer.id,
+            absoluteExpiresAt,
+            idleExpiresAt,
+            ipAddress: input.ipAddress?.slice(0, 64),
+            userAgent: input.userAgent?.slice(0, 512),
+            deviceLabel: deviceLabel(input.userAgent),
+            requestId: input.requestId || 'unknown',
+          }
+        });
+
+        const rawRefreshToken = randomBytes(48).toString('base64url');
+        const refreshHash = createHash('sha256').update(rawRefreshToken).digest('hex');
+
+        await transaction.customerRefreshToken.create({
+          data: {
+            sessionId: customerSession.id,
+            tokenHash: refreshHash,
+            expiresAt: absoluteExpiresAt
+          }
+        });
+
+        const accessToken = await this.jwt.signAsync({
+            sub: verifiedCustomer.id.toString(),
+            sid: customerSession.id,
+            type: 'customer-access',
+        }, {
+            secret: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_SECRET'),
+            expiresIn: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_EXPIRES_IN') as any,
+            issuer: this.configService.getOrThrow<string>('JWT_ISSUER'),
+            audience: 'personal-loan-customer',
+        });
+
+        return { verifiedCustomer, accessToken, rawRefreshToken };
       });
 
       this.logger.log(
-        `Mobile verified for customer ${customer.customerCode}, mobile ending ${mobileNumber.slice(-4)}.`,
+        `Mobile verified for customer ${customer.verifiedCustomer.customerCode}, mobile ending ${mobileNumber.slice(-4)}.`,
       );
 
       return {
         success: true,
         message: 'Mobile number verified successfully.',
+        refreshToken: customer.rawRefreshToken,
         data: {
+          accessToken: customer.accessToken,
           customer: {
-            id: customer.id.toString(),
-            customerCode: customer.customerCode,
-            countryCode: customer.countryCode,
-            mobileNumber: customer.mobileNumber,
-            mobileVerified: customer.mobileVerified,
-            accountStatus: customer.accountStatus,
-            onboardingStatus: customer.onboardingStatus,
-            eligibilityStatus: customer.eligibilityStatus,
-            fullName: customer.fullName,
-            email: customer.email,
-            emailVerified: customer.emailVerified,
-            panVerified: customer.panVerified,
+            id: customer.verifiedCustomer.id.toString(),
+            customerCode: customer.verifiedCustomer.customerCode,
+            countryCode: customer.verifiedCustomer.countryCode,
+            mobileNumber: customer.verifiedCustomer.mobileNumber,
+            mobileVerified: customer.verifiedCustomer.mobileVerified,
+            accountStatus: customer.verifiedCustomer.accountStatus,
+            onboardingStatus: customer.verifiedCustomer.onboardingStatus,
+            eligibilityStatus: customer.verifiedCustomer.eligibilityStatus,
+            fullName: customer.verifiedCustomer.fullName,
+            email: customer.verifiedCustomer.email,
+            emailVerified: customer.verifiedCustomer.emailVerified,
+            panVerified: customer.verifiedCustomer.panVerified,
           },
         },
       };
@@ -783,5 +831,183 @@ export class OtpService {
     }
 
     return value;
+  }
+
+  private hashRefreshToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private invalidRefresh(): never {
+    throw new UnauthorizedException({
+      error: { code: 'AUTH_REFRESH_INVALID', message: 'Your session is no longer valid.' },
+    });
+  }
+
+  async refreshCustomerSession(rawToken: string, userAgent: string | null, ipAddress: string | null) {
+    const tokenHash = this.hashRefreshToken(rawToken);
+    const token = await this.prisma.customerRefreshToken.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        usedAt: true,
+        revokedAt: true,
+        expiresAt: true,
+        session: {
+          select: {
+            id: true,
+            revokedAt: true,
+            absoluteExpiresAt: true,
+            idleExpiresAt: true,
+            customer: {
+              select: {
+                id: true,
+                customerCode: true,
+                mobileNumber: true,
+                accountStatus: true,
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!token) this.invalidRefresh();
+
+    const now = new Date();
+    
+    // Check if token was already used (replay/compromise)
+    if (token.usedAt) {
+      // A browser can issue a second refresh during React StrictMode startup
+      // before it has applied the rotated cookie. Do not revoke the whole
+      // session for this short, legitimate race; an older replay is still
+      // treated as compromise below.
+      if (now.getTime() - token.usedAt.getTime() <= 5_000) {
+        this.invalidRefresh();
+      }
+
+      await this.prisma.customerSession.update({
+        where: { id: token.session.id },
+        data: { revokedAt: now, revokedReason: 'REFRESH_TOKEN_REUSE' }
+      });
+      await this.prisma.customerRefreshToken.updateMany({
+        where: { sessionId: token.session.id, revokedAt: null },
+        data: { revokedAt: now }
+      });
+      this.invalidRefresh();
+    }
+
+    if (token.revokedAt || token.expiresAt < now) this.invalidRefresh();
+
+    const session = token.session;
+    if (session.revokedAt || session.absoluteExpiresAt < now || session.idleExpiresAt < now) {
+      this.invalidRefresh();
+    }
+
+    if (session.customer.accountStatus !== 'ACTIVE') {
+      this.invalidRefresh();
+    }
+
+    const replacement = randomBytes(48).toString('base64url');
+    const replacementHash = this.hashRefreshToken(replacement);
+    
+    const idleLengthMins = this.configService.get<number>('REFRESH_IDLE_TIMEOUT_MINUTES', 30);
+    const newIdleExpiresAt = new Date(now.getTime() + idleLengthMins * 60000);
+
+    const rotated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.customerRefreshToken.updateMany({
+        where: { id: token.id, usedAt: null, revokedAt: null },
+        data: { usedAt: now }
+      });
+
+      if (claimed.count !== 1) return false;
+
+      await tx.customerRefreshToken.create({
+        data: {
+          sessionId: session.id,
+          tokenHash: replacementHash,
+          parentTokenId: token.id,
+          expiresAt: session.absoluteExpiresAt
+        }
+      });
+
+      await tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          idleExpiresAt: newIdleExpiresAt,
+          lastSeenAt: now,
+          ipAddress: ipAddress?.slice(0, 64),
+          userAgent: userAgent?.slice(0, 512),
+        }
+      });
+
+      return true;
+    });
+
+    if (!rotated) this.invalidRefresh();
+
+    const accessToken = await this.jwt.signAsync({
+      sub: session.customer.id.toString(),
+      sid: session.id,
+      type: 'customer-access',
+    }, {
+      secret: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_SECRET'),
+      expiresIn: this.configService.getOrThrow<string>('CUSTOMER_JWT_ACCESS_EXPIRES_IN') as any,
+      issuer: this.configService.getOrThrow<string>('JWT_ISSUER'),
+      audience: 'personal-loan-customer',
+    });
+
+    return {
+      accessToken,
+      refreshToken: replacement,
+      customer: {
+        id: session.customer.id.toString(),
+        customerCode: session.customer.customerCode,
+        mobileNumber: session.customer.mobileNumber,
+      }
+    };
+  }
+
+  async revokeCustomerSessionByToken(rawToken: string) {
+    try {
+      const tokenHash = this.hashRefreshToken(rawToken);
+      const token = await this.prisma.customerRefreshToken.findUnique({
+        where: { tokenHash },
+        select: { sessionId: true }
+      });
+
+      if (token) {
+        await this.prisma.customerSession.update({
+          where: { id: token.sessionId },
+          data: { revokedAt: new Date(), revokedReason: 'LOGOUT' }
+        });
+      }
+    } catch (e) {
+      // Ignore errors on logout
+    }
+  }
+
+  getCookieName(): string {
+    return this.configService.getOrThrow<string>('CUSTOMER_COOKIE_NAME');
+  }
+
+  getCookieOptions(): any {
+    const isProd = this.configService.get('NODE_ENV') === 'production';
+    const maxAgeHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 168);
+    const apiPrefix = this.configService.get<string>('API_PREFIX', 'api');
+    const secure = this.configService.get<boolean>('COOKIE_SECURE', false) || isProd;
+    const sameSite = this.configService.get<'strict' | 'lax' | 'none'>('COOKIE_SAME_SITE', 'strict');
+
+    return {
+      httpOnly: true,
+      secure,
+      sameSite,
+      path: `/${apiPrefix}/customer/auth`,
+      maxAge: maxAgeHours * 3600000,
+    };
+  }
+
+  getLegacyCookiePaths(): string[] {
+    const apiPrefix = this.configService.get<string>('API_PREFIX', 'api');
+    return [`/${apiPrefix}/customer`];
   }
 }

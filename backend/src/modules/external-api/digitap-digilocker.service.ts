@@ -114,7 +114,11 @@ export class DigitapDigilockerService {
 
       return response.data;
     } catch (error: any) {
-      this.logger.error(`Digitap get-digilocker-details error: ${error.message}`);
+      if (error.response?.status === 400 && error.response?.data?.errorCode === 'DG1007') {
+        this.logger.debug(`Digitap DigiLocker transaction ${transactionId} is not yet successful or pending.`);
+        return null;
+      }
+      this.logger.error(`Digitap get-digilocker-details error: ${error.message}. Response: ${JSON.stringify(error.response?.data || 'No response data')}`);
       throw error;
     }
   }

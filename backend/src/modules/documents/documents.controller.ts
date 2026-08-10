@@ -5,35 +5,34 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   Post,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Public } from '../../common/decorators/public.decorator';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
 import { DocumentsService } from './documents.service';
 
 @Controller('documents')
+@CustomerProtected()
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
-  @Public()
   @Post('customer-live-photo')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor('file'))
   uploadCustomerLivePhoto(
     @UploadedFile() file: any,
     @Body() body: any,
+    @CurrentCustomer() customer: any,
   ) {
-    return this.documentsService.saveCustomerLivePhoto(file, body);
+    return this.documentsService.saveCustomerLivePhoto(BigInt(customer.customerId), file, body);
   }
 
-  @Public()
-  @Get('customer/:customerId/live-photo')
-  getCustomerLivePhoto(
-    @Param('customerId', new ParseIntPipe()) customerId: number,
-  ) {
-    return this.documentsService.getCustomerLivePhoto(customerId);
+  @Get('customer/live-photo')
+  getCustomerLivePhoto(@CurrentCustomer() customer: any) {
+    return this.documentsService.getCustomerLivePhoto(BigInt(customer.customerId));
   }
 }

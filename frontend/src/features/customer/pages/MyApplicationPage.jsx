@@ -25,21 +25,40 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
+  Upload,
+  ScanLine,
+  Sparkles,
+  FileText,
   UserCheck,
   X,
 } from 'lucide-react';
 import { usePincodeLookup } from '../hooks/usePincodeLookup';
 import {
   customerApi,
-  getCustomerById,
+  getCustomerMe,
+  resumeApplication,
   updateBasicDetails,
   updateCustomerProfile,
   submitCustomerApplication,
   reverseGeocode,
+  verifyCustomerPan,
+  processPanOcr,
+  verifyFaceLiveness,
+  initiateAssessmentPayment,
+  getAssessmentPaymentStatus,
+  saveApplicationAddress,
+  acceptLenderDecisionConsents,
   uploadLivePhotoDocument,
   getCustomerLivePhoto,
+  initiateCustomerAadhaarKyc,
+  getCustomerAadhaarKycStatus,
+  refreshCustomerAadhaarKycStatus,
+  runEligibility,
+  updatePincode,
 } from '../customerApi';
+import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi';
 import { authApi } from '../../auth/authApi';
+
 
 const FLOW_STEPS = [
   {
@@ -53,6 +72,10 @@ const FLOW_STEPS = [
   {
     id: 'profile_details',
     label: 'Profile Details',
+  },
+  {
+    id: 'aadhaar_kyc',
+    label: 'Aadhaar KYC',
   },
   {
     id: 'submit_application',
@@ -251,23 +274,23 @@ function deriveCustomerWorkflow(customer) {
   if (empType === 'SALARIED') {
     profileDetailsCompleted = Boolean(
       customer.residenceStatus &&
-        customer.companyType &&
-        customer.companyName &&
-        customer.designation &&
-        customer.monthlyIncome !== null &&
-        customer.monthlyIncome !== undefined &&
-        customer.workPincode,
+      customer.companyType &&
+      customer.companyName &&
+      customer.designation &&
+      customer.monthlyIncome !== null &&
+      customer.monthlyIncome !== undefined &&
+      customer.workPincode,
     );
   } else if (empType === 'SELF_EMPLOYED') {
     profileDetailsCompleted = Boolean(
       customer.residenceStatus &&
-        customer.businessName &&
-        customer.businessConstitution &&
-        customer.monthlyIncome !== null &&
-        customer.monthlyIncome !== undefined &&
-        customer.annualTurnover !== null &&
-        customer.annualTurnover !== undefined &&
-        customer.workPincode,
+      customer.businessName &&
+      customer.businessConstitution &&
+      customer.monthlyIncome !== null &&
+      customer.monthlyIncome !== undefined &&
+      customer.annualTurnover !== null &&
+      customer.annualTurnover !== undefined &&
+      customer.workPincode,
     );
   }
 
@@ -293,18 +316,34 @@ function deriveCustomerWorkflow(customer) {
   );
 
   const applicationSubmitted = Boolean(
-    customer.latestApplicationId,
+    ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(customer.onboardingStatus)
+  );
+
+  const aadhaarKycStatus = String(
+    customer.aadhaarKycStatus ||
+    customer.digilockerStatus ||
+    ''
+  ).toUpperCase();
+
+  const aadhaarKycCompleted = Boolean(
+    customer.aadhaarVerified === true ||
+    customer.digilockerVerified === true ||
+    ['VERIFIED', 'COMPLETED', 'SUCCESS'].includes(aadhaarKycStatus)
   );
 
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
     currentStep = 'basic_details';
+  } else if (eligibilityCompleted && !eligibilityPassed) {
+    currentStep = 'rejection_screen';
   } else if (!eligibilityCompleted || !eligibilityPassed) {
     currentStep = 'basic_details';
   } else if (!assessmentFeePaid) {
     currentStep = 'assessment_fee';
   } else if (!profileDetailsCompleted) {
     currentStep = 'profile_details';
+  } else if (!aadhaarKycCompleted) {
+    currentStep = 'aadhaar_kyc';
   } else {
     currentStep = 'submit_application';
   }
@@ -313,12 +352,34 @@ function deriveCustomerWorkflow(customer) {
     currentStep = 'submit_application';
   }
 
+  const backendStep = customer.journey?.nextPermittedStep;
+  const backendStepMap = {
+    BASIC_DETAILS: 'basic_details',
+    PLATFORM_REJECTED: 'rejection_screen',
+    ASSESSMENT_FEE: 'assessment_fee',
+    PROFILE_DETAILS: 'profile_details',
+    AADHAAR_KYC: 'aadhaar_kyc',
+    ADDRESS_DETAILS: 'aadhaar_kyc',
+    SUBMIT_APPLICATION: 'submit_application',
+    LENDER_CREATE_PROCESSING: 'integration_processing',
+    LENDER_UPDATE_PROCESSING: 'integration_processing',
+    LENDER_DECISION_PROCESSING: 'integration_processing',
+    APPROVAL_PROCESSING: 'integration_processing',
+    PRE_APPROVAL_OFFER_SELECTION: 'pre_approval_offer_selection',
+    INTEGRATION_SUPPORT: 'integration_support',
+    LENDER_REJECTED: 'submit_application',
+    BANK_DETAILS: 'submit_application',
+  };
+  if (backendStepMap[backendStep]) currentStep = backendStepMap[backendStep];
+
   return {
     mobileVerified,
     panVerified,
     emailVerified,
     basicDetailsCompleted,
     profileDetailsCompleted,
+    aadhaarKycCompleted,
+    aadhaarKycStatus,
     eligibilityCompleted,
     eligibilityPassed,
     assessmentFeePaid,
@@ -346,7 +407,7 @@ function mapCustomerToForm(customer) {
     designation: customer.designation || '',
     monthlyIncome:
       customer.monthlyIncome !== null &&
-      customer.monthlyIncome !== undefined
+        customer.monthlyIncome !== undefined
         ? String(customer.monthlyIncome)
         : '',
     workPincode: customer.workPincode || '',
@@ -356,15 +417,15 @@ function mapCustomerToForm(customer) {
       customer.businessConstitution || '',
     annualTurnover:
       customer.annualTurnover !== null &&
-      customer.annualTurnover !== undefined
+        customer.annualTurnover !== undefined
         ? String(customer.annualTurnover)
         : '',
 
-    employmentVintage: '',
-    totalExperience: '',
-    salaryMode: '',
-    businessVintage: '',
-    kfsLanguage: 'English',
+    employmentVintage: customer.employmentVintage || '',
+    totalExperience: customer.totalExperience || '',
+    salaryMode: customer.salaryMode || '',
+    businessVintage: customer.businessVintage || '',
+    kfsLanguage: customer.kfsLanguage || 'English',
   };
 }
 
@@ -374,7 +435,7 @@ export default function MyApplicationPage() {
   const storedSession = useMemo(() => {
     try {
       return JSON.parse(
-        sessionStorage.getItem(
+        localStorage.getItem(
           'customerSession',
         ) || 'null',
       );
@@ -388,6 +449,9 @@ export default function MyApplicationPage() {
   const [customer, setCustomer] = useState(null);
   const [isCustomerLoading, setIsCustomerLoading] = useState(true);
   const [customerLoadError, setCustomerLoadError] = useState('');
+
+  const [platformProducts, setPlatformProducts] = useState([]);
+  const [isLoadingPlatformProducts, setIsLoadingPlatformProducts] = useState(true);
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [currentStep, setCurrentStep] = useState('basic_details');
@@ -427,6 +491,8 @@ export default function MyApplicationPage() {
   const [savedPhotoDocument, setSavedPhotoDocument] = useState(null);
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [submissionData, setSubmissionData] = useState(null);
+  const [isRetryingLenderSubmission, setIsRetryingLenderSubmission] = useState(false);
+  const [retryLenderSubmissionError, setRetryLenderSubmissionError] = useState('');
 
   const mobileNumber =
     customer?.mobileNumber ||
@@ -434,13 +500,11 @@ export default function MyApplicationPage() {
     '';
 
   const fetchCustomer = async () => {
-    if (!customerId) return;
-
     setIsCustomerLoading(true);
     setCustomerLoadError('');
 
     try {
-      const customerData = await getCustomerById(customerId);
+      const customerData = await getCustomerMe();
       setCustomer(customerData);
 
       const mappedForm = mapCustomerToForm(customerData);
@@ -453,6 +517,8 @@ export default function MyApplicationPage() {
       setBrePassed(wf.eligibilityPassed);
       setFeePaid(wf.assessmentFeePaid);
       if (wf.assessmentFeePaid) {
+        setPaymentId('ALREADY_PAID');
+        setTransactionId('ALREADY_PAID');
         setLenderConsent(true);
       }
       setApplicationSubmitted(wf.applicationSubmitted);
@@ -479,9 +545,8 @@ export default function MyApplicationPage() {
       } else {
         setPanVerification(null);
       }
-
       try {
-        const livePhotoDoc = await getCustomerLivePhoto(customerId);
+        const livePhotoDoc = await getCustomerLivePhoto(customerData?.id);
         if (livePhotoDoc && livePhotoDoc.status === 'VERIFIED') {
           setSavedPhotoDocument(livePhotoDoc);
         }
@@ -489,12 +554,14 @@ export default function MyApplicationPage() {
         console.error('Failed to load saved live photo document:', photoErr);
       }
     } catch (err) {
-      console.error('Failed to fetch customer data:', err);
       setCustomerLoadError(
-        err instanceof Error
-          ? err.message
-          : 'Unable to load customer details. Please try again.',
+        err?.message || 'Unable to load your details.',
       );
+      if (err?.message?.includes('Customer authentication is required') || err?.message?.includes('Access denied') || err?.message?.includes('Customer details were not found')) {
+        navigate('/customer/login', {
+          replace: true,
+        });
+      }
     } finally {
       setIsCustomerLoading(false);
     }
@@ -502,13 +569,34 @@ export default function MyApplicationPage() {
 
   useEffect(() => {
     if (!customerId) {
-      sessionStorage.removeItem('customerSession');
+      localStorage.removeItem('customerSession');
       navigate('/customer/login', { replace: true });
       return;
     }
 
     fetchCustomer();
+
+    // Fetch products
+    setIsLoadingPlatformProducts(false);
   }, [customerId, navigate]);
+
+  const handleRetryLenderSubmission = async () => {
+    setIsRetryingLenderSubmission(true);
+    setRetryLenderSubmissionError('');
+
+    try {
+      await customerApi.retryLenderSubmission(customer?.latestApplicationId);
+      await fetchCustomer();
+    } catch (error) {
+      setRetryLenderSubmissionError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to retry right now. Please try again in a moment.',
+      );
+    } finally {
+      setIsRetryingLenderSubmission(false);
+    }
+  };
 
   const currentStepIndex = FLOW_STEPS.findIndex(
     (step) => step.id === currentStep,
@@ -583,7 +671,7 @@ export default function MyApplicationPage() {
       if (
         name === 'panNumber' &&
         normalizedValue !==
-          currentForm.panNumber
+        currentForm.panNumber
       ) {
         updatedForm.dateOfBirth = '';
         updatedForm.gender = '';
@@ -663,7 +751,7 @@ export default function MyApplicationPage() {
         monthDifference < 0 ||
         (monthDifference === 0 &&
           today.getDate() <
-            birthDate.getDate())
+          birthDate.getDate())
       ) {
         age -= 1;
       }
@@ -853,10 +941,6 @@ export default function MyApplicationPage() {
           ...currentErrors,
           email: '',
         }));
-        updateStoredApplication({
-          form,
-          emailVerified: true,
-        });
         showMessage('Email already verified.');
         return;
       }
@@ -923,11 +1007,6 @@ export default function MyApplicationPage() {
         ...currentErrors,
         email: '',
       }));
-
-      updateStoredApplication({
-        form,
-        emailVerified: true,
-      });
 
       showMessage(
         'Email verified successfully.',
@@ -1011,49 +1090,7 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const response = await fetch(
-        '/api/external-api/verify-pan',
-        {
-          method: 'POST',
-
-          headers: {
-            Accept: 'application/json',
-            'Content-Type':
-              'application/json',
-          },
-
-          body: JSON.stringify({
-            customerId:
-              storedSession.customerId,
-            panNumber: normalizedPan,
-          }),
-        },
-      );
-
-      let result = null;
-
-      try {
-        result = await response.json();
-      } catch {
-        throw new Error(
-          'PAN verification service returned an invalid response.',
-        );
-      }
-
-      if (!response.ok) {
-        const backendMessage =
-          result?.message ||
-          result?.data?.message ||
-          result?.data?.data?.message ||
-          result?.error ||
-          'PAN verification failed.';
-
-        throw new Error(
-          Array.isArray(backendMessage)
-            ? backendMessage.join(', ')
-            : backendMessage,
-        );
-      }
+      const result = await verifyCustomerPan(normalizedPan);
 
       const responsePayload =
         result?.data?.data ||
@@ -1084,8 +1121,8 @@ export default function MyApplicationPage() {
 
       const verifiedPan = String(
         panData.panNumber ||
-          responsePayload?.panNumber ||
-          '',
+        responsePayload?.panNumber ||
+        '',
       )
         .trim()
         .toUpperCase();
@@ -1102,8 +1139,8 @@ export default function MyApplicationPage() {
       const providerName =
         normalizePersonName(
           panData.fullName ||
-            responsePayload?.fullName ||
-            '',
+          responsePayload?.fullName ||
+          '',
         );
 
       if (!providerName) {
@@ -1126,15 +1163,15 @@ export default function MyApplicationPage() {
       const normalizedDateOfBirth =
         normalizeDateForInput(
           panData.dateOfBirth ||
-            responsePayload?.dateOfBirth ||
-            '',
+          responsePayload?.dateOfBirth ||
+          '',
         );
 
       const normalizedGender =
         normalizeGender(
           panData.gender ||
-            responsePayload?.gender ||
-            '',
+          responsePayload?.gender ||
+          '',
         );
 
       if (!normalizedDateOfBirth) {
@@ -1164,12 +1201,12 @@ export default function MyApplicationPage() {
 
         pincode: isValidPincode(
           panData.pincode ||
-            responsePayload?.pincode ||
-            '',
+          responsePayload?.pincode ||
+          '',
         )
           ? panData.pincode ||
-            responsePayload?.pincode ||
-            ''
+          responsePayload?.pincode ||
+          ''
           : form.pincode,
       };
 
@@ -1309,13 +1346,49 @@ export default function MyApplicationPage() {
           email: form.email ? form.email.trim() : undefined,
           emailVerified: emailVerified,
         });
+
+        const appRes = await resumeApplication(customerId);
+
+        if (appRes?.applicationNumber) {
+          setApplicationNumber(appRes.applicationNumber);
+        }
       }
 
-      await delay(800);
+      let result;
+      try {
+        const rawResult = await runEligibility(customerId);
+        // apiRequest unpacks success/data automatically, so we wrap it back to match the component's expectations
+        result = { success: true, data: rawResult };
+      } catch (err) {
+        result = { success: false, error: err };
+      }
 
+      if (!result.success) {
+        // ERROR state
+        const errorMsg = result.error?.message || result.message;
+        console.error('Eligibility technical error:', errorMsg);
+        showMessage(errorMsg || 'Unable to complete the eligibility check. Please try again.', 'error');
+        setBrePassed(false);
+        return;
+      }
+
+      if (result.data.outcome === 'FAIL') {
+        // FAIL state
+        setBrePassed(false);
+        setCurrentStep('rejection_screen'); // or however rejection is handled
+        showMessage('We are unable to proceed with your application based on our platform policy.', 'error');
+        // Refresh customer to get persistent rejection status
+        await fetchCustomer();
+        return;
+      }
+
+      // PASS state
       setBrePassed(true);
       setCurrentStep('assessment_fee');
       setErrors({});
+
+      // Refresh customer profile to load allocated lender and fee snapshot
+      await fetchCustomer();
 
       showMessage(
         'Eligibility check passed. An eligible lender has been assigned.',
@@ -1360,37 +1433,12 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const response = await fetch('/api/external-api/initiate-payment', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: String(customerId),
-          amount: 234.82,
-          baseAmount: 199,
-          gstAmount: 35.82,
-          gstRate: 18,
-          purpose: 'PROCESSING_FEE',
-        }),
+      const result = await initiateAssessmentPayment({
+        purpose: 'ASSESSMENT_FEE',
+        consentTemplateId: 'LENDER_DATA_SHARING_V1',
+        consentVersion: '1.0',
+        consentText: `I consent to share my application data with ${customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner'} for eligibility assessment and final decision.`,
       });
-
-      let result = null;
-      try {
-        result = await response.json();
-      } catch {
-        throw new Error('Payment initiation service returned an invalid response.');
-      }
-
-      if (!response.ok) {
-        const msg =
-          result?.message ||
-          result?.error ||
-          result?.data?.message ||
-          'Payment initiation failed.';
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
 
       const paymentData =
         result?.data?.data || result?.data || result || null;
@@ -1480,26 +1528,7 @@ export default function MyApplicationPage() {
       attempts += 1;
 
       try {
-        const response = await fetch('/api/external-api/payment-status', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            customerId: String(customerId),
-            paymentId: pId,
-            transactionId: txId,
-            purpose: 'PROCESSING_FEE',
-          }),
-        });
-
-        let result = null;
-        try {
-          result = await response.json();
-        } catch {
-          result = null;
-        }
+        const result = await getAssessmentPaymentStatus(pId, txId);
 
         const statusPayload =
           result?.data?.data || result?.data || result || null;
@@ -1562,15 +1591,6 @@ export default function MyApplicationPage() {
   }, []);
 
   const handleProceedToProfile = () => {
-    // TESTING MODE: Bypassing feePaid check for testing next steps
-    // if (!feePaid) {
-    //   showMessage(
-    //     'Complete the assessment fee payment first.',
-    //     'error',
-    //   );
-    //   return;
-    // }
-
     goToStep('profile_details');
   };
 
@@ -1597,7 +1617,8 @@ export default function MyApplicationPage() {
     try {
       await updateCustomerProfile(customerId, form);
       showMessage('Profile details and live photograph saved successfully.');
-      goToStep('submit_application');
+      await fetchCustomer();
+      goToStep('aadhaar_kyc');
     } catch (err) {
       console.error('Failed to save profile details:', err);
       showMessage(
@@ -1622,7 +1643,7 @@ export default function MyApplicationPage() {
     }
   };
 
-  const handleSubmitApplication = async () => {
+  const handleSubmitApplication = async ({ sameAsPermanent, decisionConsentAccepted } = {}) => {
     if (!validateBasicDetails()) {
       showMessage('Basic details are incomplete.', 'error');
       goToStep('basic_details');
@@ -1653,10 +1674,41 @@ export default function MyApplicationPage() {
       return;
     }
 
+    if (!workflow.aadhaarKycCompleted) {
+      showMessage('Please complete Aadhaar KYC through DigiLocker before submitting your application.', 'error');
+      goToStep('aadhaar_kyc');
+      return;
+    }
+
+    if (!decisionConsentAccepted) {
+      showMessage('Please provide the required lender decision consents.', 'error');
+      return;
+    }
+
+    if (!sameAsPermanent && (!savedPhotoDocument?.formattedAddress || !savedPhotoDocument?.city || !savedPhotoDocument?.state || !savedPhotoDocument?.postalCode)) {
+      showMessage('Current structured address is incomplete. Please recapture the live photo with location enabled.', 'error');
+      goToStep('profile_details');
+      return;
+    }
+
     setIsSubmitting(true);
     clearMessage();
 
     try {
+      await saveApplicationAddress(sameAsPermanent ? {
+        addressType: 'CURRENT',
+        sameAsPermanent: true,
+      } : {
+        addressType: 'CURRENT',
+        sameAsPermanent: false,
+        source: 'CUSTOMER',
+        addressLine1: savedPhotoDocument.formattedAddress,
+        city: savedPhotoDocument.city,
+        state: savedPhotoDocument.state,
+        country: savedPhotoDocument.country || 'India',
+        pincode: savedPhotoDocument.postalCode,
+      });
+      await acceptLenderDecisionConsents();
       const res = await submitCustomerApplication(customerId);
       const appNum = res?.applicationNumber || `PL-APP-${Date.now()}`;
 
@@ -1742,59 +1794,63 @@ export default function MyApplicationPage() {
         />
       )}
 
-          {currentStep ===
+      {currentStep ===
         'basic_details' && (
-        <BasicDetailsStep
-          customerId={customerId}
-          form={form}
-          errors={errors}
-          mobileNumber={mobileNumber}
-          emailVerified={
-            emailVerified
-          }
-          isEmailVerifying={
-            isEmailVerifying
-          }
-          isEmailOtpSent={
-            isEmailOtpSent
-          }
-          emailOtp={emailOtp}
-          developmentEmailOtp={
-            developmentEmailOtp
-          }
-          panVerified={panVerified}
-          isPanVerifying={
-            isPanVerifying
-          }
-          isBreRunning={isBreRunning}
-          isSaving={isSaving}
-          onChange={handleChange}
-          onVerifyEmail={
-            handleVerifyEmail
-          }
-          onSendEmailOtp={
-            handleSendEmailOtp
-          }
-          onVerifyEmailOtp={
-            handleVerifyEmailOtp
-          }
-          onEmailOtpChange={
-            setEmailOtp
-          }
-          onVerifyPan={
-            handleVerifyPan
-          }
-          onSaveDraft={
-            handleSaveDraft
-          }
-          onContinue={
-            handleBasicDetailsContinue
-          }
-        />
-      )}
+          <BasicDetailsStep
+            customerId={customerId}
+            form={form}
+            errors={errors}
+            mobileNumber={mobileNumber}
+            emailVerified={
+              emailVerified
+            }
+            isEmailVerifying={
+              isEmailVerifying
+            }
+            isEmailOtpSent={
+              isEmailOtpSent
+            }
+            emailOtp={emailOtp}
+            developmentEmailOtp={
+              developmentEmailOtp
+            }
+            panVerified={panVerified}
+            isPanVerifying={
+              isPanVerifying
+            }
+            isBreRunning={isBreRunning}
+            isSaving={isSaving}
+            onChange={handleChange}
+            onVerifyEmail={
+              handleVerifyEmail
+            }
+            onSendEmailOtp={
+              handleSendEmailOtp
+            }
+            onVerifyEmailOtp={
+              handleVerifyEmailOtp
+            }
+            onEmailOtpChange={
+              setEmailOtp
+            }
+            onVerifyPan={
+              handleVerifyPan
+            }
+            onSaveDraft={
+              handleSaveDraft
+            }
+            onContinue={
+              handleBasicDetailsContinue
+            }
+            platformProducts={platformProducts}
+            isLoadingPlatformProducts={isLoadingPlatformProducts}
+            applicationNumber={applicationNumber}
+          />
+        )}
 
       {currentStep === 'assessment_fee' && (
         <AssessmentFeeStep
+          customer={customer}
           lenderConsent={lenderConsent}
           feePaid={feePaid}
           isFeeProcessing={isFeeProcessing}
@@ -1807,10 +1863,36 @@ export default function MyApplicationPage() {
         />
       )}
 
-      {currentStep ===
-        'profile_details' && (
+      {currentStep === 'rejection_screen' && (
+        <StepCard>
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-red-100 text-red-600 mb-6">
+              <AlertCircle size={32} />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-3">Application Unsuccessful</h2>
+            <p className="text-slate-600 max-w-md mx-auto mb-8">
+              Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
+              {customer?.eligibilityReason && customer.eligibilityReason !== 'Platform policy rejection' && (
+                <span className="block mt-4 p-3 bg-red-50 text-sm text-red-700 rounded border border-red-100 font-medium text-left">
+                  {customer.eligibilityReason}
+                </span>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition"
+            >
+              Return to Home
+            </button>
+          </div>
+        </StepCard>
+      )}
+
+      {currentStep === 'profile_details' && (
         <ProfileDetailsStep
           customerId={customerId}
+          applicationId={customer?.latestApplicationId}
           customerCode={customer?.customerCode}
           savedPhotoDocument={savedPhotoDocument}
           onPhotoSaved={setSavedPhotoDocument}
@@ -1818,17 +1900,22 @@ export default function MyApplicationPage() {
           errors={errors}
           isSaving={isSaving}
           onChange={handleChange}
-          onBack={() =>
-            goToStep(
-              'assessment_fee',
-            )
-          }
-          onSaveDraft={
-            handleSaveDraft
-          }
-          onContinue={
-            handleProfileContinue
-          }
+          onBack={() => goToStep('assessment_fee')}
+          onSaveDraft={handleSaveDraft}
+          onContinue={handleProfileContinue}
+        />
+      )}
+
+      {currentStep === 'aadhaar_kyc' && (
+        <AadhaarKycStep
+          customerId={customerId}
+          customerCode={customer?.customerCode}
+          customer={customer}
+          workflow={workflow}
+          onCompleted={() => {
+            fetchCustomer();
+          }}
+          onBack={() => goToStep('profile_details')}
         />
       )}
 
@@ -1836,15 +1923,453 @@ export default function MyApplicationPage() {
         <SubmitApplicationStep
           form={form}
           customer={customer}
+          savedPhotoDocument={savedPhotoDocument}
           mobileNumber={mobileNumber}
           applicationSubmitted={applicationSubmitted}
           applicationNumber={applicationNumber}
           isSubmitting={isSubmitting}
-          onBack={() => goToStep('profile_details')}
+          onBack={() => goToStep('aadhaar_kyc')}
           onSubmit={handleSubmitApplication}
         />
       )}
+      {currentStep === 'pre_approval_offer_selection' && (
+        <PreApprovalOfferStep
+          lan={customer?.journey?.platformLan}
+          onSelected={() => fetchCustomer()}
+        />
+      )}
+      {currentStep === 'integration_processing' && (
+        <StepCard>
+          <div className="p-8 text-center">
+            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-emerald-600" />
+            <h2 className="mt-4 text-xl font-bold text-slate-900">Your lender application is processing</h2>
+            <p className="mt-2 text-sm text-slate-600">We are securely completing the current lender integration stage. This page will resume from the backend-confirmed state.</p>
+          </div>
+        </StepCard>
+      )}
+      {currentStep === 'integration_support' && (
+        <StepCard>
+          <div className="p-8 text-center">
+            <AlertCircle className="mx-auto h-10 w-10 text-amber-600" />
+            <h2 className="mt-4 text-xl font-bold text-slate-900">We need to retry this application securely</h2>
+            <p className="mt-2 text-sm text-slate-600">Your data and payment remain recorded. Please contact support and quote error code {customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW'}.</p>
+
+            {retryLenderSubmissionError && (
+              <p className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">
+                {retryLenderSubmissionError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleRetryLenderSubmission}
+              disabled={isRetryingLenderSubmission}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRetryingLenderSubmission ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4" />
+              )}
+              {isRetryingLenderSubmission ? 'Retrying…' : 'Retry Now'}
+            </button>
+          </div>
+        </StepCard>
+      )}
     </div>
+  );
+}
+
+function AadhaarKycStep({
+  customerId,
+  customerCode,
+  customer,
+  workflow,
+  onCompleted,
+  onBack,
+}) {
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [kycStatus, setKycStatus] = useState(null);
+  const [polling, setPolling] = useState(false);
+  const pollTimerRef = useRef(null);
+
+  const [sameAsPermanent, setSameAsPermanent] = useState(true);
+  const [addressForm, setAddressForm] = useState({
+    addressLine1: '',
+    addressLine2: '',
+    locality: '',
+    landmark: '',
+    pincode: '',
+    city: '',
+    state: '',
+  });
+  const [addressErrors, setAddressErrors] = useState({});
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await getCustomerAadhaarKycStatus();
+      setKycStatus(res);
+      if (res?.aadhaarVerified || res?.status === 'VERIFIED') {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setPolling(false);
+      }
+      return res;
+    } catch (err) {
+      console.error('Failed to fetch Aadhaar KYC status:', err);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await refreshCustomerAadhaarKycStatus();
+      setKycStatus(res);
+      if (res?.aadhaarVerified || res?.status === 'VERIFIED') {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setPolling(false);
+      }
+    } catch (err) {
+      setError(err?.message || 'Failed to refresh status.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+
+    const handleMessage = (event) => {
+      if (event.data?.type === 'DIGILOCKER_CALLBACK_RECEIVED') {
+        handleRefresh();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  const handleStartDigilocker = async () => {
+    if (!consentGiven) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await initiateCustomerAadhaarKyc(customerCode);
+      if (res?.verificationUrl) {
+        const popup = window.open(
+          res.verificationUrl,
+          'DigitapDigiLocker',
+          'width=520,height=760,resizable=yes,scrollbars=yes'
+        );
+        if (!popup) {
+          setError('Popup was blocked by browser. Please allow popups and click Start DigiLocker Verification again.');
+          setLoading(false);
+          return;
+        }
+      }
+      setPolling(true);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      pollTimerRef.current = setInterval(async () => {
+        const statusRes = await fetchStatus();
+        if (statusRes?.aadhaarVerified || statusRes?.status === 'VERIFIED') {
+          clearInterval(pollTimerRef.current);
+          setPolling(false);
+        }
+      }, 5000);
+    } catch (err) {
+      setError(err?.message || 'Failed to initiate DigiLocker verification.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isVerified = Boolean(
+    kycStatus?.aadhaarVerified ||
+    kycStatus?.status === 'VERIFIED' ||
+    customer?.aadhaarVerified ||
+    customer?.digilockerStatus === 'VERIFIED'
+  );
+
+  const validateAddress = () => {
+    const errors = {};
+    if (!sameAsPermanent) {
+      if (!addressForm.addressLine1?.trim()) errors.addressLine1 = 'Address Line 1 is required';
+      if (!addressForm.city?.trim()) errors.city = 'City is required';
+      if (!addressForm.state?.trim()) errors.state = 'State is required';
+      if (!/^[1-9][0-9]{5}$/.test(addressForm.pincode)) errors.pincode = 'Valid 6-digit Pincode is required';
+    }
+    setAddressErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveAddress = async () => {
+    if (!validateAddress()) return;
+    setIsSavingAddress(true);
+    setError('');
+    try {
+      if (sameAsPermanent) {
+        await saveApplicationAddress({ addressType: 'CURRENT', sameAsPermanent: true });
+      } else {
+        await saveApplicationAddress({
+          addressType: 'CURRENT',
+          sameAsPermanent: false,
+          ...addressForm,
+        });
+      }
+      onCompleted?.();
+    } catch (err) {
+      setError(err?.message || 'Failed to save address details.');
+    } finally {
+      setIsSavingAddress(false);
+    }
+  };
+
+  return (
+    <StepCard>
+      <StepHeading
+        icon={FileCheck2}
+        eyebrow="AADHAAR VERIFICATION"
+        title="Aadhaar KYC via DigiLocker"
+        description="Verify your identity securely through DigiLocker before submitting your application to the lender."
+      />
+
+      <div className="mt-6 space-y-6">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-800">{customer?.fullName || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Registered Mobile</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-800">
+                {customer?.mobileNumber ? `+91 ${customer.mobileNumber.slice(0, 2)}****${customer.mobileNumber.slice(-4)}` : 'N/A'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Customer Reference</p>
+              <p className="mt-0.5 font-mono text-sm font-bold text-emerald-700">{customerCode || customer?.customerCode || 'N/A'}</p>
+            </div>
+          </div>
+        </div>
+
+        {isVerified ? (
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500 text-white">
+                <CheckCircle2 size={24} />
+              </div>
+              <h3 className="mt-3 text-lg font-bold text-emerald-900">Aadhaar KYC Verified</h3>
+              <p className="mt-1 text-sm text-emerald-700">
+                Your identity has been verified via DigiLocker.
+                {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
+              </p>
+              {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
+                <p className="mt-2 text-sm font-semibold text-emerald-900">
+                  Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-6">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">Aadhaar Permanent Address</h4>
+                <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  {kycStatus?.permanentAddress?.formattedAddress || customer?.permanentAddress || 'Address details missing from Aadhaar profile.'}
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                <h4 className="text-sm font-bold text-slate-900 mb-3">Is your current address the same as your permanent address?</h4>
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sameAsPermanent"
+                      checked={sameAsPermanent}
+                      onChange={() => setSameAsPermanent(true)}
+                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm text-slate-700">Yes, it is the same</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sameAsPermanent"
+                      checked={!sameAsPermanent}
+                      onChange={() => setSameAsPermanent(false)}
+                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm text-slate-700">No, it is different</span>
+                  </label>
+                </div>
+              </div>
+
+              {!sameAsPermanent && (
+                <div className="pt-4 border-t border-slate-100 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address Line 1 <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addressForm.addressLine1}
+                      onChange={(e) => setAddressForm({ ...addressForm, addressLine1: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.addressLine1 ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                      placeholder="Flat, House no., Building, Company, Apartment"
+                    />
+                    {addressErrors.addressLine1 && <p className="mt-1 text-xs text-red-500">{addressErrors.addressLine1}</p>}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address Line 2 (Optional)</label>
+                    <input
+                      type="text"
+                      value={addressForm.addressLine2}
+                      onChange={(e) => setAddressForm({ ...addressForm, addressLine2: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      placeholder="Area, Street, Sector, Village"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Locality (Optional)</label>
+                    <input
+                      type="text"
+                      value={addressForm.locality}
+                      onChange={(e) => setAddressForm({ ...addressForm, locality: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Landmark (Optional)</label>
+                    <input
+                      type="text"
+                      value={addressForm.landmark}
+                      onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pincode <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={addressForm.pincode}
+                      onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, '') })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.pincode ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                    />
+                    {addressErrors.pincode && <p className="mt-1 text-xs text-red-500">{addressErrors.pincode}</p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">City <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addressForm.city}
+                      onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.city ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                    />
+                    {addressErrors.city && <p className="mt-1 text-xs text-red-500">{addressErrors.city}</p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">State <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addressForm.state}
+                      onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.state ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                    />
+                    {addressErrors.state && <p className="mt-1 text-xs text-red-500">{addressErrors.state}</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={consentGiven}
+                  onChange={(e) => setConsentGiven(e.target.checked)}
+                  className="mt-1 h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-xs text-slate-700 leading-relaxed">
+                  I consent to Fintree Finance Private Limited securely initiating DigiLocker-based Aadhaar KYC using my verified account information. I authorize the retrieval and processing of permitted identity information for loan onboarding, verification and lender submission.
+                </span>
+              </label>
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={handleStartDigilocker}
+                disabled={!consentGiven || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                Start DigiLocker Verification
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+              >
+                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+                Check Status
+              </button>
+            </div>
+
+            {polling && (
+              <div className="flex items-center gap-3 text-xs font-medium text-blue-700 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                <LoaderCircle size={14} className="animate-spin text-blue-600" />
+                <span>DigiLocker verification in progress... Please complete the window and return.</span>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex items-center justify-between border-t border-slate-100 pt-6">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+
+          {isVerified && (
+            <button
+              type="button"
+              onClick={handleSaveAddress}
+              disabled={isSavingAddress}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
+            >
+              {isSavingAddress ? <LoaderCircle size={16} className="animate-spin" /> : 'Save & Continue'} <ArrowRight size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </StepCard>
   );
 }
 
@@ -1853,7 +2378,8 @@ function ApplicationProgress({ currentStep, workflow }) {
     basic_details: 0,
     assessment_fee: 1,
     profile_details: 2,
-    submit_application: 3,
+    aadhaar_kyc: 3,
+    submit_application: 4,
   };
   const currentStepIndex = stepIndices[currentStep] ?? 0;
   const progressPercentage =
@@ -1899,11 +2425,10 @@ function ApplicationProgress({ currentStep, workflow }) {
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              workflow?.mobileVerified
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.mobileVerified
                 ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
                 : 'bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             {workflow?.mobileVerified ? (
               <CheckCircle2 size={14} className="text-emerald-300" />
@@ -1912,11 +2437,10 @@ function ApplicationProgress({ currentStep, workflow }) {
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              workflow?.panVerified
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.panVerified
                 ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
                 : 'bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             {workflow?.panVerified ? (
               <CheckCircle2 size={14} className="text-emerald-300" />
@@ -1925,11 +2449,10 @@ function ApplicationProgress({ currentStep, workflow }) {
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              workflow?.emailVerified
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.emailVerified
                 ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
                 : 'bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             {workflow?.emailVerified ? (
               <CheckCircle2 size={14} className="text-emerald-300" />
@@ -1949,6 +2472,8 @@ function ApplicationProgress({ currentStep, workflow }) {
               isCompleted = Boolean(workflow?.assessmentFeePaid);
             } else if (step.id === 'profile_details') {
               isCompleted = Boolean(workflow?.profileDetailsCompleted);
+            } else if (step.id === 'aadhaar_kyc') {
+              isCompleted = Boolean(workflow?.aadhaarKycCompleted);
             } else if (step.id === 'submit_application') {
               isCompleted = Boolean(workflow?.applicationSubmitted);
             }
@@ -1959,25 +2484,23 @@ function ApplicationProgress({ currentStep, workflow }) {
               <div key={step.id} className="flex flex-1 items-center">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${
-                      isCompleted
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${isCompleted
                         ? 'bg-emerald-600 text-white'
                         : isActive
                           ? 'bg-blue-600 text-white ring-4 ring-blue-100'
                           : 'bg-slate-100 text-slate-400'
-                    }`}
+                      }`}
                   >
                     {isCompleted ? <Check size={17} /> : index + 1}
                   </div>
 
                   <span
-                    className={`whitespace-nowrap text-xs font-semibold ${
-                      isActive
+                    className={`whitespace-nowrap text-xs font-semibold ${isActive
                         ? 'text-blue-700'
                         : isCompleted
                           ? 'text-emerald-700'
                           : 'text-slate-400'
-                    }`}
+                      }`}
                   >
                     {step.label}
                   </span>
@@ -1985,9 +2508,8 @@ function ApplicationProgress({ currentStep, workflow }) {
 
                 {index < FLOW_STEPS.length - 1 && (
                   <div
-                    className={`mx-3 h-0.5 flex-1 ${
-                      isCompleted ? 'bg-emerald-500' : 'bg-slate-200'
-                    }`}
+                    className={`mx-3 h-0.5 flex-1 ${isCompleted ? 'bg-emerald-500' : 'bg-slate-200'
+                      }`}
                   />
                 )}
               </div>
@@ -2005,11 +2527,10 @@ function MessageBanner({
 }) {
   return (
     <div
-      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-        type === 'error'
+      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${type === 'error'
           ? 'border-red-200 bg-red-50 text-red-700'
           : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      }`}
+        }`}
     >
       {message}
     </div>
@@ -2038,6 +2559,9 @@ function BasicDetailsStep({
   onVerifyPan,
   onSaveDraft,
   onContinue,
+  platformProducts,
+  isLoadingPlatformProducts,
+  applicationNumber,
 }) {
   const {
     city: pincodeCity,
@@ -2056,17 +2580,10 @@ function BasicDetailsStep({
     ) {
       const savePincodeToBackend = async () => {
         try {
-          await fetch(`/api/customer/${customerId}/pincode`, {
-            method: 'PATCH',
-            headers: {
-              Accept: 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              pincode: form.pincode.trim(),
-              city: pincodeCity,
-              state: pincodeState,
-            }),
+          await updatePincode(customerId, {
+            pincode: form.pincode.trim(),
+            city: pincodeCity,
+            state: pincodeState,
           });
           console.log(
             `Auto-saved residential PIN code ${form.pincode} (${pincodeCity}, ${pincodeState}) to customer table.`,
@@ -2079,6 +2596,111 @@ function BasicDetailsStep({
       savePincodeToBackend();
     }
   }, [customerId, form.pincode, pincodeCity, pincodeState]);
+
+  const [isOcrScanning, setIsOcrScanning] = useState(false);
+  const [ocrSuccessMsg, setOcrSuccessMsg] = useState('');
+  const [ocrError, setOcrError] = useState('');
+  const [isPanCameraOpen, setIsPanCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+
+  const panFileInputRef = useRef(null);
+  const panCameraInputRef = useRef(null);
+  const panVideoRef = useRef(null);
+
+  const handlePanOcrFile = async (file) => {
+    if (!file) return;
+    setIsOcrScanning(true);
+    setOcrError('');
+    setOcrSuccessMsg('');
+
+    try {
+      const result = await processPanOcr(file);
+      const data = result?.data || result || {};
+      const extractedPan = (data.panNumber || data.pan_number || '').trim().toUpperCase();
+      const extractedName = (data.fullName || data.name || '').trim();
+      const extractedFatherName = (data.fatherName || data.father_name || '').trim();
+
+      if (!extractedPan && !extractedName) {
+        throw new Error('Could not extract PAN details from the image. Please enter details manually or try a clearer image.');
+      }
+
+      if (extractedName) {
+        onChange({ target: { name: 'fullName', value: extractedName } });
+      }
+      if (extractedPan) {
+        onChange({ target: { name: 'panNumber', value: extractedPan } });
+      }
+      if (extractedFatherName) {
+        onChange({ target: { name: 'fatherName', value: extractedFatherName } });
+      }
+
+      setOcrSuccessMsg(
+        `Auto-populated Name: "${extractedName || '—'}", PAN: "${extractedPan || '—'}"${extractedFatherName ? `, & Father's Name: "${extractedFatherName}"` : ''}. Please review details and click "Verify PAN".`
+      );
+    } catch (err) {
+      setOcrError(err?.message || 'PAN OCR processing failed. Please enter details manually or try uploading a clearer image.');
+    } finally {
+      setIsOcrScanning(false);
+    }
+  };
+
+  const handlePanFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handlePanOcrFile(file);
+      e.target.value = '';
+    }
+  };
+
+  const handleOpenPanCamera = async () => {
+    setOcrError('');
+    setOcrSuccessMsg('');
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        setCameraStream(stream);
+        setIsPanCameraOpen(true);
+      } else {
+        panCameraInputRef.current?.click();
+      }
+    } catch {
+      panCameraInputRef.current?.click();
+    }
+  };
+
+  const handleClosePanCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+    setIsPanCameraOpen(false);
+  };
+
+  useEffect(() => {
+    if (isPanCameraOpen && panVideoRef.current && cameraStream) {
+      panVideoRef.current.srcObject = cameraStream;
+    }
+  }, [isPanCameraOpen, cameraStream]);
+
+  const handleCapturePanPhoto = () => {
+    if (!panVideoRef.current) return;
+    const video = panVideoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const capturedFile = new File([blob], `pan_camera_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        handleClosePanCamera();
+        handlePanOcrFile(capturedFile);
+      }
+    }, 'image/jpeg', 0.92);
+  };
 
   return (
     <StepCard>
@@ -2099,10 +2721,148 @@ function BasicDetailsStep({
         }
       />
 
+
       <SectionHeading
         title="PAN verification"
         description="The entered name must match the PAN holder name."
       />
+
+      {!panVerified && (
+        <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 via-slate-50 to-indigo-50/50 p-5 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-200">
+                <ScanLine size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  Auto-fill details via PAN Card OCR
+                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold text-blue-700 uppercase tracking-wider">AI Scan</span>
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Upload or capture your PAN card image to auto-fill your Name as per PAN and PAN Number
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="file"
+              ref={panFileInputRef}
+              accept="image/*,.pdf"
+              onChange={handlePanFileChange}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => panFileInputRef.current?.click()}
+              disabled={isOcrScanning}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:border-slate-400 transition cursor-pointer disabled:opacity-60"
+            >
+              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin text-blue-600" /> : <Upload size={15} className="text-blue-600" />}
+              <span>Upload PAN Photo</span>
+            </button>
+
+            <input
+              type="file"
+              ref={panCameraInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handlePanFileChange}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={handleOpenPanCamera}
+              disabled={isOcrScanning}
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer disabled:opacity-60"
+            >
+              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin" /> : <Camera size={15} />}
+              <span>Take Photo (Camera)</span>
+            </button>
+          </div>
+
+          {isOcrScanning && (
+            <div className="mt-3.5 flex items-center gap-2.5 rounded-xl bg-blue-100/80 p-3 text-xs font-semibold text-blue-900 border border-blue-200">
+              <LoaderCircle size={16} className="animate-spin text-blue-600 shrink-0" />
+              <span>Scanning PAN Card with AI OCR... Extracting Full Name and PAN Number...</span>
+            </div>
+          )}
+
+          {ocrSuccessMsg && !isOcrScanning && (
+            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-emerald-50 p-3.5 text-xs font-medium text-emerald-900 border border-emerald-200">
+              <Sparkles size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-emerald-800">PAN OCR Success!</span> {ocrSuccessMsg}
+              </div>
+            </div>
+          )}
+
+          {ocrError && !isOcrScanning && (
+            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-red-50 p-3 text-xs font-medium text-red-800 border border-red-200">
+              <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+              <div>{ocrError}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Camera Capture Modal */}
+      {isPanCameraOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Camera className="h-5 w-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Capture PAN Card Photo</h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleClosePanCamera}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="relative overflow-hidden rounded-2xl bg-black mb-4">
+              <video
+                ref={panVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="h-64 w-full object-cover"
+              />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+                <div className="h-44 w-full rounded-2xl border-2 border-dashed border-white/80 bg-blue-500/10 shadow-2xl flex flex-col items-center justify-center text-white/90 text-xs font-semibold">
+                  <span>Align PAN Card inside frame</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleClosePanCamera}
+                className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCapturePanPhoto}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+              >
+                <Camera size={16} />
+                <span>Capture & Scan PAN</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5 md:grid-cols-2">
         <FormInput
@@ -2130,13 +2890,12 @@ function BasicDetailsStep({
           </label>
 
           <div
-            className={`flex overflow-hidden rounded-xl border bg-white ${
-              errors.panNumber
+            className={`flex overflow-hidden rounded-xl border bg-white ${errors.panNumber
                 ? 'border-red-400 ring-4 ring-red-50'
                 : panVerified
                   ? 'border-emerald-400 ring-4 ring-emerald-50'
                   : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-            }`}
+              }`}
           >
             <input
               type="text"
@@ -2166,11 +2925,10 @@ function BasicDetailsStep({
                 form.panNumber
                   .length !== 10
               }
-              className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${
-                panVerified
+              className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${panVerified
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   : 'border-slate-200 text-blue-700 hover:bg-blue-50'
-              } disabled:cursor-not-allowed disabled:opacity-60`}
+                } disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {isPanVerifying ? (
                 <>
@@ -2206,6 +2964,17 @@ function BasicDetailsStep({
             </p>
           )}
         </div>
+
+        <FormInput
+          label="Father's name"
+          name="fatherName"
+          value={form.fatherName}
+          error={errors.fatherName}
+          onChange={onChange}
+          placeholder="Enter father's full name"
+          helperText="Auto-filled via PAN OCR or enter manually"
+          required
+        />
       </div>
 
       {!panVerified && (
@@ -2287,7 +3056,7 @@ function BasicDetailsStep({
                 error={
                   errors.gender
                 }
-                onChange={() => {}}
+                onChange={() => { }}
                 disabled
                 options={[
                   ['MALE', 'Male'],
@@ -2395,13 +3164,12 @@ function BasicDetailsStep({
               </label>
 
               <div
-                className={`flex overflow-hidden rounded-xl border bg-white ${
-                  errors.email
+                className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
                     ? 'border-red-400 ring-4 ring-red-50'
                     : emailVerified
                       ? 'border-emerald-400 ring-4 ring-emerald-50'
                       : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-                }`}
+                  }`}
               >
                 <input
                   type="email"
@@ -2455,11 +3223,10 @@ function BasicDetailsStep({
               {isEmailOtpSent && !emailVerified && (
                 <div className="mt-3">
                   <div
-                    className={`flex overflow-hidden rounded-xl border bg-white ${
-                      errors.email
+                    className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
                         ? 'border-red-400 ring-4 ring-red-50'
                         : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-                    }`}
+                      }`}
                   >
                     <input
                       type="text"
@@ -2531,6 +3298,7 @@ function BasicDetailsStep({
 }
 
 function AssessmentFeeStep({
+  customer,
   lenderConsent,
   feePaid,
   isFeeProcessing,
@@ -2541,6 +3309,12 @@ function AssessmentFeeStep({
   onPay,
   onContinue,
 }) {
+  const lenderName = customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner';
+  const baseFee = customer?.assessmentFee?.baseAmount || 0;
+  const gstFee = customer?.assessmentFee?.gstAmount || 0;
+  const totalFee = customer?.assessmentFee?.totalAmount || 0;
+  const gstRate = customer?.assessmentFee?.gstRate || 18;
+
   return (
     <StepCard>
       <StepHeading
@@ -2554,18 +3328,18 @@ function AssessmentFeeStep({
         <section className="rounded-3xl border border-slate-200 p-6">
           <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-700">
             <BadgeCheck size={17} />
-            Proposed lending partner
+            Allocated lending partner
           </p>
 
           <div className="mt-5 flex flex-col justify-between gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-center">
             <div className="flex items-center gap-4">
               <div className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-600 font-bold text-white">
-                FF
+                {lenderName.substring(0, 2).toUpperCase()}
               </div>
 
               <div>
                 <h3 className="font-bold text-slate-900">
-                  Fintree Finance Private Limited
+                  {lenderName}
                 </h3>
 
                 <p className="mt-1 text-xs text-slate-500">
@@ -2605,7 +3379,7 @@ function AssessmentFeeStep({
 
             <span className="text-xs leading-5 text-slate-700">
               I consent to share my application data with{' '}
-              <strong>Fintree Finance</strong> for eligibility assessment and final decision.
+              <strong>{lenderName}</strong> for eligibility assessment and final decision.
             </span>
           </label>
 
@@ -2623,12 +3397,12 @@ function AssessmentFeeStep({
             <div className="mt-6 space-y-4">
               <FeeRow
                 label="Base fee"
-                amount="₹199.00"
+                amount={`₹${baseFee.toFixed(2)}`}
               />
 
               <FeeRow
-                label="GST at 18%"
-                amount="₹35.82"
+                label={`GST at ${gstRate}%`}
+                amount={`₹${gstFee.toFixed(2)}`}
               />
 
               <div className="flex items-center justify-between border-t border-slate-800 pt-5">
@@ -2637,7 +3411,7 @@ function AssessmentFeeStep({
                 </span>
 
                 <strong className="text-2xl">
-                  ₹234.82
+                  {`₹${totalFee.toFixed(2)}`}
                 </strong>
               </div>
             </div>
@@ -2689,7 +3463,7 @@ function AssessmentFeeStep({
                   </>
                 ) : (
                   <>
-                    Pay ₹234.82
+                    Pay ₹{totalFee.toFixed(2)}
                     <ArrowRight
                       size={17}
                     />
@@ -2710,7 +3484,7 @@ function AssessmentFeeStep({
         onBack={onBack}
         onNext={onContinue}
         nextLabel="Complete Profile"
-        nextDisabled={false} /* TESTING: Bypassing !feePaid check */
+        nextDisabled={false}
         hideSave
       />
     </StepCard>
@@ -2802,6 +3576,7 @@ function drawWatermarkOnCanvas(canvas, videoElement, metadata) {
 
 function LivePhotographSection({
   customerId,
+  applicationId,
   customerCode,
   savedPhotoDocument,
   onPhotoSaved,
@@ -3008,19 +3783,7 @@ function LivePhotographSection({
       reader.readAsDataURL(taggedBlob);
       const base64Image = await base64Promise;
 
-      const livenessResponse = await fetch('/api/external-api/face-liveness', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: String(customerId),
-          inputImage: base64Image,
-        }),
-      });
-
-      const livenessResultJson = await livenessResponse.json();
+      const livenessResultJson = await verifyFaceLiveness(applicationId, base64Image);
       const innerData = livenessResultJson?.data?.data || livenessResultJson?.data || livenessResultJson;
       const livenessResultObj = innerData?.livenessResult || innerData;
 
@@ -3038,7 +3801,8 @@ function LivePhotographSection({
       });
 
       formData.append('file', imageFile);
-      formData.append('customerId', String(customerId));
+      formData.append('applicationId', String(applicationId));
+      formData.append('livenessVerificationId', innerData.livenessVerificationId || '');
       formData.append('latitude', String(locationData.latitude));
       formData.append('longitude', String(locationData.longitude));
       formData.append('accuracy', String(locationData.accuracy || 0));
@@ -3048,9 +3812,6 @@ function LivePhotographSection({
       formData.append('country', addressData?.country || 'India');
       formData.append('postalCode', addressData?.postalCode || '');
       formData.append('capturedAt', locationData.capturedAt.toISOString());
-      formData.append('faceLivenessStatus', 'VERIFIED');
-      formData.append('faceLivenessScore', String(livenessResultObj.liveness_confidence || livenessResultObj.confidence || livenessResultObj.score || 0.98));
-      formData.append('faceLivenessProviderApplicationId', innerData.reqId || livenessResultObj.req_id || '');
       formData.append('documentType', 'CUSTOMER_LIVE_PHOTO');
       formData.append('source', 'PROFILE_DETAILS');
       formData.append('applicantType', 'BORROWER');
@@ -3287,6 +4048,7 @@ function LivePhotographSection({
 
 function ProfileDetailsStep({
   customerId,
+  applicationId,
   customerCode,
   savedPhotoDocument,
   onPhotoSaved,
@@ -3697,6 +4459,7 @@ function ProfileDetailsStep({
 
       <LivePhotographSection
         customerId={customerId}
+        applicationId={applicationId}
         customerCode={customerCode}
         savedPhotoDocument={savedPhotoDocument}
         onPhotoSaved={onPhotoSaved}
@@ -3719,7 +4482,7 @@ function ProfileDetailsStep({
         onSave={onSaveDraft}
         isSaving={isSaving}
         onNext={onContinue}
-        nextLabel="Review Application"
+        nextLabel="Continue to Aadhaar KYC"
       />
     </StepCard>
   );
@@ -3728,6 +4491,7 @@ function ProfileDetailsStep({
 function SubmitApplicationStep({
   form,
   customer,
+  savedPhotoDocument,
   mobileNumber,
   applicationSubmitted,
   applicationNumber,
@@ -3736,6 +4500,8 @@ function SubmitApplicationStep({
   onSubmit,
 }) {
   const navigate = useNavigate();
+  const [sameAsPermanent, setSameAsPermanent] = useState(true);
+  const [decisionConsentAccepted, setDecisionConsentAccepted] = useState(false);
 
   const status = customer?.onboardingStatus || 'APPLICATION_SUBMITTED';
   const isApproved = status === 'LENDER_APPROVED';
@@ -3760,27 +4526,43 @@ function SubmitApplicationStep({
               <p className="mt-1 text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
                 {isApproved
                   ? 'Fintree Finance has approved your loan application. You can now continue your post-approval journey.'
-                  : isRejected 
-                  ? 'Unfortunately, your application did not meet the lender criteria at this time.'
-                  : 'Your loan application is currently under final evaluation by our credit underwriting team. Once final approval comes, the next flow will start automatically.'}
+                  : isRejected
+                    ? 'Unfortunately, your application did not meet the lender criteria at this time.'
+                    : 'Your loan application is currently under final evaluation by our credit underwriting team. Once final approval comes, the next flow will start automatically.'}
               </p>
             </div>
           </div>
         </div>
 
-        {isApproved && hasLan && (
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Continue to Disbursal</h3>
-            <p className="text-sm text-slate-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
-            <button
-              onClick={() => navigate(`/customer/loan/${customer.latestLan}/post-approval`)}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-bold text-white shadow hover:bg-emerald-700"
-            >
-              Continue Approved Loan Journey
-              <ArrowRight size={18} />
-            </button>
-          </div>
-        )}
+        {isApproved && hasLan && (() => {
+          const isDisbursalRequestedOrDisbursed =
+            customer?.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
+            customer?.latestDisbursalStatus === 'DISBURSAL_PROCESSING' ||
+            customer?.latestDisbursalStatus === 'DISBURSED' ||
+            customer?.latestLoanStatus === 'DISBURSED';
+
+          return (
+            <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">
+                {isDisbursalRequestedOrDisbursed ? 'Loan Account & Disbursal Status' : 'Continue to Disbursal'}
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
+              <button
+                onClick={() =>
+                  navigate(
+                    isDisbursalRequestedOrDisbursed
+                      ? `/customer/loan/${customer.latestLan}/details`
+                      : `/customer/loan/${customer.latestLan}/post-approval`
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-bold text-white shadow hover:bg-emerald-700 cursor-pointer"
+              >
+                {isDisbursalRequestedOrDisbursed ? 'View Loan Details' : 'Continue Approved Loan Journey'}
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          );
+        })()}
 
         {isApproved && !hasLan && (
           <div className="rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-sm">
@@ -3855,7 +4637,7 @@ function SubmitApplicationStep({
               label="Employment"
               value={
                 form.employmentType ===
-                'SALARIED'
+                  'SALARIED'
                   ? 'Salaried'
                   : 'Self-employed'
               }
@@ -3864,13 +4646,13 @@ function SubmitApplicationStep({
             <ReviewItem
               label={
                 form.employmentType ===
-                'SALARIED'
+                  'SALARIED'
                   ? 'Company'
                   : 'Business'
               }
               value={
                 form.employmentType ===
-                'SALARIED'
+                  'SALARIED'
                   ? form.companyName
                   : form.businessName
               }
@@ -3965,11 +4747,37 @@ function SubmitApplicationStep({
             </div>
           </div>
 
+          <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <label className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+              <input
+                type="checkbox"
+                checked={sameAsPermanent}
+                onChange={(event) => setSameAsPermanent(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              My current address is the same as my DigiLocker permanent address.
+            </label>
+            {!sameAsPermanent && (
+              <p className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600">
+                Current address from verified photo location: {savedPhotoDocument?.formattedAddress || 'Location address unavailable'}
+              </p>
+            )}
+            <label className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+              <input
+                type="checkbox"
+                checked={decisionConsentAccepted}
+                onChange={(event) => setDecisionConsentAccepted(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              I authorize the bureau enquiry, lender credit assessment, and submission of this completed application to the allocated lender for a decision.
+            </label>
+          </div>
+
           <button
             type="button"
-            onClick={onSubmit}
+            onClick={() => onSubmit({ sameAsPermanent, decisionConsentAccepted })}
             disabled={
-              isSubmitting
+              isSubmitting || !decisionConsentAccepted
             }
             className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -4103,6 +4911,101 @@ function StepCard({ children }) {
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       {children}
     </section>
+  );
+}
+
+function PreApprovalOfferStep({ lan, onSelected }) {
+  const [offer, setOffer] = useState(null);
+  const [selectedTenure, setSelectedTenure] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!lan) return;
+    setLoading(true);
+    getPreApprovalOffer(lan)
+      .then((data) => {
+        setOffer(data);
+        setSelectedTenure(data?.selectedTenure || (Array.isArray(data?.allowedTenures) ? data.allowedTenures[0] : null));
+      })
+      .catch((err) => setError(err.message || 'Unable to load your pre-approved offer.'))
+      .finally(() => setLoading(false));
+  }, [lan]);
+
+  const formatCurrency = (val) => (val || val === 0) ? Number(val).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }) : '—';
+
+  const handleSelect = async () => {
+    if (!selectedTenure) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await selectPreApprovalOffer(lan, { tenureDays: selectedTenure });
+      onSelected();
+    } catch (err) {
+      setError(err.message || 'Unable to select this offer.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <StepCard>
+      <div className="p-2 sm:p-4">
+        <h2 className="text-xl font-bold text-slate-900">You're Pre-Approved!</h2>
+        <p className="mt-1 text-sm text-slate-600">Select a repayment tenure to proceed to final lender approval.</p>
+
+        {loading ? (
+          <div className="mt-8 flex justify-center"><LoaderCircle className="h-8 w-8 animate-spin text-emerald-600" /></div>
+        ) : error ? (
+          <p className="mt-6 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>
+        ) : (
+          <>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold text-slate-500">Pre-Approved Amount</p>
+                <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(offer?.amount)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs font-semibold text-slate-500">Lender Credit Limit</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{formatCurrency(offer?.lenderApprovedAmount)}</p>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <p className="mb-3 text-sm font-bold text-slate-900">Select Repayment Tenure</p>
+              <div className="flex flex-wrap gap-3">
+                {(offer?.allowedTenures || []).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSelectedTenure(t)}
+                    className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+                      : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
+                      }`}
+                  >
+                    {t} Days
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSelect}
+                disabled={submitting || !selectedTenure}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                {submitting ? 'Submitting…' : 'Confirm Offer & Continue'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </StepCard>
   );
 }
 
@@ -4271,15 +5174,13 @@ function FormInput({
       </label>
 
       <div
-        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition ${
-          error
+        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition ${error
             ? 'border-red-400 ring-4 ring-red-50'
             : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-        } ${
-          disabled
+          } ${disabled
             ? 'bg-slate-100'
             : 'bg-white'
-        }`}
+          }`}
       >
         {prefix && (
           <span className="border-r border-slate-200 px-4 text-sm font-bold text-slate-600">
@@ -4346,13 +5247,12 @@ function FormSelect({
         value={value || ''}
         onChange={onChange}
         disabled={disabled}
-        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition ${
-          disabled
+        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition ${disabled
             ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500'
             : error
               ? 'border-red-400 bg-white text-slate-900 ring-4 ring-red-50'
               : 'border-slate-300 bg-white text-slate-900 focus:border-blue-600 focus:ring-4 focus:ring-blue-50'
-        }`}
+          }`}
       >
         <option value="">
           Select {label}

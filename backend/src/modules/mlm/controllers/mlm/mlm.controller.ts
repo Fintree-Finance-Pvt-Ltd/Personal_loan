@@ -25,6 +25,7 @@ import {
   rejectMlmPolicyVersionSchema,
   simulateMlmPolicyVersionSchema,
   executeMlmAllocationSchema,
+  mlmDistributionQuerySchema,
 } from '../../mlm.validation';
 import {
   CreateMlmPolicyDto,
@@ -34,6 +35,7 @@ import {
   RejectMlmPolicyVersionDto,
   SimulateMlmPolicyVersionDto,
   ExecuteMlmAllocationDto,
+  MlmDistributionQueryDto,
 } from '../../mlm.types';
 
 export class ZodPipe implements PipeTransform {
@@ -70,9 +72,9 @@ export class MlmController {
 
   @Get('mlm-distribution')
   @Permissions('MLM_READ')
-  async getDistributionDashboard(@Query('versionId') versionId: string) {
-    if (!versionId) throw new BadRequestException('versionId is required');
-    return this.mlmService.getDistributionDashboard(versionId);
+  @UsePipes(new ZodPipe(mlmDistributionQuerySchema))
+  async getDistributionDashboard(@Query() query: MlmDistributionQueryDto) {
+    return this.mlmService.getDistributionDashboard(query);
   }
 
   @Get('mlm-policies')

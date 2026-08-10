@@ -4,7 +4,10 @@ import { OtpController } from './otp.controller';
 import { OtpService } from './otp.service';
 import { SmsService } from './sms/sms.service';
 
+import { JwtModule } from '@nestjs/jwt';
+
 @Module({
+  imports: [JwtModule.register({})],
   controllers: [OtpController],
   providers: [
     OtpService,

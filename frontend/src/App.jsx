@@ -8,10 +8,13 @@ import { PermissionRoute, ProtectedRoute } from './components/ProtectedRoute';
 import CustomerLayout from './components/layout/customer/CustomerLayout';
 import CustomerSignIn from './features/auth/pages/CustomerSignIn';
 import CustomerDashboard from './features/customer/pages/CustomerDashboard';
-import CustomerPlaceholderPage from './features/customer/pages/CustomerPlaceholderPage';
+import CustomerSupportPage from './features/customer/pages/CustomerSupportPage';
 import MyApplicationPage from './features/customer/pages/MyApplicationPage';
 import PostApprovalJourneyPage from './features/customer/pages/PostApprovalJourneyPage';
 import DigiLockerCallbackPage from './features/customer/pages/DigiLockerCallbackPage';
+import MandateResultPage from './features/customer/pages/MandateResultPage';
+import { CustomerLoanDetailsPage } from './features/customer/pages/CustomerLoanDetailsPage';
+import { CustomerProfilePage } from './features/customer/pages/CustomerProfilePage';
 
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
@@ -28,6 +31,9 @@ import PlatformPoliciesPage from './features/platform-policies/pages/PlatformPol
 import CreatePlatformPolicyPage from './features/platform-policies/pages/CreatePlatformPolicyPage';
 import PlatformPolicyDetailsPage from './features/platform-policies/pages/PlatformPolicyDetailsPage';
 import EditPlatformPolicyVersionPage from './features/platform-policies/pages/EditPlatformPolicyVersionPage';
+
+// Credit Review
+import CreditReviewPage from './features/credit-review/pages/CreditReviewPage';
 
 // MLM
 import MlmPoliciesPage from './features/mlm/pages/MlmPoliciesPage';
@@ -71,39 +77,17 @@ export default function App() {
       {/* Public customer login & DigiLocker callback */}
       <Route path="/customer/login" element={<CustomerSignIn />} />
       <Route path="/customer/digilocker/callback" element={<DigiLockerCallbackPage />} />
+      <Route path="/customer/mandate/result" element={<MandateResultPage />} />
 
       {/* Customer layout routes */}
       <Route element={<CustomerLayout />}>
         <Route path="/customer/dashboard" element={<CustomerDashboard />} />
         <Route path="/customer/application" element={<MyApplicationPage />} />
         <Route path="/customer/loan/:lan/post-approval" element={<PostApprovalJourneyPage />} />
-        <Route
-          path="/customer/loan-details"
-          element={
-            <CustomerPlaceholderPage
-              title="Loan Details"
-              description="Your approved loan amount, tenure and repayment information will appear here."
-            />
-          }
-        />
-        <Route
-          path="/customer/profile"
-          element={
-            <CustomerPlaceholderPage
-              title="My Profile"
-              description="Manage your personal and contact information."
-            />
-          }
-        />
-        <Route
-          path="/customer/support"
-          element={
-            <CustomerPlaceholderPage
-              title="Help & Support"
-              description="Contact the Fintree Finance customer support team."
-            />
-          }
-        />
+        <Route path="/customer/loan/:lan/details" element={<CustomerLoanDetailsPage />} />
+        <Route path="/customer/loan-details" element={<CustomerLoanDetailsPage />} />
+        <Route path="/customer/profile" element={<CustomerProfilePage />} />
+        <Route path="/customer/support" element={<CustomerSupportPage />} />
       </Route>
 
       {/* Admin public login */}
@@ -182,6 +166,16 @@ export default function App() {
             }
           />
 
+          {/* Credit Review */}
+          <Route
+            path="/admin-master/credit-review"
+            element={
+              <PermissionRoute permission="APPLICATION_VIEW_MASKED">
+                <CreditReviewPage />
+              </PermissionRoute>
+            }
+          />
+
           {/* MLM Routes */}
           <Route
             path="/admin-master/mlm-policies"
@@ -216,7 +210,7 @@ export default function App() {
             }
           />
           <Route
-            path="/admin-master/mlm-policy-versions/:versionId/distribution"
+            path="/admin-master/mlm-distribution"
             element={
               <PermissionRoute permission="MLM_READ">
                 <MlmDistributionDashboardPage />

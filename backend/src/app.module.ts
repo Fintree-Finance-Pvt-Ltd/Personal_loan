@@ -32,6 +32,10 @@ import { DocumentsModule } from './modules/documents/documents.module';
 import { MlmModule } from './modules/mlm/mlm.module';
 import { PlatformProductsModule } from './modules/platform-products/platform-products.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { ElectronicSignModule } from './modules/electronic-sign/electronic-sign.module';
+import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
+import { LenderIntegrationModule } from './modules/lender-integrations/lender-integration.module';
+import { CreditReviewModule } from './modules/credit-review/credit-review.module';
 
 @Module({
   imports: [
@@ -64,6 +68,10 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     MlmModule,
     PlatformProductsModule,
     WebhooksModule,
+    ElectronicSignModule,
+    LoanAgreementModule,
+    LenderIntegrationModule,
+    CreditReviewModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

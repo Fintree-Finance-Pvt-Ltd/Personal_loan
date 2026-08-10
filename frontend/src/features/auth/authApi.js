@@ -1,12 +1,35 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || '/api';
+function getFullApiUrl(endpoint) {
+  const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  const cleanBase = rawBaseUrl.replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+  // Keep OTP login and customer refresh on the same browser origin in local
+  // development. Vite proxies /api to VITE_API_BASE_URL.
+  if (import.meta.env.DEV) {
+    return `/api${cleanEndpoint}`;
+  }
+
+  if (cleanEndpoint.startsWith('/api/')) {
+    if (cleanBase.endsWith('/api')) {
+      return `${cleanBase.slice(0, -4)}${cleanEndpoint}`;
+    }
+    return `${cleanBase}${cleanEndpoint}`;
+  }
+
+  if (cleanBase.endsWith('/api')) {
+    return `${cleanBase}${cleanEndpoint}`;
+  }
+
+  return `${cleanBase}/api${cleanEndpoint}`;
+}
 
 async function apiRequest(
   endpoint,
   options = {},
 ) {
+  const url = getFullApiUrl(endpoint);
   const response = await fetch(
-    `${API_BASE_URL}${endpoint}`,
+    url,
     {
       credentials: 'include',
 
@@ -55,6 +78,7 @@ function extractApiMessage(
 ) {
   const message =
     result?.message ||
+    result?.error?.message ||
     result?.error ||
     result?.data?.message;
 
@@ -63,6 +87,10 @@ function extractApiMessage(
   }
 
   if (typeof message === 'string') {
+    // Humanize generic rate limit message
+    if (result?.error?.code === 'RATE_LIMITED' || result?.statusCode === 429) {
+      return 'Too many requests. Please wait a moment before trying again.';
+    }
     return message;
   }
 
