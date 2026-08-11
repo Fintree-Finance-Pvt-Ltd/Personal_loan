@@ -580,6 +580,14 @@ export default function MyApplicationPage() {
     setIsLoadingPlatformProducts(false);
   }, [customerId, navigate]);
 
+  useEffect(() => {
+    if (currentStep !== 'integration_processing') return undefined;
+    const timer = setInterval(() => {
+      fetchCustomer();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [currentStep]);
+
   const handleRetryLenderSubmission = async () => {
     setIsRetryingLenderSubmission(true);
     setRetryLenderSubmissionError('');
