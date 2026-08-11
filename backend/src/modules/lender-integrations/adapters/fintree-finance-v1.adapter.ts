@@ -18,6 +18,8 @@ import {
   LenderCreateApplicationResult,
   LenderDecisionContext,
   LenderDecisionResult,
+  LenderDisburseContext,
+  LenderDisburseResult,
   LenderDocumentCandidate,
   LenderDocumentSelection,
   LenderDocumentUploadContext,
@@ -43,6 +45,7 @@ import {
   FintreeCreateResponseSchema,
   FintreeDecisionResponseSchema,
   FintreeDetailsResponseSchema,
+  FintreeDisburseResponseSchema,
   FintreeDocumentResponseSchema,
 } from './fintree-finance-v1/fintree-finance-v1.schemas';
 
@@ -51,6 +54,7 @@ import {
   mapFintreeCreatePayload,
   mapFintreeDecisionPayload,
   mapFintreeDetailsPayload,
+  mapFintreeDisbursePayload,
   mapFintreeDocumentPayload,
   selectFintreeDocuments,
 } from './fintree-finance-v1/fintree-finance-v1.mapper';
@@ -79,6 +83,7 @@ export class FintreeFinanceV1Adapter
     documentUpload: true,
     decisionRequest: true,
     statusPolling: false,
+    disbursement: true,
   } as const;
 
   constructor(
@@ -533,6 +538,63 @@ export class FintreeFinanceV1Adapter
       'PERMANENT_VALIDATION',
       false,
     );
+  }
+
+  async requestDisbursal(
+    context:
+      LenderDisburseContext,
+  ): Promise<LenderDisburseResult> {
+    const payload =
+      mapFintreeDisbursePayload(
+        context,
+      );
+
+    const response =
+      await this.callFintree({
+        context,
+
+        endpointName:
+          'DISBURSE',
+
+        method:
+          'POST',
+
+        path:
+          this.resolvePartnerPath(
+            this.requirePath(
+              context.transport
+                .disbursePath,
+              'disbursePath',
+            ),
+
+            context
+              .partnerApplicationId,
+          ),
+
+        payload,
+
+        schema:
+          FintreeDisburseResponseSchema,
+      });
+
+    if (!response.success) {
+      throw this.partnerError(
+        response.error.code,
+        response.error.message,
+      );
+    }
+
+    return {
+      acknowledged: true,
+
+      providerStatus:
+        response.data.status,
+
+      disbursalReference:
+        response.data
+          .disbursalReference ??
+        null,
+    };
   }
 
   private async callFintree<

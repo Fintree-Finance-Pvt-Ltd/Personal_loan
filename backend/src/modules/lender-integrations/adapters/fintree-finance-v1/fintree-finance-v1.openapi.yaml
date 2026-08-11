@@ -467,6 +467,55 @@ components:
           type: string
           format: uuid
 
+    DisburseRequest:
+      type: object
+      description: |
+        Triggers Fintree to disburse the final accepted loan amount, sent only after
+        mandate and e-sign are both complete. This call only asks Fintree to start
+        disbursal — it does not itself confirm the disbursed outcome. The final result
+        (UTR, status, disbursement date) arrives later, asynchronously, via the existing
+        disbursal webhook (POST /webhooks/lenders/{lenderCode}/disbursal).
+      required:
+        - externalApplicationReference
+        - lan
+        - amount
+        - trigger_fund
+      properties:
+        externalApplicationReference:
+          type: string
+        lan:
+          type: string
+        amount:
+          type: string
+          description: The final accepted loan amount — never the pre-approval credit limit.
+        trigger_fund:
+          type: boolean
+          enum: [true]
+
+    DisburseResponse:
+      type: object
+      required:
+        - success
+        - data
+        - correlationId
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - status
+          description: Acknowledges that the fund-trigger request was accepted — not a disbursal confirmation.
+          properties:
+            status:
+              type: string
+            disbursalReference:
+              type: string
+        correlationId:
+          type: string
+          format: uuid
+
 security:
   - ApiKeyAuth: []
 
@@ -643,6 +692,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UploadDocumentResponse'
+        "400":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /applications/{partnerApplicationId}/disburse:
+    post:
+      summary: Trigger Disbursal
+      operationId: requestDisbursal
+      parameters:
+        - name: partnerApplicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisburseRequest'
+      responses:
+        "200":
+          description: Fund-trigger request accepted (not a disbursal confirmation — see the disbursal webhook)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisburseResponse'
         "400":
           description: Validation Error
           content:

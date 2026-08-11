@@ -104,9 +104,29 @@ export const FintreeDecisionResponseSchema = z.discriminatedUnion('success', [
   }).strict(),
 ]);
 
+// The disburse-trigger call only acknowledges that Fintree has accepted the fund-trigger
+// request — it is not the final disbursal confirmation. The actual UTR/status/date arrive
+// later via the existing disbursal webhook (LoanService.processDisbursalWebhook).
+export const FintreeDisburseResponseSchema = z.discriminatedUnion('success', [
+  z.object({
+    success: z.literal(true),
+    data: z.object({
+      status: z.string().min(1),
+      disbursalReference: z.string().optional(),
+    }).passthrough(),
+    correlationId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    success: z.literal(false),
+    error: FintreeErrorSchema,
+    correlationId: z.string().uuid(),
+  }).strict(),
+]);
+
 export type FintreeCreateResponse = z.infer<typeof FintreeCreateResponseSchema>;
 export type FintreeConsentResponse = z.infer<typeof FintreeConsentResponseSchema>;
 export type FintreeDetailsResponse = z.infer<typeof FintreeDetailsResponseSchema>;
 export type FintreeDocumentResponse = z.infer<typeof FintreeDocumentResponseSchema>;
 export type FintreeDecisionResponse = z.infer<typeof FintreeDecisionResponseSchema>;
+export type FintreeDisburseResponse = z.infer<typeof FintreeDisburseResponseSchema>;
 

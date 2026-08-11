@@ -328,14 +328,39 @@ if (!platformLan) {
     const event = await this.prisma.lenderIntegrationOutbox.findUnique({ where: { id: eventId } });
     if (!event || event.status !== 'FAILED') throw new BadRequestException('Only a permanently failed lender event can be replayed.');
     const application = await this.prisma.plApplication.findUnique({ where: { id: event.applicationId }, include: { lenderApplicationLink: true } });
-    if (!application || ['LENDER_APPROVED', 'LENDER_REJECTED'].includes(application.status)) throw new BadRequestException('Terminal lender decisions cannot be replayed.');
+    // A DISBURSE-stage event is expected to run while the application is already
+    // LENDER_APPROVED (disbursal only happens post-approval) — that is not "terminal"
+    // for this stage the way it is for CREATE/UPDATE/DECISION.
+    if (!application || (event.integrationStage !== 'DISBURSE' && ['LENDER_APPROVED', 'LENDER_REJECTED'].includes(application.status))) {
+      throw new BadRequestException('Terminal lender decisions cannot be replayed.');
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.lenderIntegrationOutbox.update({ where: { id: event.id }, data: { status: 'PENDING', attemptCount: 0, availableAt: new Date(), processedAt: null, lockedAt: null, lockedBy: null, lockToken: null, leaseExpiresAt: null, lastErrorCode: null, lastErrorMessage: null } });
-      if (application.lenderApplicationLink) {
+      // DISBURSE has no LenderApplicationLink status column of its own (see
+      // LenderIntegrationService.processDisburse/markStageFailure) — it tracks state
+      // directly on PlLoan.disbursalStatus instead, so there is nothing to reset here.
+      if (application.lenderApplicationLink && event.integrationStage !== 'DISBURSE') {
         const field = event.integrationStage === 'CREATE' ? 'createStatus' : event.integrationStage === 'UPDATE' ? 'updateStatus' : 'decisionStatus';
         await tx.lenderApplicationLink.update({ where: { id: application.lenderApplicationLink.id }, data: { [field]: 'PENDING', lastErrorCode: null, lastErrorMessage: null } });
       }
+      if (event.integrationStage === 'DISBURSE') {
+        await tx.plLoan.updateMany({ where: { applicationId: application.id }, data: { disbursalStatus: 'DISBURSAL_REQUESTED' } });
+      }
     });
     return { success: true, eventId: event.id, status: 'PENDING' };
+  }
+
+  async enqueueDisbursalWhenReady(applicationId: bigint) {
+    const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId } });
+    if (!application?.lenderId) throw new BadRequestException('Allocated lender is missing.');
+    const loan = await this.prisma.plLoan.findUnique({ where: { applicationId } });
+    if (!loan) throw new BadRequestException('No loan exists for this application yet.');
+
+    const idempotencyKey = `${application.applicationNumber}:LENDER_REQUEST_DISBURSAL:V1`;
+    return this.prisma.lenderIntegrationOutbox.upsert({
+      where: { idempotencyKey },
+      create: { eventType: 'LENDER_REQUEST_DISBURSAL', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId, integrationStage: 'DISBURSE', payloadVersion: 1, idempotencyKey },
+      update: {},
+    });
   }
 }

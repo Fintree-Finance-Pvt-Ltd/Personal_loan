@@ -31,6 +31,7 @@ export interface LenderIntegrationTransportConfig {
   decisionPath: string | null;
   statusPath: string | null;
   documentUploadPath: string | null;
+  disbursePath: string | null;
 
   connectTimeoutMs: number;
   requestTimeoutMs: number;
@@ -42,6 +43,7 @@ export interface LenderAdapterCapabilities {
   documentUpload: boolean;
   decisionRequest: boolean;
   statusPolling: boolean;
+  disbursement: boolean;
 }
 
 export interface LenderCreateApplicationContext {
@@ -340,6 +342,28 @@ export interface LenderDecisionResult {
 export type LenderStatusResult =
   LenderDecisionResult;
 
+export interface LenderDisburseContext {
+  idempotencyKey: string;
+  correlationId: string;
+  payloadVersion: number;
+  transport: LenderIntegrationTransportConfig;
+
+  partnerApplicationId: string;
+  applicationReference: string;
+  platformLan: string;
+
+  // The final accepted loan amount to disburse — never the pre-approval credit
+  // limit or the initial requested amount.
+  amount: string;
+  triggerFund: true;
+}
+
+export interface LenderDisburseResult {
+  acknowledged: boolean;
+  providerStatus: string;
+  disbursalReference?: string | null;
+}
+
 export interface LenderWebhookVerificationInput {
   headers: Record<
     string,
@@ -393,4 +417,8 @@ export interface LenderAdapter {
   verifyWebhook?(
     input: LenderWebhookVerificationInput,
   ): Promise<VerifiedLenderWebhookResult>;
+
+  requestDisbursal?(
+    context: LenderDisburseContext,
+  ): Promise<LenderDisburseResult>;
 }

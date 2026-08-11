@@ -34,6 +34,7 @@ import {
   LenderConsentContext,
   LenderCreateApplicationContext,
   LenderDecisionContext,
+  LenderDisburseContext,
   LenderDocumentCandidate,
   LenderDocumentUploadContext,
   LenderIntegrationTransportConfig,
@@ -278,6 +279,26 @@ export class LenderIntegrationService {
 
       return true;
 
+    case 'DISBURSE':
+      if (
+        !adapter.capabilities
+          .disbursement
+      ) {
+        throw new LenderIntegrationError(
+          'FINTREE_DISBURSE_CONTRACT_NOT_ENABLED',
+          'Disbursal trigger is disabled for this adapter.',
+          'PERMANENT_VALIDATION',
+        );
+      }
+
+      return this.processDisburse(
+        event,
+        application,
+        link,
+        config,
+        adapter,
+      );
+
     default:
       throw new LenderIntegrationError(
         'LENDER_STAGE_UNSUPPORTED',
@@ -317,6 +338,21 @@ async markStageFailure(
           lastErrorMessage: error.message,
         },
       });
+      return;
+    }
+
+    // DISBURSE has no LenderApplicationLink status column — it tracks state on
+    // PlLoan.disbursalStatus directly (see processDisburse()). While retries remain,
+    // leave the loan's status alone (still DISBURSAL_REQUESTED/PROCESSING from
+    // LoanService.requestDisbursal()); only mark it failed once retries are exhausted,
+    // so the customer sees a support/retry state instead of "processing" forever.
+    if (event.integrationStage === 'DISBURSE') {
+      if (!retrying) {
+        await tx.plLoan.updateMany({
+          where: { applicationId: event.applicationId },
+          data: { disbursalStatus: 'DISBURSAL_TRIGGER_FAILED' },
+        });
+      }
       return;
     }
 
@@ -1218,12 +1254,19 @@ async markStageFailure(
   // Only the onboarding-profile UPDATE (V1, pre-approval) and the offer-selection
   // UPDATE (V2, final approval) should ever trigger a decision request. Later staged
   // pushes (bank V3, mandate V4, ...) must never re-request a lender decision.
+  // decisionPayloadVersion defaults to 1 in the schema even when no decision has
+  // ever been requested, so it cannot by itself distinguish "never requested" from
+  // "V1 already requested" — decisionIdempotencyKey (null until a decision is
+  // genuinely requested) is the reliable signal for that.
   if (
     adapter.capabilities
       .decisionRequest &&
     event.payloadVersion <= 2 &&
-    (link.decisionPayloadVersion ?? 0) <
-      event.payloadVersion
+    (
+      !link.decisionIdempotencyKey ||
+      link.decisionPayloadVersion <
+        event.payloadVersion
+    )
   ) {
     await this.outbox
       .enqueueDecisionWhenReady(
@@ -1250,6 +1293,58 @@ async markStageFailure(
     await this.prisma.lenderApplicationLink.update({ where: { id: link.id }, data: { decisionStatus: 'PROCESSING', decisionIdempotencyKey: event.idempotencyKey, lastAttemptAt: new Date(), lastRequestHash: this.hash(context), lastErrorCode: null, lastErrorMessage: null } });
     const result = await adapter.requestDecision(context);
     await this.decisions.process(event.id, lockToken, link.partnerApplicationId, result);
+  }
+
+  private async processDisburse(event: any, application: any, link: any, config: any, adapter: LenderAdapter): Promise<boolean> {
+    if (!adapter.requestDisbursal) {
+      throw new LenderIntegrationError('LENDER_DISBURSE_METHOD_MISSING', 'The adapter declares disbursement support but does not implement requestDisbursal.', 'AUTHENTICATION_CONFIGURATION');
+    }
+    if (!link.partnerApplicationId) {
+      throw new LenderIntegrationError('LENDER_DISBURSE_BEFORE_CREATE', 'Disbursal trigger requires a completed CREATE and partner application ID.', 'PERMANENT_VALIDATION');
+    }
+    if (application.status !== 'LENDER_APPROVED') {
+      throw new LenderIntegrationError('LENDER_DISBURSE_BEFORE_APPROVAL', 'Disbursal can only be triggered for a lender-approved application.', 'PERMANENT_VALIDATION');
+    }
+
+    const loan = await this.prisma.plLoan.findUnique({ where: { applicationId: application.id } });
+    if (!loan) {
+      throw new LenderIntegrationError('LENDER_DISBURSE_LOAN_MISSING', 'No loan exists for this application yet.', 'PERMANENT_VALIDATION');
+    }
+    if (loan.disbursalStatus === 'DISBURSED' || loan.status === 'DISBURSED') {
+      return false;
+    }
+    if (!loan.approvedAmount || Number(loan.approvedAmount) <= 0) {
+      throw new LenderIntegrationError('LENDER_DISBURSE_AMOUNT_MISSING', 'Loan is missing a valid approved amount to disburse.', 'PERMANENT_VALIDATION');
+    }
+
+    const context = await this.buildDisburseContext(event, application, link, config, loan);
+    const result = await adapter.requestDisbursal(context);
+
+    if (!result.acknowledged) {
+      throw new LenderIntegrationError('LENDER_DISBURSE_NOT_ACKNOWLEDGED', 'Lender disbursal trigger was not acknowledged.', 'PERMANENT_VALIDATION');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // Only advance disbursalStatus if the async webhook hasn't already resolved it —
+      // the webhook can, in principle, race ahead of this ACK completing.
+      await tx.plLoan.updateMany({
+        where: { id: loan.id, disbursalStatus: { notIn: ['DISBURSED', 'DISBURSAL_FAILED'] } },
+        data: {
+          disbursalStatus: 'DISBURSAL_PROCESSING',
+          disbursalProviderRef: result.disbursalReference ?? loan.disbursalProviderRef,
+        },
+      });
+
+      const _result = await tx.lenderIntegrationOutbox.updateMany({
+        where: { id: event.id, status: 'PROCESSING', lockToken: event.lockToken },
+        data: { status: 'COMPLETED', processedAt: new Date(), lockedAt: null, lockedBy: null, lockToken: null, leaseExpiresAt: null, lastErrorCode: null, lastErrorMessage: null },
+      });
+      if (_result.count !== 1) {
+        throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Event lock was lost during completion.', 'TEMPORARY', true);
+      }
+    });
+
+    return true;
   }
 
   private async buildUpdateContext(
@@ -1926,6 +2021,24 @@ async markStageFailure(
     return { idempotencyKey: event.idempotencyKey, correlationId: randomUUID(), payloadVersion: event.payloadVersion, transport: this.transport(config), partnerApplicationId: link.partnerApplicationId, applicationReference: application.applicationNumber, externalProductCode: product.code, profileComplete: true, bureauConsentReference: bureau.consentTemplateId, bureauConsentHash: bureau.consentTextHash, lenderDecisionConsentReference: decision.consentTemplateId, lenderDecisionConsentHash: decision.consentTextHash };
   }
 
+  private async buildDisburseContext(event: any, application: any, link: any, config: any, loan: any): Promise<LenderDisburseContext> {
+    if (!application.platformLan) {
+      throw new LenderIntegrationError('PLATFORM_LAN_MISSING', 'Platform LAN is missing.', 'PERMANENT_VALIDATION');
+    }
+    return {
+      idempotencyKey: event.idempotencyKey,
+      correlationId: randomUUID(),
+      payloadVersion: event.payloadVersion,
+      transport: this.transport(config),
+      partnerApplicationId: link.partnerApplicationId,
+      applicationReference: application.applicationNumber,
+      platformLan: application.platformLan,
+      // The final accepted amount, never the pre-approval credit limit.
+      amount: loan.approvedAmount.toString(),
+      triggerFund: true,
+    };
+  }
+
   private async buildStatusContext(event: any, application: any, link: any, config: any): Promise<LenderStatusContext> {
     return { idempotencyKey: event.idempotencyKey, correlationId: randomUUID(), payloadVersion: event.payloadVersion, transport: this.transport(config), partnerApplicationId: link.partnerApplicationId, applicationReference: application.applicationNumber };
   }
@@ -2194,6 +2307,9 @@ async markStageFailure(
     documentUploadPath:
       config
         .documentUploadPath,
+
+    disbursePath:
+      config.disbursePath,
 
     connectTimeoutMs:
       config.connectTimeoutMs,

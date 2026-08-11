@@ -1152,6 +1152,7 @@ enum LenderIntegrationStage {
   STATUS
   CONSENT
   DOCUMENT
+  DISBURSE
 }
 
 enum LenderIntegrationEventType {
@@ -1161,6 +1162,7 @@ enum LenderIntegrationEventType {
   LENDER_STATUS_CHECK
   LENDER_SUBMIT_CONSENT
   LENDER_UPLOAD_DOCUMENT
+  LENDER_REQUEST_DISBURSAL
 }
 
 enum LenderIntegrationOutboxStatus {
@@ -1315,6 +1317,7 @@ model LenderIntegrationConfig {
   webhookPath               String?                   @db.VarChar(255)
   webhookSecretReference    String?                   @db.VarChar(150)
   documentUploadPath        String?                   @db.VarChar(255)
+  disbursePath              String?                   @db.VarChar(255)
   connectTimeoutMs          Int                       @default(5000)
   requestTimeoutMs          Int                       @default(15000)
   maximumRetryAttempts      Int                       @default(5)

@@ -271,8 +271,8 @@ export class MlmService {
      }
 
      const activeRoutes = version.routes.filter(r => r.isActive);
-     if (activeRoutes.length < 2) {
-        throw new BadRequestException('At least two active routes are required to submit/approve/activate.');
+     if (activeRoutes.length < 1) {
+        throw new BadRequestException('At least one active route is required to submit/approve/activate.');
      }
 
      let totalPercentage = new Prisma.Decimal(0);

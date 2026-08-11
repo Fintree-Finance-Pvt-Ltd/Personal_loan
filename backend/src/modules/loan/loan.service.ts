@@ -2152,6 +2152,14 @@ export class LoanService {
       })
       .catch(() => {});
 
+    // Trigger the lender's disburse API via the existing outbox/worker pipeline (same
+    // idempotency/retry/auth machinery as CREATE/UPDATE/DECISION) — never a direct HTTP
+    // call from here. The actual disbursed confirmation (UTR/status/date) arrives later,
+    // asynchronously, via the existing disbursal webhook (processDisbursalWebhook).
+    this.lenderIntegrationOutbox.enqueueDisbursalWhenReady(loan.applicationId).catch((err) => {
+      this.logger.warn(`Failed to enqueue disbursal trigger for loan ${loan.lan}: ${err?.message || err}`);
+    });
+
     return {
       success: true,
       data: {
@@ -2170,7 +2178,7 @@ export class LoanService {
   ) {
     const lan = String(rawPayload.lan || rawPayload.LAN || rawPayload.loanId || '').trim();
     const disbursalUtr = String(rawPayload.DisbursalUTR || rawPayload.disbursalUtr || rawPayload.utr || '').trim();
-    const rawDisbursalDate = rawPayload.DisbursalDate || rawPayload.disbursalDate;
+    const rawDisbursalDate = rawPayload.DisbursalDate || rawPayload.disbursalDate || rawPayload.disbursement_date;
     const rawAmount = rawPayload.DisbursedAmount ?? rawPayload.disbursedAmount ?? rawPayload.amount;
     const rawRepaymentDate = rawPayload.RepaymentDate || rawPayload.firstRepaymentDate || rawPayload.repaymentDate;
     const rawStatus = String(rawPayload.status || rawPayload.Status || '').trim().toUpperCase();
@@ -2272,8 +2280,18 @@ export class LoanService {
         }
       }
 
-      // Validate Post Approval Requirements
-      if (!loan.acceptedTenureDays || !loan.kfsAccepted || !loan.mandateCompleted || !loan.esignCompleted) {
+      // Validate Post Approval Requirements — mirrors the exact precondition set
+      // requestDisbursal() checks before the trigger is ever sent, so a webhook can
+      // never mark a loan disbursed that shouldn't have been eligible in the first place.
+      if (
+        !loan.acceptedTenureDays ||
+        loan.digilockerStatus !== 'VERIFIED' ||
+        !loan.addressConfirmed ||
+        !loan.bankVerified ||
+        !loan.kfsAccepted ||
+        !loan.mandateCompleted ||
+        !loan.esignCompleted
+      ) {
         throw new BadRequestException(`Post approval requirements for LAN ${lan} are incomplete.`);
       }
 

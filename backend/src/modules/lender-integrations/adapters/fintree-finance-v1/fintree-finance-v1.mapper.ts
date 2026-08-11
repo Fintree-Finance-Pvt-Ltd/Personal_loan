@@ -3,6 +3,7 @@ import {
   LenderConsentContext,
   LenderCreateApplicationContext,
   LenderDecisionContext,
+  LenderDisburseContext,
   LenderDocumentCandidate,
   LenderDocumentSelection,
   LenderDocumentUploadContext,
@@ -487,6 +488,32 @@ export function mapFintreeDecisionPayload(
           'lenderDecisionConsentHash',
         ),
     },
+  };
+}
+
+export function mapFintreeDisbursePayload(
+  context: LenderDisburseContext,
+) {
+  return {
+    externalApplicationReference:
+      requireString(
+        context.applicationReference,
+        'externalApplicationReference',
+      ),
+
+    lan:
+      requireString(
+        context.platformLan,
+        'lan',
+      ),
+
+    amount:
+      requireString(
+        context.amount,
+        'amount',
+      ),
+
+    trigger_fund: context.triggerFund,
   };
 }
 

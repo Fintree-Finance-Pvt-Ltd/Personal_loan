@@ -101,4 +101,31 @@ describe('LenderIntegrationOutboxService', () => {
     });
     await expect(service.enqueueDecisionWhenReady(1n)).rejects.toThrow('BUREAU_ENQUIRY consent evidence');
   });
+
+  describe('enqueueDisbursalWhenReady', () => {
+    it('enqueues a DISBURSE stage event once a loan exists for the application', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        plLoan: { findUnique: jest.fn().mockResolvedValue({ id: 10n, applicationId: 1n }) },
+        lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      const event = await service.enqueueDisbursalWhenReady(1n);
+
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { idempotencyKey: 'APP-001:LENDER_REQUEST_DISBURSAL:V1' },
+        create: expect.objectContaining({ eventType: 'LENDER_REQUEST_DISBURSAL', integrationStage: 'DISBURSE', applicationId: 1n }),
+      }));
+      expect(event.integrationStage).toBe('DISBURSE');
+    });
+
+    it('throws when no loan exists for the application yet', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        plLoan: { findUnique: jest.fn().mockResolvedValue(null) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      await expect(service.enqueueDisbursalWhenReady(1n)).rejects.toThrow('No loan exists for this application yet.');
+    });
+  });
 });
