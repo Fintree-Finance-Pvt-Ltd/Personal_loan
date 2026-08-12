@@ -751,54 +751,147 @@ export class UnaportService {
     // Encrypt raw provider response at rest
     const encryptedRawResponse = encryptPayload(fetchResponse);
 
-    // Robust account data array normalization
-    let rawAccounts: any = fetchResponse;
-    if (rawAccounts && typeof rawAccounts === 'object' && 'data' in rawAccounts && rawAccounts.data !== null) {
-      rawAccounts = rawAccounts.data;
+    // Extract raw payload / array from response
+    let rawPayload: any = fetchResponse;
+    if (rawPayload && typeof rawPayload === 'object' && 'data' in rawPayload && rawPayload.data !== null) {
+      rawPayload = rawPayload.data;
     }
 
-    let accountsData: any[] = [];
-    if (Array.isArray(rawAccounts)) {
-      accountsData = rawAccounts;
-    } else if (rawAccounts && typeof rawAccounts === 'object') {
-      if (Array.isArray(rawAccounts.accounts)) {
-        accountsData = rawAccounts.accounts;
-      } else if (Array.isArray(rawAccounts.account)) {
-        accountsData = rawAccounts.account;
-      } else if (Array.isArray(rawAccounts.Accounts)) {
-        accountsData = rawAccounts.Accounts;
-      } else if (Array.isArray(rawAccounts.Account)) {
-        accountsData = rawAccounts.Account;
-      } else if (Array.isArray(rawAccounts.data)) {
-        accountsData = rawAccounts.data;
-      } else if (rawAccounts.FIStatusResponse?.Accounts && Array.isArray(rawAccounts.FIStatusResponse.Accounts)) {
-        accountsData = rawAccounts.FIStatusResponse.Accounts;
-      } else if (rawAccounts.fipId || rawAccounts.maskedAccNo || rawAccounts.accNumber || rawAccounts.summary || rawAccounts.transactions) {
-        // Single account object
-        accountsData = [rawAccounts];
+    let itemsList: any[] = [];
+    if (Array.isArray(rawPayload)) {
+      itemsList = rawPayload;
+    } else if (rawPayload && typeof rawPayload === 'object') {
+      if (Array.isArray(rawPayload.tabs)) itemsList = rawPayload.tabs;
+      else if (Array.isArray(rawPayload.accounts)) itemsList = rawPayload.accounts;
+      else if (Array.isArray(rawPayload.account)) itemsList = rawPayload.account;
+      else if (Array.isArray(rawPayload.Accounts)) itemsList = rawPayload.Accounts;
+      else if (Array.isArray(rawPayload.Account)) itemsList = rawPayload.Account;
+      else if (Array.isArray(rawPayload.transactions)) itemsList = rawPayload.transactions;
+      else if (Array.isArray(rawPayload.data)) itemsList = rawPayload.data;
+      else if (rawPayload.FIStatusResponse?.Accounts && Array.isArray(rawPayload.FIStatusResponse.Accounts)) {
+        itemsList = rawPayload.FIStatusResponse.Accounts;
+      } else if (rawPayload.fipId || rawPayload.maskedAccNo || rawPayload.accNumber || rawPayload.accountNumber || rawPayload.summary || rawPayload.transactions || rawPayload.txnId) {
+        itemsList = [rawPayload];
       } else {
-        // Fallback to object values if it's a map of accounts
-        accountsData = Object.values(rawAccounts).filter((item: any) => item && typeof item === 'object');
+        itemsList = Object.values(rawPayload).filter((item: any) => item && typeof item === 'object');
       }
+    }
+
+    // Flatten tabs or nested arrays if present
+    const flattenedItems: any[] = [];
+    for (const item of itemsList) {
+      if (Array.isArray(item)) {
+        flattenedItems.push(...item);
+      } else if (item && typeof item === 'object' && Array.isArray(item.transactions)) {
+        flattenedItems.push(item);
+      } else if (item && typeof item === 'object' && Array.isArray(item.tabs)) {
+        flattenedItems.push(...item.tabs);
+      } else {
+        flattenedItems.push(item);
+      }
+    }
+
+    // Group items by Account Number
+    const groupedAccounts = new Map<string, { meta: any; txns: any[] }>();
+
+    for (const item of flattenedItems) {
+      if (!item || typeof item !== 'object') continue;
+
+      const accountNumber = item.accountNumber || item.maskedAccNo || item.accNumber || item.accountNo || 'PRIMARY_ACCOUNT';
+      
+      let rawTxns: any[] = [];
+      const nestedTxns = item.transactions || item.Transaction || item.Transactions || item.transaction;
+      if (Array.isArray(nestedTxns)) {
+        rawTxns = nestedTxns;
+      } else if (nestedTxns && typeof nestedTxns === 'object') {
+        if (Array.isArray(nestedTxns.transaction)) rawTxns = nestedTxns.transaction;
+        else if (Array.isArray(nestedTxns.Transaction)) rawTxns = nestedTxns.Transaction;
+        else if (Array.isArray(nestedTxns.transactions)) rawTxns = nestedTxns.transactions;
+        else rawTxns = [nestedTxns];
+      } else if (item.txnId || item.tranTimestamp || item.amount != null) {
+        // Flat transaction item
+        rawTxns = [item];
+      }
+
+      if (!groupedAccounts.has(accountNumber)) {
+        groupedAccounts.set(accountNumber, {
+          meta: {
+            accountHolderName: item.accountHolderName || item.holderName || null,
+            accountType: item.accountType || 'SAVINGS',
+            accountNumberMasked: accountNumber !== 'PRIMARY_ACCOUNT' ? accountNumber : null,
+            accountNumberEncrypted: (item.accNumber || item.accountNumber) ? encryptPayload(item.accNumber || item.accountNumber) : null,
+            ifscCode: item.ifscCode || item.ifsc || null,
+            branchName: item.branch || item.branchName || null,
+            fipId: item.fipId || item.fipID || null,
+            fipName: item.fipName || null,
+            currency: item.summary?.currency || item.currency || 'INR',
+            summary: item.summary || null,
+          },
+          txns: [],
+        });
+      }
+
+      const accGroup = groupedAccounts.get(accountNumber)!;
+      // Enrich meta if missing
+      if (!accGroup.meta.accountHolderName && (item.accountHolderName || item.holderName)) {
+        accGroup.meta.accountHolderName = item.accountHolderName || item.holderName;
+      }
+      if (!accGroup.meta.summary && item.summary) {
+        accGroup.meta.summary = item.summary;
+      }
+      if (!accGroup.meta.fipId && (item.fipId || item.fipID)) {
+        accGroup.meta.fipId = item.fipId || item.fipID;
+      }
+
+      accGroup.txns.push(...rawTxns);
     }
 
     const now = new Date();
 
     await this.prisma.$transaction(async (tx: any) => {
-      for (const acc of accountsData) {
-        const accountHolderName = acc.accountHolderName || null;
-        const accountType = acc.accountType || 'SAVINGS';
-        const accountNumberMasked = acc.maskedAccNo || acc.accNumber || null;
-        const accountNumberEncrypted = acc.accNumber ? encryptPayload(acc.accNumber) : null;
-        const ifscCode = acc.ifscCode || null;
-        const branchName = acc.branch || null;
-        const fipId = acc.fipId || null;
-        const fipName = acc.fipName || null;
+      for (const [accountNum, group] of groupedAccounts.entries()) {
+        const meta = group.meta;
 
-        const summary = acc.summary || {};
-        const currentBalance = summary.currentBalance != null ? Number(summary.currentBalance) : null;
-        const availableBalance = summary.availableBalance != null ? Number(summary.availableBalance) : null;
-        const currency = summary.currency || 'INR';
+        // Parse and sort transactions chronologically
+        const parsedTxns = group.txns.map((txn: any) => {
+          const rawDate = txn.tranTimestamp || txn.transactionTimestamp || txn.txnDate || txn.createdAt || txn.transactionDate;
+          const txnDate = rawDate ? new Date(rawDate) : now;
+          const validTxnDate = isNaN(txnDate.getTime()) ? now : txnDate;
+          const rawAmount = Number(txn.amount || 0);
+          const balance = txn.currentBalance != null ? Number(txn.currentBalance) : (txn.balance != null ? Number(txn.balance) : null);
+          return {
+            ...txn,
+            parsedDate: validTxnDate,
+            parsedAmount: rawAmount,
+            parsedBalance: balance,
+          };
+        }).sort((a: any, b: any) => a.parsedDate.getTime() - b.parsedDate.getTime());
+
+        // Derive balances
+        let currentBalance: number | null = null;
+        let availableBalance: number | null = null;
+
+        if (meta.summary && meta.summary.currentBalance != null) {
+          currentBalance = Number(meta.summary.currentBalance);
+        } else if (parsedTxns.length > 0) {
+          const latestWithBalance = [...parsedTxns].reverse().find((t: any) => t.parsedBalance != null);
+          if (latestWithBalance) {
+            currentBalance = latestWithBalance.parsedBalance;
+          }
+        }
+
+        if (meta.summary && meta.summary.availableBalance != null) {
+          availableBalance = Number(meta.summary.availableBalance);
+        } else {
+          availableBalance = currentBalance;
+        }
+
+        const earliestTxn = parsedTxns[0];
+        const latestTxn = parsedTxns[parsedTxns.length - 1];
+
+        const fromDate = meta.summary?.fromDate ? new Date(meta.summary.fromDate) : (earliestTxn?.parsedDate || null);
+        const toDate = meta.summary?.toDate ? new Date(meta.summary.toDate) : (latestTxn?.parsedDate || null);
+        const summaryDate = meta.summary?.balanceDateTime ? new Date(meta.summary.balanceDateTime) : (latestTxn?.parsedDate || now);
 
         const bankDataRecord = await tx.customerBankAccountData.create({
           data: {
@@ -808,52 +901,38 @@ export class UnaportService {
             lan: request.lan,
             provider: 'UNAPORT',
             sessionId: cleanSessionId,
-            fipId,
-            fipName,
-            accountType,
-            accountNumberMasked,
-            accountNumberEncrypted,
-            accountHolderName,
-            ifscCode,
-            branchName,
-            currency,
+            fipId: meta.fipId,
+            fipName: meta.fipName,
+            accountType: meta.accountType,
+            accountNumberMasked: meta.accountNumberMasked,
+            accountNumberEncrypted: meta.accountNumberEncrypted,
+            accountHolderName: meta.accountHolderName,
+            ifscCode: meta.ifscCode,
+            branchName: meta.branchName,
+            currency: meta.currency,
             currentBalance,
             availableBalance,
-            summaryDate: summary.balanceDateTime ? new Date(summary.balanceDateTime) : now,
+            summaryDate,
+            fromDate,
+            toDate,
           },
         });
 
-        // Normalize transactions safely
-        let txnsList: any[] = [];
-        const rawTxns = acc.transactions || acc.Transaction || acc.Transactions || acc.transaction;
-        if (Array.isArray(rawTxns)) {
-          txnsList = rawTxns;
-        } else if (rawTxns && typeof rawTxns === 'object') {
-          if (Array.isArray(rawTxns.transaction)) {
-            txnsList = rawTxns.transaction;
-          } else if (Array.isArray(rawTxns.Transaction)) {
-            txnsList = rawTxns.Transaction;
-          } else if (Array.isArray(rawTxns.transactions)) {
-            txnsList = rawTxns.transactions;
-          } else {
-            txnsList = [rawTxns];
-          }
-        }
-
-        for (const txn of txnsList) {
+        // Insert individual transaction rows into customer_bank_transactions
+        for (const txn of parsedTxns) {
           const txnId = txn.txnId || null;
           const rawType = String(txn.type || 'DEBIT').toUpperCase();
           const txnType = rawType.includes('CREDIT') ? 'CREDIT' : 'DEBIT';
-          const amount = Number(txn.amount || 0);
-          const balance = txn.currentBalance != null ? Number(txn.currentBalance) : (txn.balance != null ? Number(txn.balance) : null);
+          const amount = txn.parsedAmount;
+          const balance = txn.parsedBalance;
           const narration = txn.narration || null;
           const mode = txn.mode || null;
-          const referenceNumber = txn.reference || null;
-          const txnDate = txn.transactionTimestamp ? new Date(txn.transactionTimestamp) : (txn.txnDate ? new Date(txn.txnDate) : now);
+          const referenceNumber = txn.reference || txn.referenceNumber || null;
+          const txnDate = txn.parsedDate;
           const valueDate = txn.valueDate ? new Date(txn.valueDate) : null;
 
           // Stable hash for transaction deduplication
-          const hashString = `${accountNumberMasked || ''}|${txnDate.toISOString()}|${amount}|${narration || ''}|${referenceNumber || ''}`;
+          const hashString = `${meta.accountNumberMasked || ''}|${txnDate.toISOString()}|${amount}|${narration || ''}|${referenceNumber || ''}`;
           const transactionHash = createHash('sha256').update(hashString).digest('hex');
 
           // Idempotent upsert by (bankDataId, transactionHash)
