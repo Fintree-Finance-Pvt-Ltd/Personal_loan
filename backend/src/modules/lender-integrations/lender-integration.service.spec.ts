@@ -62,6 +62,7 @@ describe('LenderIntegrationService explicit requirements', () => {
       plLoanMandate: { findFirst: jest.fn().mockResolvedValue(null) },
       lenderDataSharingConsent: { findFirst: jest.fn().mockResolvedValue({ id: 'CONS-1', consentText: 'Test Consent', consentTextHash: 'hash123' }) },
       lenderApplicationLink: { update: jest.fn() },
+      plLoan: { findUnique: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     service = new LenderIntegrationService(prisma, registry, outbox, decisions, documentFiles as any);
   });
@@ -212,6 +213,45 @@ describe('LenderIntegrationService explicit requirements', () => {
     expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledTimes(0);
   });
 
+  it('auto-triggers the decision request after the first UPDATE completes, even though decisionPayloadVersion defaults to 1 in the DB before any decision has ever been requested', async () => {
+    const config = configFor('FINTREE_FINANCE_V1');
+    const application = applicationFor(config);
+    const link = application.lenderApplicationLink;
+    link.createStatus = 'ACKNOWLEDGED';
+    (link as any).consentStatus = 'COMPLETED';
+    (link as any).partnerApplicationId = 'PARTNER-1';
+    // Matches the real Prisma schema default — decisionPayloadVersion is 1 and
+    // decisionIdempotencyKey is null on a brand-new link, before any decision call
+    // has ever actually been requested.
+    (link as any).decisionPayloadVersion = 1;
+    (link as any).decisionIdempotencyKey = null;
+
+    prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-2', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'UPDATE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_UPDATE_APPLICATION:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+    prisma.plApplication.findUnique.mockResolvedValue(application);
+    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+
+    outbox.getUpdateReadiness = jest.fn().mockResolvedValue({
+      ready: true,
+      application: {
+        ...application,
+        employmentSnapshot: { employmentType: 'SALARIED', companyName: 'ACME', designation: 'Engineer', monthlyIncome: 50000, completedAt: new Date() },
+        kycSnapshot: { provider: 'DIGILOCKER', verificationStatus: 'VERIFIED', verifiedAt: new Date(), verifiedName: 'Test', maskedAadhaar: 'XXXX-1234', verifiedDateOfBirth: '1990-01-01', verifiedGender: 'MALE' },
+        liveness: { verificationStatus: 'VERIFIED', verifiedAt: new Date(), photoDocument: { id: 9n, capturedAt: new Date() } },
+        stageConsents: [{ consentType: 'DATA_SHARING', consentTextHash: 'a', revokedAt: null, acceptedAt: new Date() }],
+      },
+      permanent: { addressType: 'PERMANENT' },
+      current: { addressType: 'CURRENT', sameAsPermanent: true },
+    });
+
+    adapter.updateApplication.mockResolvedValue({ acknowledged: true, providerStatus: 'ACKNOWLEDGED' });
+    adapter.capabilities = { documentUpload: false, decisionRequest: true };
+    prisma.plCustomerDocument = { findMany: jest.fn().mockResolvedValue([]) };
+
+    await service.processEvent('EVENT-2', 'LOCK-1');
+
+    expect(outbox.enqueueDecisionWhenReady).toHaveBeenCalledWith(1n, 1);
+  });
+
   // Note: the 3.5 MB request cap (DOCUMENT_REQUEST_LIMIT) is only enforced deep inside
   // LenderHttpService as maxRequestBytes on the actual HTTP call — there is no pre-flight
   // size check in processDocument() that skips an oversized transfer early. This test
@@ -276,5 +316,62 @@ describe('LenderIntegrationService explicit requirements', () => {
     expect(adapter.getStatus).toHaveBeenCalled();
     expect(adapter.requestDecision).not.toHaveBeenCalled();
     expect(decisions.process).toHaveBeenCalled();
+  });
+
+  describe('DISBURSE stage', () => {
+    const setUpDisburseEvent = (loanOverrides: any = {}) => {
+      adapter.capabilities.disbursement = true;
+      adapter.requestDisbursal = jest.fn().mockResolvedValue({ acknowledged: true, providerStatus: 'ACCEPTED', disbursalReference: 'DISB-1' });
+
+      const config = configFor('FINTREE_FINANCE_V1');
+      const application = applicationFor(config) as any;
+      application.status = 'LENDER_APPROVED';
+      application.lenderApplicationLink.partnerApplicationId = 'PARTNER-1';
+
+      prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-4', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'DISBURSE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_REQUEST_DISBURSAL:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+      prisma.plApplication.findUnique.mockResolvedValue(application);
+      prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+      prisma.plLoan.findUnique.mockResolvedValue({ id: 20n, applicationId: 1n, lan: 'FTPL00000001', approvedAmount: new Prisma.Decimal('18000'), disbursalStatus: null, status: 'READY_FOR_DISBURSAL', ...loanOverrides });
+
+      return { config, application };
+    };
+
+    it('calls adapter.requestDisbursal and advances disbursalStatus to DISBURSAL_PROCESSING on ACK', async () => {
+      setUpDisburseEvent();
+
+      await service.processEvent('EVENT-4', 'LOCK-1');
+
+      expect(adapter.requestDisbursal).toHaveBeenCalledWith(expect.objectContaining({ amount: '18000', triggerFund: true, platformLan: 'FTPL00000001' }));
+      expect(prisma.plLoan.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ disbursalStatus: 'DISBURSAL_PROCESSING', disbursalProviderRef: 'DISB-1' }),
+      }));
+      expect(prisma.lenderIntegrationOutbox.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
+    });
+
+    it('is a no-op if the loan is already DISBURSED (webhook won the race)', async () => {
+      setUpDisburseEvent({ disbursalStatus: 'DISBURSED', status: 'DISBURSED' });
+
+      await service.processEvent('EVENT-4', 'LOCK-1');
+
+      expect(adapter.requestDisbursal).not.toHaveBeenCalled();
+    });
+
+    it('throws when the adapter does not support disbursement', async () => {
+      setUpDisburseEvent();
+      adapter.capabilities.disbursement = false;
+
+      await expect(service.processEvent('EVENT-4', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_DISBURSE_CONTRACT_NOT_ENABLED' }),
+      );
+    });
+
+    it('throws when the application is not yet LENDER_APPROVED', async () => {
+      const { application } = setUpDisburseEvent();
+      application.status = 'PENDING_CREDIT_REVIEW';
+
+      await expect(service.processEvent('EVENT-4', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'LENDER_DISBURSE_BEFORE_APPROVAL' }),
+      );
+    });
   });
 });

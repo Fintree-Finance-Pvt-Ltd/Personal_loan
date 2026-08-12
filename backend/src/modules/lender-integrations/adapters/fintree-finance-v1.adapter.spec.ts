@@ -44,6 +44,7 @@ describe('FintreeFinanceV1Adapter', () => {
       uploadDocumentPath: '/docs',
       decisionPath: '/decision',
       statusPath: '/status',
+      disbursePath: '/disburse',
       requestTimeoutMs: 5000,
       options: {},
     },
@@ -246,6 +247,61 @@ describe('FintreeFinanceV1Adapter', () => {
 
       await expect(adapter.requestDecision(getDecisionContext() as any)).rejects.toThrow(
         expect.objectContaining({ code: 'VALIDATION_ERROR' }),
+      );
+    });
+  });
+
+  describe('requestDisbursal', () => {
+    const getDisburseContext = () => ({
+      ...getBaseContext('API_KEY' as any),
+      partnerApplicationId: 'P-123',
+      applicationReference: 'APP-123',
+      platformLan: 'FTPL123',
+      amount: '18000',
+      triggerFund: true as const,
+    });
+
+    beforeEach(() => {
+      configService.get.mockReturnValue('my-api-key');
+    });
+
+    it('sends trigger_fund=true and the final accepted amount, and acknowledges on success', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'ACCEPTED', disbursalReference: 'DISB-1' } },
+      });
+
+      const result = await adapter.requestDisbursal(getDisburseContext() as any);
+
+      expect(result.acknowledged).toBe(true);
+      expect(result.providerStatus).toBe('ACCEPTED');
+      expect(result.disbursalReference).toBe('DISB-1');
+      expect(httpService.requestJson).toHaveBeenCalledWith(expect.objectContaining({
+        body: JSON.stringify({ externalApplicationReference: 'APP-123', lan: 'FTPL123', amount: '18000', trigger_fund: true }),
+      }));
+    });
+
+    it('throws a partner error when Fintree responds with success:false', async () => {
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          success: false,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          error: { code: 'VALIDATION_ERROR', message: 'amount is required.' },
+        },
+      });
+
+      await expect(adapter.requestDisbursal(getDisburseContext() as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'VALIDATION_ERROR' }),
+      );
+    });
+
+    it('throws FINTREE_ENDPOINT_NOT_CONFIGURED when disbursePath is missing', async () => {
+      const context = getDisburseContext();
+      (context as any).transport.disbursePath = null;
+
+      await expect(adapter.requestDisbursal(context as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_ENDPOINT_NOT_CONFIGURED' }),
       );
     });
   });
