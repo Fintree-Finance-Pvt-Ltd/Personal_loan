@@ -627,7 +627,7 @@ export class CustomerAadhaarKycService {
           },
         });
       });
-      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar);
+      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar, dateOfBirth);
 
       // Audit log (non-blocking)
       this.auditLogs
@@ -991,7 +991,7 @@ export class CustomerAadhaarKycService {
       }
     });
 
-    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null);
+    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null, dobDate);
 
     // Download and store DigiLocker documents (PDF & XML) into disk & database pl_customer_documents
     await this.storeDigitapDocuments(
@@ -1005,14 +1005,19 @@ export class CustomerAadhaarKycService {
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
   }
 
-  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null) {
+  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null, dateOfBirth: Date | null = null) {
     const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
     if (!application) return;
     const verifiedAt = new Date();
+    // Fintree's UPDATE contract requires aadhaarKyc.dateOfBirth in YYYY-MM-DD — the raw
+    // DigiTap dob string is DD-MM-YYYY, so this must go through the already-parsed Date,
+    // never the raw string, or the lender rejects the whole UPDATE call as a validation error.
+    const verifiedDateOfBirth = dateOfBirth ? dateOfBirth.toISOString().slice(0, 10) : null;
     await this.prisma.applicationKycSnapshot.upsert({
       where: { applicationId: application.id },
-      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt },
-      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt },
+      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedDateOfBirth, verifiedAt },
+      // Don't overwrite an already-correct DOB with null on a call that couldn't parse one.
+      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt, ...(verifiedDateOfBirth ? { verifiedDateOfBirth } : {}) },
     });
     const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
     const city = String(address.vtc || address.city || address.dist || '').trim();

@@ -592,7 +592,11 @@ export default function MyApplicationPage() {
   }, [customerId, navigate]);
 
   useEffect(() => {
-    if (currentStep !== 'integration_processing') return undefined;
+    // Also polls on integration_support: a FAILED lender event can resolve on its own
+    // (the worker's own retry schedule, or someone retrying it from the admin panel)
+    // without the customer ever clicking anything here — without this, they'd be stuck
+    // looking at a stale "retry" screen for an error that's already been fixed.
+    if (currentStep !== 'integration_processing' && currentStep !== 'integration_support') return undefined;
     const timer = setInterval(() => {
       fetchCustomer();
     }, 5000);
