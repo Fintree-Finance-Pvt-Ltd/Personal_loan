@@ -14,10 +14,12 @@ export class UnaportController {
     @Param('lan') lan: string,
   ) {
     const customerId = BigInt(customer.customerId || customer.id);
+    console.log(`[AA CONTROLLER] [CALL] POST /initiate - customerId: ${customerId}, lan: ${lan}`);
     const result = await this.unaportService.initiateAccountAggregator(
       customerId,
       lan,
     );
+    console.log(`[AA CONTROLLER] [RESPONSE] POST /initiate - result:`, JSON.stringify(result, null, 2));
     return {
       success: true,
       data: result,
@@ -30,7 +32,9 @@ export class UnaportController {
     @Param('lan') lan: string,
   ) {
     const customerId = BigInt(customer.customerId || customer.id);
+    console.log(`[AA CONTROLLER] [CALL] GET /status - customerId: ${customerId}, lan: ${lan}`);
     const result = await this.unaportService.getStatus(customerId, lan);
+    console.log(`[AA CONTROLLER] [RESPONSE] GET /status - result:`, JSON.stringify(result, null, 2));
     return {
       success: true,
       data: result,
@@ -43,10 +47,12 @@ export class UnaportController {
     @Param('lan') lan: string,
   ) {
     const customerId = BigInt(customer.customerId || customer.id);
+    console.log(`[AA CONTROLLER] [CALL] POST /refresh-status - customerId: ${customerId}, lan: ${lan}`);
     const result = await this.unaportService.refreshStatus(
       customerId,
       lan,
     );
+    console.log(`[AA CONTROLLER] [RESPONSE] POST /refresh-status - result:`, JSON.stringify(result, null, 2));
     return {
       success: true,
       data: result,

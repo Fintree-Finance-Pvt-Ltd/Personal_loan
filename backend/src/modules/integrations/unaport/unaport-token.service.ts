@@ -135,6 +135,7 @@ export class UnaportTokenService {
     const url = `${baseUrl}/public/user/login`;
 
     try {
+      console.log(`[AA TOKEN SERVICE] [CALL] Unaport login POST ${url} - emailId: ${emailId}`);
       const response = await this.httpClient.post<UnaportLoginResponse>(url, {
         emailId,
         password,
@@ -147,6 +148,7 @@ export class UnaportTokenService {
 
       this.updateTokenCache(data.access_token, data.refresh_token, data.expires_in, data.refresh_expires_in);
 
+      console.log(`[AA TOKEN SERVICE] [RESPONSE] Unaport login success - acquired access_token & refresh_token`);
       return {
         accessToken: data.access_token,
         refreshToken: data.refresh_token,
@@ -170,6 +172,7 @@ export class UnaportTokenService {
     const url = `${baseUrl}/public/user/refreshToken`;
 
     try {
+      console.log(`[AA TOKEN SERVICE] [CALL] Unaport refreshToken POST ${url}`);
       const response = await this.httpClient.post<UnaportRefreshTokenResponse>(url, {
         refresh_token: currentRefreshToken,
       });
@@ -181,6 +184,7 @@ export class UnaportTokenService {
 
       this.updateTokenCache(data.access_token, data.refresh_token, data.expires_in, data.refresh_expires_in);
 
+      console.log(`[AA TOKEN SERVICE] [RESPONSE] Unaport refreshToken success - acquired updated access_token & refresh_token`);
       return {
         accessToken: data.access_token,
         refreshToken: data.refresh_token,
