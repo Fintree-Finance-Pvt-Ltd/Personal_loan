@@ -31,7 +31,7 @@ export class CustomerAadhaarKycService {
    */
   async initiate(
     currentCustomer: any,
-    body?: { consentGiven?: boolean },
+    body?: { consentGiven?: boolean; forceNew?: boolean },
   ) {
     if (!currentCustomer?.customerId) {
       throw new UnauthorizedException('Customer authentication is required.');
@@ -71,7 +71,82 @@ export class CustomerAadhaarKycService {
       };
     }
 
-    // Create unique attempt reference using customerCode — starts with DLK_CUS- for LMS forwarder routing
+    // ─────────────────────────────────────────────────────────────────────────
+    // CHECK EXISTING ACTIVE ATTEMPT BEFORE CREATING NEW TRANSACTION ID
+    // ─────────────────────────────────────────────────────────────────────────
+    const kycRecord = await this.prisma.kycVerificationStatus.findUnique({
+      where: { customerId: customer.id },
+    });
+
+    const existingTxId = customer.digilockerSessionId || kycRecord?.aadhaarTransactionId;
+    const forceNew = Boolean(body?.forceNew);
+
+    if (existingTxId && !forceNew) {
+      // First: Check if provider status has turned into VERIFIED while pending
+      try {
+        const providerDetails = await this.digitapService.getDigitapDigilockerDetails(existingTxId);
+        if (providerDetails) {
+          const rawStatus = providerDetails?.status || providerDetails?.model?.status || providerDetails?.code || '';
+          const normalizedStatus = String(rawStatus).trim().toUpperCase();
+          if (['S', 'SUCCESS', 'SUCCESSFUL', 'VERIFIED', 'COMPLETED', '200'].includes(normalizedStatus)) {
+            await this.processAndPersistVerifiedDetails(customer.id, providerDetails);
+            const updatedCust = await this.prisma.customer.findUnique({ where: { id: customer.id } });
+            return {
+              success: true,
+              data: {
+                status: 'VERIFIED',
+                aadhaarVerified: true,
+                maskedAadhaar: updatedCust?.maskedAadhaar || customer.maskedAadhaar || null,
+                aadhaarLastFourDigits: updatedCust?.aadhaarLastFourDigits || customer.aadhaarLastFourDigits || null,
+                verifiedAt: new Date(),
+                message: 'Aadhaar KYC verified successfully.',
+              },
+            };
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Check provider status on initiate retry failed: ${err?.message}`);
+      }
+
+      // Second: If active attempt exists created within 15 minutes, reuse the active session
+      let storedRequestData: any = null;
+      if (kycRecord?.aadhaarApiRequest) {
+        try {
+          storedRequestData = JSON.parse(kycRecord.aadhaarApiRequest);
+        } catch (e) {
+          storedRequestData = null;
+        }
+      }
+
+      const consentTime = customer.digilockerConsentAt ? new Date(customer.digilockerConsentAt).getTime() : (kycRecord?.updatedAt ? new Date(kycRecord.updatedAt).getTime() : 0);
+      const isWithin15Mins = (Date.now() - consentTime) < (15 * 60 * 1000);
+      const storedUrl = storedRequestData?.verificationUrl || storedRequestData?.url || storedRequestData?.kycUrl;
+      const storedRef = customer.digilockerReference || kycRecord?.aadhaarUniqueId || storedRequestData?.attemptReference;
+
+      if (isWithin15Mins && storedUrl && existingTxId && storedRef) {
+        this.logger.log(
+          `Reusing existing active DigiLocker KYC session for customer ${customer.customerCode} (TxID: ${existingTxId})`,
+        );
+
+        return {
+          success: true,
+          data: {
+            status: 'INITIATED',
+            verificationUrl: storedUrl,
+            transactionId: existingTxId,
+            attemptReference: storedRef,
+            customerCode: customer.customerCode,
+            reused: true,
+            pollAfterSeconds: 5,
+            expiresAt: new Date(consentTime + 15 * 60 * 1000).toISOString(),
+          },
+        };
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GENERATE FRESH ATTEMPT (If no active attempt or expired/forceNew)
+    // ─────────────────────────────────────────────────────────────────────────
     const attemptReference = `DLK_CUS-${customer.customerCode}_${Date.now()}`;
 
     // Call DigiLocker provider URL generation
@@ -86,6 +161,14 @@ export class CustomerAadhaarKycService {
         'http://localhost:5173/customer/digilocker/callback',
     });
 
+    const verificationUrl = response.url || response.kycUrl;
+    const storedPayload = JSON.stringify({
+      verificationUrl,
+      transactionId: response.transactionId,
+      attemptReference,
+      createdAt: Date.now(),
+    });
+
     // Persist attempt reference and transaction ID in KycVerificationStatus (upsert for idempotency)
     await this.prisma.kycVerificationStatus.upsert({
       where: { customerId: customer.id },
@@ -94,11 +177,13 @@ export class CustomerAadhaarKycService {
         aadhaarStatus: 'INITIATED',
         aadhaarUniqueId: attemptReference,
         aadhaarTransactionId: response.transactionId || null,
+        aadhaarApiRequest: storedPayload,
       },
       update: {
         aadhaarStatus: 'INITIATED',
         aadhaarUniqueId: attemptReference,
         aadhaarTransactionId: response.transactionId || null,
+        aadhaarApiRequest: storedPayload,
       },
     });
 
@@ -122,7 +207,7 @@ export class CustomerAadhaarKycService {
       success: true,
       data: {
         status: 'INITIATED',
-        verificationUrl: response.url || response.kycUrl,
+        verificationUrl,
         transactionId: response.transactionId,
         attemptReference,
         customerCode: customer.customerCode,

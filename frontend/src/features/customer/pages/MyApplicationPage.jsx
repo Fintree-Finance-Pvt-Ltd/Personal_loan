@@ -58,7 +58,7 @@ import {
 } from '../customerApi';
 import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi';
 import { authApi } from '../../auth/authApi';
-
+import { AccountAggregatorStep } from '../components/AccountAggregatorStep';
 
 const FLOW_STEPS = [
   {
@@ -76,6 +76,10 @@ const FLOW_STEPS = [
   {
     id: 'aadhaar_kyc',
     label: 'Aadhaar KYC',
+  },
+  {
+    id: 'account_aggregator',
+    label: 'Bank Account',
   },
   {
     id: 'submit_application',
@@ -331,6 +335,8 @@ function deriveCustomerWorkflow(customer) {
     ['VERIFIED', 'COMPLETED', 'SUCCESS'].includes(aadhaarKycStatus)
   );
 
+  const aaCompleted = Boolean(customer.journey?.aaCompleted || customer.journey?.aaStatus === 'SUCCESS');
+
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
     currentStep = 'basic_details';
@@ -344,6 +350,8 @@ function deriveCustomerWorkflow(customer) {
     currentStep = 'profile_details';
   } else if (!aadhaarKycCompleted) {
     currentStep = 'aadhaar_kyc';
+  } else if (!aaCompleted) {
+    currentStep = 'account_aggregator';
   } else {
     currentStep = 'submit_application';
   }
@@ -360,6 +368,8 @@ function deriveCustomerWorkflow(customer) {
     PROFILE_DETAILS: 'profile_details',
     AADHAAR_KYC: 'aadhaar_kyc',
     ADDRESS_DETAILS: 'aadhaar_kyc',
+    ACCOUNT_AGGREGATOR: 'account_aggregator',
+    BANK_STATEMENT: 'account_aggregator',
     SUBMIT_APPLICATION: 'submit_application',
     LENDER_CREATE_PROCESSING: 'integration_processing',
     LENDER_UPDATE_PROCESSING: 'integration_processing',
@@ -380,6 +390,7 @@ function deriveCustomerWorkflow(customer) {
     profileDetailsCompleted,
     aadhaarKycCompleted,
     aadhaarKycStatus,
+    aaCompleted,
     eligibilityCompleted,
     eligibilityPassed,
     assessmentFeePaid,
@@ -1927,6 +1938,16 @@ export default function MyApplicationPage() {
         />
       )}
 
+      {currentStep === 'account_aggregator' && (
+        <AccountAggregatorStep
+          lan={customer?.journey?.platformLan || customer?.journey?.applicationReference || customer?.latestApplicationReference || customer?.lan || applicationNumber}
+          onComplete={() => {
+            fetchCustomer();
+          }}
+          isCompleted={Boolean(workflow?.aaCompleted)}
+        />
+      )}
+
       {currentStep === 'submit_application' && (
         <SubmitApplicationStep
           form={form}
@@ -2387,7 +2408,8 @@ function ApplicationProgress({ currentStep, workflow }) {
     assessment_fee: 1,
     profile_details: 2,
     aadhaar_kyc: 3,
-    submit_application: 4,
+    account_aggregator: 4,
+    submit_application: 5,
   };
   const currentStepIndex = stepIndices[currentStep] ?? 0;
   const progressPercentage =
@@ -2482,6 +2504,8 @@ function ApplicationProgress({ currentStep, workflow }) {
               isCompleted = Boolean(workflow?.profileDetailsCompleted);
             } else if (step.id === 'aadhaar_kyc') {
               isCompleted = Boolean(workflow?.aadhaarKycCompleted);
+            } else if (step.id === 'account_aggregator') {
+              isCompleted = Boolean(workflow?.aaCompleted);
             } else if (step.id === 'submit_application') {
               isCompleted = Boolean(workflow?.applicationSubmitted);
             }

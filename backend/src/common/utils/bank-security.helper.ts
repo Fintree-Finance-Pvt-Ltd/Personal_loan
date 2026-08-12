@@ -67,3 +67,32 @@ export function maskIfscForAudit(ifsc: string): string {
   if (clean.length < 4) return 'XXXX';
   return `${clean.slice(0, 4)}XXXX${clean.slice(-2)}`;
 }
+
+export function encryptPayload(payload: any): string {
+  const str = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  if (!str) return '';
+  const iv = randomBytes(12);
+  const cipher = createCipheriv(ALGORITHM, getEncryptionKey(), iv);
+  let encrypted = cipher.update(str, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  const ivHex = iv.toString('hex');
+  return `${ivHex}:${authTag}:${encrypted}`;
+}
+
+export function decryptPayload(encryptedString: string): string {
+  if (!encryptedString) return '';
+  const parts = String(encryptedString || '').split(':');
+  if (parts.length !== 3) {
+    throw new Error('Invalid encrypted payload format.');
+  }
+  const [ivHex, authTagHex, encryptedHex] = parts;
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const decipher = createDecipheriv(ALGORITHM, getEncryptionKey(), iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+

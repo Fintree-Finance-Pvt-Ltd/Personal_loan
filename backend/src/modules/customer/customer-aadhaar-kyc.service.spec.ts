@@ -32,6 +32,7 @@ describe('CustomerAadhaarKycService', () => {
         update: jest.fn(),
       },
       kycVerificationStatus: {
+        findUnique: jest.fn(),
         upsert: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
@@ -105,6 +106,33 @@ describe('CustomerAadhaarKycService', () => {
     expect(result.data.status).toBe('INITIATED');
     expect(result.data.transactionId).toBe('TXN12345');
     expect(digitapService.generateDigitapDigilockerUrl).toHaveBeenCalled();
+  });
+
+  it('should reuse existing active DigiLocker session without generating a new transaction ID', async () => {
+    const mockCustomerWithSession = {
+      ...mockCustomer,
+      digilockerSessionId: 'EXISTING_TXN_999',
+      digilockerReference: 'DLK_CUS-FFPL000001_12345',
+      digilockerConsentAt: new Date(),
+    };
+    prisma.customer.findUnique.mockResolvedValue(mockCustomerWithSession);
+    prisma.kycVerificationStatus.findUnique.mockResolvedValue({
+      aadhaarTransactionId: 'EXISTING_TXN_999',
+      aadhaarUniqueId: 'DLK_CUS-FFPL000001_12345',
+      aadhaarApiRequest: JSON.stringify({
+        verificationUrl: 'https://digitap.ai/kyc/existing',
+        transactionId: 'EXISTING_TXN_999',
+        attemptReference: 'DLK_CUS-FFPL000001_12345',
+      }),
+    });
+    digitapService.getDigitapDigilockerDetails.mockResolvedValue(null);
+
+    const result = await service.initiate({ customerId: 1n }, { consentGiven: true });
+    expect(result.success).toBe(true);
+    expect(result.data.status).toBe('INITIATED');
+    expect(result.data.transactionId).toBe('EXISTING_TXN_999');
+    expect(result.data.reused).toBe(true);
+    expect(digitapService.generateDigitapDigilockerUrl).not.toHaveBeenCalled();
   });
 
   it('should throw NotFoundException when NotFoundException is expected', async () => {

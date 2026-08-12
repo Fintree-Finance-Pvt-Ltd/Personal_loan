@@ -348,9 +348,25 @@ export class LoanService {
     }
 
     const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
+    const interestRate = loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18;
+    const tenureDays = loan.acceptedTenureDays || 30;
     const processingFee = loan.acceptedProcessingFee ? Number(loan.acceptedProcessingFee) : Math.round(approvedAmount * 0.02);
-    const netDisbursalAmount = approvedAmount - processingFee;
-    const totalRepaymentAmount = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
+    const processingFeeGst = Math.round(processingFee * 0.18);
+    const netDisbursalAmount = approvedAmount - processingFee - processingFeeGst;
+
+    let totalInterest = 0;
+    if (loan.acceptedTotalRepayment && Number(loan.acceptedTotalRepayment) > approvedAmount) {
+      totalInterest = Number(loan.acceptedTotalRepayment) - approvedAmount;
+    } else {
+      totalInterest = Math.round((approvedAmount * interestRate * tenureDays) / 36500);
+    }
+
+    const totalRepaymentAmount = approvedAmount + totalInterest;
+
+    // APR Calculation: ((Total Interest + Processing Fee + GST) / Loan Amount) * (365 / Tenure Days) * 100
+    const totalCharges = totalInterest + processingFee + processingFeeGst;
+    const apr = approvedAmount > 0 ? Number(((totalCharges / approvedAmount) * (365 / tenureDays) * 100).toFixed(2)) : interestRate;
+
     let dueDate = null;
     if (loan.acceptedTenureDays) {
       const d = new Date();
@@ -361,13 +377,24 @@ export class LoanService {
     const kfs = {
       lan: loan.lan,
       loanAmount: approvedAmount,
-      tenureDays: loan.acceptedTenureDays,
+      tenureDays,
+      interestRate,
+      totalInterest,
+      processingFee,
+      processingFeeGst,
+      totalCharges,
       netDisbursalAmount,
       totalRepaymentAmount,
+      apr,
       dueDate,
       kfsAccepted: loan.kfsAccepted,
       kfsAcceptedAt: loan.kfsAcceptedAt,
       documentUrl: loan.kfsDocumentId || null,
+      borrowerName: loan.customer?.fullName || null,
+      borrowerPan: loan.customer?.panNumber || null,
+      bankName: loan.bankName || null,
+      accountMasked: loan.bankAccountMasked || null,
+      ifsc: loan.bankIfsc || null,
     };
 
     return {

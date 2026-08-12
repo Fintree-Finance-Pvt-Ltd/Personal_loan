@@ -20,7 +20,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly sessions: SessionsService,
     private readonly config: ConfigService,
-  ) {}
+  ) { }
 
   @Public()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
