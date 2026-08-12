@@ -49,12 +49,6 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
     }
   }, [lan, onComplete]);
 
-  const startPolling = useCallback(() => {
-    // Continuous status polling interval disabled - status updates are handled via Webhooks
-    setIsPolling(false);
-    fetchStatus();
-  }, [fetchStatus]);
-
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -63,12 +57,40 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
     setIsPolling(false);
   }, []);
 
+  const startPolling = useCallback(() => {
+    if (pollTimerRef.current) return;
+    setIsPolling(true);
+    startTimeRef.current = Date.now();
+
+    fetchStatus();
+
+    // Poll local DB status while bank authorization is in progress
+    pollTimerRef.current = setInterval(() => {
+      if (startTimeRef.current && Date.now() - startTimeRef.current > 10 * 60 * 1000) {
+        stopPolling();
+        return;
+      }
+      fetchStatus();
+    }, 4000);
+  }, [fetchStatus, stopPolling]);
+
   useEffect(() => {
     fetchStatus();
     return () => {
       stopPolling();
     };
   }, [fetchStatus, stopPolling]);
+
+  // Window focus listener to re-check status when user returns from consent popup tab
+  useEffect(() => {
+    const handleFocus = () => {
+      if (['INITIATED', 'SDK_OPENED', 'CONSENT_PENDING', 'CONSENT_APPROVED', 'DATA_PENDING'].includes(status)) {
+        fetchStatus();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [status, fetchStatus]);
 
   const openSdkPopup = (url) => {
     setPopupBlocked(false);
@@ -91,6 +113,14 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
       } catch (e) {
         // ignore focus error if cross-origin
       }
+
+      // Check for popup closure to instantly fetch updated webhook status
+      const popupClosedCheck = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(popupClosedCheck);
+          fetchStatus();
+        }
+      }, 1000);
     }
   };
 
@@ -255,6 +285,14 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
                     New Tab
                   </a>
                 )}
+
+                <button
+                  onClick={fetchStatus}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                  title="Check current bank connection status"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Check Status
+                </button>
               </div>
             </div>
           </div>
