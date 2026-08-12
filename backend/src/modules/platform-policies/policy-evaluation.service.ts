@@ -30,10 +30,10 @@ export class PolicyEvaluationService {
     evaluationDateInput?: string
   ): PolicyEvaluationResult {
     const activeRules = rules.filter(r => r.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
-    
+
     // Use date-only for evaluation date to ensure stability across timezones
-    const evalDateStr = evaluationDateInput 
-      ? new Date(evaluationDateInput).toISOString().split('T')[0] 
+    const evalDateStr = evaluationDateInput
+      ? new Date(evaluationDateInput).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0];
 
     const ruleResults: RuleEvaluationResult[] = [];
@@ -41,7 +41,7 @@ export class PolicyEvaluationService {
 
     for (const rule of activeRules) {
       const inputVal = inputs[rule.inputKey];
-      
+
       // Calculate age if required
       let actualInputVal = inputVal;
       if (rule.ruleCode === 'MINIMUM_AGE' || rule.ruleCode === 'MAXIMUM_AGE') {
@@ -73,9 +73,9 @@ export class PolicyEvaluationService {
       }
 
       const passed = this.evaluateRuleCondition(rule, actualInputVal);
-      
+
       let outcome = passed ? PolicyDecisionOutcome.PASS : rule.failureOutcome;
-      
+
       if (outcome === 'REFER') {
         throw new Error(`PLATFORM_POLICY_REFER_NOT_ALLOWED: Rule ${rule.ruleCode} returned REFER which is no longer supported.`);
       }
@@ -114,7 +114,7 @@ export class PolicyEvaluationService {
 
   private evaluateRuleCondition(rule: PlatformPolicyRule, actualInput: any): boolean {
     const { operator, expectedValue, valueType } = rule;
-    
+
     // Type casting based on valueType for accurate comparison
     let parsedInput: any = actualInput;
     let parsedExpected: any = expectedValue;
@@ -133,7 +133,7 @@ export class PolicyEvaluationService {
       }
     } catch (err) {
       this.logger.warn(`Failed to parse inputs for rule ${rule.ruleCode}`);
-      return false; 
+      return false;
     }
 
     switch (operator) {
@@ -190,14 +190,14 @@ export class PolicyEvaluationService {
     // Both inputs expected in YYYY-MM-DD or parseable format
     const dob = new Date(dobStr);
     const evalDate = new Date(evalDateStr);
-    
+
     let age = evalDate.getUTCFullYear() - dob.getUTCFullYear();
-    
+
     const m = evalDate.getUTCMonth() - dob.getUTCMonth();
     if (m < 0 || (m === 0 && evalDate.getUTCDate() < dob.getUTCDate())) {
       age--;
     }
-    
+
     return age;
   }
 }

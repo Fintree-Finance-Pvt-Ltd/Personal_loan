@@ -50,20 +50,9 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
   }, [lan, onComplete]);
 
   const startPolling = useCallback(() => {
-    if (pollTimerRef.current) return;
-    setIsPolling(true);
-    startTimeRef.current = Date.now();
-
+    // Continuous status polling interval disabled - status updates are handled via Webhooks
+    setIsPolling(false);
     fetchStatus();
-
-    pollTimerRef.current = setInterval(() => {
-      // 10-minute timeout check
-      if (startTimeRef.current && Date.now() - startTimeRef.current > 10 * 60 * 1000) {
-        stopPolling();
-        return;
-      }
-      fetchStatus();
-    }, 5000);
   }, [fetchStatus]);
 
   const stopPolling = useCallback(() => {

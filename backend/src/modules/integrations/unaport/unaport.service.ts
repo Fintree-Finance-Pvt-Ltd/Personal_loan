@@ -120,6 +120,7 @@ export class UnaportService {
     customerId: bigint,
     lan: string,
   ): Promise<{ trackingId: string; status: string; sdkUrl: string }> {
+    console.log(`[AA SERVICE] [CALL] initiateAccountAggregator - customerId: ${customerId}, lan: ${lan}`);
     const startTime = Date.now();
     const cleanLan = String(lan || '').trim();
 
@@ -255,11 +256,13 @@ export class UnaportService {
       durationMs: Date.now() - startTime,
     });
 
-    return {
+    const result = {
       trackingId,
       status: 'INITIATED',
       sdkUrl,
     };
+    console.log(`[AA SERVICE] [RESPONSE] initiateAccountAggregator - result:`, JSON.stringify(result, null, 2));
+    return result;
   }
 
   /**
@@ -275,6 +278,7 @@ export class UnaportService {
     completed: boolean;
     failureReason: string | null;
   }> {
+    console.log(`[AA SERVICE] [CALL] getStatus - customerId: ${customerId}, lan: ${lan}`);
     const cleanLan = String(lan || '').trim();
     await this.validateCustomerLanOwnership(customerId, cleanLan);
 
@@ -318,13 +322,15 @@ export class UnaportService {
       }
     }
 
-    return {
+    const statusResult = {
       status: request.status,
       consentStatus: request.consentStatus,
       dataStatus: request.dataStatus,
       completed: request.status === 'SUCCESS',
       failureReason: request.failureReason,
     };
+    console.log(`[AA SERVICE] [RESPONSE] getStatus - result:`, JSON.stringify(statusResult, null, 2));
+    return statusResult;
   }
 
   /**
@@ -340,6 +346,7 @@ export class UnaportService {
     completed: boolean;
     failureReason: string | null;
   }> {
+    console.log(`[AA SERVICE] [CALL] refreshStatus - customerId: ${customerId}, lan: ${lan}`);
     const cleanLan = String(lan || '').trim();
     await this.validateCustomerLanOwnership(customerId, cleanLan);
 
@@ -410,7 +417,9 @@ export class UnaportService {
       }
     }
 
-    return this.getStatus(customerId, cleanLan);
+    const refreshResult = await this.getStatus(customerId, cleanLan);
+    console.log(`[AA SERVICE] [RESPONSE] refreshStatus - result:`, JSON.stringify(refreshResult, null, 2));
+    return refreshResult;
   }
 
   /**
@@ -419,6 +428,7 @@ export class UnaportService {
   async handleConsentNotification(
     payload: UnaportConsentNotificationPayload,
   ): Promise<{ success: boolean; message: string }> {
+    console.log(`[AA SERVICE] [CALL] handleConsentNotification - payload:`, JSON.stringify(payload, null, 2));
     const startTime = Date.now();
     let rawPayload: any = payload;
     if (Array.isArray(rawPayload) && rawPayload.length > 0) {
@@ -442,7 +452,7 @@ export class UnaportService {
     const rawConsentStatus = String(notif?.consentStatus || rawPayload?.consentStatus || rawPayload?.consent_status || '').toUpperCase();
 
     if (!trackingId && !consentHandle && !consentId) {
-      this.forwardToN8nConsentWebhook(payload).catch(() => {});
+      this.forwardToN8nConsentWebhook(payload).catch(() => { });
       throw new BadRequestException('Notification payload lacks identifying reference.');
     }
 
@@ -528,7 +538,9 @@ export class UnaportService {
       durationMs: Date.now() - startTime,
     });
 
-    return { success: true, message: 'Consent notification processed successfully.' };
+    const response = { success: true, message: 'Consent notification processed successfully.' };
+    console.log(`[AA SERVICE] [RESPONSE] handleConsentNotification - result:`, JSON.stringify(response, null, 2));
+    return response;
   }
 
   /**
@@ -537,6 +549,7 @@ export class UnaportService {
   async handleDataNotification(
     payload: UnaportDataNotificationPayload,
   ): Promise<{ success: boolean; message: string }> {
+    console.log(`[AA SERVICE] [CALL] handleDataNotification - payload:`, JSON.stringify(payload, null, 2));
     const startTime = Date.now();
     let rawPayload: any = payload;
     if (Array.isArray(rawPayload) && rawPayload.length > 0) {
@@ -561,7 +574,7 @@ export class UnaportService {
     const sessionStatus = String(notif?.sessionStatus || rawPayload?.sessionStatus || rawPayload?.session_status || '').toUpperCase();
 
     if (!sessionId && !trackingId && !consentId) {
-      this.forwardToN8nDataWebhook(payload).catch(() => {});
+      this.forwardToN8nDataWebhook(payload).catch(() => { });
       throw new BadRequestException('Data notification payload missing session/tracking ID.');
     }
 
@@ -636,13 +649,16 @@ export class UnaportService {
       durationMs: Date.now() - startTime,
     });
 
-    return { success: true, message: 'Data notification processed successfully.' };
+    const response = { success: true, message: 'Data notification processed successfully.' };
+    console.log(`[AA SERVICE] [RESPONSE] handleDataNotification - result:`, JSON.stringify(response, null, 2));
+    return response;
   }
 
   /**
    * Fetch bank data by sessionId from Unaport FIU Fetch Data API.
    */
   async fetchDataBySession(sessionId: string): Promise<any> {
+    console.log(`[AA SERVICE] [CALL] fetchDataBySession - sessionId: ${sessionId}`);
     const startTime = Date.now();
     const cleanSessionId = String(sessionId || '').trim();
 
@@ -674,13 +690,14 @@ export class UnaportService {
     const isProd = this.configService.get<string>('UNAPORT_ENVIRONMENT') === 'production';
     const defaultProdFetchBase = 'https://api-backend.premium.unaport.com/backend-v2/api/v2';
     const fetchBaseUrl = envFetchBaseUrl || (isProd ? defaultProdFetchBase : (this.configService.get<string>('UNAPORT_BASE_URL') || '').replace(/\/+$/, ''));
-    
+
     let primaryUrl = `${fetchBaseUrl}/FIU/FifetchDataBySessionId/${cleanSessionId}`;
     const baseUrl = (this.configService.get<string>('UNAPORT_BASE_URL') || '').replace(/\/+$/, '');
     let fallbackUrl = `${baseUrl}/FIU/FifetchDataBySessionId/${cleanSessionId}`;
 
     let fetchResponse: UnaportFetchDataResponse;
     try {
+      console.log(`[AA SERVICE] [CALL] Unaport Fetch Data API endpoint: ${primaryUrl}`);
       this.logger.log({ event: 'unaport_fetch_data_attempt', url: primaryUrl, sessionId: cleanSessionId });
       try {
         const response = await this.httpClient.get<UnaportFetchDataResponse>(primaryUrl, {
@@ -689,8 +706,10 @@ export class UnaportService {
           },
         });
         fetchResponse = response.data;
+        console.log(`[AA SERVICE] [RESPONSE] Unaport Fetch Data API primary response:`, JSON.stringify(fetchResponse, null, 2));
       } catch (primaryErr: any) {
         if (primaryUrl !== fallbackUrl) {
+          console.log(`[AA SERVICE] [CALL] Unaport Fetch Data API fallback endpoint: ${fallbackUrl}`);
           this.logger.warn({
             event: 'unaport_fetch_data_primary_failed_trying_fallback',
             primaryUrl,
@@ -703,6 +722,7 @@ export class UnaportService {
             },
           });
           fetchResponse = response.data;
+          console.log(`[AA SERVICE] [RESPONSE] Unaport Fetch Data API fallback response:`, JSON.stringify(fetchResponse, null, 2));
         } else {
           throw primaryErr;
         }
@@ -731,8 +751,37 @@ export class UnaportService {
     // Encrypt raw provider response at rest
     const encryptedRawResponse = encryptPayload(fetchResponse);
 
-    // Normalize and store account data & transactions inside a DB transaction
-    const accountsData = fetchResponse?.data || [];
+    // Robust account data array normalization
+    let rawAccounts: any = fetchResponse;
+    if (rawAccounts && typeof rawAccounts === 'object' && 'data' in rawAccounts && rawAccounts.data !== null) {
+      rawAccounts = rawAccounts.data;
+    }
+
+    let accountsData: any[] = [];
+    if (Array.isArray(rawAccounts)) {
+      accountsData = rawAccounts;
+    } else if (rawAccounts && typeof rawAccounts === 'object') {
+      if (Array.isArray(rawAccounts.accounts)) {
+        accountsData = rawAccounts.accounts;
+      } else if (Array.isArray(rawAccounts.account)) {
+        accountsData = rawAccounts.account;
+      } else if (Array.isArray(rawAccounts.Accounts)) {
+        accountsData = rawAccounts.Accounts;
+      } else if (Array.isArray(rawAccounts.Account)) {
+        accountsData = rawAccounts.Account;
+      } else if (Array.isArray(rawAccounts.data)) {
+        accountsData = rawAccounts.data;
+      } else if (rawAccounts.FIStatusResponse?.Accounts && Array.isArray(rawAccounts.FIStatusResponse.Accounts)) {
+        accountsData = rawAccounts.FIStatusResponse.Accounts;
+      } else if (rawAccounts.fipId || rawAccounts.maskedAccNo || rawAccounts.accNumber || rawAccounts.summary || rawAccounts.transactions) {
+        // Single account object
+        accountsData = [rawAccounts];
+      } else {
+        // Fallback to object values if it's a map of accounts
+        accountsData = Object.values(rawAccounts).filter((item: any) => item && typeof item === 'object');
+      }
+    }
+
     const now = new Date();
 
     await this.prisma.$transaction(async (tx: any) => {
@@ -774,12 +823,21 @@ export class UnaportService {
           },
         });
 
-        // Normalize transactions
+        // Normalize transactions safely
         let txnsList: any[] = [];
-        if (Array.isArray(acc.transactions)) {
-          txnsList = acc.transactions;
-        } else if (acc.transactions && Array.isArray((acc.transactions as any).transaction)) {
-          txnsList = (acc.transactions as any).transaction;
+        const rawTxns = acc.transactions || acc.Transaction || acc.Transactions || acc.transaction;
+        if (Array.isArray(rawTxns)) {
+          txnsList = rawTxns;
+        } else if (rawTxns && typeof rawTxns === 'object') {
+          if (Array.isArray(rawTxns.transaction)) {
+            txnsList = rawTxns.transaction;
+          } else if (Array.isArray(rawTxns.Transaction)) {
+            txnsList = rawTxns.Transaction;
+          } else if (Array.isArray(rawTxns.transactions)) {
+            txnsList = rawTxns.transactions;
+          } else {
+            txnsList = [rawTxns];
+          }
         }
 
         for (const txn of txnsList) {
@@ -855,10 +913,12 @@ export class UnaportService {
       this.logger.warn({ event: 'n8n_data_fetch_forward_error', error: err?.message });
     });
 
-    return {
+    const fetchResult = {
       success: true,
       message: 'Bank statement data fetched and stored successfully.',
     };
+    console.log(`[AA SERVICE] [RESPONSE] fetchDataBySession - result:`, JSON.stringify(fetchResult, null, 2));
+    return fetchResult;
   }
 
   private async forwardToN8nConsentWebhook(payload: any, request?: any) {
