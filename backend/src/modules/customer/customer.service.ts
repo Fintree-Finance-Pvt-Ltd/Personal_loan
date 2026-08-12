@@ -1093,7 +1093,7 @@ export class CustomerService {
     if (application.platformDecisionOutcome !== 'PASS') return application.status === 'PLATFORM_REJECTED' ? 'PLATFORM_REJECTED' : 'BASIC_DETAILS';
     if (!payment) return 'ASSESSMENT_FEE';
     if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';
-    if (updateReadiness.reasons.includes('DIGILOCKER_KYC_NOT_VERIFIED')) return 'AADHAAR_KYC';
+    if (updateReadiness.reasons.some((reason) => ['DIGILOCKER_KYC_NOT_VERIFIED', 'AADHAAR_VERIFIED_NAME_MISSING'].includes(reason))) return 'AADHAAR_KYC';
     if (updateReadiness.reasons.some((reason) => ['PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'SAME_ADDRESS_DECISION_MISSING'].includes(reason))) return 'ADDRESS_DETAILS';
     // After Aadhaar KYC & Address confirmation, prompt for Account Aggregator bank statement
     if (!aaCompleted) return 'ACCOUNT_AGGREGATOR';

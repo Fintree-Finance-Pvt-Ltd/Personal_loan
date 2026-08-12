@@ -5,6 +5,10 @@ export const creditReviewApi = {
     const res = await api.get('/admin/credit-review');
     return res.data.data;
   },
+  getApplicationDetails: async (applicationId) => {
+    const res = await api.get(`/admin/applications/${applicationId}`);
+    return res.data.data;
+  },
   approve: async (applicationId) => {
     const res = await api.post(`/admin/credit-review/${applicationId}/approve`);
     return res.data.data;

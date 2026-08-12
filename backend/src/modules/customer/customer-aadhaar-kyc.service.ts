@@ -71,25 +71,22 @@ export class CustomerAadhaarKycService {
       };
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // CHECK EXISTING ACTIVE ATTEMPT BEFORE CREATING NEW TRANSACTION ID
-    // ─────────────────────────────────────────────────────────────────────────
-    const kycRecord = await this.prisma.kycVerificationStatus.findUnique({
-      where: { customerId: customer.id },
-    });
-
-    const existingTxId = customer.digilockerSessionId || kycRecord?.aadhaarTransactionId;
-    const forceNew = Boolean(body?.forceNew);
-
-    if (existingTxId && !forceNew) {
-      // First: Check if provider status has turned into VERIFIED while pending
+    // Reuse an in-flight session instead of opening a fresh DigiTap link on every click —
+    // both when the customer double-clicks the button and when they closed the previous
+    // window without finishing and come back later within the same validity window.
+    const initiationTtlMs = 15 * 60 * 1000;
+    const existingTxId = customer.digilockerSessionId;
+    if (existingTxId && !body?.forceNew) {
+      // First, check whether the provider already completed verification since the last
+      // time we checked (customer finished DigiLocker but our webhook hasn't landed yet)
+      // — resolve that before falling back to reusing the still-open session.
       try {
         const providerDetails = await this.digitapService.getDigitapDigilockerDetails(existingTxId);
         if (providerDetails) {
           const rawStatus = providerDetails?.status || providerDetails?.model?.status || providerDetails?.code || '';
           const normalizedStatus = String(rawStatus).trim().toUpperCase();
           if (['S', 'SUCCESS', 'SUCCESSFUL', 'VERIFIED', 'COMPLETED', '200'].includes(normalizedStatus)) {
-            await this.processAndPersistVerifiedDetails(customer.id, providerDetails);
+            await this.processAndPersistVerifiedDetails(customer.id, providerDetails, customer.fullName);
             const updatedCust = await this.prisma.customer.findUnique({ where: { id: customer.id } });
             return {
               success: true,
@@ -108,45 +105,31 @@ export class CustomerAadhaarKycService {
         this.logger.warn(`Check provider status on initiate retry failed: ${err?.message}`);
       }
 
-      // Second: If active attempt exists created within 15 minutes, reuse the active session
-      let storedRequestData: any = null;
-      if (kycRecord?.aadhaarApiRequest) {
-        try {
-          storedRequestData = JSON.parse(kycRecord.aadhaarApiRequest);
-        } catch (e) {
-          storedRequestData = null;
+      if (
+        customer.digilockerStatus === 'INITIATED' &&
+        customer.digilockerConsentAt &&
+        Date.now() - customer.digilockerConsentAt.getTime() < initiationTtlMs
+      ) {
+        const stored = this.readStoredInitiation(customer.digilockerRawResponse);
+        if (stored?.verificationUrl) {
+          return {
+            success: true,
+            data: {
+              status: 'INITIATED',
+              verificationUrl: stored.verificationUrl,
+              transactionId: stored.transactionId || customer.digilockerSessionId,
+              attemptReference: stored.attemptReference || customer.digilockerReference,
+              customerCode: customer.customerCode,
+              pollAfterSeconds: 5,
+              expiresAt: stored.expiresAt,
+              resumed: true,
+            },
+          };
         }
-      }
-
-      const consentTime = customer.digilockerConsentAt ? new Date(customer.digilockerConsentAt).getTime() : (kycRecord?.updatedAt ? new Date(kycRecord.updatedAt).getTime() : 0);
-      const isWithin15Mins = (Date.now() - consentTime) < (15 * 60 * 1000);
-      const storedUrl = storedRequestData?.verificationUrl || storedRequestData?.url || storedRequestData?.kycUrl;
-      const storedRef = customer.digilockerReference || kycRecord?.aadhaarUniqueId || storedRequestData?.attemptReference;
-
-      if (isWithin15Mins && storedUrl && existingTxId && storedRef) {
-        this.logger.log(
-          `Reusing existing active DigiLocker KYC session for customer ${customer.customerCode} (TxID: ${existingTxId})`,
-        );
-
-        return {
-          success: true,
-          data: {
-            status: 'INITIATED',
-            verificationUrl: storedUrl,
-            transactionId: existingTxId,
-            attemptReference: storedRef,
-            customerCode: customer.customerCode,
-            reused: true,
-            pollAfterSeconds: 5,
-            expiresAt: new Date(consentTime + 15 * 60 * 1000).toISOString(),
-          },
-        };
       }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // GENERATE FRESH ATTEMPT (If no active attempt or expired/forceNew)
-    // ─────────────────────────────────────────────────────────────────────────
+    // Create unique attempt reference using customerCode — starts with DLK_CUS- for LMS forwarder routing
     const attemptReference = `DLK_CUS-${customer.customerCode}_${Date.now()}`;
 
     // Call DigiLocker provider URL generation
@@ -162,12 +145,7 @@ export class CustomerAadhaarKycService {
     });
 
     const verificationUrl = response.url || response.kycUrl;
-    const storedPayload = JSON.stringify({
-      verificationUrl,
-      transactionId: response.transactionId,
-      attemptReference,
-      createdAt: Date.now(),
-    });
+    const expiresAt = new Date(Date.now() + initiationTtlMs).toISOString();
 
     // Persist attempt reference and transaction ID in KycVerificationStatus (upsert for idempotency)
     await this.prisma.kycVerificationStatus.upsert({
@@ -177,13 +155,11 @@ export class CustomerAadhaarKycService {
         aadhaarStatus: 'INITIATED',
         aadhaarUniqueId: attemptReference,
         aadhaarTransactionId: response.transactionId || null,
-        aadhaarApiRequest: storedPayload,
       },
       update: {
         aadhaarStatus: 'INITIATED',
         aadhaarUniqueId: attemptReference,
         aadhaarTransactionId: response.transactionId || null,
-        aadhaarApiRequest: storedPayload,
       },
     });
 
@@ -196,6 +172,7 @@ export class CustomerAadhaarKycService {
         digilockerSessionId: response.transactionId,
         digilockerReference: attemptReference,
         digilockerConsentAt: new Date(),
+        digilockerRawResponse: JSON.stringify({ verificationUrl, transactionId: response.transactionId, attemptReference, expiresAt }),
       },
     });
 
@@ -212,7 +189,7 @@ export class CustomerAadhaarKycService {
         attemptReference,
         customerCode: customer.customerCode,
         pollAfterSeconds: 5,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        expiresAt,
       },
     };
   }
@@ -347,7 +324,7 @@ export class CustomerAadhaarKycService {
     try {
       const providerDetails = await this.digitapService.getDigitapDigilockerDetails(transactionId);
       if (providerDetails) {
-        await this.processAndPersistVerifiedDetails(customer.id, providerDetails);
+        await this.processAndPersistVerifiedDetails(customer.id, providerDetails, customer.fullName);
       }
     } catch (error: any) {
       this.logger.warn(
@@ -518,7 +495,11 @@ export class CustomerAadhaarKycService {
         ? String(maskedAadhaar).replace(/\D/g, '').slice(-4) || null
         : null;
 
-      const fullName: string | null = (data.name as string | undefined) || null;
+      // Fall back to the customer's already-PAN-verified name when DigiTap's response
+      // doesn't include one — otherwise ApplicationKycSnapshot.verifiedName stays null
+      // forever even though verificationStatus is VERIFIED, which permanently stalls
+      // getUpdateReadiness() on AADHAAR_VERIFIED_NAME_MISSING with no way to clear it.
+      const fullName: string | null = (data.name as string | undefined) || customer.fullName || null;
       const genderRaw: string | null = (data.gender as string | undefined) || null;
       const gender: CustomerGender | null = this.mapGender(genderRaw);
 
@@ -771,6 +752,22 @@ export class CustomerAadhaarKycService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * Parses the initiation snapshot stashed in Customer.digilockerRawResponse so an
+   * in-flight session can be resumed instead of always starting a fresh one.
+   */
+  private readStoredInitiation(raw?: string | null): { verificationUrl?: string; transactionId?: string; attemptReference?: string; expiresAt?: string } | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.verificationUrl || !parsed?.expiresAt) return null;
+      if (new Date(parsed.expiresAt).getTime() < Date.now()) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Normalizes provider details and updates Customer record atomically.
    * Used by manual refresh flow.
    */
@@ -887,7 +884,7 @@ export class CustomerAadhaarKycService {
     return Buffer.from(source.replace(/^data:[^;]+;base64,/, ''), 'base64');
   }
 
-  private async processAndPersistVerifiedDetails(customerId: bigint, providerResponse: any) {
+  private async processAndPersistVerifiedDetails(customerId: bigint, providerResponse: any, fallbackName: string | null = null) {
     const model = providerResponse?.model || providerResponse?.data || providerResponse;
     const aadhaarData = model?.aadhaarData || model?.kycData || model?.data || model;
 
@@ -902,9 +899,13 @@ export class CustomerAadhaarKycService {
     const lastFour = maskedAadhaarRaw.replace(/\D/g, '').slice(-4) || 'XXXX';
     const maskedAadhaar = lastFour !== 'XXXX' ? `XXXX-XXXX-${lastFour}` : 'XXXX-XXXX-XXXX';
 
+    // Fall back to the customer's already-PAN-verified name when the provider doesn't
+    // return one — see the identical fallback in handleDigitapWebhook for why this
+    // matters (otherwise the KYC snapshot's verifiedName stays null forever).
     const verifiedName: string | null =
       (aadhaarData?.name as string | undefined) ||
       (model?.name as string | undefined) ||
+      fallbackName ||
       null;
 
     const verifiedDob: string | null =

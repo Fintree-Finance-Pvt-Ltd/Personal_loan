@@ -37,6 +37,7 @@ import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.mod
 import { LenderIntegrationModule } from './modules/lender-integrations/lender-integration.module';
 import { CreditReviewModule } from './modules/credit-review/credit-review.module';
 import { UnaportModule } from './modules/integrations/unaport/unaport.module';
+import { ApplicationsModule } from './modules/applications/applications.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { UnaportModule } from './modules/integrations/unaport/unaport.module';
     LenderIntegrationModule,
     CreditReviewModule,
     UnaportModule,
+    ApplicationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -61,6 +61,12 @@ export const ADMIN_NAVIGATION = [
     group: 'Operations',
     items: [
       {
+        label: 'Applications',
+        shortLabel: 'AP',
+        path: '/admin-master/applications',
+        permission: 'APPLICATION_VIEW_MASKED',
+      },
+      {
         label: 'Credit Review',
         shortLabel: 'CR',
         path: '/admin-master/credit-review',

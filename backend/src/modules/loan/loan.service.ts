@@ -179,7 +179,7 @@ export class LoanService {
     if (loan.disbursalStatus === 'DISBURSED' || loan.status === PlLoanStatus.DISBURSED) {
       return 'DISBURSED';
     }
-    if (loan.disbursalStatus === 'PROCESSING' || loan.status === PlLoanStatus.DISBURSAL_PROCESSING) {
+    if (loan.disbursalStatus === 'DISBURSAL_PROCESSING' || loan.disbursalStatus === 'DISBURSAL_REQUESTED' || loan.status === PlLoanStatus.DISBURSAL_PROCESSING) {
       return 'DISBURSAL_PROCESSING';
     }
     if (
@@ -210,6 +210,22 @@ export class LoanService {
     }
 
     return 'APPROVAL_SUMMARY';
+  }
+
+  /**
+   * Parses the initiation snapshot stashed in PlLoan.digilockerRawResponse so an
+   * in-flight session can be resumed instead of always starting a fresh one.
+   */
+  private readStoredDigilockerInitiation(raw?: string | null): { verificationUrl?: string; kycUrl?: string; transactionId?: string; expiresAt?: string } | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.verificationUrl || !parsed?.expiresAt) return null;
+      if (new Date(parsed.expiresAt).getTime() < Date.now()) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
   }
 
   async getPostApprovalJourney(lan: string, customerId: bigint) {
@@ -758,6 +774,34 @@ export class LoanService {
       return { success: true, message: 'Already verified' };
     }
 
+    // Reuse an in-flight session instead of opening a fresh DigiTap link on every click —
+    // mirrors the same fix applied to the onboarding-stage initiate() in
+    // CustomerAadhaarKycService, for the identical "clicked twice / came back later" bug.
+    const initiationTtlMs = 15 * 60 * 1000;
+    if (
+      loan.digilockerStatus === 'INITIATED' &&
+      loan.digilockerConsentAt &&
+      Date.now() - loan.digilockerConsentAt.getTime() < initiationTtlMs
+    ) {
+      const stored = this.readStoredDigilockerInitiation(loan.digilockerRawResponse);
+      if (stored?.verificationUrl) {
+        return {
+          success: true,
+          data: {
+            lan,
+            transactionId: stored.transactionId || loan.digilockerSessionId,
+            environment: process.env.DIGITAP_ENV || 'UAT',
+            url: stored.verificationUrl,
+            kycUrl: stored.kycUrl || stored.verificationUrl,
+            clientId: process.env.DIGITAP_CLIENT_ID,
+            serviceId: process.env.DIGITAP_DIGILOCKER_SERVICE_ID || '46',
+            status: 'INITIATED',
+            resumed: true,
+          },
+        };
+      }
+    }
+
     const uniqueId = `${lan}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     const response = await this.digitapService.generateDigitapDigilockerUrl({
@@ -768,6 +812,8 @@ export class LoanService {
       lastName: loan.customer?.lastName || undefined,
     });
 
+    const digilockerExpiresAt = new Date(Date.now() + initiationTtlMs).toISOString();
+
     await this.prisma.$transaction(async (tx) => {
       await tx.plLoan.update({
         where: { id: loan.id },
@@ -777,6 +823,7 @@ export class LoanService {
           digilockerReference: uniqueId,
           digilockerConsentAt: new Date(),
           currentStep: 'DIGILOCKER_KYC',
+          digilockerRawResponse: JSON.stringify({ verificationUrl: response.url, kycUrl: response.kycUrl, transactionId: response.transactionId, expiresAt: digilockerExpiresAt }),
         },
       });
 
@@ -895,6 +942,7 @@ export class LoanService {
         loan = await this.prisma.plLoan.findFirst({
           where: { customerId: kycStatus.customerId },
           include: { customer: true, application: true },
+          orderBy: { id: 'desc' },
         });
       }
     }
@@ -2276,6 +2324,12 @@ export class LoanService {
         throw new NotFoundException(`Loan with LAN ${lan} not found.`);
       }
 
+      // Lock row to prevent concurrent webhook replays racing on the already-disbursed
+      // check and the repayment-schedule generation below (same pattern as the mandate
+      // webhook handler) — payloadHash dedup alone doesn't cover two DIFFERENT-looking
+      // deliveries for the same disbursal arriving concurrently.
+      await tx.$queryRaw`SELECT id FROM pl_loans WHERE id = ${loan.id} FOR UPDATE`;
+
       // Check UTR duplicate across other loans
       const utrConflictLoan = await tx.plLoan.findFirst({
         where: {
@@ -2633,6 +2687,37 @@ export class LoanService {
       const remainingAmount = Number(rps.remainingAmount);
       if (remainingAmount <= 0 || rps.paymentStatus === 'PAID') {
         throw new BadRequestException(`Installment #${instNum} is already fully paid.`);
+      }
+
+      // Idempotency guard: a retried/duplicate webhook delivery for the same payment must
+      // not double-count. paymentId carries a DB unique constraint, but callers that don't
+      // supply one (or a referenceNumber) previously fell back to a fresh random ID on every
+      // call, silently defeating that constraint on retry. Check by referenceNumber first
+      // (the caller's own stable transaction reference) before ever generating a fallback ID.
+      if (payload.referenceNumber) {
+        const existingByReference = await tx.plRepayment.findFirst({
+          where: { lan, referenceNumber: payload.referenceNumber },
+        });
+        if (existingByReference) {
+          return {
+            success: true,
+            duplicate: true,
+            message: 'Repayment already processed for this reference.',
+            data: { paymentId: existingByReference.paymentId, referenceNumber: existingByReference.referenceNumber },
+          };
+        }
+      }
+
+      if (payload.paymentId) {
+        const existingByPaymentId = await tx.plRepayment.findUnique({ where: { paymentId: payload.paymentId } });
+        if (existingByPaymentId) {
+          return {
+            success: true,
+            duplicate: true,
+            message: 'Repayment already processed for this payment ID.',
+            data: { paymentId: existingByPaymentId.paymentId, referenceNumber: existingByPaymentId.referenceNumber },
+          };
+        }
       }
 
       // Generate unique paymentId if not provided
