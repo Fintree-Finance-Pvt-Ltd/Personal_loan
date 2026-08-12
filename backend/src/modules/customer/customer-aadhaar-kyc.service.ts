@@ -627,7 +627,7 @@ export class CustomerAadhaarKycService {
           },
         });
       });
-      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar, dateOfBirth);
+      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar, dateOfBirth, gender);
 
       // Audit log (non-blocking)
       this.auditLogs
@@ -678,11 +678,16 @@ export class CustomerAadhaarKycService {
     // ── 10. Failure / Expired path ────────────────────────────────────────────
     if (isFailure || isExpired) {
       const newKycStatus = isExpired ? 'FAILED' : 'FAILED';
+      // Digitap's real failure payload uses errorCode/msg at the top level (see their
+      // callback spec), not failureCode/failureMessage — those never existed in any
+      // actual Digitap response, so this always logged null for the real reason.
       const failureCode =
+        (payload.errorCode as string | undefined) ||
         (data.failureCode as string | undefined) ||
         (payload.failureCode as string | undefined) ||
         null;
       const failureMessage =
+        (payload.msg as string | undefined) ||
         (data.failureMessage as string | undefined) ||
         (payload.failureMessage as string | undefined) ||
         null;
@@ -991,7 +996,7 @@ export class CustomerAadhaarKycService {
       }
     });
 
-    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null, dobDate);
+    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null, dobDate, this.mapGender(verifiedGender));
 
     // Download and store DigiLocker documents (PDF & XML) into disk & database pl_customer_documents
     await this.storeDigitapDocuments(
@@ -1005,7 +1010,7 @@ export class CustomerAadhaarKycService {
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
   }
 
-  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null, dateOfBirth: Date | null = null) {
+  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null, dateOfBirth: Date | null = null, gender: CustomerGender | null = null) {
     const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
     if (!application) return;
     const verifiedAt = new Date();
@@ -1013,11 +1018,16 @@ export class CustomerAadhaarKycService {
     // DigiTap dob string is DD-MM-YYYY, so this must go through the already-parsed Date,
     // never the raw string, or the lender rejects the whole UPDATE call as a validation error.
     const verifiedDateOfBirth = dateOfBirth ? dateOfBirth.toISOString().slice(0, 10) : null;
+    const verifiedGender = gender ? String(gender) : null;
     await this.prisma.applicationKycSnapshot.upsert({
       where: { applicationId: application.id },
-      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedDateOfBirth, verifiedAt },
-      // Don't overwrite an already-correct DOB with null on a call that couldn't parse one.
-      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt, ...(verifiedDateOfBirth ? { verifiedDateOfBirth } : {}) },
+      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedDateOfBirth, verifiedGender, verifiedAt },
+      // Don't overwrite an already-correct DOB/gender with null on a call that couldn't parse one.
+      update: {
+        provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt,
+        ...(verifiedDateOfBirth ? { verifiedDateOfBirth } : {}),
+        ...(verifiedGender ? { verifiedGender } : {}),
+      },
     });
     const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
     const city = String(address.vtc || address.city || address.dist || '').trim();
