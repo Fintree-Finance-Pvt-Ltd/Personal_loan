@@ -2193,6 +2193,16 @@ async markStageFailure(
         productVersion?.tenureType ??
         null,
 
+      interestRate:
+        productVersion?.annualRoiPercent
+          ?.toString() ??
+        null,
+
+      processingFeePercent:
+        productVersion?.processingFeePercent
+          ?.toString() ??
+        null,
+
       scopeCode:
         application.scopeCode,
     },

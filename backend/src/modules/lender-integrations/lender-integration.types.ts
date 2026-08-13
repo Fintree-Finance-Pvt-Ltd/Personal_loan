@@ -60,6 +60,8 @@ export interface LenderCreateApplicationContext {
     requestedAmount: string | null;
     requestedTenure: number | null;
     tenureType: string | null;
+    interestRate: string | null;
+    processingFeePercent: string | null;
     scopeCode: string | null;
   };
 

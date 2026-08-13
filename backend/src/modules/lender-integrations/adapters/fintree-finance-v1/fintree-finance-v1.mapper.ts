@@ -84,6 +84,12 @@ export function mapFintreeCreatePayload(
     tenureType:
       context.application.tenureType,
 
+    interestRate:
+      context.application.interestRate,
+
+    processingFeePercent:
+      context.application.processingFeePercent,
+
     customer: {
       fullName:
         requireString(

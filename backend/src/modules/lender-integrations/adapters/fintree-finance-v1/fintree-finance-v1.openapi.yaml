@@ -91,6 +91,14 @@ components:
           type: string
           nullable: true
           enum: [DAYS, MONTHS]
+        interestRate:
+          type: string
+          nullable: true
+          description: Annual interest rate percent, from the allocated product version's configured annualRoiPercent.
+        processingFeePercent:
+          type: string
+          nullable: true
+          description: Processing fee percent, from the allocated product version's configured processingFeePercent.
         customer:
           type: object
         panVerification:

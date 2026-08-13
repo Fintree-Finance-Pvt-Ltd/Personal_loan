@@ -56,6 +56,8 @@ Creates the loan file at Fintree the moment a customer is allocated to Fintree a
   "requestedAmount": "50000",
   "requestedTenure": 90,
   "tenureType": "DAYS",
+  "interestRate": "24.0000",
+  "processingFeePercent": "2.00",
   "customer": {
     "fullName": "string",
     "firstName": "string",
@@ -75,7 +77,7 @@ Creates the loan file at Fintree the moment a customer is allocated to Fintree a
   }
 }
 ```
-`requestedAmount`/`requestedTenure`/`tenureType` are the platform's initial ask, computed from the allocated product's configured multiplier/rounding and tenure list — not yet a lender decision.
+`requestedAmount`/`requestedTenure`/`tenureType` are the platform's initial ask, computed from the allocated product's configured multiplier/rounding and tenure list — not yet a lender decision. `interestRate`/`processingFeePercent` come directly from the same allocated product version's admin-configured `annualRoiPercent`/`processingFeePercent` — also not a lender decision, just what the platform is offering.
 
 **Expected success response:**
 ```json
