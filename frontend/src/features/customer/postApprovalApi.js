@@ -44,11 +44,11 @@ async function apiRequest(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(result?.message || result?.error || result?.data?.message || `Request failed with status ${response.status}.`);
+    throw new Error(result?.message || result?.error?.message || result?.data?.message || `Request failed with status ${response.status}.`);
   }
 
   if (result?.success === false) {
-    throw new Error(result?.message || result?.error || result?.data?.message || 'The request could not be completed.');
+    throw new Error(result?.message || result?.error?.message || result?.data?.message || 'The request could not be completed.');
   }
 
   return result;

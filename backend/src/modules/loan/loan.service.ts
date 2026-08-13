@@ -2426,10 +2426,15 @@ export class LoanService {
         });
 
         if (existingRpsCount === 0) {
+          // Repayment principal must be the sanctioned/approved amount the customer's
+          // KFS and e-signed agreement are based on — not the webhook's disbursed
+          // amount, which is net of the processing fee Fintree deducts before transfer.
+          // Charging repayment on the net-disbursed figure would silently repay a
+          // different total than what the customer agreed to.
           const rpsRows = this.calculateRpsRows(
             loan.id,
             loan.lan,
-            amountNum,
+            approvedAmount,
             loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18,
             loan.acceptedTenureDays || 30,
             disbursalDate,
