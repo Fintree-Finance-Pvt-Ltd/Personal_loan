@@ -2786,6 +2786,7 @@ model CustomerBankAccountData {
   currency               String?   @default("INR") @db.VarChar(10)
   currentBalance         Decimal?  @map("current_balance") @db.Decimal(15, 2)
   availableBalance       Decimal?  @map("available_balance") @db.Decimal(15, 2)
+  averageBalance         Decimal?  @map("average_balance") @db.Decimal(15, 2)
   summaryDate            DateTime? @map("summary_date") @db.DateTime(0)
   fromDate               DateTime? @map("from_date") @db.DateTime(0)
   toDate                 DateTime? @map("to_date") @db.DateTime(0)

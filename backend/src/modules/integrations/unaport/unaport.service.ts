@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
+import * as path from 'path';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { encryptPayload } from '../../../common/utils/bank-security.helper';
@@ -266,6 +268,50 @@ export class UnaportService {
   }
 
   /**
+   * Helper to build status response containing bank summary and ABB.
+   */
+  private async buildStatusResponse(request: any) {
+    if (!request) {
+      return {
+        status: 'NOT_STARTED',
+        consentStatus: null,
+        dataStatus: null,
+        completed: false,
+        failureReason: null,
+        bankSummary: null,
+      };
+    }
+
+    let bankSummary: any = null;
+    const bankData = await this.prisma.customerBankAccountData.findFirst({
+      where: { requestId: request.id },
+      orderBy: { id: 'desc' },
+    });
+
+    if (bankData) {
+      bankSummary = {
+        accountNumberMasked: bankData.accountNumberMasked,
+        accountHolderName: bankData.accountHolderName,
+        fipName: bankData.fipName,
+        accountType: bankData.accountType,
+        currentBalance: bankData.currentBalance ? Number(bankData.currentBalance) : null,
+        availableBalance: bankData.availableBalance ? Number(bankData.availableBalance) : null,
+        averageBalance: bankData.averageBalance ? Number(bankData.averageBalance) : null,
+        abb: bankData.averageBalance ? Number(bankData.averageBalance) : (bankData.currentBalance ? Number(bankData.currentBalance) : null),
+      };
+    }
+
+    return {
+      status: request.status,
+      consentStatus: request.consentStatus,
+      dataStatus: request.dataStatus,
+      completed: request.status === 'SUCCESS',
+      failureReason: request.failureReason,
+      bankSummary,
+    };
+  }
+
+  /**
    * Get normalized Account Aggregator status for a customer LAN.
    */
   async getStatus(
@@ -277,24 +323,19 @@ export class UnaportService {
     dataStatus: string | null;
     completed: boolean;
     failureReason: string | null;
+    bankSummary?: any;
   }> {
     console.log(`[AA SERVICE] [CALL] getStatus - customerId: ${customerId}, lan: ${lan}`);
     const cleanLan = String(lan || '').trim();
     await this.validateCustomerLanOwnership(customerId, cleanLan);
 
-    const request = await this.prisma.customerAccountAggregatorRequest.findFirst({
+    let request = await this.prisma.customerAccountAggregatorRequest.findFirst({
       where: { customerId, lan: cleanLan },
       orderBy: { id: 'desc' },
     });
 
     if (!request) {
-      return {
-        status: 'NOT_STARTED',
-        consentStatus: null,
-        dataStatus: null,
-        completed: false,
-        failureReason: null,
-      };
+      return this.buildStatusResponse(null);
     }
 
     // Auto-fetch data if sessionId is present and data is pending/ready
@@ -305,13 +346,7 @@ export class UnaportService {
           where: { id: request.id },
         });
         if (updated) {
-          return {
-            status: updated.status,
-            consentStatus: updated.consentStatus,
-            dataStatus: updated.dataStatus,
-            completed: updated.status === 'SUCCESS',
-            failureReason: updated.failureReason,
-          };
+          request = updated;
         }
       } catch (err: any) {
         this.logger.warn({
@@ -322,13 +357,7 @@ export class UnaportService {
       }
     }
 
-    const statusResult = {
-      status: request.status,
-      consentStatus: request.consentStatus,
-      dataStatus: request.dataStatus,
-      completed: request.status === 'SUCCESS',
-      failureReason: request.failureReason,
-    };
+    const statusResult = await this.buildStatusResponse(request);
     console.log(`[AA SERVICE] [RESPONSE] getStatus - result:`, JSON.stringify(statusResult, null, 2));
     return statusResult;
   }
@@ -345,12 +374,13 @@ export class UnaportService {
     dataStatus: string | null;
     completed: boolean;
     failureReason: string | null;
+    bankSummary?: any;
   }> {
     console.log(`[AA SERVICE] [CALL] refreshStatus - customerId: ${customerId}, lan: ${lan}`);
     const cleanLan = String(lan || '').trim();
     await this.validateCustomerLanOwnership(customerId, cleanLan);
 
-    const request = await this.prisma.customerAccountAggregatorRequest.findFirst({
+    let request = await this.prisma.customerAccountAggregatorRequest.findFirst({
       where: { customerId, lan: cleanLan },
       orderBy: { id: 'desc' },
     });
@@ -359,15 +389,9 @@ export class UnaportService {
       return this.getStatus(customerId, cleanLan);
     }
 
-    // If already in terminal state, return directly
+    // If already in terminal state, return directly with bank summary
     if (['SUCCESS', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(request.status)) {
-      return {
-        status: request.status,
-        consentStatus: request.consentStatus,
-        dataStatus: request.dataStatus,
-        completed: request.status === 'SUCCESS',
-        failureReason: request.failureReason,
-      };
+      return this.buildStatusResponse(request);
     }
 
     // Check if sessionId is present and data is ready to fetch
@@ -756,13 +780,16 @@ export class UnaportService {
     if (rawPayload && typeof rawPayload === 'object' && 'data' in rawPayload && rawPayload.data !== null) {
       rawPayload = rawPayload.data;
     }
+    // Unnest nested data objects if present (e.g. data.data.account)
+    if (rawPayload && typeof rawPayload === 'object' && rawPayload.data && typeof rawPayload.data === 'object' && !Array.isArray(rawPayload.data) && (rawPayload.data.account || rawPayload.data.accounts || rawPayload.data.transactions)) {
+      rawPayload = rawPayload.data;
+    }
 
     let itemsList: any[] = [];
     if (Array.isArray(rawPayload)) {
       itemsList = rawPayload;
     } else if (rawPayload && typeof rawPayload === 'object') {
-      if (Array.isArray(rawPayload.tabs)) itemsList = rawPayload.tabs;
-      else if (Array.isArray(rawPayload.accounts)) itemsList = rawPayload.accounts;
+      if (Array.isArray(rawPayload.accounts)) itemsList = rawPayload.accounts;
       else if (Array.isArray(rawPayload.account)) itemsList = rawPayload.account;
       else if (Array.isArray(rawPayload.Accounts)) itemsList = rawPayload.Accounts;
       else if (Array.isArray(rawPayload.Account)) itemsList = rawPayload.Account;
@@ -770,6 +797,8 @@ export class UnaportService {
       else if (Array.isArray(rawPayload.data)) itemsList = rawPayload.data;
       else if (rawPayload.FIStatusResponse?.Accounts && Array.isArray(rawPayload.FIStatusResponse.Accounts)) {
         itemsList = rawPayload.FIStatusResponse.Accounts;
+      } else if (Array.isArray(rawPayload.tabs) && (!rawPayload.account && !rawPayload.accounts)) {
+        itemsList = rawPayload.tabs;
       } else if (rawPayload.fipId || rawPayload.maskedAccNo || rawPayload.accNumber || rawPayload.accountNumber || rawPayload.summary || rawPayload.transactions || rawPayload.txnId) {
         itemsList = [rawPayload];
       } else {
@@ -777,14 +806,14 @@ export class UnaportService {
       }
     }
 
-    // Flatten tabs or nested arrays if present
+    // Flatten nested arrays if present
     const flattenedItems: any[] = [];
     for (const item of itemsList) {
       if (Array.isArray(item)) {
         flattenedItems.push(...item);
       } else if (item && typeof item === 'object' && Array.isArray(item.transactions)) {
         flattenedItems.push(item);
-      } else if (item && typeof item === 'object' && Array.isArray(item.tabs)) {
+      } else if (item && typeof item === 'object' && Array.isArray(item.tabs) && (!item.transactions && !item.account)) {
         flattenedItems.push(...item.tabs);
       } else {
         flattenedItems.push(item);
@@ -797,8 +826,6 @@ export class UnaportService {
     for (const item of flattenedItems) {
       if (!item || typeof item !== 'object') continue;
 
-      const accountNumber = item.accountNumber || item.maskedAccNo || item.accNumber || item.accountNo || 'PRIMARY_ACCOUNT';
-      
       let rawTxns: any[] = [];
       const nestedTxns = item.transactions || item.Transaction || item.Transactions || item.transaction;
       if (Array.isArray(nestedTxns)) {
@@ -812,6 +839,9 @@ export class UnaportService {
         // Flat transaction item
         rawTxns = [item];
       }
+
+      const firstTxn = rawTxns[0];
+      const accountNumber = item.accountNumber || item.maskedAccNo || item.accNumber || item.accountNo || firstTxn?.accountNumber || 'PRIMARY_ACCOUNT';
 
       if (!groupedAccounts.has(accountNumber)) {
         groupedAccounts.set(accountNumber, {
@@ -870,6 +900,7 @@ export class UnaportService {
         // Derive balances
         let currentBalance: number | null = null;
         let availableBalance: number | null = null;
+        let averageBalance: number | null = null;
 
         if (meta.summary && meta.summary.currentBalance != null) {
           currentBalance = Number(meta.summary.currentBalance);
@@ -884,6 +915,15 @@ export class UnaportService {
           availableBalance = Number(meta.summary.availableBalance);
         } else {
           availableBalance = currentBalance;
+        }
+
+        // Compute Average Bank Balance (ABB) from recorded balances
+        const txnsWithBalance = parsedTxns.filter((t: any) => t.parsedBalance != null && !isNaN(Number(t.parsedBalance)));
+        if (txnsWithBalance.length > 0) {
+          const sumBalances = txnsWithBalance.reduce((acc: number, t: any) => acc + Number(t.parsedBalance), 0);
+          averageBalance = Math.round((sumBalances / txnsWithBalance.length) * 100) / 100;
+        } else if (currentBalance != null) {
+          averageBalance = currentBalance;
         }
 
         const earliestTxn = parsedTxns[0];
@@ -912,6 +952,7 @@ export class UnaportService {
             currency: meta.currency,
             currentBalance,
             availableBalance,
+            averageBalance,
             summaryDate,
             fromDate,
             toDate,
@@ -921,8 +962,15 @@ export class UnaportService {
         // Insert individual transaction rows into customer_bank_transactions
         for (const txn of parsedTxns) {
           const txnId = txn.txnId || null;
-          const rawType = String(txn.type || 'DEBIT').toUpperCase();
-          const txnType = rawType.includes('CREDIT') ? 'CREDIT' : 'DEBIT';
+          const rawType = String(txn.type || txn.txnType || txn.transactionType || '').toUpperCase();
+          let txnType = 'DEBIT';
+          if (rawType.includes('CREDIT') || rawType.includes('CR')) {
+            txnType = 'CREDIT';
+          } else if (rawType.includes('DEBIT') || rawType.includes('DR')) {
+            txnType = 'DEBIT';
+          } else if (txn.narration && /CREDIT|Payment from|NEFT IN|IMPS IN|RECEIVED/i.test(String(txn.narration))) {
+            txnType = 'CREDIT';
+          }
           const amount = txn.parsedAmount;
           const balance = txn.parsedBalance;
           const narration = txn.narration || null;
@@ -992,12 +1040,139 @@ export class UnaportService {
       this.logger.warn({ event: 'n8n_data_fetch_forward_error', error: err?.message });
     });
 
+    // Trigger Unaport Analytics generation (from postman1 (6).json)
+    this.triggerUnaportAnalytics(cleanSessionId).catch((err) => {
+      this.logger.warn({ event: 'unaport_analytics_trigger_error', error: err?.message });
+    });
+
+    // Export PDF/Excel statement files to uploads and save to pl_customer_documents table
+    this.exportAndSaveStatementDocuments(request, cleanSessionId).catch((err) => {
+      this.logger.warn({ event: 'unaport_export_documents_error', error: err?.message });
+    });
+
     const fetchResult = {
       success: true,
       message: 'Bank statement data fetched and stored successfully.',
     };
     console.log(`[AA SERVICE] [RESPONSE] fetchDataBySession - result:`, JSON.stringify(fetchResult, null, 2));
     return fetchResult;
+  }
+
+  /**
+   * Downloads and saves Unaport Export Analytics / Bank Statement files (PDF & Excel)
+   * to local uploads folder and records them in pl_customer_documents table.
+   */
+  async exportAndSaveStatementDocuments(request: any, sessionId: string): Promise<void> {
+    try {
+      const cleanSessionId = String(sessionId || '').trim();
+      const tokens = await this.tokenService.getValidTokens();
+      const token = tokens.accessToken;
+      const baseURL = this.configService.get<string>('UNAPORT_FIU_BASE_URL') || 'https://common.premium.unaport.com/api/v1';
+      const appUrl = baseURL.replace('/public/user/login', '').replace(/\/+$/, '');
+      const orgEntity = this.configService.get<string>('UNAPORT_ENTITY_ID') || 'UNACORES-FIU-UAT';
+
+      const now = new Date();
+      const year = String(now.getFullYear());
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const targetDir = path.join(process.cwd(), 'uploads', 'customer-documents', 'bank-statement', year, month);
+
+      if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+      }
+
+      // Export endpoints: PDF & Excel
+      const exportTypes = [
+        {
+          name: 'pdf',
+          endpoint: `${appUrl}/FIU/ExportPdf/${orgEntity}/${cleanSessionId}`,
+          mimeType: 'application/pdf',
+          ext: 'pdf',
+        },
+        {
+          name: 'excel',
+          endpoint: `${appUrl}/FIU/Export/${orgEntity}/${cleanSessionId}`,
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          ext: 'xlsx',
+        },
+      ];
+
+      for (const exp of exportTypes) {
+        try {
+          this.logger.log(`[UNAPORT EXPORT CALL] GET ${exp.endpoint}`);
+          const response = await this.httpClient.get(exp.endpoint, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            responseType: 'arraybuffer',
+          });
+
+          if (response?.data && response.data.length > 50) {
+            const buffer = Buffer.from(response.data);
+            const fileName = `aa_statement_${cleanSessionId.slice(0, 8)}_${exp.name}_${Date.now()}.${exp.ext}`;
+            const fullPath = path.join(targetDir, fileName);
+            const relativePath = `uploads/customer-documents/bank-statement/${year}/${month}/${fileName}`;
+            const fileUrl = `/${relativePath}`;
+
+            writeFileSync(fullPath, buffer);
+
+            // Create record in pl_customer_documents table
+            await this.prisma.plCustomerDocument.create({
+              data: {
+                customerId: request.customerId,
+                applicationId: request.applicationId || null,
+                documentType: 'BANK_STATEMENT',
+                applicantType: 'BORROWER',
+                status: 'VERIFIED',
+                fileName,
+                originalFileName: `bank_statement_${exp.name}.${exp.ext}`,
+                filePath: relativePath,
+                fileUrl,
+                mimeType: exp.mimeType,
+                fileSize: buffer.length,
+                source: 'UNAPORT_AA',
+              },
+            });
+
+            this.logger.log(`✅ [AA STATEMENT EXPORT SAVED] Session: ${cleanSessionId}, File: ${relativePath}, Recorded in pl_customer_documents.`);
+          }
+        } catch (expErr: any) {
+          this.logger.warn(`[UNAPORT STATEMENT EXPORT WARNING] ${exp.name} export failed for session ${cleanSessionId}: ${expErr?.message}`);
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`[UNAPORT STATEMENT EXPORT ERROR]: ${err?.message}`);
+    }
+  }
+
+  /**
+   * Trigger Unaport Analytics generation API for a session ID (as per postman1 (6).json spec).
+   */
+  async triggerUnaportAnalytics(sessionId: string): Promise<any> {
+    try {
+      const cleanSessionId = String(sessionId || '').trim();
+      const tokens = await this.tokenService.getValidTokens();
+      const token = tokens.accessToken;
+      const baseURL = this.configService.get<string>('UNAPORT_FIU_BASE_URL') || 'https://common.premium.unaport.com/api/v1';
+      const appUrl = baseURL.replace('/public/user/login', '').replace(/\/+$/, '');
+      const orgId = this.configService.get<string>('UNAPORT_ORG_ID') || 'f8b81967-a47d-4d9f-bd1b-ca8a29a879d4';
+
+      const analyticsUrl = `${appUrl}/FIU/FI/Analytic/${orgId}/${cleanSessionId}`;
+      this.logger.log(`[UNAPORT ANALYTICS CALL] GET ${analyticsUrl}`);
+
+      const response = await this.httpClient.get(analyticsUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = response?.data;
+      this.logger.log(`[UNAPORT ANALYTICS RESPONSE]: ${JSON.stringify(data)}`);
+      return data;
+    } catch (err: any) {
+      this.logger.warn(`[UNAPORT ANALYTICS WARNING]: ${err?.response?.data?.message || err?.message}`);
+      return null;
+    }
   }
 
   private async forwardToN8nConsentWebhook(payload: any, request?: any) {

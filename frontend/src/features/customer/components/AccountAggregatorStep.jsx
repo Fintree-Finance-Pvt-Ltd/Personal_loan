@@ -21,6 +21,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
   const [consentStatus, setConsentStatus] = useState(null);
   const [dataStatus, setDataStatus] = useState(null);
   const [failureReason, setFailureReason] = useState(null);
+  const [bankSummary, setBankSummary] = useState(null);
   const [isPolling, setIsPolling] = useState(false);
 
   const pollTimerRef = useRef(null);
@@ -37,6 +38,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
       setConsentStatus(statusData?.consentStatus || null);
       setDataStatus(statusData?.dataStatus || null);
       setFailureReason(statusData?.failureReason || null);
+      setBankSummary(statusData?.bankSummary || null);
 
       if (statusData?.completed || currentStatus === 'SUCCESS') {
         stopPolling();
@@ -317,18 +319,44 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
 
         {/* SUCCESS */}
         {status === 'SUCCESS' && (
-          <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-xs">
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0" />
               <div>
                 <h4 className="text-base font-semibold text-emerald-950">
                   Bank Account Connected Successfully
                 </h4>
                 <p className="text-xs text-emerald-700">
-                  Your bank statement details have been verified and saved for loan assessment.
+                  Your bank statement details have been verified and processed for loan assessment.
                 </p>
               </div>
             </div>
+
+            {bankSummary && (
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 border-t border-emerald-200/80 pt-4">
+                <div className="rounded-xl bg-white p-3.5 border border-emerald-100 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Connected Bank</span>
+                  <span className="text-sm font-bold text-slate-900 mt-1 block">
+                    {bankSummary.fipName || 'Bank Account'} ({bankSummary.accountNumberMasked || 'XXXX'})
+                  </span>
+                  <span className="text-[11px] text-slate-500 block truncate">{bankSummary.accountHolderName || 'Savings Account'}</span>
+                </div>
+
+                <div className="rounded-xl bg-white p-3.5 border border-emerald-100 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Current Balance</span>
+                  <span className="text-base font-bold text-slate-900 mt-1 block">
+                    ₹{Number(bankSummary.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="rounded-xl bg-emerald-600 p-3.5 text-white shadow-xs">
+                  <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider block">Average Bank Balance (ABB)</span>
+                  <span className="text-base font-extrabold text-white mt-1 block">
+                    ₹{Number(bankSummary.averageBalance || bankSummary.abb || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
