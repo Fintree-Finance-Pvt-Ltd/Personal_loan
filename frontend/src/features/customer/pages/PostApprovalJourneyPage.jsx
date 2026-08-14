@@ -8,9 +8,7 @@ import {
   AlertCircle,
   BadgeCheck,
   FileText,
-  MapPin,
   Building2,
-  FileCheck2,
   CreditCard,
   PenLine,
   Landmark,
@@ -24,21 +22,16 @@ import { getCustomerAccessToken } from '../customerApi';
 import {
   getPostApprovalJourney,
   acceptLoanOffer,
-  initiateDigilocker,
-  getDigilockerStatus,
-  saveAddress,
   verifyBankAccount,
   acceptKfs,
   initiateMandate,
   getMandateStatus,
   refreshMandateStatus,
-  initiateEsign,
   requestDisbursal,
   prepareElectronicSign,
   markDocumentViewed,
   sendSigningOtp,
   verifySigningOtp,
-  getElectronicSignStatus,
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 
@@ -405,252 +398,6 @@ function ApprovalSummaryStep({ data, onNext }) {
           {isAccepted ? 'Proceed to KYC' : 'Accept Offer & Continue'}
         </ActionButton>
       </div>
-    </StepCard>
-  );
-}
-
-function DigiLockerStep({ lan, data, onNext }) {
-  const isVerified = Boolean(data?.workflow?.digilockerVerified || data?.digilocker?.status === 'VERIFIED');
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [consent, setConsent] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [activeKycUrl, setActiveKycUrl] = useState(null);
-  const [isVerifyingInPopup, setIsVerifyingInPopup] = useState(false);
-
-  const startPolling = () => {
-    const startTime = Date.now();
-    const interval = setInterval(async () => {
-      try {
-        if (Date.now() - startTime > 300000) {
-          clearInterval(interval);
-          setIsVerifyingInPopup(false);
-          setActiveKycUrl(null);
-          setErrorMsg('Verification timed out. Please try again.');
-          return;
-        }
-
-        const res = await getDigilockerStatus(lan);
-        if (res?.status === 'VERIFIED') {
-          clearInterval(interval);
-          setIsVerifyingInPopup(false);
-          setActiveKycUrl(null);
-          onNext();
-        } else if (res?.status === 'FAILED') {
-          clearInterval(interval);
-          setIsVerifyingInPopup(false);
-          setActiveKycUrl(null);
-          setErrorMsg('Aadhaar verification failed. Please try again.');
-        }
-      } catch (e) {
-        // Ignore polling errors
-      }
-    }, 3000);
-  };
-
-  const openPopupUrl = (url) => {
-    const width = 650;
-    const height = 750;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
-
-    const popup = window.open(
-      url,
-      'DigitapDigiLocker',
-      `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no,location=no,status=no,scrollbars=yes,resizable=yes`
-    );
-
-    if (popup) popup.focus();
-  };
-
-  const handleInitiate = async () => {
-    if (isVerified) {
-      onNext();
-      return;
-    }
-    if (!consent) {
-      setErrorMsg('Please check the consent box to proceed.');
-      return;
-    }
-
-    setErrorMsg('');
-    setIsLoading(true);
-    try {
-      const responseData = await initiateDigilocker(lan);
-
-      if (responseData.status === 'VERIFIED') {
-        onNext();
-        return;
-      }
-
-      const targetUrl = responseData?.kycUrl || responseData?.url;
-      if (!targetUrl) {
-        throw new Error('DigiLocker verification URL was not generated.');
-      }
-
-      setActiveKycUrl(targetUrl);
-      setIsVerifyingInPopup(true);
-      openPopupUrl(targetUrl);
-      startPolling();
-    } catch (err) {
-      setErrorMsg(err.message || 'Failed to initiate DigiLocker');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <StepCard title="Aadhaar KYC via DigiLocker" subtitle="Complete your identity verification using DigiLocker." icon={FileCheck2}>
-      {isVerified ? (
-        <div>
-          <CompletedBadge
-            title="Aadhaar KYC Verified"
-            description={`Masked Aadhaar: ${data?.digilocker?.maskedAadhaar || 'XXXX-XXXX-XXXX'}`}
-          />
-          <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Applicant Verified Name</p>
-            <p className="mt-1 text-base font-bold text-slate-900">{data?.customer?.fullName || '—'}</p>
-          </div>
-          <div className="flex justify-end">
-            <ActionButton onClick={onNext}>
-              Proceed to Address Confirmation
-            </ActionButton>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-            <p className="font-semibold">What you'll need:</p>
-            <ul className="mt-2 list-inside list-disc space-y-1 text-blue-700">
-              <li>Your Aadhaar-linked mobile number</li>
-              <li>Active DigiLocker account (or you can create one)</li>
-            </ul>
-          </div>
-
-          <div className="mb-6 flex items-start gap-3">
-            <input
-              type="checkbox"
-              id="consent"
-              checked={consent}
-              onChange={(e) => {
-                setConsent(e.target.checked);
-                setErrorMsg('');
-              }}
-              className="mt-1 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
-            />
-            <label htmlFor="consent" className="text-sm text-slate-700 cursor-pointer">
-              I consent to securely fetch and process my Aadhaar information through DigiLocker for identity verification and loan processing.
-            </label>
-          </div>
-
-          {errorMsg && (
-            <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {isVerifyingInPopup ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 mb-4">
-              <div className="flex items-center gap-3">
-                <LoaderCircle className="h-6 w-6 animate-spin text-amber-600" />
-                <div>
-                  <p className="font-bold text-base">DigiLocker Verification in Progress</p>
-                  <p className="text-xs text-amber-700 mt-0.5">Please complete your DigiLocker login in the window that opened.</p>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => activeKycUrl && openPopupUrl(activeKycUrl)}
-                  className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 transition"
-                >
-                  Re-open Verification Window
-                </button>
-              </div>
-            </div>
-          ) : (
-            <ActionButton onClick={handleInitiate} loading={isLoading} disabled={!consent} variant="blue">
-              Verify Aadhaar
-            </ActionButton>
-          )}
-        </div>
-      )}
-    </StepCard>
-  );
-}
-
-function AddressConfirmationStep({ lan, data, onNext }) {
-  const isConfirmed = Boolean(data?.workflow?.addressConfirmed);
-  const [sameAsPermanent, setSameAsPermanent] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const permAddr = data?.digilocker?.permanentAddress;
-  const currentAddr = data?.address;
-
-  const handleSave = async () => {
-    if (isConfirmed) {
-      onNext();
-      return;
-    }
-    setIsSaving(true);
-    try {
-      await saveAddress(lan, { sameAsPermanent });
-      onNext();
-    } catch (err) {
-      alert(err.message || 'Failed to save address');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <StepCard title="Address Confirmation" subtitle="Confirm your current residential address." icon={MapPin}>
-      {isConfirmed ? (
-        <div>
-          <CompletedBadge
-            title="Address Confirmed"
-            description={currentAddr?.formattedAddress || (permAddr?.formattedAddress ? 'Same as Aadhaar Permanent Address' : 'Residential address confirmed')}
-          />
-          {currentAddr && (
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Residential Address</p>
-              <p className="mt-2 text-sm font-medium text-slate-900">
-                {[currentAddr.addressLine1, currentAddr.addressLine2, currentAddr.city, currentAddr.state, currentAddr.pincode].filter(Boolean).join(', ')}
-              </p>
-            </div>
-          )}
-          <div className="flex justify-end">
-            <ActionButton onClick={onNext}>
-              Proceed to Bank Verification
-            </ActionButton>
-          </div>
-        </div>
-      ) : (
-        <div>
-          {permAddr && (
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Aadhaar Address</p>
-              <p className="mt-2 text-sm font-medium text-slate-900">{permAddr.formattedAddress || 'Address details missing'}</p>
-            </div>
-          )}
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={sameAsPermanent}
-              onChange={e => setSameAsPermanent(e.target.checked)}
-              className="mt-0.5 h-5 w-5 rounded border-slate-300 text-emerald-600"
-            />
-            <span className="text-sm font-semibold text-slate-900">
-              My current address is the same as my Aadhaar address
-            </span>
-          </label>
-          <div className="mt-8 flex justify-end">
-            <ActionButton onClick={handleSave} loading={isSaving}>
-              Confirm Address
-            </ActionButton>
-          </div>
-        </div>
-      )}
     </StepCard>
   );
 }
@@ -2182,7 +1929,7 @@ function EsignStep({ lan, data, onNext }) {
   );
 }
 
-function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
+function DisbursalStep({ lan, data, onRefresh: _onRefresh, onGoToStep }) {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');

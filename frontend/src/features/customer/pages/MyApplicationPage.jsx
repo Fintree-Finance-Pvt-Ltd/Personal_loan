@@ -10,10 +10,8 @@ import {
   Check,
   CheckCircle2,
   CircleUserRound,
-  Clock3,
   FileCheck2,
   Camera,
-  Image,
   Info,
   LoaderCircle,
   Lock,
@@ -28,7 +26,6 @@ import {
   Upload,
   ScanLine,
   Sparkles,
-  FileText,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -461,7 +458,7 @@ export default function MyApplicationPage() {
   const [isCustomerLoading, setIsCustomerLoading] = useState(true);
   const [customerLoadError, setCustomerLoadError] = useState('');
 
-  const [platformProducts, setPlatformProducts] = useState([]);
+  const [platformProducts] = useState([]);
   const [isLoadingPlatformProducts, setIsLoadingPlatformProducts] = useState(true);
 
   const [form, setForm] = useState(INITIAL_FORM);
@@ -487,21 +484,21 @@ export default function MyApplicationPage() {
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const [paymentId, setPaymentId] = useState('');
+  const [, setPaymentId] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const pollingTimerRef = useRef(null);
 
   const [isPanVerifying, setIsPanVerifying] = useState(false);
   const [panVerified, setPanVerified] = useState(false);
-  const [panVerification, setPanVerification] = useState(null);
+  const [, setPanVerification] = useState(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
   const [applicationNumber, setApplicationNumber] = useState('');
   const [savedPhotoDocument, setSavedPhotoDocument] = useState(null);
-  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
-  const [submissionData, setSubmissionData] = useState(null);
+  const [, setShowSubmissionModal] = useState(false);
+  const [, setSubmissionData] = useState(null);
   const [isRetryingLenderSubmission, setIsRetryingLenderSubmission] = useState(false);
   const [retryLenderSubmissionError, setRetryLenderSubmissionError] = useState('');
 
@@ -620,16 +617,6 @@ export default function MyApplicationPage() {
       setIsRetryingLenderSubmission(false);
     }
   };
-
-  const currentStepIndex = FLOW_STEPS.findIndex(
-    (step) => step.id === currentStep,
-  );
-
-  const safeCurrentStepIndex =
-    currentStepIndex >= 0 ? currentStepIndex : 0;
-
-  const progressPercentage =
-    ((safeCurrentStepIndex + 1) / FLOW_STEPS.length) * 100;
 
   const showMessage = (
     text,
@@ -2014,10 +2001,10 @@ export default function MyApplicationPage() {
 }
 
 function AadhaarKycStep({
-  customerId,
+  customerId: _customerId,
   customerCode,
   customer,
-  workflow,
+  workflow: _workflow,
   onCompleted,
   onBack,
 }) {
@@ -2588,16 +2575,16 @@ function BasicDetailsStep({
   isBreRunning,
   isSaving,
   onChange,
-  onVerifyEmail,
+  onVerifyEmail: _onVerifyEmail,
   onSendEmailOtp,
   onVerifyEmailOtp,
   onEmailOtpChange,
   onVerifyPan,
   onSaveDraft,
   onContinue,
-  platformProducts,
-  isLoadingPlatformProducts,
-  applicationNumber,
+  platformProducts: _platformProducts,
+  isLoadingPlatformProducts: _isLoadingPlatformProducts,
+  applicationNumber: _applicationNumber,
 }) {
   const {
     city: pincodeCity,
@@ -3628,12 +3615,12 @@ function LivePhotographSection({
   const [taggedBlob, setTaggedBlob] = useState(null);
 
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [, setIsGeocoding] = useState(false);
   const [isWatermarking, setIsWatermarking] = useState(false);
   const [isRunningLiveness, setIsRunningLiveness] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  const [livenessResult, setLivenessResult] = useState(null);
+  const [, setLivenessResult] = useState(null);
   const [photoError, setPhotoError] = useState('');
 
   const videoRef = useRef(null);
@@ -4530,7 +4517,7 @@ function SubmitApplicationStep({
   savedPhotoDocument,
   mobileNumber,
   applicationSubmitted,
-  applicationNumber,
+  applicationNumber: _applicationNumber,
   isSubmitting,
   onBack,
   onSubmit,
@@ -4921,23 +4908,6 @@ function SummaryStatus({
         />
         {value}
       </span>
-    </div>
-  );
-}
-
-function SuccessDetail({
-  label,
-  value,
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-2 break-words text-sm font-bold text-slate-900">
-        {value}
-      </p>
     </div>
   );
 }

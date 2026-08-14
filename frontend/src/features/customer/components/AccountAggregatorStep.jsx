@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Building2,
   CheckCircle2,
@@ -13,16 +13,16 @@ import {
   getAccountAggregatorStatus,
 } from '../customerApi';
 
-export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
+export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isCompleted }) {
   const [loading, setLoading] = useState(false);
   const [sdkUrl, setSdkUrl] = useState(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [status, setStatus] = useState('NOT_STARTED');
-  const [consentStatus, setConsentStatus] = useState(null);
-  const [dataStatus, setDataStatus] = useState(null);
+  const [, setConsentStatus] = useState(null);
+  const [, setDataStatus] = useState(null);
   const [failureReason, setFailureReason] = useState(null);
   const [bankSummary, setBankSummary] = useState(null);
-  const [isPolling, setIsPolling] = useState(false);
+  const [, setIsPolling] = useState(false);
 
   const pollTimerRef = useRef(null);
   const startTimeRef = useRef(null);
@@ -112,7 +112,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted }) {
     } else {
       try {
         popup.focus();
-      } catch (e) {
+      } catch {
         // ignore focus error if cross-origin
       }
 

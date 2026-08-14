@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Req, Res, UnauthorizedException,
+  Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Req, Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
@@ -13,6 +13,7 @@ import { SessionsService } from '../sessions/sessions.service';
 import { SessionIdDto } from '../sessions/dto/session-id.dto';
 import type { AuthenticatedUser } from '../../common/types/auth-user.type';
 import { EmptyBodyDto } from '../../common/types/empty-body.dto';
+import { assertTrustedOrigin } from '../../common/utils/security.utils';
 
 @Controller('auth/admin')
 export class AuthController {
@@ -48,7 +49,7 @@ export class AuthController {
     @Headers('origin') origin?: string,
     @Headers('referer') referer?: string,
   ) {
-    this.assertTrustedOrigin(origin, referer);
+    assertTrustedOrigin(this.config.getOrThrow<string>('FRONTEND_URL'), origin, referer);
     const result = await this.auth.refresh(request.cookies?.[this.cookieName()], this.context(request));
     this.setRefreshCookie(response, result.refreshToken);
     const { refreshToken: _secret, ...safeResult } = result;
@@ -65,7 +66,7 @@ export class AuthController {
     @Headers('origin') origin?: string,
     @Headers('referer') referer?: string,
   ) {
-    this.assertTrustedOrigin(origin, referer);
+    assertTrustedOrigin(this.config.getOrThrow<string>('FRONTEND_URL'), origin, referer);
     const result = await this.auth.logout(user, this.context(request));
     response.clearCookie(this.cookieName(), this.cookieOptions());
     return result;
@@ -127,20 +128,5 @@ export class AuthController {
 
   private setRefreshCookie(response: Response, token: string): void {
     response.cookie(this.cookieName(), token, this.cookieOptions());
-  }
-
-  private assertTrustedOrigin(origin?: string, referer?: string): void {
-    const trusted = new URL(this.config.getOrThrow<string>('FRONTEND_URL')).origin;
-    let candidate: string | undefined;
-    try {
-      candidate = origin ? new URL(origin).origin : referer ? new URL(referer).origin : undefined;
-    } catch {
-      candidate = undefined;
-    }
-    if (candidate !== trusted) {
-      throw new UnauthorizedException({
-        error: { code: 'UNTRUSTED_ORIGIN', message: 'The request origin is not trusted.' },
-      });
-    }
   }
 }

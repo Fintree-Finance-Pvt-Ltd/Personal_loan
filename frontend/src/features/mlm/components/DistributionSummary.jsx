@@ -1,4 +1,3 @@
-import React from 'react';
 import { Target, Users, Layers, Activity, Ban } from 'lucide-react';
 
 const formatCurrency = (value) => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { PageHeader, Spinner, Alert, Button, Badge } from '../../../components/ui';
+import { useParams, Link, useLocation } from 'react-router-dom';
+import { PageHeader, Spinner, Alert, Button } from '../../../components/ui';
 import { productsApi } from '../api/products.api';
 import { apiError } from '../../../lib/api';
 import { ProductStatusBadge, ProductVersionStatusBadge } from '../components/ProductStatusBadge';
@@ -10,7 +10,6 @@ import { PermissionGate } from '../../../components/ProtectedRoute';
 export function ProductDetailsPage() {
   const { productId } = useParams();
   const location = useLocation();
-  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

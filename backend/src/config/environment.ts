@@ -20,6 +20,12 @@ const schema = z
     REFRESH_TOKEN_PEPPER: z.string().min(32),
     REFRESH_SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(8),
     REFRESH_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+    // Customer sessions intentionally have no idle timeout (see OtpService — idleExpiresAt
+    // is pinned to absoluteExpiresAt): the KYC/application journey spans DigiLocker
+    // redirects and multi-day gaps, and a stolen refresh token isn't actually blocked by
+    // a short idle window anyway since reusing it just resets the clock. The real control
+    // is this absolute cap, which forces a fresh OTP login regardless of activity.
+    CUSTOMER_REFRESH_SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
     LOGIN_MAX_FAILED_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
     LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
     COOKIE_NAME: z.string().regex(/^[A-Za-z0-9_-]+$/),

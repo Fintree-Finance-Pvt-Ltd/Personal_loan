@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowRight, Ban, CheckCircle } from 'lucide-react';
 
 const formatCurrency = (value) => {

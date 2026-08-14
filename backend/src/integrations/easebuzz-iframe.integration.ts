@@ -621,13 +621,13 @@ export async function initiateEasebuzzIframePayment(
 
   const safeRequestLog = {
     initiateUrl,
-    key,
+    key: key ? 'REDACTED' : undefined,
     txnid,
     amount,
     productinfo,
-    firstname,
-    phone,
-    email,
+    firstname: firstname ? 'REDACTED' : undefined,
+    phone: phone ? 'REDACTED' : undefined,
+    email: email ? 'REDACTED' : undefined,
     surl,
     furl,
     udf1,

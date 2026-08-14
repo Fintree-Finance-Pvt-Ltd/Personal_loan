@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { UnauthorizedException } from '@nestjs/common';
 
 const SENSITIVE_KEYS =
   /password|otp|token|secret|authorization|cookie|api.?key|pan|aadhaar|bank.?account|bureau|kyc|document/i;
@@ -47,6 +48,27 @@ export function sanitizeObject(input: unknown, depth = 0): unknown {
 
 export function redactForLog(input: unknown): unknown {
   return sanitizeObject(input);
+}
+
+// A cookie-based refresh/logout endpoint relies on SameSite to stop cross-site
+// submission, but that's a single setting with no defense-in-depth: if it's ever
+// relaxed (an iframe integration, a payment-redirect quirk) the endpoint has zero
+// CSRF protection unless something else checks where the request actually came
+// from. Call this from any @Public() cookie-authenticated endpoint that mutates
+// or reads session state.
+export function assertTrustedOrigin(frontendUrl: string, origin?: string, referer?: string): void {
+  const trusted = new URL(frontendUrl).origin;
+  let candidate: string | undefined;
+  try {
+    candidate = origin ? new URL(origin).origin : referer ? new URL(referer).origin : undefined;
+  } catch {
+    candidate = undefined;
+  }
+  if (candidate !== trusted) {
+    throw new UnauthorizedException({
+      error: { code: 'UNTRUSTED_ORIGIN', message: 'The request origin is not trusted.' },
+    });
+  }
 }
 
 export function deviceLabel(userAgent?: string | null): string {

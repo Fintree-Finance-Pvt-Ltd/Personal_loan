@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { LoaderCircle, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
-import { refreshMandateStatus, getMandateStatus } from '../postApprovalApi';
+import { refreshMandateStatus } from '../postApprovalApi';
 
 function getCustomerSession() {
   try {
@@ -59,7 +59,7 @@ export default function MandateResultPage() {
             setMessage('Mandate status verification in progress. Return to your journey to check status.');
           }
         }
-      } catch (err) {
+      } catch {
         if (pollCount < maxPolls) {
           setTimeout(checkStatus, 3000);
         } else {

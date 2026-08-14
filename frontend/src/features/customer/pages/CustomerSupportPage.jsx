@@ -16,7 +16,6 @@ import {
     Mail,
     MessageCircle,
     Phone,
-    ReceiptText,
     Send,
     ShieldAlert,
     ShieldCheck,

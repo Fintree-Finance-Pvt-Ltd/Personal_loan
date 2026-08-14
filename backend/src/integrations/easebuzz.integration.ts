@@ -164,6 +164,10 @@ export async function createPlEasyCollectLink(input: {
   try {
     console.log('PL EasyCollect request payload:', {
       ...payload,
+      key: payload.key ? 'REDACTED' : undefined,
+      name: payload.name ? 'REDACTED' : undefined,
+      phone: payload.phone ? 'REDACTED' : undefined,
+      email: payload.email ? 'REDACTED' : undefined,
       hash: payload.hash ? 'HASH_GENERATED' : undefined,
     });
 

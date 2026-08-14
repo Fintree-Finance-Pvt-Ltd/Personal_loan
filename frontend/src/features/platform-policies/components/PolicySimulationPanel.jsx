@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { platformPoliciesApi } from '../api/platform-policies.api';
 import { Button } from '../../../components/ui';
 
@@ -9,7 +9,6 @@ export default function PolicySimulationPanel({ versionId, rules }) {
 
   // Group active rules to find which inputs we need
   const activeRules = rules.filter(r => r.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
-  const inputKeys = [...new Set(activeRules.map(r => r.inputKey))];
 
   const handleInputChange = (key, value, type) => {
     let parsedValue = value;

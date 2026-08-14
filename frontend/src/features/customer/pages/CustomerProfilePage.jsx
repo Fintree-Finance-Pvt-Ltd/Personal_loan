@@ -1,16 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   User,
   Mail,
   Phone,
   ShieldCheck,
-  Building2,
   MapPin,
   Briefcase,
-  CreditCard,
   Landmark,
-  Calendar,
   CheckCircle2,
   AlertCircle,
   RefreshCw,

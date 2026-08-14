@@ -1,4 +1,3 @@
-import React from 'react';
 import ReadinessBadge from './ReadinessBadge';
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
 

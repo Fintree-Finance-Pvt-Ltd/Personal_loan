@@ -280,10 +280,12 @@ export class OtpService {
           },
         });
 
-        const sessionLengthHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 168);
-        const idleLengthMins = this.configService.get<number>('REFRESH_IDLE_TIMEOUT_MINUTES', 30);
-        const absoluteExpiresAt = new Date(now.getTime() + sessionLengthHours * 3600000);
-        const idleExpiresAt = new Date(now.getTime() + idleLengthMins * 60000);
+        const sessionLengthDays = this.configService.get<number>('CUSTOMER_REFRESH_SESSION_DAYS', 30);
+        const absoluteExpiresAt = new Date(now.getTime() + sessionLengthDays * 86_400_000);
+        // No separate idle clock for customers: pin idleExpiresAt to the same absolute
+        // cap so the idle check in refreshCustomerSession()/CustomerJwtStrategy never
+        // fires before it. See CUSTOMER_REFRESH_SESSION_DAYS in environment.ts for why.
+        const idleExpiresAt = absoluteExpiresAt;
 
         const customerSession = await transaction.customerSession.create({
           data: {
@@ -877,11 +879,12 @@ export class OtpService {
     
     // Check if token was already used (replay/compromise)
     if (token.usedAt) {
-      // A browser can issue a second refresh during React StrictMode startup
-      // before it has applied the rotated cookie. Do not revoke the whole
+      // A browser can issue a second refresh during React StrictMode startup,
+      // or from a second tab that mounted around the same time as the first,
+      // before either has applied the rotated cookie. Do not revoke the whole
       // session for this short, legitimate race; an older replay is still
       // treated as compromise below.
-      if (now.getTime() - token.usedAt.getTime() <= 5_000) {
+      if (now.getTime() - token.usedAt.getTime() <= 15_000) {
         this.invalidRefresh();
       }
 
@@ -909,9 +912,12 @@ export class OtpService {
 
     const replacement = randomBytes(48).toString('base64url');
     const replacementHash = this.hashRefreshToken(replacement);
-    
-    const idleLengthMins = this.configService.get<number>('REFRESH_IDLE_TIMEOUT_MINUTES', 30);
-    const newIdleExpiresAt = new Date(now.getTime() + idleLengthMins * 60000);
+
+    // Customers have no idle clock — see the session-creation comment above. Keep
+    // idleExpiresAt pinned to the session's (unchanged) absolute cap on every
+    // rotation, rather than sliding it forward, so refreshing never extends how
+    // long a session can live past its original 30-day absolute expiry.
+    const newIdleExpiresAt = session.absoluteExpiresAt;
 
     const rotated = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.customerRefreshToken.updateMany({

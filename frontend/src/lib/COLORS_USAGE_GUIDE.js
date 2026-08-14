@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------
 
 // Import the colors object:
-import { colors, colorTokens } from './colors';
+// import { colors, colorTokens } from './colors';
 
 // Use in inline styles:
 // <div style={{ color: colors.text.primary }}>...</div>

@@ -1,4 +1,4 @@
-import React, {
+import {
   useCallback,
   useEffect,
   useRef,
@@ -7,7 +7,6 @@ import React, {
 import {
   AlertTriangle,
   ArrowLeft,
-  Building2,
   Calendar,
   CheckCircle2,
   Clock,
@@ -123,7 +122,7 @@ export function CustomerLoanDetailsPage() {
               'No active loan found for this account.',
             );
           }
-        } catch (_err) {
+        } catch {
           if (isMounted) {
             setLoading(false);
 
