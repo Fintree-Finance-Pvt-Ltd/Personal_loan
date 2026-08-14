@@ -24,7 +24,7 @@ function isCustomerRefreshRequest(config) {
   );
 }
 
-function shouldClearCustomerSession(error) {
+export function shouldClearCustomerSession(error) {
   const status = error?.response?.status;
   const code = getApiErrorCode(error);
 

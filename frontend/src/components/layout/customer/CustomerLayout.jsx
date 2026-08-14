@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { getCustomerAccessToken, doCustomerRefresh } from '../../../features/customer/customerApi';
+import { getCustomerAccessToken, doCustomerRefresh, shouldClearCustomerSession } from '../../../features/customer/customerApi';
 import CustomerHeader from './CustomerHeader';
 import CustomerSidebar from './CustomerSidebar';
 
@@ -24,11 +24,20 @@ export default function CustomerLayout() {
 
     doCustomerRefresh()
       .then(() => setIsInitializing(false))
-      .catch(() => {
+      .catch((error) => {
         setIsInitializing(false);
-        localStorage.removeItem('customerSession');
-        sessionStorage.removeItem('customerSession');
-        navigate('/customer/login', { replace: true });
+        // A network blip or a transient backend error (a dropped DB connection,
+        // a 500, a timeout) is not proof the session is invalid — it just means
+        // this one attempt to confirm it failed. Only wipe the stored session
+        // and force a re-login when the backend has explicitly said the
+        // refresh token/session is dead. Same rule the axios interceptor below
+        // already applies to reactive refreshes; this is the same check for the
+        // proactive one that runs on every full page reload.
+        if (shouldClearCustomerSession(error)) {
+          localStorage.removeItem('customerSession');
+          sessionStorage.removeItem('customerSession');
+          navigate('/customer/login', { replace: true });
+        }
       });
   }, [navigate]);
 
