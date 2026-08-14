@@ -86,6 +86,39 @@ export class WebhooksController {
   }
 
   @Public()
+  @Get('easebuzz/easycollect/mandate')
+  @HttpCode(HttpStatus.OK)
+  async handleEasebuzzEasycollectMandateProbe() {
+    return {
+      success: true,
+      message: 'Easebuzz EasyCollect mandate webhook endpoint is reachable. Use POST for actual webhook events.',
+      path: '/api/webhooks/easebuzz/easycollect/mandate',
+    };
+  }
+
+  @Public()
+  @Post('easebuzz/easycollect/mandate')
+  @HttpCode(HttpStatus.OK)
+  async handleEasebuzzEasycollectMandateWebhook(@Body() payload: any, @Req() req: Request) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string) || 'UNKNOWN_IP';
+    const userAgent = req.headers['user-agent'] || '';
+
+    this.logger.log(`Received Easebuzz EasyCollect mandate webhook [IP: ${clientIp}]`);
+
+    try {
+      return await this.webhooksService.processEasebuzzEasycollectMandateWebhook(payload, clientIp, userAgent);
+    } catch (error: any) {
+      this.logger.error(`Easebuzz EasyCollect mandate webhook error: ${error?.message || error}`);
+      return {
+        status: 'Ignored',
+        acknowledged: true,
+        processed: false,
+        reason: 'PROCESSING_ERROR',
+      };
+    }
+  }
+
+  @Public()
   @Get('easebuzz/mandate')
   @HttpCode(HttpStatus.OK)
   async handleEasebuzzMandateProbe() {
