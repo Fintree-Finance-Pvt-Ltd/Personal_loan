@@ -1938,6 +1938,29 @@ export class LoanService {
   }
 
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const txId =
+      payload?.transaction_id ||
+      payload?.merchant_transaction_id ||
+      payload?.udf1_tx_id ||
+      payload?.data?.transaction_id ||
+      payload?.data?.merchant_transaction_id ||
+      payload?.data?.udf1_tx_id ||
+      payload?.data?.mandate?.transaction_id ||
+      payload?.txnid ||
+      payload?.merchant_txn ||
+      payload?.data?.txnid ||
+      payload?.data?.merchant_txn;
+
+    const txIdStr = String(txId || '').trim();
+    const isPlmTransaction = txIdStr.toUpperCase().startsWith('PLM');
+
+    if (!isPlmTransaction) {
+      this.logger.log(
+        `Received non-PL mandate webhook [TxID: "${txIdStr || 'NONE'}"]. Forwarding to easycollect mandate webhook endpoint: /api/webhooks/easebuzz/easycollect/mandate`
+      );
+      return this.forwardToEasycollectMandateWebhook(payload, metadata);
+    }
+
     const sanitized = this.easebuzzAutocollectService.sanitizeEasebuzzMandatePayload(payload);
     const event = String(payload?.event || payload?.data?.event || '').trim().toUpperCase();
     const webhookSecret = this.configService.get<string>('EASEBUZZ_WEBHOOK_SECRET');
@@ -1951,14 +1974,6 @@ export class LoanService {
       this.logger.log('No EASEBUZZ_WEBHOOK_SECRET configured; skipping Easybuzz webhook signature verification.');
     }
 
-    const txId =
-      payload?.transaction_id ||
-      payload?.merchant_transaction_id ||
-      payload?.udf1_tx_id ||
-      payload?.data?.transaction_id ||
-      payload?.data?.merchant_transaction_id ||
-      payload?.data?.udf1_tx_id ||
-      payload?.data?.mandate?.transaction_id;
     const providerMandateId =
       payload?.mandate_id ||
       payload?.provider_mandate_id ||
@@ -2108,6 +2123,80 @@ export class LoanService {
     }
 
     return result;
+  }
+
+  async forwardToEasycollectMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const easycollectMandateUrl =
+      process.env.EASYCOLLECT_MANDATE_WEBHOOK_URL ||
+      `http://127.0.0.1:${process.env.PORT || 3001}/api/webhooks/easebuzz/easycollect/mandate`;
+
+    try {
+      this.logger.log(`Forwarding non-PLM mandate webhook to ${easycollectMandateUrl}`);
+      const response = await axios.post(easycollectMandateUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-from': 'pl-mandate-webhook',
+          'x-forwarded-for': metadata?.ipAddress || '',
+          'user-agent': metadata?.userAgent || '',
+        },
+        timeout: 10000,
+      });
+
+      return {
+        success: true,
+        forwarded: true,
+        targetUrl: easycollectMandateUrl,
+        responseData: response.data,
+      };
+    } catch (err: any) {
+      this.logger.warn(
+        `HTTP forwarding to ${easycollectMandateUrl} failed: ${err?.message || err}. Falling back to internal EasyCollect mandate handler.`
+      );
+      return this.handleEasebuzzEasycollectMandateWebhook(payload, metadata);
+    }
+  }
+
+  async handleEasebuzzEasycollectMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const txId =
+      payload?.transaction_id ||
+      payload?.merchant_transaction_id ||
+      payload?.udf1_tx_id ||
+      payload?.data?.transaction_id ||
+      payload?.data?.merchant_transaction_id ||
+      payload?.data?.udf1_tx_id ||
+      payload?.data?.mandate?.transaction_id ||
+      payload?.txnid ||
+      payload?.merchant_txn ||
+      'UNKNOWN';
+
+    this.logger.log(
+      `[EasyCollect Mandate Webhook] Processed EasyCollect mandate event [TxID: ${txId}, IP: ${metadata?.ipAddress || 'UNKNOWN'}]`
+    );
+
+    try {
+      if (typeof (this.prisma as any).plWebhookInbox?.create === 'function') {
+        await this.prisma.plWebhookInbox.create({
+          data: {
+            id: randomBytes(16).toString('hex'),
+            providerTransactionId: String(txId),
+            provider: 'easebuzz-easycollect-mandate',
+            eventHash: String(payload?.data?.authorization || payload?.authorization || payload?.hash || 'NO_HASH'),
+            payload: payload,
+          },
+        });
+      }
+    } catch (_e: any) {
+      // Ignore inbox duplicate error if logged
+    }
+
+    return {
+      success: true,
+      acknowledged: true,
+      processed: true,
+      route: '/api/webhooks/easebuzz/easycollect/mandate',
+      txId: String(txId),
+      message: 'EasyCollect mandate webhook acknowledged successfully.',
+    };
   }
 
   async initiateEsign(lan: string, customerId: bigint) {
