@@ -32,6 +32,10 @@ export interface LenderIntegrationTransportConfig {
   statusPath: string | null;
   documentUploadPath: string | null;
   disbursePath: string | null;
+  // Servicing (post-disbursal): repayment/charge/waiver, all many-per-application.
+  repaymentPath: string | null;
+  chargePath: string | null;
+  chargeWaiverPath: string | null;
 
   connectTimeoutMs: number;
   requestTimeoutMs: number;
@@ -44,6 +48,9 @@ export interface LenderAdapterCapabilities {
   decisionRequest: boolean;
   statusPolling: boolean;
   disbursement: boolean;
+  repaymentNotification: boolean;
+  chargeNotification: boolean;
+  chargeWaiverNotification: boolean;
 }
 
 export interface LenderCreateApplicationContext {
@@ -366,6 +373,66 @@ export interface LenderDisburseResult {
   disbursalReference?: string | null;
 }
 
+// ── Servicing (post-disbursal) ──────────────────────────────────────────────
+// Unlike CREATE/UPDATE/DECISION/DISBURSE (one-shot per application), a loan can
+// have many repayments, many charges, and a charge can be waived more than once.
+// Each context below corresponds to exactly one such event, not "the application's
+// current state" — see LenderIntegrationOutbox.repaymentId/chargeId/chargeWaiverId.
+
+export interface LenderRepaymentContext {
+  idempotencyKey: string;
+  correlationId: string;
+  payloadVersion: number;
+  transport: LenderIntegrationTransportConfig;
+
+  partnerApplicationId: string;
+  applicationReference: string;
+  platformLan: string;
+
+  amount: string;
+  // Strict YYYY-MM-DD, not a full ISO-8601 datetime.
+  paymentDate: string;
+  paymentId: string;
+  paymentMode: string;
+  utr: string;
+}
+
+export interface LenderChargeContext {
+  idempotencyKey: string;
+  correlationId: string;
+  payloadVersion: number;
+  transport: LenderIntegrationTransportConfig;
+
+  partnerApplicationId: string;
+  applicationReference: string;
+  platformLan: string;
+
+  chargeType: string;
+  amount: string;
+  // Strict YYYY-MM-DD, not a full ISO-8601 datetime.
+  dueDate: string;
+  remarks: string | null;
+}
+
+export interface LenderChargeWaiverContext {
+  idempotencyKey: string;
+  correlationId: string;
+  payloadVersion: number;
+  transport: LenderIntegrationTransportConfig;
+
+  partnerApplicationId: string;
+  applicationReference: string;
+  platformLan: string;
+
+  chargeType: string;
+  waiverAmount: string;
+}
+
+export interface LenderServicingResult {
+  acknowledged: boolean;
+  providerStatus: string;
+}
+
 export interface LenderWebhookVerificationInput {
   headers: Record<
     string,
@@ -423,4 +490,16 @@ export interface LenderAdapter {
   requestDisbursal?(
     context: LenderDisburseContext,
   ): Promise<LenderDisburseResult>;
+
+  recordRepayment?(
+    context: LenderRepaymentContext,
+  ): Promise<LenderServicingResult>;
+
+  addCharge?(
+    context: LenderChargeContext,
+  ): Promise<LenderServicingResult>;
+
+  waiveCharge?(
+    context: LenderChargeWaiverContext,
+  ): Promise<LenderServicingResult>;
 }

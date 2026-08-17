@@ -111,6 +111,13 @@ export class ApplicationsService {
     ]);
     const loan = application.loans[0] ?? null;
     const link = application.lenderApplicationLink;
+    const charges = loan
+      ? await this.prisma.plLoanCharge.findMany({
+          where: { loanId: loan.id },
+          include: { waivers: { orderBy: { id: 'desc' } } },
+          orderBy: { id: 'desc' },
+        })
+      : [];
 
     return {
       application: {
@@ -178,6 +185,24 @@ export class ApplicationsService {
             status: loan.status,
             disbursalStatus: loan.disbursalStatus,
             approvedAmount: loan.approvedAmount?.toNumber() ?? null,
+            charges: charges.map((charge) => ({
+              chargeId: charge.id.toString(),
+              chargeType: charge.chargeType,
+              amount: charge.amount.toNumber(),
+              paidAmount: charge.paidAmount.toNumber(),
+              remainingAmount: charge.remainingAmount.toNumber(),
+              status: charge.status,
+              dueDate: charge.dueDate,
+              description: charge.description,
+              createdAt: charge.createdAt,
+              waivers: charge.waivers.map((waiver) => ({
+                waiverId: waiver.id.toString(),
+                waiverAmount: waiver.waiverAmount.toNumber(),
+                waivedAt: waiver.waivedAt,
+                remarks: waiver.remarks,
+                lenderNotifiedAt: waiver.lenderNotifiedAt,
+              })),
+            })),
           }
         : null,
       stages: application.lenderIntegrationOutbox.map((event) => ({

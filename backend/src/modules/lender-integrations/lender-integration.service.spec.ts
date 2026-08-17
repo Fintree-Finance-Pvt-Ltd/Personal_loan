@@ -374,4 +374,175 @@ describe('LenderIntegrationService explicit requirements', () => {
       );
     });
   });
+
+  describe('REPAYMENT stage', () => {
+    const setUpRepaymentEvent = () => {
+      adapter.capabilities.repaymentNotification = true;
+      adapter.recordRepayment = jest.fn().mockResolvedValue({ acknowledged: true, providerStatus: 'REPAYMENT_RECORDED' });
+
+      const config = configFor('FINTREE_FINANCE_V1');
+      const application = applicationFor(config) as any;
+      application.lenderApplicationLink.partnerApplicationId = 'PARTNER-1';
+
+      prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-5', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'REPAYMENT', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_NOTIFY_REPAYMENT:501', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId, repaymentId: 501n });
+      prisma.plApplication.findUnique.mockResolvedValue(application);
+      prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+      prisma.plRepayment = { findUnique: jest.fn().mockResolvedValue({ id: 501n, amountReceived: new Prisma.Decimal('5115.00'), paymentDate: new Date('2026-08-30T00:00:00Z'), paymentId: 'PAYID12345', paymentMode: 'UPI', referenceNumber: 'UTR1234567890' }) };
+
+      return { config, application };
+    };
+
+    it('calls adapter.recordRepayment with the repayment fields and marks the event COMPLETED', async () => {
+      setUpRepaymentEvent();
+
+      await service.processEvent('EVENT-5', 'LOCK-1');
+
+      expect(prisma.plRepayment.findUnique).toHaveBeenCalledWith({ where: { id: 501n } });
+      expect(adapter.recordRepayment).toHaveBeenCalledWith(expect.objectContaining({
+        partnerApplicationId: 'PARTNER-1',
+        amount: '5115',
+        paymentDate: '2026-08-30',
+        paymentId: 'PAYID12345',
+        paymentMode: 'UPI',
+        utr: 'UTR1234567890',
+      }));
+      expect(prisma.lenderIntegrationOutbox.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
+    });
+
+    it('throws when the adapter does not support repayment notification', async () => {
+      setUpRepaymentEvent();
+      adapter.capabilities.repaymentNotification = false;
+
+      await expect(service.processEvent('EVENT-5', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_REPAYMENT_CONTRACT_NOT_ENABLED' }),
+      );
+    });
+
+    it('throws LENDER_SERVICING_BEFORE_CREATE when partnerApplicationId is missing', async () => {
+      const { application } = setUpRepaymentEvent();
+      application.lenderApplicationLink.partnerApplicationId = null;
+
+      await expect(service.processEvent('EVENT-5', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'LENDER_SERVICING_BEFORE_CREATE' }),
+      );
+    });
+
+    it('throws LENDER_REPAYMENT_NOT_ACKNOWLEDGED when the lender does not acknowledge', async () => {
+      setUpRepaymentEvent();
+      adapter.recordRepayment.mockResolvedValue({ acknowledged: false, providerStatus: 'FAILED' });
+
+      await expect(service.processEvent('EVENT-5', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'LENDER_REPAYMENT_NOT_ACKNOWLEDGED' }),
+      );
+    });
+  });
+
+  describe('CHARGE stage', () => {
+    const setUpChargeEvent = () => {
+      adapter.capabilities.chargeNotification = true;
+      adapter.addCharge = jest.fn().mockResolvedValue({ acknowledged: true, providerStatus: 'CHARGE_ADDED' });
+
+      const config = configFor('FINTREE_FINANCE_V1');
+      const application = applicationFor(config) as any;
+      application.lenderApplicationLink.partnerApplicationId = 'PARTNER-1';
+
+      prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-6', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'CHARGE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_NOTIFY_CHARGE:601', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId, chargeId: 601n });
+      prisma.plApplication.findUnique.mockResolvedValue(application);
+      prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+      prisma.plLoanCharge = { findUnique: jest.fn().mockResolvedValue({ id: 601n, chargeType: 'BOUNCE_CHARGE', amount: new Prisma.Decimal('500.00'), dueDate: new Date('2026-09-05T00:00:00Z'), description: 'Cheque bounced' }) };
+
+      return { config, application };
+    };
+
+    it('calls adapter.addCharge with the charge fields and marks the event COMPLETED', async () => {
+      setUpChargeEvent();
+
+      await service.processEvent('EVENT-6', 'LOCK-1');
+
+      expect(prisma.plLoanCharge.findUnique).toHaveBeenCalledWith({ where: { id: 601n } });
+      expect(adapter.addCharge).toHaveBeenCalledWith(expect.objectContaining({
+        partnerApplicationId: 'PARTNER-1',
+        chargeType: 'BOUNCE_CHARGE',
+        amount: '500',
+        dueDate: '2026-09-05',
+        remarks: 'Cheque bounced',
+      }));
+      expect(prisma.lenderIntegrationOutbox.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
+    });
+
+    it('throws when the adapter does not support charge notification', async () => {
+      setUpChargeEvent();
+      adapter.capabilities.chargeNotification = false;
+
+      await expect(service.processEvent('EVENT-6', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_CHARGE_CONTRACT_NOT_ENABLED' }),
+      );
+    });
+
+    it('throws LENDER_CHARGE_DUE_DATE_MISSING when the charge has no due date', async () => {
+      setUpChargeEvent();
+      prisma.plLoanCharge.findUnique.mockResolvedValue({ id: 601n, chargeType: 'BOUNCE_CHARGE', amount: new Prisma.Decimal('500.00'), dueDate: null, description: null });
+
+      await expect(service.processEvent('EVENT-6', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'LENDER_CHARGE_DUE_DATE_MISSING' }),
+      );
+    });
+  });
+
+  describe('CHARGE_WAIVER stage', () => {
+    const setUpChargeWaiverEvent = () => {
+      adapter.capabilities.chargeWaiverNotification = true;
+      adapter.waiveCharge = jest.fn().mockResolvedValue({ acknowledged: true, providerStatus: 'CHARGE_WAIVED' });
+
+      const config = configFor('FINTREE_FINANCE_V1');
+      const application = applicationFor(config) as any;
+      application.lenderApplicationLink.partnerApplicationId = 'PARTNER-1';
+
+      prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-7', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'CHARGE_WAIVER', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_NOTIFY_CHARGE_WAIVER:701', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId, chargeWaiverId: 701n });
+      prisma.plApplication.findUnique.mockResolvedValue(application);
+      prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+      prisma.plLoanChargeWaiver = {
+        findUnique: jest.fn().mockResolvedValue({ id: 701n, waiverAmount: new Prisma.Decimal('250.00'), charge: { chargeType: 'BOUNCE_CHARGE' } }),
+        update: jest.fn(),
+      };
+
+      return { config, application };
+    };
+
+    it('calls adapter.waiveCharge with the waiver fields, sets lenderNotifiedAt and marks the event COMPLETED', async () => {
+      setUpChargeWaiverEvent();
+
+      await service.processEvent('EVENT-7', 'LOCK-1');
+
+      expect(prisma.plLoanChargeWaiver.findUnique).toHaveBeenCalledWith({ where: { id: 701n }, include: { charge: true } });
+      expect(adapter.waiveCharge).toHaveBeenCalledWith(expect.objectContaining({
+        partnerApplicationId: 'PARTNER-1',
+        chargeType: 'BOUNCE_CHARGE',
+        waiverAmount: '250',
+      }));
+      expect(prisma.plLoanChargeWaiver.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 701n },
+        data: expect.objectContaining({ lenderNotifiedAt: expect.any(Date) }),
+      }));
+      expect(prisma.lenderIntegrationOutbox.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }));
+    });
+
+    it('throws when the adapter does not support charge waiver notification', async () => {
+      setUpChargeWaiverEvent();
+      adapter.capabilities.chargeWaiverNotification = false;
+
+      await expect(service.processEvent('EVENT-7', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_CHARGE_WAIVER_CONTRACT_NOT_ENABLED' }),
+      );
+    });
+
+    it('throws LENDER_CHARGE_WAIVER_NOT_ACKNOWLEDGED when the lender does not acknowledge', async () => {
+      setUpChargeWaiverEvent();
+      adapter.waiveCharge.mockResolvedValue({ acknowledged: false, providerStatus: 'FAILED' });
+
+      await expect(service.processEvent('EVENT-7', 'LOCK-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'LENDER_CHARGE_WAIVER_NOT_ACKNOWLEDGED' }),
+      );
+    });
+  });
 });

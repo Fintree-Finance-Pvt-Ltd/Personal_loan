@@ -4,16 +4,19 @@ const STATUS_STYLES = {
   APPROVED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   DISBURSED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   LENDER_APPROVED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  PAID: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
 
   PENDING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
   PROCESSING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
   RETRY_PENDING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  PARTIAL: 'bg-amber-50 text-amber-700 ring-amber-600/20',
 
   FAILED: 'bg-red-50 text-red-700 ring-red-600/20',
   REJECTED: 'bg-red-50 text-red-700 ring-red-600/20',
   LENDER_REJECTED: 'bg-red-50 text-red-700 ring-red-600/20',
 
   NOT_STARTED: 'bg-slate-100 text-slate-700 ring-slate-500/20',
+  WAIVED: 'bg-slate-100 text-slate-700 ring-slate-500/20',
 };
 
 function formatStatus(value) {

@@ -8,7 +8,7 @@ const adapter = (adapterKey: string, adapterVersion = '1'): LenderAdapter => ({
   createApplication: jest.fn(),
   updateApplication: jest.fn(),
   requestDecision: jest.fn(),
-  capabilities: { separateConsentSubmission: false, detailsUpdate: false, documentUpload: false, decisionRequest: false, statusPolling: false, disbursement: false },
+  capabilities: { separateConsentSubmission: false, detailsUpdate: false, documentUpload: false, decisionRequest: false, statusPolling: false, disbursement: false, repaymentNotification: false, chargeNotification: false, chargeWaiverNotification: false },
 });
 
 describe('LenderAdapterRegistry', () => {

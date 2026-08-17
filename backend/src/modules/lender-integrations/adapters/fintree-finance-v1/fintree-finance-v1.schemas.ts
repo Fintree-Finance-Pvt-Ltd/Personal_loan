@@ -123,10 +123,63 @@ export const FintreeDisburseResponseSchema = z.discriminatedUnion('success', [
   }).strict(),
 ]);
 
+// Servicing (post-disbursal) — confirmed against Fintree's real contract (2026-08-17):
+// same {success,data,correlationId} / {success,error,correlationId} envelope as every
+// other Fintree endpoint, error branch reusing the same FintreeErrorSchema (their
+// `details` field only appears on some VALIDATION_ERROR responses, matching the
+// already-optional `details` on FintreeErrorSchema below).
+export const FintreeRepaymentResponseSchema = z.discriminatedUnion('success', [
+  z.object({
+    success: z.literal(true),
+    data: z.object({
+      status: z.literal('REPAYMENT_RECORDED'),
+    }).strict(),
+    correlationId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    success: z.literal(false),
+    error: FintreeErrorSchema,
+    correlationId: z.string().uuid(),
+  }).strict(),
+]);
+
+export const FintreeChargeResponseSchema = z.discriminatedUnion('success', [
+  z.object({
+    success: z.literal(true),
+    data: z.object({
+      status: z.literal('CHARGE_ADDED'),
+    }).strict(),
+    correlationId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    success: z.literal(false),
+    error: FintreeErrorSchema,
+    correlationId: z.string().uuid(),
+  }).strict(),
+]);
+
+export const FintreeChargeWaiverResponseSchema = z.discriminatedUnion('success', [
+  z.object({
+    success: z.literal(true),
+    data: z.object({
+      status: z.literal('CHARGE_WAIVED'),
+    }).strict(),
+    correlationId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    success: z.literal(false),
+    error: FintreeErrorSchema,
+    correlationId: z.string().uuid(),
+  }).strict(),
+]);
+
 export type FintreeCreateResponse = z.infer<typeof FintreeCreateResponseSchema>;
 export type FintreeConsentResponse = z.infer<typeof FintreeConsentResponseSchema>;
 export type FintreeDetailsResponse = z.infer<typeof FintreeDetailsResponseSchema>;
 export type FintreeDocumentResponse = z.infer<typeof FintreeDocumentResponseSchema>;
 export type FintreeDecisionResponse = z.infer<typeof FintreeDecisionResponseSchema>;
 export type FintreeDisburseResponse = z.infer<typeof FintreeDisburseResponseSchema>;
+export type FintreeRepaymentResponse = z.infer<typeof FintreeRepaymentResponseSchema>;
+export type FintreeChargeResponse = z.infer<typeof FintreeChargeResponseSchema>;
+export type FintreeChargeWaiverResponse = z.infer<typeof FintreeChargeWaiverResponseSchema>;
 

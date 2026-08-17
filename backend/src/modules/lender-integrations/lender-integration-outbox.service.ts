@@ -363,4 +363,45 @@ if (!platformLan) {
       update: {},
     });
   }
+
+  // Repayment/charge/waiver are many-per-application (unlike the one-shot stages
+  // above), so the idempotency key is keyed on the specific sub-entity id, not just
+  // the application — otherwise a second repayment on the same loan would upsert
+  // into the first one's already-completed outbox row and never get sent.
+
+  async enqueueRepaymentNotification(applicationId: bigint, repaymentId: bigint) {
+    const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId } });
+    if (!application?.lenderId) throw new BadRequestException('Allocated lender is missing.');
+
+    const idempotencyKey = `${application.applicationNumber}:LENDER_NOTIFY_REPAYMENT:${repaymentId}`;
+    return this.prisma.lenderIntegrationOutbox.upsert({
+      where: { idempotencyKey },
+      create: { eventType: 'LENDER_NOTIFY_REPAYMENT', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId, integrationStage: 'REPAYMENT', payloadVersion: 1, idempotencyKey, repaymentId },
+      update: {},
+    });
+  }
+
+  async enqueueChargeNotification(applicationId: bigint, chargeId: bigint) {
+    const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId } });
+    if (!application?.lenderId) throw new BadRequestException('Allocated lender is missing.');
+
+    const idempotencyKey = `${application.applicationNumber}:LENDER_NOTIFY_CHARGE:${chargeId}`;
+    return this.prisma.lenderIntegrationOutbox.upsert({
+      where: { idempotencyKey },
+      create: { eventType: 'LENDER_NOTIFY_CHARGE', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId, integrationStage: 'CHARGE', payloadVersion: 1, idempotencyKey, chargeId },
+      update: {},
+    });
+  }
+
+  async enqueueChargeWaiverNotification(applicationId: bigint, chargeWaiverId: bigint) {
+    const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId } });
+    if (!application?.lenderId) throw new BadRequestException('Allocated lender is missing.');
+
+    const idempotencyKey = `${application.applicationNumber}:LENDER_NOTIFY_CHARGE_WAIVER:${chargeWaiverId}`;
+    return this.prisma.lenderIntegrationOutbox.upsert({
+      where: { idempotencyKey },
+      create: { eventType: 'LENDER_NOTIFY_CHARGE_WAIVER', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId, integrationStage: 'CHARGE_WAIVER', payloadVersion: 1, idempotencyKey, chargeWaiverId },
+      update: {},
+    });
+  }
 }

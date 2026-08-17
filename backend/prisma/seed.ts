@@ -59,6 +59,7 @@ const permissions = [
   ["POLICY_SIMULATE", "POLICY"],
   ["PAYMENT_REFUND_CREATE", "PAYMENT"],
   ["PAYMENT_REFUND_APPROVE", "PAYMENT"],
+  ["LOAN_CHARGE_MANAGE", "LOAN"],
   ["LENDER_READ", "LENDER"],
   ["LENDER_CREATE", "LENDER"],
   ["LENDER_UPDATE", "LENDER"],
@@ -149,6 +150,7 @@ const grants: Record<string, string[]> = {
     "CUSTOMER_PII_VIEW_FULL",
     "CREDIT_APPROVE",
     "CREDIT_REJECT",
+    "LOAN_CHARGE_MANAGE",
   ],
   POLICY_MAKER: [
     ...ownSession,

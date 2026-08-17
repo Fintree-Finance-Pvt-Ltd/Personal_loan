@@ -305,4 +305,188 @@ describe('FintreeFinanceV1Adapter', () => {
       );
     });
   });
+
+  describe('recordRepayment', () => {
+    const getRepaymentContext = () => ({
+      ...getBaseContext('API_KEY' as any),
+      partnerApplicationId: 'P-123',
+      applicationReference: 'APP-123',
+      platformLan: 'FTPL123',
+      amount: '5115.00',
+      paymentDate: '2026-08-30',
+      paymentId: 'PAYID12345',
+      paymentMode: 'UPI',
+      utr: 'UTR1234567890',
+    });
+
+    beforeEach(() => {
+      configService.get.mockReturnValue('my-api-key');
+    });
+
+    it('sends the confirmed Fintree repayment payload shape and acknowledges REPAYMENT_RECORDED', async () => {
+      (getRepaymentContext().transport as any).repaymentPath = '/repayment';
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'REPAYMENT_RECORDED' } },
+      });
+
+      const context = getRepaymentContext();
+      (context.transport as any).repaymentPath = '/repayment';
+
+      const result = await adapter.recordRepayment(context as any);
+
+      expect(result.acknowledged).toBe(true);
+      expect(result.providerStatus).toBe('REPAYMENT_RECORDED');
+      expect(httpService.requestJson).toHaveBeenCalledWith(expect.objectContaining({
+        body: JSON.stringify({
+          externalApplicationReference: 'APP-123',
+          lan: 'FTPL123',
+          amount: '5115.00',
+          paymentDate: '2026-08-30',
+          paymentId: 'PAYID12345',
+          paymentMode: 'UPI',
+          utr: 'UTR1234567890',
+        }),
+      }));
+    });
+
+    it('throws a partner error (e.g. DUPLICATE_UTR) when Fintree responds with success:false', async () => {
+      const context = getRepaymentContext();
+      (context.transport as any).repaymentPath = '/repayment';
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          success: false,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          error: { code: 'DUPLICATE_UTR', message: "UTR 'UTR1234567890' already used." },
+        },
+      });
+
+      await expect(adapter.recordRepayment(context as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'DUPLICATE_UTR' }),
+      );
+    });
+
+    it('throws FINTREE_ENDPOINT_NOT_CONFIGURED when repaymentPath is missing', async () => {
+      const context = getRepaymentContext();
+      (context.transport as any).repaymentPath = null;
+
+      await expect(adapter.recordRepayment(context as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_ENDPOINT_NOT_CONFIGURED' }),
+      );
+    });
+  });
+
+  describe('addCharge', () => {
+    const getChargeContext = () => ({
+      ...getBaseContext('API_KEY' as any),
+      partnerApplicationId: 'P-123',
+      applicationReference: 'APP-123',
+      platformLan: 'FTPL123',
+      chargeType: 'BOUNCE_CHARGE',
+      amount: '500.00',
+      dueDate: '2026-09-05',
+      remarks: 'Cheque bounced',
+    });
+
+    beforeEach(() => {
+      configService.get.mockReturnValue('my-api-key');
+    });
+
+    it('sends the confirmed Fintree charge payload shape and acknowledges CHARGE_ADDED', async () => {
+      const context = getChargeContext();
+      (context.transport as any).chargePath = '/charges';
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'CHARGE_ADDED' } },
+      });
+
+      const result = await adapter.addCharge(context as any);
+
+      expect(result.acknowledged).toBe(true);
+      expect(result.providerStatus).toBe('CHARGE_ADDED');
+      expect(httpService.requestJson).toHaveBeenCalledWith(expect.objectContaining({
+        body: JSON.stringify({
+          externalApplicationReference: 'APP-123',
+          lan: 'FTPL123',
+          chargeType: 'BOUNCE_CHARGE',
+          amount: '500.00',
+          dueDate: '2026-09-05',
+          remarks: 'Cheque bounced',
+        }),
+      }));
+    });
+
+    it('throws FINTREE_ENDPOINT_NOT_CONFIGURED when chargePath is missing', async () => {
+      const context = getChargeContext();
+      (context.transport as any).chargePath = null;
+
+      await expect(adapter.addCharge(context as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_ENDPOINT_NOT_CONFIGURED' }),
+      );
+    });
+  });
+
+  describe('waiveCharge', () => {
+    const getWaiverContext = () => ({
+      ...getBaseContext('API_KEY' as any),
+      partnerApplicationId: 'P-123',
+      applicationReference: 'APP-123',
+      platformLan: 'FTPL123',
+      chargeType: 'BOUNCE_CHARGE',
+      waiverAmount: '250.00',
+    });
+
+    beforeEach(() => {
+      configService.get.mockReturnValue('my-api-key');
+    });
+
+    it('sends the confirmed Fintree waiver payload shape and acknowledges CHARGE_WAIVED', async () => {
+      const context = getWaiverContext();
+      (context.transport as any).chargeWaiverPath = '/charges/waiver';
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: { success: true, correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157', data: { status: 'CHARGE_WAIVED' } },
+      });
+
+      const result = await adapter.waiveCharge(context as any);
+
+      expect(result.acknowledged).toBe(true);
+      expect(result.providerStatus).toBe('CHARGE_WAIVED');
+      expect(httpService.requestJson).toHaveBeenCalledWith(expect.objectContaining({
+        body: JSON.stringify({
+          externalApplicationReference: 'APP-123',
+          lan: 'FTPL123',
+          chargeType: 'BOUNCE_CHARGE',
+          waiverAmount: '250.00',
+        }),
+      }));
+    });
+
+    it('throws a partner error (e.g. CHARGE_NOT_FOUND) when Fintree responds with success:false', async () => {
+      const context = getWaiverContext();
+      (context.transport as any).chargeWaiverPath = '/charges/waiver';
+      httpService.requestJson.mockResolvedValue({
+        status: 200,
+        data: {
+          success: false,
+          correlationId: '47d96ed0-643a-4467-96a8-a90b4d4dc157',
+          error: { code: 'CHARGE_NOT_FOUND', message: 'No unpaid charge of that type.' },
+        },
+      });
+
+      await expect(adapter.waiveCharge(context as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'CHARGE_NOT_FOUND' }),
+      );
+    });
+
+    it('throws FINTREE_ENDPOINT_NOT_CONFIGURED when chargeWaiverPath is missing', async () => {
+      const context = getWaiverContext();
+      (context.transport as any).chargeWaiverPath = null;
+
+      await expect(adapter.waiveCharge(context as any)).rejects.toThrow(
+        expect.objectContaining({ code: 'FINTREE_ENDPOINT_NOT_CONFIGURED' }),
+      );
+    });
+  });
 });

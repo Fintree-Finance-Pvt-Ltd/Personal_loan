@@ -31,6 +31,8 @@ import {
 
 import {
   LenderAdapter,
+  LenderChargeContext,
+  LenderChargeWaiverContext,
   LenderConsentContext,
   LenderCreateApplicationContext,
   LenderDecisionContext,
@@ -38,6 +40,7 @@ import {
   LenderDocumentCandidate,
   LenderDocumentUploadContext,
   LenderIntegrationTransportConfig,
+  LenderRepaymentContext,
   LenderStatusContext,
   LenderUpdateApplicationContext,
 } from './lender-integration.types';
@@ -298,6 +301,36 @@ export class LenderIntegrationService {
         config,
         adapter,
       );
+
+    case 'REPAYMENT':
+      if (!adapter.capabilities.repaymentNotification) {
+        throw new LenderIntegrationError(
+          'FINTREE_REPAYMENT_CONTRACT_NOT_ENABLED',
+          'Repayment notification is disabled for this adapter.',
+          'PERMANENT_VALIDATION',
+        );
+      }
+      return this.processRepaymentNotify(event, application, link, config, adapter);
+
+    case 'CHARGE':
+      if (!adapter.capabilities.chargeNotification) {
+        throw new LenderIntegrationError(
+          'FINTREE_CHARGE_CONTRACT_NOT_ENABLED',
+          'Charge notification is disabled for this adapter.',
+          'PERMANENT_VALIDATION',
+        );
+      }
+      return this.processChargeNotify(event, application, link, config, adapter);
+
+    case 'CHARGE_WAIVER':
+      if (!adapter.capabilities.chargeWaiverNotification) {
+        throw new LenderIntegrationError(
+          'FINTREE_CHARGE_WAIVER_CONTRACT_NOT_ENABLED',
+          'Charge waiver notification is disabled for this adapter.',
+          'PERMANENT_VALIDATION',
+        );
+      }
+      return this.processChargeWaiverNotify(event, application, link, config, adapter);
 
     default:
       throw new LenderIntegrationError(
@@ -1347,6 +1380,112 @@ async markStageFailure(
     return true;
   }
 
+  private async processRepaymentNotify(event: any, application: any, link: any, config: any, adapter: LenderAdapter): Promise<boolean> {
+    if (!adapter.recordRepayment) {
+      throw new LenderIntegrationError('LENDER_REPAYMENT_METHOD_MISSING', 'The adapter declares repayment-notification support but does not implement recordRepayment.', 'AUTHENTICATION_CONFIGURATION');
+    }
+    if (!link.partnerApplicationId) {
+      throw new LenderIntegrationError('LENDER_SERVICING_BEFORE_CREATE', 'Servicing notifications require a completed CREATE and partner application ID.', 'PERMANENT_VALIDATION');
+    }
+    if (!event.repaymentId) {
+      throw new LenderIntegrationError('LENDER_REPAYMENT_EVENT_MISSING_REF', 'Repayment notification event is missing its repayment reference.', 'PERMANENT_VALIDATION');
+    }
+
+    const repayment = await this.prisma.plRepayment.findUnique({ where: { id: event.repaymentId } });
+    if (!repayment) {
+      throw new LenderIntegrationError('LENDER_REPAYMENT_MISSING', 'The referenced repayment no longer exists.', 'PERMANENT_VALIDATION');
+    }
+
+    const context = await this.buildRepaymentContext(event, application, link, config, repayment);
+    const result = await adapter.recordRepayment(context);
+
+    if (!result.acknowledged) {
+      throw new LenderIntegrationError('LENDER_REPAYMENT_NOT_ACKNOWLEDGED', 'Lender did not acknowledge the repayment notification.', 'PERMANENT_VALIDATION');
+    }
+
+    const completed = await this.prisma.lenderIntegrationOutbox.updateMany({
+      where: { id: event.id, status: 'PROCESSING', lockToken: event.lockToken },
+      data: { status: 'COMPLETED', processedAt: new Date(), lockedAt: null, lockedBy: null, lockToken: null, leaseExpiresAt: null, lastErrorCode: null, lastErrorMessage: null },
+    });
+    if (completed.count !== 1) {
+      throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Event lock was lost during completion.', 'TEMPORARY', true);
+    }
+
+    return true;
+  }
+
+  private async processChargeNotify(event: any, application: any, link: any, config: any, adapter: LenderAdapter): Promise<boolean> {
+    if (!adapter.addCharge) {
+      throw new LenderIntegrationError('LENDER_CHARGE_METHOD_MISSING', 'The adapter declares charge-notification support but does not implement addCharge.', 'AUTHENTICATION_CONFIGURATION');
+    }
+    if (!link.partnerApplicationId) {
+      throw new LenderIntegrationError('LENDER_SERVICING_BEFORE_CREATE', 'Servicing notifications require a completed CREATE and partner application ID.', 'PERMANENT_VALIDATION');
+    }
+    if (!event.chargeId) {
+      throw new LenderIntegrationError('LENDER_CHARGE_EVENT_MISSING_REF', 'Charge notification event is missing its charge reference.', 'PERMANENT_VALIDATION');
+    }
+
+    const charge = await this.prisma.plLoanCharge.findUnique({ where: { id: event.chargeId } });
+    if (!charge) {
+      throw new LenderIntegrationError('LENDER_CHARGE_MISSING', 'The referenced charge no longer exists.', 'PERMANENT_VALIDATION');
+    }
+
+    const context = await this.buildChargeContext(event, application, link, config, charge);
+    const result = await adapter.addCharge(context);
+
+    if (!result.acknowledged) {
+      throw new LenderIntegrationError('LENDER_CHARGE_NOT_ACKNOWLEDGED', 'Lender did not acknowledge the charge notification.', 'PERMANENT_VALIDATION');
+    }
+
+    const completed = await this.prisma.lenderIntegrationOutbox.updateMany({
+      where: { id: event.id, status: 'PROCESSING', lockToken: event.lockToken },
+      data: { status: 'COMPLETED', processedAt: new Date(), lockedAt: null, lockedBy: null, lockToken: null, leaseExpiresAt: null, lastErrorCode: null, lastErrorMessage: null },
+    });
+    if (completed.count !== 1) {
+      throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Event lock was lost during completion.', 'TEMPORARY', true);
+    }
+
+    return true;
+  }
+
+  private async processChargeWaiverNotify(event: any, application: any, link: any, config: any, adapter: LenderAdapter): Promise<boolean> {
+    if (!adapter.waiveCharge) {
+      throw new LenderIntegrationError('LENDER_CHARGE_WAIVER_METHOD_MISSING', 'The adapter declares charge-waiver-notification support but does not implement waiveCharge.', 'AUTHENTICATION_CONFIGURATION');
+    }
+    if (!link.partnerApplicationId) {
+      throw new LenderIntegrationError('LENDER_SERVICING_BEFORE_CREATE', 'Servicing notifications require a completed CREATE and partner application ID.', 'PERMANENT_VALIDATION');
+    }
+    if (!event.chargeWaiverId) {
+      throw new LenderIntegrationError('LENDER_CHARGE_WAIVER_EVENT_MISSING_REF', 'Charge waiver notification event is missing its waiver reference.', 'PERMANENT_VALIDATION');
+    }
+
+    const waiver = await this.prisma.plLoanChargeWaiver.findUnique({ where: { id: event.chargeWaiverId }, include: { charge: true } });
+    if (!waiver) {
+      throw new LenderIntegrationError('LENDER_CHARGE_WAIVER_MISSING', 'The referenced charge waiver no longer exists.', 'PERMANENT_VALIDATION');
+    }
+
+    const context = await this.buildChargeWaiverContext(event, application, link, config, waiver);
+    const result = await adapter.waiveCharge(context);
+
+    if (!result.acknowledged) {
+      throw new LenderIntegrationError('LENDER_CHARGE_WAIVER_NOT_ACKNOWLEDGED', 'Lender did not acknowledge the charge waiver notification.', 'PERMANENT_VALIDATION');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.plLoanChargeWaiver.update({ where: { id: waiver.id }, data: { lenderNotifiedAt: new Date() } });
+
+      const completed = await tx.lenderIntegrationOutbox.updateMany({
+        where: { id: event.id, status: 'PROCESSING', lockToken: event.lockToken },
+        data: { status: 'COMPLETED', processedAt: new Date(), lockedAt: null, lockedBy: null, lockToken: null, leaseExpiresAt: null, lastErrorCode: null, lastErrorMessage: null },
+      });
+      if (completed.count !== 1) {
+        throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Event lock was lost during completion.', 'TEMPORARY', true);
+      }
+    });
+
+    return true;
+  }
+
   private async buildUpdateContext(
   event: any,
   application: any,
@@ -2039,6 +2178,69 @@ async markStageFailure(
     };
   }
 
+  private toDateOnly(value: Date): string {
+    return value.toISOString().slice(0, 10);
+  }
+
+  private async buildRepaymentContext(event: any, application: any, link: any, config: any, repayment: any): Promise<LenderRepaymentContext> {
+    if (!application.platformLan) {
+      throw new LenderIntegrationError('PLATFORM_LAN_MISSING', 'Platform LAN is missing.', 'PERMANENT_VALIDATION');
+    }
+    return {
+      idempotencyKey: event.idempotencyKey,
+      correlationId: randomUUID(),
+      payloadVersion: event.payloadVersion,
+      transport: this.transport(config),
+      partnerApplicationId: link.partnerApplicationId,
+      applicationReference: application.applicationNumber,
+      platformLan: application.platformLan,
+      amount: repayment.amountReceived.toString(),
+      paymentDate: this.toDateOnly(repayment.paymentDate),
+      paymentId: repayment.paymentId,
+      paymentMode: repayment.paymentMode,
+      utr: repayment.referenceNumber || repayment.paymentId,
+    };
+  }
+
+  private async buildChargeContext(event: any, application: any, link: any, config: any, charge: any): Promise<LenderChargeContext> {
+    if (!application.platformLan) {
+      throw new LenderIntegrationError('PLATFORM_LAN_MISSING', 'Platform LAN is missing.', 'PERMANENT_VALIDATION');
+    }
+    if (!charge.dueDate) {
+      throw new LenderIntegrationError('LENDER_CHARGE_DUE_DATE_MISSING', 'The charge has no due date to report to the lender.', 'PERMANENT_VALIDATION');
+    }
+    return {
+      idempotencyKey: event.idempotencyKey,
+      correlationId: randomUUID(),
+      payloadVersion: event.payloadVersion,
+      transport: this.transport(config),
+      partnerApplicationId: link.partnerApplicationId,
+      applicationReference: application.applicationNumber,
+      platformLan: application.platformLan,
+      chargeType: charge.chargeType,
+      amount: charge.amount.toString(),
+      dueDate: this.toDateOnly(charge.dueDate),
+      remarks: charge.description,
+    };
+  }
+
+  private async buildChargeWaiverContext(event: any, application: any, link: any, config: any, waiver: any): Promise<LenderChargeWaiverContext> {
+    if (!application.platformLan) {
+      throw new LenderIntegrationError('PLATFORM_LAN_MISSING', 'Platform LAN is missing.', 'PERMANENT_VALIDATION');
+    }
+    return {
+      idempotencyKey: event.idempotencyKey,
+      correlationId: randomUUID(),
+      payloadVersion: event.payloadVersion,
+      transport: this.transport(config),
+      partnerApplicationId: link.partnerApplicationId,
+      applicationReference: application.applicationNumber,
+      platformLan: application.platformLan,
+      chargeType: waiver.charge.chargeType,
+      waiverAmount: waiver.waiverAmount.toString(),
+    };
+  }
+
   private async buildStatusContext(event: any, application: any, link: any, config: any): Promise<LenderStatusContext> {
     return { idempotencyKey: event.idempotencyKey, correlationId: randomUUID(), payloadVersion: event.payloadVersion, transport: this.transport(config), partnerApplicationId: link.partnerApplicationId, applicationReference: application.applicationNumber };
   }
@@ -2320,6 +2522,15 @@ async markStageFailure(
 
     disbursePath:
       config.disbursePath,
+
+    repaymentPath:
+      config.repaymentPath,
+
+    chargePath:
+      config.chargePath,
+
+    chargeWaiverPath:
+      config.chargeWaiverPath,
 
     connectTimeoutMs:
       config.connectTimeoutMs,

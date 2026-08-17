@@ -1,5 +1,7 @@
 import { LenderIntegrationError } from '../../lender-integration.errors';
 import {
+  LenderChargeContext,
+  LenderChargeWaiverContext,
   LenderConsentContext,
   LenderCreateApplicationContext,
   LenderDecisionContext,
@@ -7,6 +9,7 @@ import {
   LenderDocumentCandidate,
   LenderDocumentSelection,
   LenderDocumentUploadContext,
+  LenderRepaymentContext,
   LenderUpdateApplicationContext,
 } from '../../lender-integration.types';
 
@@ -520,6 +523,117 @@ export function mapFintreeDisbursePayload(
       ),
 
     trigger_fund: context.triggerFund,
+  };
+}
+
+export function mapFintreeRepaymentPayload(
+  context: LenderRepaymentContext,
+) {
+  return {
+    externalApplicationReference:
+      requireString(
+        context.applicationReference,
+        'externalApplicationReference',
+      ),
+
+    lan:
+      requireString(
+        context.platformLan,
+        'lan',
+      ),
+
+    amount:
+      requireString(
+        context.amount,
+        'amount',
+      ),
+
+    paymentDate:
+      requireString(
+        context.paymentDate,
+        'paymentDate',
+      ),
+
+    paymentId:
+      requireString(
+        context.paymentId,
+        'paymentId',
+      ),
+
+    paymentMode:
+      context.paymentMode,
+
+    utr:
+      context.utr,
+  };
+}
+
+export function mapFintreeChargePayload(
+  context: LenderChargeContext,
+) {
+  return {
+    externalApplicationReference:
+      requireString(
+        context.applicationReference,
+        'externalApplicationReference',
+      ),
+
+    lan:
+      requireString(
+        context.platformLan,
+        'lan',
+      ),
+
+    chargeType:
+      requireString(
+        context.chargeType,
+        'chargeType',
+      ),
+
+    amount:
+      requireString(
+        context.amount,
+        'amount',
+      ),
+
+    dueDate:
+      requireString(
+        context.dueDate,
+        'dueDate',
+      ),
+
+    remarks:
+      context.remarks,
+  };
+}
+
+export function mapFintreeChargeWaiverPayload(
+  context: LenderChargeWaiverContext,
+) {
+  return {
+    externalApplicationReference:
+      requireString(
+        context.applicationReference,
+        'externalApplicationReference',
+      ),
+
+    lan:
+      requireString(
+        context.platformLan,
+        'lan',
+      ),
+
+    chargeType:
+      requireString(
+        context.chargeType,
+        'chargeType',
+      ),
+
+    waiverAmount:
+      requireString(
+        context.waiverAmount,
+        'waiverAmount',
+      ),
   };
 }
 

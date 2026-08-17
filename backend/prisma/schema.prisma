@@ -1153,6 +1153,9 @@ enum LenderIntegrationStage {
   CONSENT
   DOCUMENT
   DISBURSE
+  REPAYMENT
+  CHARGE
+  CHARGE_WAIVER
 }
 
 enum LenderIntegrationEventType {
@@ -1163,6 +1166,9 @@ enum LenderIntegrationEventType {
   LENDER_SUBMIT_CONSENT
   LENDER_UPLOAD_DOCUMENT
   LENDER_REQUEST_DISBURSAL
+  LENDER_NOTIFY_REPAYMENT
+  LENDER_NOTIFY_CHARGE
+  LENDER_NOTIFY_CHARGE_WAIVER
 }
 
 enum LenderIntegrationOutboxStatus {
@@ -1318,6 +1324,12 @@ model LenderIntegrationConfig {
   webhookSecretReference    String?                   @db.VarChar(150)
   documentUploadPath        String?                   @db.VarChar(255)
   disbursePath              String?                   @db.VarChar(255)
+  // Servicing paths (post-disbursal, called by us after CREATE/DISBURSE has already run) —
+  // {partnerApplicationId} in each is LenderApplicationLink.partnerApplicationId, the ID
+  // the lender assigned during CREATE, not anything from the (unrelated) partner-api module.
+  repaymentPath             String?                   @db.VarChar(255)
+  chargePath                String?                   @db.VarChar(255)
+  chargeWaiverPath          String?                   @db.VarChar(255)
   connectTimeoutMs          Int                       @default(5000)
   requestTimeoutMs          Int                       @default(15000)
   maximumRetryAttempts      Int                       @default(5)
@@ -1418,6 +1430,12 @@ model LenderIntegrationOutbox {
   payloadVersion       Int
   idempotencyKey       String                        @unique @db.VarChar(191)
   documentTransferId   BigInt?                       @db.UnsignedBigInt
+  // Repayment/charge/waiver are many-per-application (unlike CREATE/UPDATE/DECISION/
+  // DISBURSE, which are one-shot per application) — each outbox row needs to know
+  // exactly which underlying event it's for, same reason documentTransferId exists.
+  repaymentId          BigInt?                       @db.UnsignedBigInt
+  chargeId             BigInt?                       @db.UnsignedBigInt
+  chargeWaiverId       BigInt?                       @db.UnsignedBigInt
   status               LenderIntegrationOutboxStatus @default(PENDING)
   attemptCount         Int                           @default(0)
   availableAt          DateTime                      @default(now())
@@ -1434,6 +1452,9 @@ model LenderIntegrationOutbox {
   application      PlApplication           @relation(fields: [applicationId], references: [id], onDelete: Restrict)
   lender           Lender                  @relation(fields: [lenderId], references: [id], onDelete: Restrict)
   documentTransfer LenderDocumentTransfer? @relation(fields: [documentTransferId], references: [id], onDelete: SetNull)
+  repayment        PlRepayment?            @relation(fields: [repaymentId], references: [id], onDelete: SetNull)
+  charge           PlLoanCharge?           @relation(fields: [chargeId], references: [id], onDelete: SetNull)
+  chargeWaiver     PlLoanChargeWaiver?     @relation(fields: [chargeWaiverId], references: [id], onDelete: SetNull)
 
   @@index([status, availableAt, createdAt])
   @@index([applicationId, integrationStage])
@@ -1887,7 +1908,8 @@ model PlRepayment {
   createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
-  allocations PlRepaymentAllocation[]
+  allocations        PlRepaymentAllocation[]
+  lenderOutboxEvents LenderIntegrationOutbox[]
 
   @@index([loanId], map: "idx_pl_repayment_loan_id")
   @@index([lan], map: "idx_pl_repayment_lan")
@@ -1929,10 +1951,36 @@ model PlLoanCharge {
   createdAt       DateTime  @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
 
+  waivers            PlLoanChargeWaiver[]
+  lenderOutboxEvents LenderIntegrationOutbox[]
+
   @@index([loanId], map: "idx_pl_charge_loan_id")
   @@index([lan], map: "idx_pl_charge_lan")
   @@index([chargeType], map: "idx_pl_charge_type")
   @@map("pl_loan_charges")
+}
+
+model PlLoanChargeWaiver {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  chargeId       BigInt    @map("charge_id") @db.UnsignedBigInt
+  charge         PlLoanCharge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  loanId         BigInt    @map("loan_id") @db.UnsignedBigInt
+  lan            String    @db.VarChar(30)
+  waiverAmount   Decimal   @map("waiver_amount") @db.Decimal(15, 2)
+  waivedAt       DateTime  @default(now()) @map("waived_at") @db.DateTime(0)
+  waivedByUserId String?   @map("waived_by_user_id")
+  remarks        String?   @db.VarChar(255)
+  // Set once the outbound Fintree notification for this waiver actually succeeds —
+  // lets us tell "waived on our side" apart from "Fintree has been told" at a glance.
+  lenderNotifiedAt DateTime? @map("lender_notified_at") @db.DateTime(0)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  lenderOutboxEvents LenderIntegrationOutbox[]
+
+  @@index([chargeId], map: "idx_pl_charge_waiver_charge_id")
+  @@index([loanId], map: "idx_pl_charge_waiver_loan_id")
+  @@map("pl_loan_charge_waivers")
 }
 
 enum MlmPolicyOperationalStatus {

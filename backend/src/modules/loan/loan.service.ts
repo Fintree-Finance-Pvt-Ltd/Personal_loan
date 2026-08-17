@@ -2671,7 +2671,7 @@ export class LoanService {
       throw new BadRequestException('Payment amount must be a positive number.');
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Fetch Loan
       const loan = await tx.plLoan.findFirst({
         where: { lan },
@@ -2877,8 +2877,163 @@ export class LoanService {
         installmentNumber: instNum,
         newRemainingAmount,
         paymentStatus: newPaymentStatus,
+        applicationId: loan.applicationId,
+        repaymentId: repayment.id,
       };
     });
+
+    // Only for a genuinely new repayment — the duplicate-reference/duplicate-paymentId
+    // early-return branches above don't carry applicationId/repaymentId, so this is a
+    // no-op replay for those, which is correct: nothing new happened to notify about.
+    if (result.applicationId && result.repaymentId) {
+      // Trigger the lender's repayment-notification API via the existing outbox/worker
+      // pipeline (same idempotency/retry/auth machinery as CREATE/UPDATE/DISBURSE) —
+      // never a direct HTTP call from here, and never allowed to fail the repayment
+      // itself (it already succeeded in our own system by the time this fires).
+      this.lenderIntegrationOutbox.enqueueRepaymentNotification(result.applicationId, result.repaymentId).catch((err) => {
+        this.logger.warn(`Failed to enqueue repayment notification for loan ${lan}: ${err?.message || err}`);
+      });
+    }
+
+    return result;
+  }
+
+  async addLoanCharge(
+    lanInput: string,
+    payload: { chargeType: string; amount: number; dueDate: Date; remarks?: string },
+    actorUserId?: string,
+  ) {
+    const lan = String(lanInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+
+    // Normalized to match this table's own documented convention (chargeType String
+    // // BOUNCE_CHARGE, PENAL_CHARGE) regardless of how the caller capitalizes it.
+    const chargeType = String(payload.chargeType || '').trim().toUpperCase().replace(/\s+/g, '_');
+    if (!chargeType) throw new BadRequestException('chargeType is required.');
+
+    const amountNum = Number(payload.amount);
+    if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+      throw new BadRequestException('Charge amount must be a positive number.');
+    }
+    if (!payload.dueDate) throw new BadRequestException('dueDate is required.');
+
+    const loan = await this.prisma.plLoan.findFirst({ where: { lan } });
+    if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+
+    const charge = await this.prisma.plLoanCharge.create({
+      data: {
+        loanId: loan.id,
+        lan,
+        chargeType,
+        amount: new Prisma.Decimal(amountNum),
+        paidAmount: new Prisma.Decimal(0),
+        remainingAmount: new Prisma.Decimal(amountNum),
+        status: 'PENDING',
+        dueDate: payload.dueDate,
+        description: payload.remarks?.trim() || null,
+      },
+    });
+
+    this.auditLogs
+      .record({
+        actorUserId: actorUserId ?? null,
+        module: 'LOAN',
+        action: 'LOAN_CHARGE_ADDED',
+        entityType: 'PlLoanCharge',
+        entityId: charge.id.toString(),
+        outcome: 'SUCCESS',
+        requestId: randomBytes(16).toString('hex'),
+        newValue: { lan, chargeType, amount: amountNum, dueDate: payload.dueDate },
+      })
+      .catch(() => {});
+
+    // Trigger the lender's charge-notification API via the existing outbox/worker
+    // pipeline — never a direct HTTP call from here, never allowed to fail the charge
+    // creation itself (it already succeeded in our own system by the time this fires).
+    this.lenderIntegrationOutbox.enqueueChargeNotification(loan.applicationId, charge.id).catch((err) => {
+      this.logger.warn(`Failed to enqueue charge notification for loan ${lan}: ${err?.message || err}`);
+    });
+
+    return {
+      success: true,
+      message: `Charge '${chargeType}' of ₹${amountNum} added to loan ${lan}.`,
+      chargeId: charge.id.toString(),
+    };
+  }
+
+  async waiveLoanCharge(
+    lanInput: string,
+    chargeId: bigint,
+    payload: { waiverAmount: number; remarks?: string },
+    actorUserId?: string,
+  ) {
+    const lan = String(lanInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+
+    const waiverAmountNum = Number(payload.waiverAmount);
+    if (!waiverAmountNum || isNaN(waiverAmountNum) || waiverAmountNum <= 0) {
+      throw new BadRequestException('waiverAmount must be a positive number.');
+    }
+
+    const charge = await this.prisma.plLoanCharge.findFirst({ where: { id: chargeId, lan }, include: { loan: true } });
+    if (!charge) throw new NotFoundException(`Charge ${chargeId} not found for LAN ${lan}.`);
+    if (!['PENDING', 'PARTIAL'].includes(charge.status)) {
+      throw new BadRequestException(`Charge is not outstanding (status: ${charge.status}).`);
+    }
+
+    const remaining = Number(charge.remainingAmount);
+    if (waiverAmountNum > remaining) {
+      throw new BadRequestException(`waiverAmount (${waiverAmountNum}) exceeds the outstanding amount (${remaining}).`);
+    }
+
+    // Reaches zero -> fully cleared via waiver. Otherwise stays PARTIAL/PENDING,
+    // still collectible for the rest — a charge can be waived more than once.
+    const newRemaining = Math.round((remaining - waiverAmountNum) * 100) / 100;
+
+    const waiver = await this.prisma.$transaction(async (tx) => {
+      await tx.plLoanCharge.update({
+        where: { id: charge.id },
+        data: {
+          remainingAmount: new Prisma.Decimal(newRemaining),
+          status: newRemaining === 0 ? 'WAIVED' : charge.status,
+        },
+      });
+
+      return tx.plLoanChargeWaiver.create({
+        data: {
+          chargeId: charge.id,
+          loanId: charge.loanId,
+          lan,
+          waiverAmount: new Prisma.Decimal(waiverAmountNum),
+          waivedByUserId: actorUserId ?? null,
+          remarks: payload.remarks?.trim() || null,
+        },
+      });
+    });
+
+    this.auditLogs
+      .record({
+        actorUserId: actorUserId ?? null,
+        module: 'LOAN',
+        action: 'LOAN_CHARGE_WAIVED',
+        entityType: 'PlLoanCharge',
+        entityId: charge.id.toString(),
+        outcome: 'SUCCESS',
+        requestId: randomBytes(16).toString('hex'),
+        newValue: { lan, waiverAmount: waiverAmountNum, remainingAfter: newRemaining },
+      })
+      .catch(() => {});
+
+    this.lenderIntegrationOutbox.enqueueChargeWaiverNotification(charge.loan.applicationId, waiver.id).catch((err) => {
+      this.logger.warn(`Failed to enqueue charge waiver notification for loan ${lan}: ${err?.message || err}`);
+    });
+
+    return {
+      success: true,
+      message: `Waived ₹${waiverAmountNum} on charge ${chargeId} for loan ${lan}.`,
+      waiverId: waiver.id.toString(),
+      remainingAmount: newRemaining,
+    };
   }
 
   async initiateRepaymentPayment(
