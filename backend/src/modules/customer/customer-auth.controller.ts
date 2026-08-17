@@ -1,5 +1,6 @@
 import {
   Controller,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -7,13 +8,18 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { OtpService } from '../otp/otp.service';
+import { assertTrustedOrigin } from '../../common/utils/security.utils';
 
 @Controller('customer/auth')
 export class CustomerAuthController {
-  constructor(private readonly otpService: OtpService) {}
+  constructor(
+    private readonly otpService: OtpService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Public()
   @Post('refresh')
@@ -21,7 +27,10 @@ export class CustomerAuthController {
   async refresh(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+    @Headers('origin') origin?: string,
+    @Headers('referer') referer?: string,
   ) {
+    assertTrustedOrigin(this.config.getOrThrow<string>('FRONTEND_URL'), origin, referer);
     const rawToken = request.cookies?.[this.otpService.getCookieName()];
     if (!rawToken) {
       throw new UnauthorizedException({
@@ -69,7 +78,10 @@ export class CustomerAuthController {
   async logout(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+    @Headers('origin') origin?: string,
+    @Headers('referer') referer?: string,
   ) {
+    assertTrustedOrigin(this.config.getOrThrow<string>('FRONTEND_URL'), origin, referer);
     const rawToken = request.cookies?.[this.otpService.getCookieName()];
     
     if (rawToken) {

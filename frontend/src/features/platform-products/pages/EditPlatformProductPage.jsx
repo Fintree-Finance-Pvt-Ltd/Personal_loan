@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -15,8 +15,7 @@ import { platformProductsApi } from '../api/platform-products.api';
 
 export function EditPlatformProductPage() {
   const { platformProductId } = useParams();
-  const navigate = useNavigate();
-  
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',

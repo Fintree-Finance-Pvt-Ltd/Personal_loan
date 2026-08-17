@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Button, Spinner } from '../../../components/ui';
+import { Button, Spinner } from '../../../components/ui';
 
 export function DisableUserDialog({ open, userName, onConfirm, onCancel, busy }) {
   const [confirmed, setConfirmed] = useState(false);

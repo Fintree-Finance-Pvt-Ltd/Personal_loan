@@ -128,4 +128,92 @@ describe('LenderIntegrationOutboxService', () => {
       await expect(service.enqueueDisbursalWhenReady(1n)).rejects.toThrow('No loan exists for this application yet.');
     });
   });
+
+  describe('enqueueRepaymentNotification', () => {
+    it('enqueues a REPAYMENT stage event keyed on the specific repayment id', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      const event = await service.enqueueRepaymentNotification(1n, 501n);
+
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { idempotencyKey: 'APP-001:LENDER_NOTIFY_REPAYMENT:501' },
+        create: expect.objectContaining({ eventType: 'LENDER_NOTIFY_REPAYMENT', integrationStage: 'REPAYMENT', applicationId: 1n, repaymentId: 501n }),
+      }));
+      expect(event.integrationStage).toBe('REPAYMENT');
+    });
+
+    it('throws when the application has no allocated lender', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: null }) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      await expect(service.enqueueRepaymentNotification(1n, 501n)).rejects.toThrow('Allocated lender is missing.');
+    });
+
+    it('keys a second repayment on the same loan into its own outbox row', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      await service.enqueueRepaymentNotification(1n, 501n);
+      await service.enqueueRepaymentNotification(1n, 502n);
+
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { idempotencyKey: 'APP-001:LENDER_NOTIFY_REPAYMENT:501' } }));
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: { idempotencyKey: 'APP-001:LENDER_NOTIFY_REPAYMENT:502' } }));
+    });
+  });
+
+  describe('enqueueChargeNotification', () => {
+    it('enqueues a CHARGE stage event keyed on the specific charge id', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      const event = await service.enqueueChargeNotification(1n, 601n);
+
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { idempotencyKey: 'APP-001:LENDER_NOTIFY_CHARGE:601' },
+        create: expect.objectContaining({ eventType: 'LENDER_NOTIFY_CHARGE', integrationStage: 'CHARGE', applicationId: 1n, chargeId: 601n }),
+      }));
+      expect(event.integrationStage).toBe('CHARGE');
+    });
+
+    it('throws when the application has no allocated lender', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: null }) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      await expect(service.enqueueChargeNotification(1n, 601n)).rejects.toThrow('Allocated lender is missing.');
+    });
+  });
+
+  describe('enqueueChargeWaiverNotification', () => {
+    it('enqueues a CHARGE_WAIVER stage event keyed on the specific waiver id', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      const event = await service.enqueueChargeWaiverNotification(1n, 701n);
+
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { idempotencyKey: 'APP-001:LENDER_NOTIFY_CHARGE_WAIVER:701' },
+        create: expect.objectContaining({ eventType: 'LENDER_NOTIFY_CHARGE_WAIVER', integrationStage: 'CHARGE_WAIVER', applicationId: 1n, chargeWaiverId: 701n }),
+      }));
+      expect(event.integrationStage).toBe('CHARGE_WAIVER');
+    });
+
+    it('throws when the application has no allocated lender', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: null }) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      await expect(service.enqueueChargeWaiverNotification(1n, 701n)).rejects.toThrow('Allocated lender is missing.');
+    });
+  });
 });

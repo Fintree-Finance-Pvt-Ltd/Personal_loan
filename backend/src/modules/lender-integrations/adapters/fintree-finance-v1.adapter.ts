@@ -12,6 +12,8 @@ import { z } from 'zod';
 
 import {
   LenderAdapter,
+  LenderChargeContext,
+  LenderChargeWaiverContext,
   LenderConsentContext,
   LenderConsentResult,
   LenderCreateApplicationContext,
@@ -25,6 +27,8 @@ import {
   LenderDocumentUploadContext,
   LenderDocumentUploadResult,
   LenderHttpMethod,
+  LenderRepaymentContext,
+  LenderServicingResult,
   LenderStatusContext,
   LenderStatusResult,
   LenderUpdateApplicationContext,
@@ -41,21 +45,27 @@ import {
 } from '../lender-http.service';
 
 import {
+  FintreeChargeResponseSchema,
+  FintreeChargeWaiverResponseSchema,
   FintreeConsentResponseSchema,
   FintreeCreateResponseSchema,
   FintreeDecisionResponseSchema,
   FintreeDetailsResponseSchema,
   FintreeDisburseResponseSchema,
   FintreeDocumentResponseSchema,
+  FintreeRepaymentResponseSchema,
 } from './fintree-finance-v1/fintree-finance-v1.schemas';
 
 import {
+  mapFintreeChargePayload,
+  mapFintreeChargeWaiverPayload,
   mapFintreeConsentPayload,
   mapFintreeCreatePayload,
   mapFintreeDecisionPayload,
   mapFintreeDetailsPayload,
   mapFintreeDisbursePayload,
   mapFintreeDocumentPayload,
+  mapFintreeRepaymentPayload,
   selectFintreeDocuments,
 } from './fintree-finance-v1/fintree-finance-v1.mapper';
 
@@ -84,6 +94,9 @@ export class FintreeFinanceV1Adapter
     decisionRequest: true,
     statusPolling: false,
     disbursement: true,
+    repaymentNotification: true,
+    chargeNotification: true,
+    chargeWaiverNotification: true,
   } as const;
 
   constructor(
@@ -595,6 +608,78 @@ export class FintreeFinanceV1Adapter
           .disbursalReference ??
         null,
     };
+  }
+
+  async recordRepayment(
+    context: LenderRepaymentContext,
+  ): Promise<LenderServicingResult> {
+    const payload = mapFintreeRepaymentPayload(context);
+
+    const response = await this.callFintree({
+      context,
+      endpointName: 'REPAYMENT',
+      method: 'POST',
+      path: this.resolvePartnerPath(
+        this.requirePath(context.transport.repaymentPath, 'repaymentPath'),
+        context.partnerApplicationId,
+      ),
+      payload,
+      schema: FintreeRepaymentResponseSchema,
+    });
+
+    if (!response.success) {
+      throw this.partnerError(response.error.code, response.error.message);
+    }
+
+    return { acknowledged: true, providerStatus: response.data.status };
+  }
+
+  async addCharge(
+    context: LenderChargeContext,
+  ): Promise<LenderServicingResult> {
+    const payload = mapFintreeChargePayload(context);
+
+    const response = await this.callFintree({
+      context,
+      endpointName: 'CHARGE',
+      method: 'POST',
+      path: this.resolvePartnerPath(
+        this.requirePath(context.transport.chargePath, 'chargePath'),
+        context.partnerApplicationId,
+      ),
+      payload,
+      schema: FintreeChargeResponseSchema,
+    });
+
+    if (!response.success) {
+      throw this.partnerError(response.error.code, response.error.message);
+    }
+
+    return { acknowledged: true, providerStatus: response.data.status };
+  }
+
+  async waiveCharge(
+    context: LenderChargeWaiverContext,
+  ): Promise<LenderServicingResult> {
+    const payload = mapFintreeChargeWaiverPayload(context);
+
+    const response = await this.callFintree({
+      context,
+      endpointName: 'CHARGE_WAIVER',
+      method: 'POST',
+      path: this.resolvePartnerPath(
+        this.requirePath(context.transport.chargeWaiverPath, 'chargeWaiverPath'),
+        context.partnerApplicationId,
+      ),
+      payload,
+      schema: FintreeChargeWaiverResponseSchema,
+    });
+
+    if (!response.success) {
+      throw this.partnerError(response.error.code, response.error.message);
+    }
+
+    return { acknowledged: true, providerStatus: response.data.status };
   }
 
   private async callFintree<

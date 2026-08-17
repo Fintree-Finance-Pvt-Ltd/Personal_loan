@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { platformPoliciesApi } from '../api/platform-policies.api';
 import { Button } from '../../../components/ui';
 import PolicySimulationPanel from '../components/PolicySimulationPanel';
 
 export default function PlatformPolicyDetailsPage() {
   const { policyId } = useParams();
-  const navigate = useNavigate();
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

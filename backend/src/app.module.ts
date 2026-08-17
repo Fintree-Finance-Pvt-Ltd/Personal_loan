@@ -36,6 +36,9 @@ import { ElectronicSignModule } from './modules/electronic-sign/electronic-sign.
 import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
 import { LenderIntegrationModule } from './modules/lender-integrations/lender-integration.module';
 import { CreditReviewModule } from './modules/credit-review/credit-review.module';
+import { UnaportModule } from './modules/integrations/unaport/unaport.module';
+import { ApplicationsModule } from './modules/applications/applications.module';
+import { PartnerApiModule } from './modules/partner-api/partner-api.module';
 
 @Module({
   imports: [
@@ -72,6 +75,9 @@ import { CreditReviewModule } from './modules/credit-review/credit-review.module
     LoanAgreementModule,
     LenderIntegrationModule,
     CreditReviewModule,
+    UnaportModule,
+    ApplicationsModule,
+    PartnerApiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ruleEditorSchema } from '../validation/platform-policy.schema';

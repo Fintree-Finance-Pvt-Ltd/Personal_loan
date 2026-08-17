@@ -1,4 +1,3 @@
-import React from 'react';
 import { ShieldAlert, ShieldCheck, ShieldX } from 'lucide-react';
 
 export default function ReadinessBadge({ status }) {

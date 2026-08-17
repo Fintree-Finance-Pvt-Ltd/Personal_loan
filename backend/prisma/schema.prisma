@@ -1153,6 +1153,9 @@ enum LenderIntegrationStage {
   CONSENT
   DOCUMENT
   DISBURSE
+  REPAYMENT
+  CHARGE
+  CHARGE_WAIVER
 }
 
 enum LenderIntegrationEventType {
@@ -1163,6 +1166,9 @@ enum LenderIntegrationEventType {
   LENDER_SUBMIT_CONSENT
   LENDER_UPLOAD_DOCUMENT
   LENDER_REQUEST_DISBURSAL
+  LENDER_NOTIFY_REPAYMENT
+  LENDER_NOTIFY_CHARGE
+  LENDER_NOTIFY_CHARGE_WAIVER
 }
 
 enum LenderIntegrationOutboxStatus {
@@ -1318,6 +1324,12 @@ model LenderIntegrationConfig {
   webhookSecretReference    String?                   @db.VarChar(150)
   documentUploadPath        String?                   @db.VarChar(255)
   disbursePath              String?                   @db.VarChar(255)
+  // Servicing paths (post-disbursal, called by us after CREATE/DISBURSE has already run) —
+  // {partnerApplicationId} in each is LenderApplicationLink.partnerApplicationId, the ID
+  // the lender assigned during CREATE, not anything from the (unrelated) partner-api module.
+  repaymentPath             String?                   @db.VarChar(255)
+  chargePath                String?                   @db.VarChar(255)
+  chargeWaiverPath          String?                   @db.VarChar(255)
   connectTimeoutMs          Int                       @default(5000)
   requestTimeoutMs          Int                       @default(15000)
   maximumRetryAttempts      Int                       @default(5)
@@ -1418,6 +1430,12 @@ model LenderIntegrationOutbox {
   payloadVersion       Int
   idempotencyKey       String                        @unique @db.VarChar(191)
   documentTransferId   BigInt?                       @db.UnsignedBigInt
+  // Repayment/charge/waiver are many-per-application (unlike CREATE/UPDATE/DECISION/
+  // DISBURSE, which are one-shot per application) — each outbox row needs to know
+  // exactly which underlying event it's for, same reason documentTransferId exists.
+  repaymentId          BigInt?                       @db.UnsignedBigInt
+  chargeId             BigInt?                       @db.UnsignedBigInt
+  chargeWaiverId       BigInt?                       @db.UnsignedBigInt
   status               LenderIntegrationOutboxStatus @default(PENDING)
   attemptCount         Int                           @default(0)
   availableAt          DateTime                      @default(now())
@@ -1434,6 +1452,9 @@ model LenderIntegrationOutbox {
   application      PlApplication           @relation(fields: [applicationId], references: [id], onDelete: Restrict)
   lender           Lender                  @relation(fields: [lenderId], references: [id], onDelete: Restrict)
   documentTransfer LenderDocumentTransfer? @relation(fields: [documentTransferId], references: [id], onDelete: SetNull)
+  repayment        PlRepayment?            @relation(fields: [repaymentId], references: [id], onDelete: SetNull)
+  charge           PlLoanCharge?           @relation(fields: [chargeId], references: [id], onDelete: SetNull)
+  chargeWaiver     PlLoanChargeWaiver?     @relation(fields: [chargeWaiverId], references: [id], onDelete: SetNull)
 
   @@index([status, availableAt, createdAt])
   @@index([applicationId, integrationStage])
@@ -1887,7 +1908,8 @@ model PlRepayment {
   createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
-  allocations PlRepaymentAllocation[]
+  allocations        PlRepaymentAllocation[]
+  lenderOutboxEvents LenderIntegrationOutbox[]
 
   @@index([loanId], map: "idx_pl_repayment_loan_id")
   @@index([lan], map: "idx_pl_repayment_lan")
@@ -1929,10 +1951,36 @@ model PlLoanCharge {
   createdAt       DateTime  @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
 
+  waivers            PlLoanChargeWaiver[]
+  lenderOutboxEvents LenderIntegrationOutbox[]
+
   @@index([loanId], map: "idx_pl_charge_loan_id")
   @@index([lan], map: "idx_pl_charge_lan")
   @@index([chargeType], map: "idx_pl_charge_type")
   @@map("pl_loan_charges")
+}
+
+model PlLoanChargeWaiver {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  chargeId       BigInt    @map("charge_id") @db.UnsignedBigInt
+  charge         PlLoanCharge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  loanId         BigInt    @map("loan_id") @db.UnsignedBigInt
+  lan            String    @db.VarChar(30)
+  waiverAmount   Decimal   @map("waiver_amount") @db.Decimal(15, 2)
+  waivedAt       DateTime  @default(now()) @map("waived_at") @db.DateTime(0)
+  waivedByUserId String?   @map("waived_by_user_id")
+  remarks        String?   @db.VarChar(255)
+  // Set once the outbound Fintree notification for this waiver actually succeeds —
+  // lets us tell "waived on our side" apart from "Fintree has been told" at a glance.
+  lenderNotifiedAt DateTime? @map("lender_notified_at") @db.DateTime(0)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  lenderOutboxEvents LenderIntegrationOutbox[]
+
+  @@index([chargeId], map: "idx_pl_charge_waiver_charge_id")
+  @@index([loanId], map: "idx_pl_charge_waiver_loan_id")
+  @@map("pl_loan_charge_waivers")
 }
 
 enum MlmPolicyOperationalStatus {
@@ -2717,3 +2765,113 @@ model LenderDocumentTransfer {
   @@index([transferStatus])
   @@map("lender_document_transfers")
 }
+
+model CustomerAccountAggregatorRequest {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId    BigInt  @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt? @map("application_id") @db.UnsignedBigInt
+
+  lan String @db.VarChar(50)
+
+  provider String @default("UNAPORT") @db.VarChar(30)
+
+  trackingId String @unique(map: "uk_pl_aa_tracking_id") @map("tracking_id") @db.VarChar(150)
+
+  consentId     String? @map("consent_id") @db.VarChar(255)
+  consentHandle String? @map("consent_handle") @db.VarChar(255)
+  sessionId     String? @map("session_id") @db.VarChar(255)
+
+  status String @db.VarChar(50)
+
+  consentStatus String? @map("consent_status") @db.VarChar(50)
+  dataStatus    String? @map("data_status") @db.VarChar(50)
+
+  initiatedAt DateTime? @map("initiated_at") @db.DateTime(0)
+  consentedAt DateTime? @map("consented_at") @db.DateTime(0)
+  dataReadyAt DateTime? @map("data_ready_at") @db.DateTime(0)
+  completedAt DateTime? @map("completed_at") @db.DateTime(0)
+  failedAt    DateTime? @map("failed_at") @db.DateTime(0)
+
+  providerRequestEncrypted  String? @map("provider_request_encrypted") @db.LongText
+  providerResponseEncrypted String? @map("provider_response_encrypted") @db.LongText
+
+  failureCode   String? @map("failure_code") @db.VarChar(100)
+  failureReason String? @map("failure_reason") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  bankData CustomerBankAccountData[]
+
+  @@index([customerId], map: "idx_pl_aa_req_customer")
+  @@index([applicationId], map: "idx_pl_aa_req_application")
+  @@index([lan], map: "idx_pl_aa_req_lan")
+  @@index([sessionId], map: "idx_pl_aa_req_session")
+  @@index([status], map: "idx_pl_aa_req_status")
+  @@map("customer_account_aggregator_requests")
+}
+
+model CustomerBankAccountData {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  requestId     BigInt                           @map("request_id") @db.UnsignedBigInt
+  request       CustomerAccountAggregatorRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  customerId    BigInt                           @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt?                          @map("application_id") @db.UnsignedBigInt
+  lan           String                           @db.VarChar(50)
+  provider      String                           @default("UNAPORT") @db.VarChar(30)
+  sessionId     String?                          @map("session_id") @db.VarChar(255)
+
+  fipId                  String?   @map("fip_id") @db.VarChar(100)
+  fipName                String?   @map("fip_name") @db.VarChar(150)
+  accountType            String?   @map("account_type") @db.VarChar(50)
+  accountNumberMasked    String?   @map("account_number_masked") @db.VarChar(50)
+  accountNumberEncrypted String?   @map("account_number_encrypted") @db.Text
+  accountHolderName      String?   @map("account_holder_name") @db.VarChar(200)
+  ifscCode               String?   @map("ifsc_code") @db.VarChar(20)
+  branchName             String?   @map("branch_name") @db.VarChar(150)
+  currency               String?   @default("INR") @db.VarChar(10)
+  currentBalance         Decimal?  @map("current_balance") @db.Decimal(15, 2)
+  availableBalance       Decimal?  @map("available_balance") @db.Decimal(15, 2)
+  averageBalance         Decimal?  @map("average_balance") @db.Decimal(15, 2)
+  summaryDate            DateTime? @map("summary_date") @db.DateTime(0)
+  fromDate               DateTime? @map("from_date") @db.DateTime(0)
+  toDate                 DateTime? @map("to_date") @db.DateTime(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  transactions CustomerBankTransaction[]
+
+  @@index([customerId], map: "idx_pl_bank_data_customer")
+  @@index([applicationId], map: "idx_pl_bank_data_app")
+  @@index([lan], map: "idx_pl_bank_data_lan")
+  @@map("customer_bank_account_data")
+}
+
+model CustomerBankTransaction {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  bankDataId BigInt                  @map("bank_data_id") @db.UnsignedBigInt
+  bankData   CustomerBankAccountData @relation(fields: [bankDataId], references: [id], onDelete: Cascade)
+
+  txnId           String?   @map("txn_id") @db.VarChar(150)
+  txnDate         DateTime  @map("txn_date") @db.DateTime(0)
+  valueDate       DateTime? @map("value_date") @db.DateTime(0)
+  txnType         String    @map("txn_type") @db.VarChar(20)
+  amount          Decimal   @db.Decimal(15, 2)
+  balance         Decimal?  @db.Decimal(15, 2)
+  narration       String?   @db.Text
+  mode            String?   @db.VarChar(50)
+  referenceNumber String?   @map("reference_number") @db.VarChar(150)
+  transactionHash String    @map("transaction_hash") @db.Char(64)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  @@unique([bankDataId, transactionHash], map: "uk_bank_txn_dedup")
+  @@index([bankDataId], map: "idx_pl_bank_txn_data")
+  @@index([txnDate], map: "idx_pl_bank_txn_date")
+  @@map("customer_bank_transactions")
+}
+

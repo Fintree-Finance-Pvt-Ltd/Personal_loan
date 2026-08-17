@@ -31,7 +31,7 @@ export class CustomerAadhaarKycService {
    */
   async initiate(
     currentCustomer: any,
-    body?: { consentGiven?: boolean },
+    body?: { consentGiven?: boolean; forceNew?: boolean },
   ) {
     if (!currentCustomer?.customerId) {
       throw new UnauthorizedException('Customer authentication is required.');
@@ -71,6 +71,64 @@ export class CustomerAadhaarKycService {
       };
     }
 
+    // Reuse an in-flight session instead of opening a fresh DigiTap link on every click —
+    // both when the customer double-clicks the button and when they closed the previous
+    // window without finishing and come back later within the same validity window.
+    const initiationTtlMs = 15 * 60 * 1000;
+    const existingTxId = customer.digilockerSessionId;
+    if (existingTxId && !body?.forceNew) {
+      // First, check whether the provider already completed verification since the last
+      // time we checked (customer finished DigiLocker but our webhook hasn't landed yet)
+      // — resolve that before falling back to reusing the still-open session.
+      try {
+        const providerDetails = await this.digitapService.getDigitapDigilockerDetails(existingTxId);
+        if (providerDetails) {
+          const rawStatus = providerDetails?.status || providerDetails?.model?.status || providerDetails?.code || '';
+          const normalizedStatus = String(rawStatus).trim().toUpperCase();
+          if (['S', 'SUCCESS', 'SUCCESSFUL', 'VERIFIED', 'COMPLETED', '200'].includes(normalizedStatus)) {
+            await this.processAndPersistVerifiedDetails(customer.id, providerDetails, customer.fullName);
+            const updatedCust = await this.prisma.customer.findUnique({ where: { id: customer.id } });
+            return {
+              success: true,
+              data: {
+                status: 'VERIFIED',
+                aadhaarVerified: true,
+                maskedAadhaar: updatedCust?.maskedAadhaar || customer.maskedAadhaar || null,
+                aadhaarLastFourDigits: updatedCust?.aadhaarLastFourDigits || customer.aadhaarLastFourDigits || null,
+                verifiedAt: new Date(),
+                message: 'Aadhaar KYC verified successfully.',
+              },
+            };
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Check provider status on initiate retry failed: ${err?.message}`);
+      }
+
+      if (
+        customer.digilockerStatus === 'INITIATED' &&
+        customer.digilockerConsentAt &&
+        Date.now() - customer.digilockerConsentAt.getTime() < initiationTtlMs
+      ) {
+        const stored = this.readStoredInitiation(customer.digilockerRawResponse);
+        if (stored?.verificationUrl) {
+          return {
+            success: true,
+            data: {
+              status: 'INITIATED',
+              verificationUrl: stored.verificationUrl,
+              transactionId: stored.transactionId || customer.digilockerSessionId,
+              attemptReference: stored.attemptReference || customer.digilockerReference,
+              customerCode: customer.customerCode,
+              pollAfterSeconds: 5,
+              expiresAt: stored.expiresAt,
+              resumed: true,
+            },
+          };
+        }
+      }
+    }
+
     // Create unique attempt reference using customerCode — starts with DLK_CUS- for LMS forwarder routing
     const attemptReference = `DLK_CUS-${customer.customerCode}_${Date.now()}`;
 
@@ -85,6 +143,9 @@ export class CustomerAadhaarKycService {
         this.config.get<string>('DIGITAP_DIGILOCKER_REDIRECT_URL') ||
         'http://localhost:5173/customer/digilocker/callback',
     });
+
+    const verificationUrl = response.url || response.kycUrl;
+    const expiresAt = new Date(Date.now() + initiationTtlMs).toISOString();
 
     // Persist attempt reference and transaction ID in KycVerificationStatus (upsert for idempotency)
     await this.prisma.kycVerificationStatus.upsert({
@@ -111,6 +172,7 @@ export class CustomerAadhaarKycService {
         digilockerSessionId: response.transactionId,
         digilockerReference: attemptReference,
         digilockerConsentAt: new Date(),
+        digilockerRawResponse: JSON.stringify({ verificationUrl, transactionId: response.transactionId, attemptReference, expiresAt }),
       },
     });
 
@@ -122,12 +184,12 @@ export class CustomerAadhaarKycService {
       success: true,
       data: {
         status: 'INITIATED',
-        verificationUrl: response.url || response.kycUrl,
+        verificationUrl,
         transactionId: response.transactionId,
         attemptReference,
         customerCode: customer.customerCode,
         pollAfterSeconds: 5,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        expiresAt,
       },
     };
   }
@@ -262,7 +324,7 @@ export class CustomerAadhaarKycService {
     try {
       const providerDetails = await this.digitapService.getDigitapDigilockerDetails(transactionId);
       if (providerDetails) {
-        await this.processAndPersistVerifiedDetails(customer.id, providerDetails);
+        await this.processAndPersistVerifiedDetails(customer.id, providerDetails, customer.fullName);
       }
     } catch (error: any) {
       this.logger.warn(
@@ -433,7 +495,11 @@ export class CustomerAadhaarKycService {
         ? String(maskedAadhaar).replace(/\D/g, '').slice(-4) || null
         : null;
 
-      const fullName: string | null = (data.name as string | undefined) || null;
+      // Fall back to the customer's already-PAN-verified name when DigiTap's response
+      // doesn't include one — otherwise ApplicationKycSnapshot.verifiedName stays null
+      // forever even though verificationStatus is VERIFIED, which permanently stalls
+      // getUpdateReadiness() on AADHAAR_VERIFIED_NAME_MISSING with no way to clear it.
+      const fullName: string | null = (data.name as string | undefined) || customer.fullName || null;
       const genderRaw: string | null = (data.gender as string | undefined) || null;
       const gender: CustomerGender | null = this.mapGender(genderRaw);
 
@@ -561,7 +627,7 @@ export class CustomerAadhaarKycService {
           },
         });
       });
-      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar);
+      await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar, dateOfBirth, gender);
 
       // Audit log (non-blocking)
       this.auditLogs
@@ -612,11 +678,16 @@ export class CustomerAadhaarKycService {
     // ── 10. Failure / Expired path ────────────────────────────────────────────
     if (isFailure || isExpired) {
       const newKycStatus = isExpired ? 'FAILED' : 'FAILED';
+      // Digitap's real failure payload uses errorCode/msg at the top level (see their
+      // callback spec), not failureCode/failureMessage — those never existed in any
+      // actual Digitap response, so this always logged null for the real reason.
       const failureCode =
+        (payload.errorCode as string | undefined) ||
         (data.failureCode as string | undefined) ||
         (payload.failureCode as string | undefined) ||
         null;
       const failureMessage =
+        (payload.msg as string | undefined) ||
         (data.failureMessage as string | undefined) ||
         (payload.failureMessage as string | undefined) ||
         null;
@@ -684,6 +755,22 @@ export class CustomerAadhaarKycService {
   // ─────────────────────────────────────────────────────────────────────────────
   // PRIVATE HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Parses the initiation snapshot stashed in Customer.digilockerRawResponse so an
+   * in-flight session can be resumed instead of always starting a fresh one.
+   */
+  private readStoredInitiation(raw?: string | null): { verificationUrl?: string; transactionId?: string; attemptReference?: string; expiresAt?: string } | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.verificationUrl || !parsed?.expiresAt) return null;
+      if (new Date(parsed.expiresAt).getTime() < Date.now()) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Normalizes provider details and updates Customer record atomically.
@@ -802,7 +889,7 @@ export class CustomerAadhaarKycService {
     return Buffer.from(source.replace(/^data:[^;]+;base64,/, ''), 'base64');
   }
 
-  private async processAndPersistVerifiedDetails(customerId: bigint, providerResponse: any) {
+  private async processAndPersistVerifiedDetails(customerId: bigint, providerResponse: any, fallbackName: string | null = null) {
     const model = providerResponse?.model || providerResponse?.data || providerResponse;
     const aadhaarData = model?.aadhaarData || model?.kycData || model?.data || model;
 
@@ -817,9 +904,13 @@ export class CustomerAadhaarKycService {
     const lastFour = maskedAadhaarRaw.replace(/\D/g, '').slice(-4) || 'XXXX';
     const maskedAadhaar = lastFour !== 'XXXX' ? `XXXX-XXXX-${lastFour}` : 'XXXX-XXXX-XXXX';
 
+    // Fall back to the customer's already-PAN-verified name when the provider doesn't
+    // return one — see the identical fallback in handleDigitapWebhook for why this
+    // matters (otherwise the KYC snapshot's verifiedName stays null forever).
     const verifiedName: string | null =
       (aadhaarData?.name as string | undefined) ||
       (model?.name as string | undefined) ||
+      fallbackName ||
       null;
 
     const verifiedDob: string | null =
@@ -905,7 +996,7 @@ export class CustomerAadhaarKycService {
       }
     });
 
-    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null);
+    await this.snapshotVerifiedApplicationKyc(customerId, String(aadhaarData?.transactionId || aadhaarData?.referenceId || `DIGILOCKER-${customerId}`), verifiedName, addr, maskedAadhaar || null, dobDate, this.mapGender(verifiedGender));
 
     // Download and store DigiLocker documents (PDF & XML) into disk & database pl_customer_documents
     await this.storeDigitapDocuments(
@@ -919,14 +1010,24 @@ export class CustomerAadhaarKycService {
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
   }
 
-  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null) {
+  private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null, dateOfBirth: Date | null = null, gender: CustomerGender | null = null) {
     const application = await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
     if (!application) return;
     const verifiedAt = new Date();
+    // Fintree's UPDATE contract requires aadhaarKyc.dateOfBirth in YYYY-MM-DD — the raw
+    // DigiTap dob string is DD-MM-YYYY, so this must go through the already-parsed Date,
+    // never the raw string, or the lender rejects the whole UPDATE call as a validation error.
+    const verifiedDateOfBirth = dateOfBirth ? dateOfBirth.toISOString().slice(0, 10) : null;
+    const verifiedGender = gender ? String(gender) : null;
     await this.prisma.applicationKycSnapshot.upsert({
       where: { applicationId: application.id },
-      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt },
-      update: { provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt },
+      create: { applicationId: application.id, provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedDateOfBirth, verifiedGender, verifiedAt },
+      // Don't overwrite an already-correct DOB/gender with null on a call that couldn't parse one.
+      update: {
+        provider: 'DIGITAP_DIGILOCKER', providerReference, verificationStatus: 'VERIFIED', verifiedName, maskedAadhaar, verifiedAt,
+        ...(verifiedDateOfBirth ? { verifiedDateOfBirth } : {}),
+        ...(verifiedGender ? { verifiedGender } : {}),
+      },
     });
     const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
     const city = String(address.vtc || address.city || address.dist || '').trim();

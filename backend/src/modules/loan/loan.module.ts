@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { LoanController } from './loan.controller';
+import { AdminLoanServicingController } from './admin-loan-servicing.controller';
 import { LoanService } from './loan.service';
 import { ExternalApiModule } from '../external-api/external-api.module';
 import { EasebuzzAutocollectService } from '../../integrations/easebuzz-autocollect.service';
@@ -10,7 +11,7 @@ import { ApplicationTransitionService } from './services/application-transition.
 
 @Module({
   imports: [ExternalApiModule, ProductsModule, LenderIntegrationModule],
-  controllers: [LoanController],
+  controllers: [LoanController, AdminLoanServicingController],
   providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService],
   exports: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService],
 })

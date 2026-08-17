@@ -20,6 +20,12 @@ const schema = z
     REFRESH_TOKEN_PEPPER: z.string().min(32),
     REFRESH_SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(8),
     REFRESH_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+    // Customer sessions intentionally have no idle timeout (see OtpService — idleExpiresAt
+    // is pinned to absoluteExpiresAt): the KYC/application journey spans DigiLocker
+    // redirects and multi-day gaps, and a stolen refresh token isn't actually blocked by
+    // a short idle window anyway since reusing it just resets the clock. The real control
+    // is this absolute cap, which forces a fresh OTP login regardless of activity.
+    CUSTOMER_REFRESH_SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
     LOGIN_MAX_FAILED_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
     LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
     COOKIE_NAME: z.string().regex(/^[A-Za-z0-9_-]+$/),
@@ -48,6 +54,15 @@ const schema = z
     LENDER_DATA_SHARING_CONSENT_REFERENCE: z.string().min(1).max(150).default('CUSTOMER_LENDER_DATA_SHARING'),
     LENDER_INTEGRATION_ALLOWED_HOSTS: z.string().optional().default(''),
     FINTREE_API_KEY: z.string().optional().default(''),
+    UNAPORT_ENVIRONMENT: z.enum(['sandbox', 'production']).optional().default('sandbox'),
+    UNAPORT_BASE_URL: z.string().optional().default('https://common.sandbox.unaport.com/api/v1'),
+    UNAPORT_SDK_URL: z.string().optional().default('https://sdk.sandbox.unaport.com/view'),
+    UNAPORT_EMAIL: z.string().optional().default(''),
+    UNAPORT_PASSWORD: z.string().optional().default(''),
+    UNAPORT_PRODUCT_ID: z.string().optional().default('529684db-7241-44d7-95a3-fdc4ee9f8c11'),
+    UNAPORT_FIU_ID: z.string().optional().default('UNACORES-FIU-UAT'),
+    UNAPORT_FI_TYPE: z.string().optional().default('Deposits'),
+    UNAPORT_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).optional().default(15000),
   })
   .superRefine((env, context) => {
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {

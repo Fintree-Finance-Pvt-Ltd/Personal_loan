@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
@@ -7,12 +7,48 @@ import { LoanAgreementDataBuilder } from '../builders/loan-agreement-data.builde
 import { registerHandlebarsHelpers } from '../helpers/handlebars-helpers';
 
 @Injectable()
-export class LoanAgreementService {
+export class LoanAgreementService implements OnModuleDestroy {
   private readonly logger = new Logger(LoanAgreementService.name);
   private compiledTemplate: Handlebars.TemplateDelegate | null = null;
 
+  // A fresh puppeteer.launch() per PDF (full Chromium cold-start) was the cause of the
+  // very first "View Agreement" click failing/timing out per loan — every distinct loan
+  // paid that cost once, before prepareDocument()'s disk cache made subsequent views
+  // fast. Keeping one browser alive for the process's lifetime and only opening/closing
+  // a page per request removes that cold-start from the customer-facing path.
+  private browserPromise: Promise<puppeteer.Browser> | null = null;
+
   constructor(private readonly dataBuilder: LoanAgreementDataBuilder) {
     registerHandlebarsHelpers();
+  }
+
+  private async getBrowser(): Promise<puppeteer.Browser> {
+    if (!this.browserPromise) {
+      this.browserPromise = puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
+      });
+    }
+
+    const browser = await this.browserPromise;
+    if (!browser.connected) {
+      this.logger.warn('Shared Puppeteer browser was disconnected; relaunching.');
+      this.browserPromise = null;
+      return this.getBrowser();
+    }
+
+    return browser;
+  }
+
+  async onModuleDestroy() {
+    if (!this.browserPromise) return;
+    const browser = await this.browserPromise.catch(() => null);
+    await browser?.close();
   }
 
   private getTemplate(): Handlebars.TemplateDelegate {
@@ -48,19 +84,10 @@ export class LoanAgreementService {
 
   async generateAgreementPdf(lan: string, customerId?: bigint): Promise<Buffer> {
     const html = await this.generateAgreementHtml(lan, customerId);
+    const browser = await this.getBrowser();
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    });
-
+    const page = await browser.newPage();
     try {
-      const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
       const pdfBufferBytes = await page.pdf({
@@ -77,7 +104,7 @@ export class LoanAgreementService {
 
       return Buffer.from(pdfBufferBytes);
     } finally {
-      await browser.close();
+      await page.close();
     }
   }
 }

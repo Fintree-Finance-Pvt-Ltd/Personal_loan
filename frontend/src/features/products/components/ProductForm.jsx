@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input, Textarea, Select, Button, Alert, Badge } from '../../../components/ui';
 import { createProductSchema } from '../validation/product.schema';

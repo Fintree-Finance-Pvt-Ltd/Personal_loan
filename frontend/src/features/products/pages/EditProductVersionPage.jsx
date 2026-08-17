@@ -15,7 +15,7 @@ export function EditProductVersionPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [expectedVersion, setExpectedVersion] = useState(1);
+  const [, setExpectedVersion] = useState(1);
 
   const { register, handleSubmit, control, watch, reset, formState: { errors } } = useForm({
     resolver: zodResolver(updateProductStrategySchema),

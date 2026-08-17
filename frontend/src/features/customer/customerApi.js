@@ -24,7 +24,7 @@ function isCustomerRefreshRequest(config) {
   );
 }
 
-function shouldClearCustomerSession(error) {
+export function shouldClearCustomerSession(error) {
   const status = error?.response?.status;
   const code = getApiErrorCode(error);
 
@@ -556,6 +556,29 @@ export async function updatePincode(customerId, body) {
   return result?.data?.data || result?.data || result;
 }
 
+export async function initiateAccountAggregator(lan) {
+  const response = await customerAxios.post(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/initiate`,
+    {}
+  );
+  return response?.data?.data || response?.data || response;
+}
+
+export async function getAccountAggregatorStatus(lan) {
+  const response = await customerAxios.get(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/status`
+  );
+  return response?.data?.data || response?.data || response;
+}
+
+export async function refreshAccountAggregatorStatus(lan) {
+  const response = await customerAxios.post(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/refresh-status`,
+    {}
+  );
+  return response?.data?.data || response?.data || response;
+}
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
@@ -579,6 +602,10 @@ export const customerApi = {
   refreshCustomerAadhaarKycStatus,
   runEligibility,
   retryLenderSubmission,
+  initiateAccountAggregator,
+  getAccountAggregatorStatus,
+  refreshAccountAggregatorStatus,
 };
+
 
 

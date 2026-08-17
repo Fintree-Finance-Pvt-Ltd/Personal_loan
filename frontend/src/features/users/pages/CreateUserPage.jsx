@@ -28,7 +28,7 @@ export function CreateUserPage() {
       .finally(() => setRolesLoading(false));
   }, []);
 
-  const submit = async ({ confirmPassword, ...values }) => {
+  const submit = async ({ confirmPassword: _confirmPassword, ...values }) => {
     setApiErr('');
     try {
       const created = await createUser(values);

@@ -79,6 +79,19 @@ export class CreditReviewService {
         tx.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'CURRENT' } } }),
       ]);
 
+      // acceptOffer() normally computes and persists these bullet-payment figures when a
+      // customer picks an offer, but that method can never run here — acceptedTenureDays
+      // is already being set below at loan creation, and acceptOffer() refuses to run once
+      // it's set. Without this, resolveMandateConfiguration() falls back to authorizing the
+      // e-Mandate for principal only, undercutting the interest already shown to the
+      // customer on the KFS screen (getPostApprovalJourney uses the identical formula as
+      // its own acceptedTotalRepayment fallback, so the two stay consistent).
+      const principal = Number(application.selectedAmount);
+      const tenureDays = application.selectedTenure;
+      const processingFee = Math.round(principal * 0.02);
+      const totalInterest = Math.round((principal * Number(approvedRoi) * tenureDays) / 36500);
+      const totalRepayment = principal + totalInterest;
+
       const loan = await tx.plLoan.upsert({
         where: { applicationId: application.id },
         create: {
@@ -95,6 +108,9 @@ export class CreditReviewService {
           acceptedTenureDays: application.selectedTenure,
           acceptedAt: decidedAt,
           acceptedInterestRate: approvedRoi,
+          acceptedProcessingFee: processingFee,
+          acceptedTotalRepayment: totalRepayment,
+          acceptedEmiAmount: totalRepayment,
           ...(kycStatus?.aadhaarStatus === 'VERIFIED'
             ? {
                 digilockerStatus: 'VERIFIED',

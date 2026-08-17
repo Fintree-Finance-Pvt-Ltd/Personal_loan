@@ -8,9 +8,7 @@ import {
   AlertCircle,
   BadgeCheck,
   FileText,
-  MapPin,
   Building2,
-  FileCheck2,
   CreditCard,
   PenLine,
   Landmark,
@@ -24,21 +22,16 @@ import { getCustomerAccessToken } from '../customerApi';
 import {
   getPostApprovalJourney,
   acceptLoanOffer,
-  initiateDigilocker,
-  getDigilockerStatus,
-  saveAddress,
   verifyBankAccount,
   acceptKfs,
   initiateMandate,
   getMandateStatus,
   refreshMandateStatus,
-  initiateEsign,
   requestDisbursal,
   prepareElectronicSign,
   markDocumentViewed,
   sendSigningOtp,
   verifySigningOtp,
-  getElectronicSignStatus,
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 
@@ -405,252 +398,6 @@ function ApprovalSummaryStep({ data, onNext }) {
           {isAccepted ? 'Proceed to KYC' : 'Accept Offer & Continue'}
         </ActionButton>
       </div>
-    </StepCard>
-  );
-}
-
-function DigiLockerStep({ lan, data, onNext }) {
-  const isVerified = Boolean(data?.workflow?.digilockerVerified || data?.digilocker?.status === 'VERIFIED');
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [consent, setConsent] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [activeKycUrl, setActiveKycUrl] = useState(null);
-  const [isVerifyingInPopup, setIsVerifyingInPopup] = useState(false);
-
-  const startPolling = () => {
-    const startTime = Date.now();
-    const interval = setInterval(async () => {
-      try {
-        if (Date.now() - startTime > 300000) {
-          clearInterval(interval);
-          setIsVerifyingInPopup(false);
-          setActiveKycUrl(null);
-          setErrorMsg('Verification timed out. Please try again.');
-          return;
-        }
-
-        const res = await getDigilockerStatus(lan);
-        if (res?.status === 'VERIFIED') {
-          clearInterval(interval);
-          setIsVerifyingInPopup(false);
-          setActiveKycUrl(null);
-          onNext();
-        } else if (res?.status === 'FAILED') {
-          clearInterval(interval);
-          setIsVerifyingInPopup(false);
-          setActiveKycUrl(null);
-          setErrorMsg('Aadhaar verification failed. Please try again.');
-        }
-      } catch (e) {
-        // Ignore polling errors
-      }
-    }, 3000);
-  };
-
-  const openPopupUrl = (url) => {
-    const width = 650;
-    const height = 750;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
-
-    const popup = window.open(
-      url,
-      'DigitapDigiLocker',
-      `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no,location=no,status=no,scrollbars=yes,resizable=yes`
-    );
-
-    if (popup) popup.focus();
-  };
-
-  const handleInitiate = async () => {
-    if (isVerified) {
-      onNext();
-      return;
-    }
-    if (!consent) {
-      setErrorMsg('Please check the consent box to proceed.');
-      return;
-    }
-
-    setErrorMsg('');
-    setIsLoading(true);
-    try {
-      const responseData = await initiateDigilocker(lan);
-
-      if (responseData.status === 'VERIFIED') {
-        onNext();
-        return;
-      }
-
-      const targetUrl = responseData?.kycUrl || responseData?.url;
-      if (!targetUrl) {
-        throw new Error('DigiLocker verification URL was not generated.');
-      }
-
-      setActiveKycUrl(targetUrl);
-      setIsVerifyingInPopup(true);
-      openPopupUrl(targetUrl);
-      startPolling();
-    } catch (err) {
-      setErrorMsg(err.message || 'Failed to initiate DigiLocker');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <StepCard title="Aadhaar KYC via DigiLocker" subtitle="Complete your identity verification using DigiLocker." icon={FileCheck2}>
-      {isVerified ? (
-        <div>
-          <CompletedBadge
-            title="Aadhaar KYC Verified"
-            description={`Masked Aadhaar: ${data?.digilocker?.maskedAadhaar || 'XXXX-XXXX-XXXX'}`}
-          />
-          <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Applicant Verified Name</p>
-            <p className="mt-1 text-base font-bold text-slate-900">{data?.customer?.fullName || '—'}</p>
-          </div>
-          <div className="flex justify-end">
-            <ActionButton onClick={onNext}>
-              Proceed to Address Confirmation
-            </ActionButton>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-            <p className="font-semibold">What you'll need:</p>
-            <ul className="mt-2 list-inside list-disc space-y-1 text-blue-700">
-              <li>Your Aadhaar-linked mobile number</li>
-              <li>Active DigiLocker account (or you can create one)</li>
-            </ul>
-          </div>
-
-          <div className="mb-6 flex items-start gap-3">
-            <input
-              type="checkbox"
-              id="consent"
-              checked={consent}
-              onChange={(e) => {
-                setConsent(e.target.checked);
-                setErrorMsg('');
-              }}
-              className="mt-1 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
-            />
-            <label htmlFor="consent" className="text-sm text-slate-700 cursor-pointer">
-              I consent to securely fetch and process my Aadhaar information through DigiLocker for identity verification and loan processing.
-            </label>
-          </div>
-
-          {errorMsg && (
-            <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {isVerifyingInPopup ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 mb-4">
-              <div className="flex items-center gap-3">
-                <LoaderCircle className="h-6 w-6 animate-spin text-amber-600" />
-                <div>
-                  <p className="font-bold text-base">DigiLocker Verification in Progress</p>
-                  <p className="text-xs text-amber-700 mt-0.5">Please complete your DigiLocker login in the window that opened.</p>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => activeKycUrl && openPopupUrl(activeKycUrl)}
-                  className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 transition"
-                >
-                  Re-open Verification Window
-                </button>
-              </div>
-            </div>
-          ) : (
-            <ActionButton onClick={handleInitiate} loading={isLoading} disabled={!consent} variant="blue">
-              Verify Aadhaar
-            </ActionButton>
-          )}
-        </div>
-      )}
-    </StepCard>
-  );
-}
-
-function AddressConfirmationStep({ lan, data, onNext }) {
-  const isConfirmed = Boolean(data?.workflow?.addressConfirmed);
-  const [sameAsPermanent, setSameAsPermanent] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const permAddr = data?.digilocker?.permanentAddress;
-  const currentAddr = data?.address;
-
-  const handleSave = async () => {
-    if (isConfirmed) {
-      onNext();
-      return;
-    }
-    setIsSaving(true);
-    try {
-      await saveAddress(lan, { sameAsPermanent });
-      onNext();
-    } catch (err) {
-      alert(err.message || 'Failed to save address');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <StepCard title="Address Confirmation" subtitle="Confirm your current residential address." icon={MapPin}>
-      {isConfirmed ? (
-        <div>
-          <CompletedBadge
-            title="Address Confirmed"
-            description={currentAddr?.formattedAddress || (permAddr?.formattedAddress ? 'Same as Aadhaar Permanent Address' : 'Residential address confirmed')}
-          />
-          {currentAddr && (
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Residential Address</p>
-              <p className="mt-2 text-sm font-medium text-slate-900">
-                {[currentAddr.addressLine1, currentAddr.addressLine2, currentAddr.city, currentAddr.state, currentAddr.pincode].filter(Boolean).join(', ')}
-              </p>
-            </div>
-          )}
-          <div className="flex justify-end">
-            <ActionButton onClick={onNext}>
-              Proceed to Bank Verification
-            </ActionButton>
-          </div>
-        </div>
-      ) : (
-        <div>
-          {permAddr && (
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Aadhaar Address</p>
-              <p className="mt-2 text-sm font-medium text-slate-900">{permAddr.formattedAddress || 'Address details missing'}</p>
-            </div>
-          )}
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={sameAsPermanent}
-              onChange={e => setSameAsPermanent(e.target.checked)}
-              className="mt-0.5 h-5 w-5 rounded border-slate-300 text-emerald-600"
-            />
-            <span className="text-sm font-semibold text-slate-900">
-              My current address is the same as my Aadhaar address
-            </span>
-          </label>
-          <div className="mt-8 flex justify-end">
-            <ActionButton onClick={handleSave} loading={isSaving}>
-              Confirm Address
-            </ActionButton>
-          </div>
-        </div>
-      )}
     </StepCard>
   );
 }
@@ -1032,14 +779,17 @@ function KfsStep({ lan, data, onNext }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isConsentChecked, setIsConsentChecked] = useState(isAccepted);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showModal, setShowModal] = useState(false);
 
   const kfs = data?.kfs || {};
   const loan = data?.loan || {};
   const offer = data?.offer || {};
   const lender = data?.lender || {};
+  const customer = data?.customer || {};
+  const bank = data?.bank || {};
 
   const formatCurrency = (value) => {
-    if (value === null || value === undefined || value === '') return '—';
+    if (value === null || value === undefined || value === '') return '₹0';
     return Number(value).toLocaleString('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -1054,20 +804,28 @@ function KfsStep({ lan, data, onNext }) {
     return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
-  const loanAmount = kfs?.loanAmount ?? offer?.approvedAmount ?? loan?.approvedAmount;
-  const tenureDays = kfs?.tenureDays ?? offer?.acceptedTenureDays ?? loan?.acceptedTenureDays;
-  const netDisbursalAmount = kfs?.netDisbursalAmount ?? offer?.netDisbursalAmount;
-  const totalRepaymentAmount = kfs?.totalRepaymentAmount ?? offer?.acceptedTotalRepayment;
+  const loanAmount = Number(kfs?.loanAmount ?? offer?.approvedAmount ?? loan?.approvedAmount ?? 0);
+  const tenureDays = Number(kfs?.tenureDays ?? offer?.acceptedTenureDays ?? loan?.acceptedTenureDays ?? 30);
+  const interestRate = Number(kfs?.interestRate ?? offer?.acceptedInterestRate ?? 18);
+  const processingFee = Number(kfs?.processingFee ?? offer?.acceptedProcessingFee ?? Math.round(loanAmount * 0.02));
+  const processingFeeGst = Number(kfs?.processingFeeGst ?? Math.round(processingFee * 0.18));
+  const totalCharges = processingFee + processingFeeGst;
+  const netDisbursalAmount = Number(kfs?.netDisbursalAmount ?? (loanAmount - totalCharges));
+
+  const totalInterest = Number(
+    kfs?.totalInterest ??
+    (kfs?.totalRepaymentAmount ? kfs.totalRepaymentAmount - loanAmount : Math.round((loanAmount * interestRate * tenureDays) / 36500))
+  );
+
+  const totalRepaymentAmount = Number(kfs?.totalRepaymentAmount ?? offer?.acceptedTotalRepayment ?? (loanAmount + totalInterest));
+  const apr = kfs?.apr ?? (loanAmount > 0 ? Number((((totalInterest + totalCharges) / loanAmount) * (365 / tenureDays) * 100).toFixed(2)) : interestRate);
+
   const dueDate = kfs?.dueDate ?? offer?.dueDate;
   const kfsDocumentUrl = kfs?.documentUrl || kfs?.fileUrl || kfs?.previewUrl || null;
 
   const handleViewKfs = () => {
     setErrorMsg('');
-    if (kfsDocumentUrl) {
-      window.open(kfsDocumentUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      setErrorMsg('Key Fact Statement document preview is generated upon acceptance.');
-    }
+    setShowModal(true);
   };
 
   const handleAccept = async () => {
@@ -1096,12 +854,13 @@ function KfsStep({ lan, data, onNext }) {
     }
   };
 
-  const detailItems = [
-    { label: 'Loan amount', value: formatCurrency(loanAmount) },
-    { label: 'Tenure', value: tenureDays ? `${tenureDays} days` : '—' },
-    { label: 'Net disbursal', value: formatCurrency(netDisbursalAmount) },
-    { label: 'Total repayment', value: formatCurrency(totalRepaymentAmount) },
-    { label: 'Estimated Due date', value: formatDate(dueDate) },
+  const summaryCards = [
+    { label: 'Sanctioned Loan Amount', value: formatCurrency(loanAmount), tag: 'Principal Sum' },
+    { label: 'Net Disbursal Amount', value: formatCurrency(netDisbursalAmount), tag: 'Credited to Bank', highlight: true },
+    { label: 'Total Repayment Amount', value: formatCurrency(totalRepaymentAmount), tag: 'Principal + Interest' },
+    { label: 'Annual Interest Rate (ROI)', value: `${interestRate}% p.a.`, tag: 'Fixed Interest' },
+    { label: 'Annual Percentage Rate (APR)', value: `${apr}%`, tag: 'Total Cost of Credit' },
+    { label: 'Tenure & Repayment Due Date', value: `${tenureDays} Days (${formatDate(dueDate)})`, tag: 'Single Bullet Payment' },
   ];
 
   return (
@@ -1122,35 +881,55 @@ function KfsStep({ lan, data, onNext }) {
             <div>
               <h2 className="text-2xl font-extrabold text-slate-950">Key Fact Statement (KFS)</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Personal Loan · {lender?.name || 'Fintree Finance Private Limited'}
+                Personal Loan Statement · {lender?.name || 'Fintree Finance Private Limited'} · LAN: <span className="font-mono font-semibold text-slate-700">{lan}</span>
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleViewKfs}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-600 px-5 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-50"
-          >
-            <ExternalLink size={16} />
-            View KFS
-          </button>
+          <div className="flex items-center gap-3">
+            {kfsDocumentUrl && (
+              <a
+                href={kfsDocumentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <ExternalLink size={14} /> PDF File
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={handleViewKfs}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+            >
+              <Eye size={16} />
+              View Full Mini-Statement
+            </button>
+          </div>
         </div>
 
-        <div className="mt-7 overflow-hidden rounded-2xl border border-slate-200">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3">
-            {detailItems.map((item, index) => (
-              <div
-                key={item.label}
-                className={`min-h-[108px] p-5 ${index !== detailItems.length - 1 ? 'border-b border-slate-200' : ''
-                  } sm:border-b ${index % 2 !== 1 ? 'sm:border-r' : ''} lg:border-b lg:border-r ${index === 2 || index === 4 ? 'lg:border-r-0' : ''
-                  } ${index >= 3 ? 'lg:border-b-0' : ''}`}
-              >
-                <p className="text-sm font-medium text-slate-500">{item.label}</p>
-                <p className="mt-2 text-xl font-extrabold text-slate-950">{item.value}</p>
+        {/* Financial Summary Grid */}
+        <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {summaryCards.map((item) => (
+            <div
+              key={item.label}
+              className={`rounded-2xl border p-5 transition-all ${
+                item.highlight
+                  ? 'border-emerald-200 bg-emerald-50/50 shadow-sm'
+                  : 'border-slate-200 bg-slate-50/30'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</span>
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                  item.highlight ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/70 text-slate-700'
+                }`}>
+                  {item.tag}
+                </span>
               </div>
-            ))}
-          </div>
+              <p className="mt-2 text-2xl font-extrabold text-slate-950">{item.value}</p>
+            </div>
+          ))}
         </div>
 
         {!isAccepted && (
@@ -1183,6 +962,208 @@ function KfsStep({ lan, data, onNext }) {
             {isAccepted ? 'Proceed to e-Mandate' : 'Accept KFS & Continue'}
           </ActionButton>
         </div>
+      </div>
+
+      {/* KFS Mini Statement Modal */}
+      {showModal && (
+        <KfsMiniStatementModal
+          lan={lan}
+          kfs={kfs}
+          loan={loan}
+          offer={offer}
+          lender={lender}
+          customer={customer}
+          bank={bank}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, onClose }) {
+  const formatCurrency = (val) => {
+    if (val === null || val === undefined || val === '') return '₹0';
+    return Number(val).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+  };
+
+  const formatDate = (val) => {
+    if (!val) return '—';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const loanAmount = Number(kfs?.loanAmount ?? offer?.approvedAmount ?? loan?.approvedAmount ?? 0);
+  const tenureDays = Number(kfs?.tenureDays ?? offer?.acceptedTenureDays ?? loan?.acceptedTenureDays ?? 30);
+  const interestRate = Number(kfs?.interestRate ?? offer?.acceptedInterestRate ?? 18);
+  const processingFee = Number(kfs?.processingFee ?? offer?.acceptedProcessingFee ?? Math.round(loanAmount * 0.02));
+  const processingFeeGst = Number(kfs?.processingFeeGst ?? Math.round(processingFee * 0.18));
+  const totalCharges = processingFee + processingFeeGst;
+  const netDisbursalAmount = Number(kfs?.netDisbursalAmount ?? (loanAmount - totalCharges));
+
+  const totalInterest = Number(
+    kfs?.totalInterest ??
+    (kfs?.totalRepaymentAmount ? kfs.totalRepaymentAmount - loanAmount : Math.round((loanAmount * interestRate * tenureDays) / 36500))
+  );
+
+  const totalRepaymentAmount = Number(kfs?.totalRepaymentAmount ?? offer?.acceptedTotalRepayment ?? (loanAmount + totalInterest));
+  const apr = kfs?.apr ?? (loanAmount > 0 ? Number((((totalInterest + totalCharges) / loanAmount) * (365 / tenureDays) * 100).toFixed(2)) : interestRate);
+  const dueDate = kfs?.dueDate ?? offer?.dueDate;
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8 max-h-[90vh] overflow-y-auto print:max-w-none print:shadow-none print:p-0">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 pb-5 print:border-b-2">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-600 text-white font-extrabold text-lg">
+              F
+            </div>
+            <div>
+              <h3 className="text-xl font-extrabold text-slate-950 sm:text-2xl">
+                KEY FACT STATEMENT & MINI-STATEMENT
+              </h3>
+              <p className="text-xs text-slate-500">
+                Issued by {lender?.name || 'Fintree Finance Private Limited'} (RBI Regulated NBFC)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 print:hidden">
+            <button
+              onClick={handlePrint}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
+            >
+              Print / Save PDF
+            </button>
+            <button
+              onClick={onClose}
+              className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Borrower & Loan Metadata */}
+        <div className="mt-6 grid gap-4 rounded-2xl bg-slate-50 p-5 sm:grid-cols-2 text-xs border border-slate-200">
+          <div>
+            <p className="text-slate-500 font-medium">Borrower Name:</p>
+            <p className="font-bold text-slate-900 text-sm">{kfs?.borrowerName || customer?.fullName || 'Borrower'}</p>
+            <p className="text-slate-500 font-medium mt-2">PAN Number:</p>
+            <p className="font-bold text-slate-900">{kfs?.borrowerPan || customer?.panNumber || '—'}</p>
+          </div>
+          <div>
+            <p className="text-slate-500 font-medium">Loan Application Reference (LAN):</p>
+            <p className="font-mono font-bold text-indigo-700 text-sm">{lan}</p>
+            <p className="text-slate-500 font-medium mt-2">Disbursal Bank Account:</p>
+            <p className="font-bold text-slate-900">{bank?.bankName || kfs?.bankName || 'Verified Bank'} ({bank?.accountMasked || kfs?.accountMasked || 'XXXX'})</p>
+          </div>
+        </div>
+
+        {/* Summary Table */}
+        <div className="mt-6">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">1. Key Financial Terms & Cost Breakdown</h4>
+          <div className="overflow-hidden rounded-xl border border-slate-200 text-xs">
+            <table className="w-full text-left">
+              <thead className="bg-slate-100 font-semibold text-slate-700">
+                <tr>
+                  <th className="p-3">Component / Description</th>
+                  <th className="p-3 text-right">Calculation / Rate</th>
+                  <th className="p-3 text-right">Amount (INR)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <tr>
+                  <td className="p-3 font-medium text-slate-900">(A) Sanctioned Loan Amount</td>
+                  <td className="p-3 text-right text-slate-500">Principal Sum</td>
+                  <td className="p-3 text-right font-bold text-slate-900">{formatCurrency(loanAmount)}</td>
+                </tr>
+                <tr>
+                  <td className="p-3 font-medium text-slate-900">(B) Processing Fee</td>
+                  <td className="p-3 text-right text-slate-500">2% of Principal</td>
+                  <td className="p-3 text-right font-semibold text-rose-600">- {formatCurrency(processingFee)}</td>
+                </tr>
+                <tr>
+                  <td className="p-3 font-medium text-slate-900">(C) Goods & Services Tax (GST)</td>
+                  <td className="p-3 text-right text-slate-500">18% on Processing Fee</td>
+                  <td className="p-3 text-right font-semibold text-rose-600">- {formatCurrency(processingFeeGst)}</td>
+                </tr>
+                <tr className="bg-emerald-50/60 font-bold">
+                  <td className="p-3 text-emerald-950">(D) Net Disbursal Amount (A - B - C)</td>
+                  <td className="p-3 text-right text-emerald-700">Credited to Bank Account</td>
+                  <td className="p-3 text-right text-emerald-700 text-sm">{formatCurrency(netDisbursalAmount)}</td>
+                </tr>
+                <tr>
+                  <td className="p-3 font-medium text-slate-900">(E) Total Interest Charge</td>
+                  <td className="p-3 text-right text-slate-500">{interestRate}% p.a. over {tenureDays} Days</td>
+                  <td className="p-3 text-right font-semibold text-slate-900">+ {formatCurrency(totalInterest)}</td>
+                </tr>
+                <tr className="bg-indigo-50/70 font-extrabold text-indigo-950">
+                  <td className="p-3 text-indigo-950">(F) Total Repayment Amount (A + E)</td>
+                  <td className="p-3 text-right text-indigo-700">Due on {formatDate(dueDate)}</td>
+                  <td className="p-3 text-right text-indigo-900 text-base">{formatCurrency(totalRepaymentAmount)}</td>
+                </tr>
+                <tr className="bg-amber-50/50 font-semibold text-amber-950">
+                  <td className="p-3">(G) Annual Percentage Rate (APR)</td>
+                  <td className="p-3 text-right text-amber-800">Total Cost of Credit per Annum</td>
+                  <td className="p-3 text-right font-extrabold text-amber-950 text-sm">{apr}% p.a.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Repayment Schedule Mini Statement */}
+        <div className="mt-6">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">2. Repayment Schedule (Mini-Statement)</h4>
+          <div className="overflow-hidden rounded-xl border border-slate-200 text-xs">
+            <table className="w-full text-left">
+              <thead className="bg-slate-100 font-semibold text-slate-700">
+                <tr>
+                  <th className="p-3">Instalment #</th>
+                  <th className="p-3">Due Date</th>
+                  <th className="p-3 text-right">Principal</th>
+                  <th className="p-3 text-right">Interest</th>
+                  <th className="p-3 text-right">Total Payable</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <tr className="bg-white">
+                  <td className="p-3 font-semibold text-slate-900">#1 (Bullet Repayment)</td>
+                  <td className="p-3 text-slate-700 font-medium">{formatDate(dueDate)}</td>
+                  <td className="p-3 text-right font-medium text-slate-900">{formatCurrency(loanAmount)}</td>
+                  <td className="p-3 text-right font-medium text-slate-900">{formatCurrency(totalInterest)}</td>
+                  <td className="p-3 text-right font-extrabold text-indigo-700">{formatCurrency(totalRepaymentAmount)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Regulatory Notices */}
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-[11px] text-slate-600 leading-relaxed">
+          <p className="font-bold text-slate-800">Penal & Late Payment Policy:</p>
+          <p className="mt-1">
+            Penal charges of 0.1% per day will be levied on overdue principal for any delay post due date. Cheque/E-NACH bounce charges of ₹500 + GST apply per bounce attempt. Cooling-off period of 3 days is provided during which the borrower can exit by paying principal + proportionate APR.
+          </p>
+        </div>
+
+        <div className="mt-6 flex justify-end print:hidden">
+          <button
+            onClick={onClose}
+            className="rounded-xl bg-slate-900 px-6 py-2.5 text-xs font-bold text-white hover:bg-slate-800 shadow"
+          >
+            Close Statement View
+          </button>
+        </div>
+
       </div>
     </div>
   );
@@ -1948,7 +1929,7 @@ function EsignStep({ lan, data, onNext }) {
   );
 }
 
-function DisbursalStep({ lan, data, onRefresh, onGoToStep }) {
+function DisbursalStep({ lan, data, onRefresh: _onRefresh, onGoToStep }) {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');

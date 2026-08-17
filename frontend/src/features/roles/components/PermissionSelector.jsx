@@ -40,9 +40,6 @@ export function PermissionSelector({ allPermissions, selectedIds, onChange, disa
       </p>
       {allModules.map(module => {
         const perms = grouped[module];
-        const moduleIds = perms.map(p => p.id);
-        const allSelected = moduleIds.every(id => selectedSet.has(id));
-        const someSelected = moduleIds.some(id => selectedSet.has(id));
         return (
           <div key={module} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2">

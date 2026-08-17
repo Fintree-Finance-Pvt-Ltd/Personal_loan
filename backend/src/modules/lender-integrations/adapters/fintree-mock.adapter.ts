@@ -29,6 +29,9 @@ export class FintreeMockAdapter implements LenderAdapter {
     decisionRequest: false,
     statusPolling: false,
     disbursement: false,
+    repaymentNotification: false,
+    chargeNotification: false,
+    chargeWaiverNotification: false,
   };
 
   async createApplication(context: LenderCreateApplicationContext): Promise<LenderCreateApplicationResult> {

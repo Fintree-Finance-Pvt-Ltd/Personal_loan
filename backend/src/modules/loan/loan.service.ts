@@ -179,7 +179,7 @@ export class LoanService {
     if (loan.disbursalStatus === 'DISBURSED' || loan.status === PlLoanStatus.DISBURSED) {
       return 'DISBURSED';
     }
-    if (loan.disbursalStatus === 'PROCESSING' || loan.status === PlLoanStatus.DISBURSAL_PROCESSING) {
+    if (loan.disbursalStatus === 'DISBURSAL_PROCESSING' || loan.disbursalStatus === 'DISBURSAL_REQUESTED' || loan.status === PlLoanStatus.DISBURSAL_PROCESSING) {
       return 'DISBURSAL_PROCESSING';
     }
     if (
@@ -210,6 +210,22 @@ export class LoanService {
     }
 
     return 'APPROVAL_SUMMARY';
+  }
+
+  /**
+   * Parses the initiation snapshot stashed in PlLoan.digilockerRawResponse so an
+   * in-flight session can be resumed instead of always starting a fresh one.
+   */
+  private readStoredDigilockerInitiation(raw?: string | null): { verificationUrl?: string; kycUrl?: string; transactionId?: string; expiresAt?: string } | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.verificationUrl || !parsed?.expiresAt) return null;
+      if (new Date(parsed.expiresAt).getTime() < Date.now()) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
   }
 
   async getPostApprovalJourney(lan: string, customerId: bigint) {
@@ -348,9 +364,25 @@ export class LoanService {
     }
 
     const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
+    const interestRate = loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18;
+    const tenureDays = loan.acceptedTenureDays || 30;
     const processingFee = loan.acceptedProcessingFee ? Number(loan.acceptedProcessingFee) : Math.round(approvedAmount * 0.02);
-    const netDisbursalAmount = approvedAmount - processingFee;
-    const totalRepaymentAmount = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
+    const processingFeeGst = Math.round(processingFee * 0.18);
+    const netDisbursalAmount = approvedAmount - processingFee - processingFeeGst;
+
+    let totalInterest = 0;
+    if (loan.acceptedTotalRepayment && Number(loan.acceptedTotalRepayment) > approvedAmount) {
+      totalInterest = Number(loan.acceptedTotalRepayment) - approvedAmount;
+    } else {
+      totalInterest = Math.round((approvedAmount * interestRate * tenureDays) / 36500);
+    }
+
+    const totalRepaymentAmount = approvedAmount + totalInterest;
+
+    // APR Calculation: ((Total Interest + Processing Fee + GST) / Loan Amount) * (365 / Tenure Days) * 100
+    const totalCharges = totalInterest + processingFee + processingFeeGst;
+    const apr = approvedAmount > 0 ? Number(((totalCharges / approvedAmount) * (365 / tenureDays) * 100).toFixed(2)) : interestRate;
+
     let dueDate = null;
     if (loan.acceptedTenureDays) {
       const d = new Date();
@@ -361,13 +393,24 @@ export class LoanService {
     const kfs = {
       lan: loan.lan,
       loanAmount: approvedAmount,
-      tenureDays: loan.acceptedTenureDays,
+      tenureDays,
+      interestRate,
+      totalInterest,
+      processingFee,
+      processingFeeGst,
+      totalCharges,
       netDisbursalAmount,
       totalRepaymentAmount,
+      apr,
       dueDate,
       kfsAccepted: loan.kfsAccepted,
       kfsAcceptedAt: loan.kfsAcceptedAt,
       documentUrl: loan.kfsDocumentId || null,
+      borrowerName: loan.customer?.fullName || null,
+      borrowerPan: loan.customer?.panNumber || null,
+      bankName: loan.bankName || null,
+      accountMasked: loan.bankAccountMasked || null,
+      ifsc: loan.bankIfsc || null,
     };
 
     return {
@@ -731,6 +774,34 @@ export class LoanService {
       return { success: true, message: 'Already verified' };
     }
 
+    // Reuse an in-flight session instead of opening a fresh DigiTap link on every click —
+    // mirrors the same fix applied to the onboarding-stage initiate() in
+    // CustomerAadhaarKycService, for the identical "clicked twice / came back later" bug.
+    const initiationTtlMs = 15 * 60 * 1000;
+    if (
+      loan.digilockerStatus === 'INITIATED' &&
+      loan.digilockerConsentAt &&
+      Date.now() - loan.digilockerConsentAt.getTime() < initiationTtlMs
+    ) {
+      const stored = this.readStoredDigilockerInitiation(loan.digilockerRawResponse);
+      if (stored?.verificationUrl) {
+        return {
+          success: true,
+          data: {
+            lan,
+            transactionId: stored.transactionId || loan.digilockerSessionId,
+            environment: process.env.DIGITAP_ENV || 'UAT',
+            url: stored.verificationUrl,
+            kycUrl: stored.kycUrl || stored.verificationUrl,
+            clientId: process.env.DIGITAP_CLIENT_ID,
+            serviceId: process.env.DIGITAP_DIGILOCKER_SERVICE_ID || '46',
+            status: 'INITIATED',
+            resumed: true,
+          },
+        };
+      }
+    }
+
     const uniqueId = `${lan}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     const response = await this.digitapService.generateDigitapDigilockerUrl({
@@ -741,6 +812,8 @@ export class LoanService {
       lastName: loan.customer?.lastName || undefined,
     });
 
+    const digilockerExpiresAt = new Date(Date.now() + initiationTtlMs).toISOString();
+
     await this.prisma.$transaction(async (tx) => {
       await tx.plLoan.update({
         where: { id: loan.id },
@@ -750,6 +823,7 @@ export class LoanService {
           digilockerReference: uniqueId,
           digilockerConsentAt: new Date(),
           currentStep: 'DIGILOCKER_KYC',
+          digilockerRawResponse: JSON.stringify({ verificationUrl: response.url, kycUrl: response.kycUrl, transactionId: response.transactionId, expiresAt: digilockerExpiresAt }),
         },
       });
 
@@ -868,6 +942,7 @@ export class LoanService {
         loan = await this.prisma.plLoan.findFirst({
           where: { customerId: kycStatus.customerId },
           include: { customer: true, application: true },
+          orderBy: { id: 'desc' },
         });
       }
     }
@@ -1863,6 +1938,29 @@ export class LoanService {
   }
 
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const txId =
+      payload?.transaction_id ||
+      payload?.merchant_transaction_id ||
+      payload?.udf1_tx_id ||
+      payload?.data?.transaction_id ||
+      payload?.data?.merchant_transaction_id ||
+      payload?.data?.udf1_tx_id ||
+      payload?.data?.mandate?.transaction_id ||
+      payload?.txnid ||
+      payload?.merchant_txn ||
+      payload?.data?.txnid ||
+      payload?.data?.merchant_txn;
+
+    const txIdStr = String(txId || '').trim();
+    const isPlmTransaction = txIdStr.toUpperCase().startsWith('PLM');
+
+    if (!isPlmTransaction) {
+      this.logger.log(
+        `Received non-PL mandate webhook [TxID: "${txIdStr || 'NONE'}"]. Forwarding to easycollect mandate webhook endpoint: /api/webhooks/easebuzz/easycollect/mandate`
+      );
+      return this.forwardToEasycollectMandateWebhook(payload, metadata);
+    }
+
     const sanitized = this.easebuzzAutocollectService.sanitizeEasebuzzMandatePayload(payload);
     const event = String(payload?.event || payload?.data?.event || '').trim().toUpperCase();
     const webhookSecret = this.configService.get<string>('EASEBUZZ_WEBHOOK_SECRET');
@@ -1876,14 +1974,6 @@ export class LoanService {
       this.logger.log('No EASEBUZZ_WEBHOOK_SECRET configured; skipping Easybuzz webhook signature verification.');
     }
 
-    const txId =
-      payload?.transaction_id ||
-      payload?.merchant_transaction_id ||
-      payload?.udf1_tx_id ||
-      payload?.data?.transaction_id ||
-      payload?.data?.merchant_transaction_id ||
-      payload?.data?.udf1_tx_id ||
-      payload?.data?.mandate?.transaction_id;
     const providerMandateId =
       payload?.mandate_id ||
       payload?.provider_mandate_id ||
@@ -2033,6 +2123,80 @@ export class LoanService {
     }
 
     return result;
+  }
+
+  async forwardToEasycollectMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const easycollectMandateUrl =
+      process.env.EASYCOLLECT_MANDATE_WEBHOOK_URL ||
+      `http://127.0.0.1:${process.env.PORT || 3001}/api/webhooks/easebuzz/easycollect/mandate`;
+
+    try {
+      this.logger.log(`Forwarding non-PLM mandate webhook to ${easycollectMandateUrl}`);
+      const response = await axios.post(easycollectMandateUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-from': 'pl-mandate-webhook',
+          'x-forwarded-for': metadata?.ipAddress || '',
+          'user-agent': metadata?.userAgent || '',
+        },
+        timeout: 10000,
+      });
+
+      return {
+        success: true,
+        forwarded: true,
+        targetUrl: easycollectMandateUrl,
+        responseData: response.data,
+      };
+    } catch (err: any) {
+      this.logger.warn(
+        `HTTP forwarding to ${easycollectMandateUrl} failed: ${err?.message || err}. Falling back to internal EasyCollect mandate handler.`
+      );
+      return this.handleEasebuzzEasycollectMandateWebhook(payload, metadata);
+    }
+  }
+
+  async handleEasebuzzEasycollectMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
+    const txId =
+      payload?.transaction_id ||
+      payload?.merchant_transaction_id ||
+      payload?.udf1_tx_id ||
+      payload?.data?.transaction_id ||
+      payload?.data?.merchant_transaction_id ||
+      payload?.data?.udf1_tx_id ||
+      payload?.data?.mandate?.transaction_id ||
+      payload?.txnid ||
+      payload?.merchant_txn ||
+      'UNKNOWN';
+
+    this.logger.log(
+      `[EasyCollect Mandate Webhook] Processed EasyCollect mandate event [TxID: ${txId}, IP: ${metadata?.ipAddress || 'UNKNOWN'}]`
+    );
+
+    try {
+      if (typeof (this.prisma as any).plWebhookInbox?.create === 'function') {
+        await this.prisma.plWebhookInbox.create({
+          data: {
+            id: randomBytes(16).toString('hex'),
+            providerTransactionId: String(txId),
+            provider: 'easebuzz-easycollect-mandate',
+            eventHash: String(payload?.data?.authorization || payload?.authorization || payload?.hash || 'NO_HASH'),
+            payload: payload,
+          },
+        });
+      }
+    } catch (_e: any) {
+      // Ignore inbox duplicate error if logged
+    }
+
+    return {
+      success: true,
+      acknowledged: true,
+      processed: true,
+      route: '/api/webhooks/easebuzz/easycollect/mandate',
+      txId: String(txId),
+      message: 'EasyCollect mandate webhook acknowledged successfully.',
+    };
   }
 
   async initiateEsign(lan: string, customerId: bigint) {
@@ -2249,6 +2413,12 @@ export class LoanService {
         throw new NotFoundException(`Loan with LAN ${lan} not found.`);
       }
 
+      // Lock row to prevent concurrent webhook replays racing on the already-disbursed
+      // check and the repayment-schedule generation below (same pattern as the mandate
+      // webhook handler) — payloadHash dedup alone doesn't cover two DIFFERENT-looking
+      // deliveries for the same disbursal arriving concurrently.
+      await tx.$queryRaw`SELECT id FROM pl_loans WHERE id = ${loan.id} FOR UPDATE`;
+
       // Check UTR duplicate across other loans
       const utrConflictLoan = await tx.plLoan.findFirst({
         where: {
@@ -2345,10 +2515,15 @@ export class LoanService {
         });
 
         if (existingRpsCount === 0) {
+          // Repayment principal must be the sanctioned/approved amount the customer's
+          // KFS and e-signed agreement are based on — not the webhook's disbursed
+          // amount, which is net of the processing fee Fintree deducts before transfer.
+          // Charging repayment on the net-disbursed figure would silently repay a
+          // different total than what the customer agreed to.
           const rpsRows = this.calculateRpsRows(
             loan.id,
             loan.lan,
-            amountNum,
+            approvedAmount,
             loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18,
             loan.acceptedTenureDays || 30,
             disbursalDate,
@@ -2585,7 +2760,7 @@ export class LoanService {
       throw new BadRequestException('Payment amount must be a positive number.');
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Fetch Loan
       const loan = await tx.plLoan.findFirst({
         where: { lan },
@@ -2606,6 +2781,37 @@ export class LoanService {
       const remainingAmount = Number(rps.remainingAmount);
       if (remainingAmount <= 0 || rps.paymentStatus === 'PAID') {
         throw new BadRequestException(`Installment #${instNum} is already fully paid.`);
+      }
+
+      // Idempotency guard: a retried/duplicate webhook delivery for the same payment must
+      // not double-count. paymentId carries a DB unique constraint, but callers that don't
+      // supply one (or a referenceNumber) previously fell back to a fresh random ID on every
+      // call, silently defeating that constraint on retry. Check by referenceNumber first
+      // (the caller's own stable transaction reference) before ever generating a fallback ID.
+      if (payload.referenceNumber) {
+        const existingByReference = await tx.plRepayment.findFirst({
+          where: { lan, referenceNumber: payload.referenceNumber },
+        });
+        if (existingByReference) {
+          return {
+            success: true,
+            duplicate: true,
+            message: 'Repayment already processed for this reference.',
+            data: { paymentId: existingByReference.paymentId, referenceNumber: existingByReference.referenceNumber },
+          };
+        }
+      }
+
+      if (payload.paymentId) {
+        const existingByPaymentId = await tx.plRepayment.findUnique({ where: { paymentId: payload.paymentId } });
+        if (existingByPaymentId) {
+          return {
+            success: true,
+            duplicate: true,
+            message: 'Repayment already processed for this payment ID.',
+            data: { paymentId: existingByPaymentId.paymentId, referenceNumber: existingByPaymentId.referenceNumber },
+          };
+        }
       }
 
       // Generate unique paymentId if not provided
@@ -2760,8 +2966,163 @@ export class LoanService {
         installmentNumber: instNum,
         newRemainingAmount,
         paymentStatus: newPaymentStatus,
+        applicationId: loan.applicationId,
+        repaymentId: repayment.id,
       };
     });
+
+    // Only for a genuinely new repayment — the duplicate-reference/duplicate-paymentId
+    // early-return branches above don't carry applicationId/repaymentId, so this is a
+    // no-op replay for those, which is correct: nothing new happened to notify about.
+    if (result.applicationId && result.repaymentId) {
+      // Trigger the lender's repayment-notification API via the existing outbox/worker
+      // pipeline (same idempotency/retry/auth machinery as CREATE/UPDATE/DISBURSE) —
+      // never a direct HTTP call from here, and never allowed to fail the repayment
+      // itself (it already succeeded in our own system by the time this fires).
+      this.lenderIntegrationOutbox.enqueueRepaymentNotification(result.applicationId, result.repaymentId).catch((err) => {
+        this.logger.warn(`Failed to enqueue repayment notification for loan ${lan}: ${err?.message || err}`);
+      });
+    }
+
+    return result;
+  }
+
+  async addLoanCharge(
+    lanInput: string,
+    payload: { chargeType: string; amount: number; dueDate: Date; remarks?: string },
+    actorUserId?: string,
+  ) {
+    const lan = String(lanInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+
+    // Normalized to match this table's own documented convention (chargeType String
+    // // BOUNCE_CHARGE, PENAL_CHARGE) regardless of how the caller capitalizes it.
+    const chargeType = String(payload.chargeType || '').trim().toUpperCase().replace(/\s+/g, '_');
+    if (!chargeType) throw new BadRequestException('chargeType is required.');
+
+    const amountNum = Number(payload.amount);
+    if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+      throw new BadRequestException('Charge amount must be a positive number.');
+    }
+    if (!payload.dueDate) throw new BadRequestException('dueDate is required.');
+
+    const loan = await this.prisma.plLoan.findFirst({ where: { lan } });
+    if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+
+    const charge = await this.prisma.plLoanCharge.create({
+      data: {
+        loanId: loan.id,
+        lan,
+        chargeType,
+        amount: new Prisma.Decimal(amountNum),
+        paidAmount: new Prisma.Decimal(0),
+        remainingAmount: new Prisma.Decimal(amountNum),
+        status: 'PENDING',
+        dueDate: payload.dueDate,
+        description: payload.remarks?.trim() || null,
+      },
+    });
+
+    this.auditLogs
+      .record({
+        actorUserId: actorUserId ?? null,
+        module: 'LOAN',
+        action: 'LOAN_CHARGE_ADDED',
+        entityType: 'PlLoanCharge',
+        entityId: charge.id.toString(),
+        outcome: 'SUCCESS',
+        requestId: randomBytes(16).toString('hex'),
+        newValue: { lan, chargeType, amount: amountNum, dueDate: payload.dueDate },
+      })
+      .catch(() => {});
+
+    // Trigger the lender's charge-notification API via the existing outbox/worker
+    // pipeline — never a direct HTTP call from here, never allowed to fail the charge
+    // creation itself (it already succeeded in our own system by the time this fires).
+    this.lenderIntegrationOutbox.enqueueChargeNotification(loan.applicationId, charge.id).catch((err) => {
+      this.logger.warn(`Failed to enqueue charge notification for loan ${lan}: ${err?.message || err}`);
+    });
+
+    return {
+      success: true,
+      message: `Charge '${chargeType}' of ₹${amountNum} added to loan ${lan}.`,
+      chargeId: charge.id.toString(),
+    };
+  }
+
+  async waiveLoanCharge(
+    lanInput: string,
+    chargeId: bigint,
+    payload: { waiverAmount: number; remarks?: string },
+    actorUserId?: string,
+  ) {
+    const lan = String(lanInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+
+    const waiverAmountNum = Number(payload.waiverAmount);
+    if (!waiverAmountNum || isNaN(waiverAmountNum) || waiverAmountNum <= 0) {
+      throw new BadRequestException('waiverAmount must be a positive number.');
+    }
+
+    const charge = await this.prisma.plLoanCharge.findFirst({ where: { id: chargeId, lan }, include: { loan: true } });
+    if (!charge) throw new NotFoundException(`Charge ${chargeId} not found for LAN ${lan}.`);
+    if (!['PENDING', 'PARTIAL'].includes(charge.status)) {
+      throw new BadRequestException(`Charge is not outstanding (status: ${charge.status}).`);
+    }
+
+    const remaining = Number(charge.remainingAmount);
+    if (waiverAmountNum > remaining) {
+      throw new BadRequestException(`waiverAmount (${waiverAmountNum}) exceeds the outstanding amount (${remaining}).`);
+    }
+
+    // Reaches zero -> fully cleared via waiver. Otherwise stays PARTIAL/PENDING,
+    // still collectible for the rest — a charge can be waived more than once.
+    const newRemaining = Math.round((remaining - waiverAmountNum) * 100) / 100;
+
+    const waiver = await this.prisma.$transaction(async (tx) => {
+      await tx.plLoanCharge.update({
+        where: { id: charge.id },
+        data: {
+          remainingAmount: new Prisma.Decimal(newRemaining),
+          status: newRemaining === 0 ? 'WAIVED' : charge.status,
+        },
+      });
+
+      return tx.plLoanChargeWaiver.create({
+        data: {
+          chargeId: charge.id,
+          loanId: charge.loanId,
+          lan,
+          waiverAmount: new Prisma.Decimal(waiverAmountNum),
+          waivedByUserId: actorUserId ?? null,
+          remarks: payload.remarks?.trim() || null,
+        },
+      });
+    });
+
+    this.auditLogs
+      .record({
+        actorUserId: actorUserId ?? null,
+        module: 'LOAN',
+        action: 'LOAN_CHARGE_WAIVED',
+        entityType: 'PlLoanCharge',
+        entityId: charge.id.toString(),
+        outcome: 'SUCCESS',
+        requestId: randomBytes(16).toString('hex'),
+        newValue: { lan, waiverAmount: waiverAmountNum, remainingAfter: newRemaining },
+      })
+      .catch(() => {});
+
+    this.lenderIntegrationOutbox.enqueueChargeWaiverNotification(charge.loan.applicationId, waiver.id).catch((err) => {
+      this.logger.warn(`Failed to enqueue charge waiver notification for loan ${lan}: ${err?.message || err}`);
+    });
+
+    return {
+      success: true,
+      message: `Waived ₹${waiverAmountNum} on charge ${chargeId} for loan ${lan}.`,
+      waiverId: waiver.id.toString(),
+      remainingAmount: newRemaining,
+    };
   }
 
   async initiateRepaymentPayment(

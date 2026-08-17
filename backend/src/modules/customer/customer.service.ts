@@ -454,7 +454,13 @@ export class CustomerService {
       });
       hasDecisionConsents = requiredConsentTypes.every((type) => decisionConsents.some((c) => c.consentType === type));
     }
-    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan, hasDecisionConsents });
+    const aaRequest = await this.prisma.customerAccountAggregatorRequest.findFirst({
+      where: { customerId: customer.id, status: 'SUCCESS' },
+    });
+    const aaCompleted = Boolean(aaRequest);
+    const aaStatus = aaRequest?.status || 'NOT_STARTED';
+
+    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan, hasDecisionConsents, aaCompleted });
 
     // Explicitly build response — never spread raw Prisma objects with BigInt fields
     return {
@@ -559,6 +565,8 @@ export class CustomerService {
           coolingOffUntil: latestApp.lenderCoolingOffUntil,
           nextStatusCheckAt: latestApp.lenderNextStatusCheckAt,
           integration: currentOutbox ? { stage: currentOutbox.integrationStage, status: currentOutbox.status, attemptCount: currentOutbox.attemptCount, safeErrorCode: currentOutbox.lastErrorCode } : null,
+          aaCompleted,
+          aaStatus,
           nextPermittedStep,
         } : null,
       },
@@ -1066,8 +1074,8 @@ export class CustomerService {
     });
   }
 
-  private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean }): string {
-    const { application, payment, link, outbox, updateReadiness, loan, hasDecisionConsents } = input;
+  private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean; aaCompleted?: boolean }): string {
+    const { application, payment, link, outbox, updateReadiness, loan, hasDecisionConsents, aaCompleted } = input;
     if (!application) return 'BASIC_DETAILS';
     // application.status (not link.normalizedDecision, which is shared across both
     // lender decision calls) is authoritative for which of the two approval stages
@@ -1084,14 +1092,16 @@ export class CustomerService {
     if (outbox?.status === 'FAILED') return 'INTEGRATION_SUPPORT';
     if (application.platformDecisionOutcome !== 'PASS') return application.status === 'PLATFORM_REJECTED' ? 'PLATFORM_REJECTED' : 'BASIC_DETAILS';
     if (!payment) return 'ASSESSMENT_FEE';
-    if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) return 'LENDER_CREATE_PROCESSING';
     if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';
-    if (updateReadiness.reasons.includes('DIGILOCKER_KYC_NOT_VERIFIED')) return 'AADHAAR_KYC';
+    if (updateReadiness.reasons.some((reason) => ['DIGILOCKER_KYC_NOT_VERIFIED', 'AADHAAR_VERIFIED_NAME_MISSING'].includes(reason))) return 'AADHAAR_KYC';
     if (updateReadiness.reasons.some((reason) => ['PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'SAME_ADDRESS_DECISION_MISSING'].includes(reason))) return 'ADDRESS_DETAILS';
+    // After Aadhaar KYC & Address confirmation, prompt for Account Aggregator bank statement
+    if (!aaCompleted) return 'ACCOUNT_AGGREGATOR';
     // The customer must explicitly consent to a lender decision request before we
     // proceed automatically in the background — without this, CREATE/UPDATE can
     // race ahead of the customer ever seeing the Submit Application screen.
     if (!hasDecisionConsents) return 'SUBMIT_APPLICATION';
+    if (!link || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) return 'LENDER_CREATE_PROCESSING';
     if (!['ACKNOWLEDGED', 'COMPLETED'].includes(link.updateStatus)) return 'LENDER_UPDATE_PROCESSING';
     if (link.normalizedDecision === 'PENDING' || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.decisionStatus)) return 'LENDER_DECISION_PROCESSING';
     return 'LENDER_DECISION_PROCESSING';

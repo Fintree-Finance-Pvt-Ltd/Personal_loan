@@ -165,7 +165,12 @@ export class PlPaymentsService {
         );
       }
 
-      // Deactivate any existing stale CREATED / PROCESSING payment rows for this customer & purpose
+      // Deactivate existing stale CREATED / PROCESSING payment rows for this customer &
+      // purpose — but only ones old enough to plausibly be abandoned. Without the age
+      // guard, a near-simultaneous duplicate request (network retry, double-click that
+      // slipped past the frontend's disabled-button guard) would invalidate a session
+      // that's still genuinely in flight in the customer's browser out from under it.
+      const staleBeforeMs = new Date(Date.now() - 2 * 60 * 1000);
       const existingActivePayments = await (
         this.prisma as any
       ).plPaymentLink.findMany({
@@ -173,6 +178,7 @@ export class PlPaymentsService {
           customerId,
           purpose,
           status: { in: ['CREATED', 'PROCESSING'] },
+          createdAt: { lt: staleBeforeMs },
         },
       });
 

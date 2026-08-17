@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { getCustomerAccessToken, doCustomerRefresh } from '../../../features/customer/customerApi';
+import { getCustomerAccessToken, doCustomerRefresh, shouldClearCustomerSession } from '../../../features/customer/customerApi';
 import CustomerHeader from './CustomerHeader';
 import CustomerSidebar from './CustomerSidebar';
 
@@ -24,13 +24,37 @@ export default function CustomerLayout() {
 
     doCustomerRefresh()
       .then(() => setIsInitializing(false))
-      .catch(() => {
+      .catch((error) => {
         setIsInitializing(false);
-        localStorage.removeItem('customerSession');
-        sessionStorage.removeItem('customerSession');
-        navigate('/customer/login', { replace: true });
+        // A network blip or a transient backend error (a dropped DB connection,
+        // a 500, a timeout) is not proof the session is invalid — it just means
+        // this one attempt to confirm it failed. Only wipe the stored session
+        // and force a re-login when the backend has explicitly said the
+        // refresh token/session is dead. Same rule the axios interceptor below
+        // already applies to reactive refreshes; this is the same check for the
+        // proactive one that runs on every full page reload.
+        if (shouldClearCustomerSession(error)) {
+          localStorage.removeItem('customerSession');
+          sessionStorage.removeItem('customerSession');
+          navigate('/customer/login', { replace: true });
+        }
       });
   }, [navigate]);
+
+  // Customer sessions have no idle timeout (only a 30-day absolute cap — see
+  // otp.service.ts), so this heartbeat isn't preventing a logout. It's here so
+  // the access token (15-minute JWT) is proactively renewed while a tab sits
+  // open, rather than expiring silently and making the customer's next click
+  // eat an invisible 401-then-retry round trip. A single missed beat (network
+  // blip) is harmless — the next real request's 401 handling covers it.
+  useEffect(() => {
+    if (isInitializing) return undefined;
+    const HEARTBEAT_MS = 10 * 60 * 1000;
+    const timer = setInterval(() => {
+      doCustomerRefresh().catch(() => {});
+    }, HEARTBEAT_MS);
+    return () => clearInterval(timer);
+  }, [isInitializing]);
 
   if (isInitializing) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50">Loading...</div>;

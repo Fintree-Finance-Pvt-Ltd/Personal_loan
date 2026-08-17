@@ -1,7 +1,7 @@
 // EXAMPLE: How to update your components to use global colors
 // This shows the CustomerSignIn component using global colors
 
-import { colorClasses, colorTokens } from '../../lib/colors';
+import { colorClasses } from '../../lib/colors';
 
 // ❌ OLD WAY - Hardcoded colors everywhere:
 // <div className="bg-emerald-900 p-8 text-white">

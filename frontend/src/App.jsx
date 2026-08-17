@@ -35,6 +35,10 @@ import EditPlatformPolicyVersionPage from './features/platform-policies/pages/Ed
 // Credit Review
 import CreditReviewPage from './features/credit-review/pages/CreditReviewPage';
 
+// Applications
+import ApplicationsPage from './features/applications/pages/ApplicationsPage';
+import ApplicationDetailsPage from './features/applications/pages/ApplicationDetailsPage';
+
 // MLM
 import MlmPoliciesPage from './features/mlm/pages/MlmPoliciesPage';
 import CreateMlmPolicyPage from './features/mlm/pages/CreateMlmPolicyPage';
@@ -172,6 +176,24 @@ export default function App() {
             element={
               <PermissionRoute permission="APPLICATION_VIEW_MASKED">
                 <CreditReviewPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Applications */}
+          <Route
+            path="/admin-master/applications"
+            element={
+              <PermissionRoute permission="APPLICATION_VIEW_MASKED">
+                <ApplicationsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-master/applications/:applicationId"
+            element={
+              <PermissionRoute permission="APPLICATION_VIEW_MASKED">
+                <ApplicationDetailsPage />
               </PermissionRoute>
             }
           />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { mlmApi } from '../api/mlm.api';
 import { platformProductsApi } from '../../platform-products/api/platform-products.api';

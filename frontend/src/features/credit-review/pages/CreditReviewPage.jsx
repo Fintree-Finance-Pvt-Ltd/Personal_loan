@@ -7,6 +7,123 @@ function formatCurrency(amount) {
   return `₹${Number(amount).toLocaleString('en-IN')}`;
 }
 
+function formatDate(value) {
+  return value ? new Date(value).toLocaleString('en-IN') : '-';
+}
+
+function formatLabel(value) {
+  if (!value) return '-';
+  return String(value)
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function ApplicationDetailsPanel({ applicationId }) {
+  const [details, setDetails] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [detailsError, setDetailsError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setDetailsError('');
+    creditReviewApi
+      .getApplicationDetails(applicationId)
+      .then((res) => {
+        if (!cancelled) setDetails(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setDetailsError(apiError(err, 'Unable to load application details.'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
+
+  if (loading) {
+    return <div className="py-6 text-center text-sm text-gray-500">Loading details...</div>;
+  }
+
+  if (detailsError) {
+    return <div className="py-4 text-sm text-red-700">{detailsError}</div>;
+  }
+
+  if (!details) return null;
+
+  const { application, customer, loan, documents } = details;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-3">
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="text-xs font-semibold uppercase text-gray-500">Application</div>
+        <dl className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between"><dt className="text-gray-500">LAN</dt><dd>{application.platformLan || '-'}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd>{formatLabel(application.status)}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Requested</dt><dd>{formatCurrency(application.requestedAmount)}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Selected</dt><dd>{formatCurrency(application.selectedAmount)} / {application.selectedTenure ?? '-'}d</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Lender approved</dt><dd>{formatCurrency(application.lenderApprovedAmount)}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Lender ROI</dt><dd>{application.lenderApprovedRoi ?? '-'}%</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Submitted</dt><dd>{formatDate(application.submittedAt)}</dd></div>
+        </dl>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="text-xs font-semibold uppercase text-gray-500">Customer</div>
+        <dl className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between"><dt className="text-gray-500">Name</dt><dd>{customer.fullName}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Code</dt><dd>{customer.customerCode || '-'}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Mobile</dt><dd>{customer.mobileNumber || '-'}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">Email</dt><dd>{customer.email || '-'}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">PAN</dt><dd>{customer.panNumber || '-'}</dd></div>
+        </dl>
+        {loan && (
+          <>
+            <div className="mt-4 text-xs font-semibold uppercase text-gray-500">Loan</div>
+            <dl className="mt-3 space-y-2 text-sm">
+              <div className="flex justify-between"><dt className="text-gray-500">LAN</dt><dd>{loan.lan}</dd></div>
+              <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd>{formatLabel(loan.status)}</dd></div>
+              <div className="flex justify-between"><dt className="text-gray-500">Disbursal</dt><dd>{formatLabel(loan.disbursalStatus)}</dd></div>
+            </dl>
+          </>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="text-xs font-semibold uppercase text-gray-500">Documents</div>
+        {documents.length === 0 ? (
+          <p className="mt-3 text-sm text-gray-500">No documents on file.</p>
+        ) : (
+          <ul className="mt-3 space-y-2 text-sm">
+            {documents.map((document) => (
+              <li key={document.documentId} className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                <div>
+                  <div className="font-medium">{formatLabel(document.documentType)}</div>
+                  <div className="text-xs text-gray-500">
+                    {formatLabel(document.status)} · {formatDate(document.uploadedAt)}
+                  </div>
+                </div>
+                <a
+                  href={document.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 text-brand-700 hover:underline"
+                >
+                  View
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CreditReviewPage() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,6 +131,7 @@ export default function CreditReviewPage() {
   const [actioningId, setActioningId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -55,13 +173,17 @@ export default function CreditReviewPage() {
     }
   };
 
+  const toggleExpanded = (applicationId) => {
+    setExpandedId((current) => (current === applicationId ? null : applicationId));
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">Final Approval Review</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Applications where the customer has selected an offer and the final lender decision is pending. Use Approve/Reject to override manually instead of waiting for the lender's async result.
+            Applications where the customer has selected an offer and the final lender decision is pending. Use Approve/Reject to override manually instead of waiting for the lender's async result. Click a row for full details and documents.
           </p>
         </div>
       </div>
@@ -93,7 +215,10 @@ export default function CreditReviewPage() {
             ) : (
               applications.map((application) => (
                 <React.Fragment key={application.applicationId}>
-                  <tr className="hover:bg-gray-50">
+                  <tr
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => toggleExpanded(application.applicationId)}
+                  >
                     <td className="px-6 py-4 font-medium">{application.applicationReference}</td>
                     <td className="px-6 py-4">
                       <div>{application.customerName}</div>
@@ -105,7 +230,7 @@ export default function CreditReviewPage() {
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {application.selectedAt ? new Date(application.selectedAt).toLocaleString('en-IN') : '-'}
                     </td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                    <td className="px-6 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         disabled={actioningId === application.applicationId}
@@ -128,6 +253,13 @@ export default function CreditReviewPage() {
                       </button>
                     </td>
                   </tr>
+                  {expandedId === application.applicationId && (
+                    <tr className="bg-gray-50">
+                      <td colSpan="7" className="px-6">
+                        <ApplicationDetailsPanel applicationId={application.applicationId} />
+                      </td>
+                    </tr>
+                  )}
                   {rejectingId === application.applicationId && (
                     <tr className="bg-gray-50">
                       <td colSpan="7" className="px-6 py-4">

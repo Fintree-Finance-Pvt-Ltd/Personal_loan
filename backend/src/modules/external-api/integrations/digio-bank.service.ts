@@ -87,8 +87,7 @@ export class DigioBankService {
       const verified = Boolean(
         data.verified === true ||
         data.status === 'VERIFIED' ||
-        data.status === 'SUCCESS' ||
-        data.verified_at
+        data.status === 'SUCCESS'
       );
 
       const beneficiaryNameWithBank =

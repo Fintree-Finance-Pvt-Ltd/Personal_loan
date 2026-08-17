@@ -10,10 +10,8 @@ import {
   Check,
   CheckCircle2,
   CircleUserRound,
-  Clock3,
   FileCheck2,
   Camera,
-  Image,
   Info,
   LoaderCircle,
   Lock,
@@ -28,7 +26,6 @@ import {
   Upload,
   ScanLine,
   Sparkles,
-  FileText,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -58,7 +55,7 @@ import {
 } from '../customerApi';
 import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi';
 import { authApi } from '../../auth/authApi';
-
+import { AccountAggregatorStep } from '../components/AccountAggregatorStep';
 
 const FLOW_STEPS = [
   {
@@ -76,6 +73,10 @@ const FLOW_STEPS = [
   {
     id: 'aadhaar_kyc',
     label: 'Aadhaar KYC',
+  },
+  {
+    id: 'account_aggregator',
+    label: 'Bank Account',
   },
   {
     id: 'submit_application',
@@ -331,6 +332,8 @@ function deriveCustomerWorkflow(customer) {
     ['VERIFIED', 'COMPLETED', 'SUCCESS'].includes(aadhaarKycStatus)
   );
 
+  const aaCompleted = Boolean(customer.journey?.aaCompleted || customer.journey?.aaStatus === 'SUCCESS');
+
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
     currentStep = 'basic_details';
@@ -344,6 +347,8 @@ function deriveCustomerWorkflow(customer) {
     currentStep = 'profile_details';
   } else if (!aadhaarKycCompleted) {
     currentStep = 'aadhaar_kyc';
+  } else if (!aaCompleted) {
+    currentStep = 'account_aggregator';
   } else {
     currentStep = 'submit_application';
   }
@@ -360,6 +365,8 @@ function deriveCustomerWorkflow(customer) {
     PROFILE_DETAILS: 'profile_details',
     AADHAAR_KYC: 'aadhaar_kyc',
     ADDRESS_DETAILS: 'aadhaar_kyc',
+    ACCOUNT_AGGREGATOR: 'account_aggregator',
+    BANK_STATEMENT: 'account_aggregator',
     SUBMIT_APPLICATION: 'submit_application',
     LENDER_CREATE_PROCESSING: 'integration_processing',
     LENDER_UPDATE_PROCESSING: 'integration_processing',
@@ -380,6 +387,7 @@ function deriveCustomerWorkflow(customer) {
     profileDetailsCompleted,
     aadhaarKycCompleted,
     aadhaarKycStatus,
+    aaCompleted,
     eligibilityCompleted,
     eligibilityPassed,
     assessmentFeePaid,
@@ -450,7 +458,7 @@ export default function MyApplicationPage() {
   const [isCustomerLoading, setIsCustomerLoading] = useState(true);
   const [customerLoadError, setCustomerLoadError] = useState('');
 
-  const [platformProducts, setPlatformProducts] = useState([]);
+  const [platformProducts] = useState([]);
   const [isLoadingPlatformProducts, setIsLoadingPlatformProducts] = useState(true);
 
   const [form, setForm] = useState(INITIAL_FORM);
@@ -476,21 +484,21 @@ export default function MyApplicationPage() {
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const [paymentId, setPaymentId] = useState('');
+  const [, setPaymentId] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const pollingTimerRef = useRef(null);
 
   const [isPanVerifying, setIsPanVerifying] = useState(false);
   const [panVerified, setPanVerified] = useState(false);
-  const [panVerification, setPanVerification] = useState(null);
+  const [, setPanVerification] = useState(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
   const [applicationNumber, setApplicationNumber] = useState('');
   const [savedPhotoDocument, setSavedPhotoDocument] = useState(null);
-  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
-  const [submissionData, setSubmissionData] = useState(null);
+  const [, setShowSubmissionModal] = useState(false);
+  const [, setSubmissionData] = useState(null);
   const [isRetryingLenderSubmission, setIsRetryingLenderSubmission] = useState(false);
   const [retryLenderSubmissionError, setRetryLenderSubmissionError] = useState('');
 
@@ -581,7 +589,11 @@ export default function MyApplicationPage() {
   }, [customerId, navigate]);
 
   useEffect(() => {
-    if (currentStep !== 'integration_processing') return undefined;
+    // Also polls on integration_support: a FAILED lender event can resolve on its own
+    // (the worker's own retry schedule, or someone retrying it from the admin panel)
+    // without the customer ever clicking anything here — without this, they'd be stuck
+    // looking at a stale "retry" screen for an error that's already been fixed.
+    if (currentStep !== 'integration_processing' && currentStep !== 'integration_support') return undefined;
     const timer = setInterval(() => {
       fetchCustomer();
     }, 5000);
@@ -605,16 +617,6 @@ export default function MyApplicationPage() {
       setIsRetryingLenderSubmission(false);
     }
   };
-
-  const currentStepIndex = FLOW_STEPS.findIndex(
-    (step) => step.id === currentStep,
-  );
-
-  const safeCurrentStepIndex =
-    currentStepIndex >= 0 ? currentStepIndex : 0;
-
-  const progressPercentage =
-    ((safeCurrentStepIndex + 1) / FLOW_STEPS.length) * 100;
 
   const showMessage = (
     text,
@@ -1927,6 +1929,16 @@ export default function MyApplicationPage() {
         />
       )}
 
+      {currentStep === 'account_aggregator' && (
+        <AccountAggregatorStep
+          lan={customer?.journey?.platformLan || customer?.journey?.applicationReference || customer?.latestApplicationReference || customer?.lan || applicationNumber}
+          onComplete={() => {
+            fetchCustomer();
+          }}
+          isCompleted={Boolean(workflow?.aaCompleted)}
+        />
+      )}
+
       {currentStep === 'submit_application' && (
         <SubmitApplicationStep
           form={form}
@@ -1989,10 +2001,10 @@ export default function MyApplicationPage() {
 }
 
 function AadhaarKycStep({
-  customerId,
+  customerId: _customerId,
   customerCode,
   customer,
-  workflow,
+  workflow: _workflow,
   onCompleted,
   onBack,
 }) {
@@ -2387,7 +2399,8 @@ function ApplicationProgress({ currentStep, workflow }) {
     assessment_fee: 1,
     profile_details: 2,
     aadhaar_kyc: 3,
-    submit_application: 4,
+    account_aggregator: 4,
+    submit_application: 5,
   };
   const currentStepIndex = stepIndices[currentStep] ?? 0;
   const progressPercentage =
@@ -2482,6 +2495,8 @@ function ApplicationProgress({ currentStep, workflow }) {
               isCompleted = Boolean(workflow?.profileDetailsCompleted);
             } else if (step.id === 'aadhaar_kyc') {
               isCompleted = Boolean(workflow?.aadhaarKycCompleted);
+            } else if (step.id === 'account_aggregator') {
+              isCompleted = Boolean(workflow?.aaCompleted);
             } else if (step.id === 'submit_application') {
               isCompleted = Boolean(workflow?.applicationSubmitted);
             }
@@ -2560,16 +2575,16 @@ function BasicDetailsStep({
   isBreRunning,
   isSaving,
   onChange,
-  onVerifyEmail,
+  onVerifyEmail: _onVerifyEmail,
   onSendEmailOtp,
   onVerifyEmailOtp,
   onEmailOtpChange,
   onVerifyPan,
   onSaveDraft,
   onContinue,
-  platformProducts,
-  isLoadingPlatformProducts,
-  applicationNumber,
+  platformProducts: _platformProducts,
+  isLoadingPlatformProducts: _isLoadingPlatformProducts,
+  applicationNumber: _applicationNumber,
 }) {
   const {
     city: pincodeCity,
@@ -3600,12 +3615,12 @@ function LivePhotographSection({
   const [taggedBlob, setTaggedBlob] = useState(null);
 
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [, setIsGeocoding] = useState(false);
   const [isWatermarking, setIsWatermarking] = useState(false);
   const [isRunningLiveness, setIsRunningLiveness] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  const [livenessResult, setLivenessResult] = useState(null);
+  const [, setLivenessResult] = useState(null);
   const [photoError, setPhotoError] = useState('');
 
   const videoRef = useRef(null);
@@ -4502,7 +4517,7 @@ function SubmitApplicationStep({
   savedPhotoDocument,
   mobileNumber,
   applicationSubmitted,
-  applicationNumber,
+  applicationNumber: _applicationNumber,
   isSubmitting,
   onBack,
   onSubmit,
@@ -4893,23 +4908,6 @@ function SummaryStatus({
         />
         {value}
       </span>
-    </div>
-  );
-}
-
-function SuccessDetail({
-  label,
-  value,
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-2 break-words text-sm font-bold text-slate-900">
-        {value}
-      </p>
     </div>
   );
 }

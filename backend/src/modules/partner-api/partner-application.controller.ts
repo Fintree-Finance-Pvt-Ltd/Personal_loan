@@ -16,6 +16,7 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { Public } from '../../common/decorators/public.decorator';
 import { PartnerAuthGuard, PARTNER_CLIENT_CONTEXT_KEY } from './partner-auth.guard';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { PartnerApplicationService } from './partner-application.service';
@@ -32,6 +33,11 @@ import {
 
 type AnyRecord = Record<string, unknown>;
 
+// Public here means "skip the global admin JWT guard" — this controller is
+// authenticated by PartnerAuthGuard's HMAC signature check below instead,
+// which is the actual auth mechanism for external partner callers (they have
+// no admin session to hold a JWT for).
+@Public()
 @UseGuards(PartnerAuthGuard)
 @UseInterceptors(IdempotencyInterceptor)
 @Controller('partner/v1/applications')
@@ -45,7 +51,12 @@ export class PartnerApplicationController {
 
   private handleError(err: unknown): never {
     if (err instanceof PartnerApiError) {
-      throw new HttpException({ error: err.code, message: err.message }, err.httpStatus);
+      // HttpExceptionFilter only reads a documented error.code out of a NESTED
+      // { error: { code, message } } body — it treats a bare string `error`
+      // as unstructured and falls back to a generic HTTP-status code
+      // (CONFLICT/NOT_FOUND/INVALID_REQUEST). A flat `{ error: err.code, ... }`
+      // silently loses every specific PartnerApiError code on the wire.
+      throw new HttpException({ error: { code: err.code, message: err.message } }, err.httpStatus);
     }
     throw err;
   }
