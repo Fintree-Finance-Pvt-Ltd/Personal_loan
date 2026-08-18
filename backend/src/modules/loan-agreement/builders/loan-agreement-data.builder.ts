@@ -115,37 +115,37 @@ export class LoanAgreementDataBuilder {
       },
     };
 
-    // Customer & Address Resolution
-    const rawMobile = customer?.mobileNumber || loan.bankAccountHolderName || '';
+    // Customer & Address Resolution (fetching directly from pl_loans table maximum data)
+    const rawMobile = customer?.mobileNumber || '';
     const maskedMobile =
       rawMobile.length >= 10
         ? `${rawMobile.slice(0, 2)}XXXX${rawMobile.slice(-4)}`
         : rawMobile || '80XXXX8231';
 
-    const addr1 = loan.currentAddrLine1 || customer?.addressLine1 || customer?.address || '';
-    const addr2 = loan.currentAddrLine2 || customer?.addressLine2 || '';
-    const city = loan.currentAddrCity || customer?.residentialCity || customer?.city || '';
-    const state = loan.currentAddrState || customer?.residentialState || customer?.state || '';
-    const pincode = loan.currentAddrPincode || customer?.residentialPincode || customer?.pincode || '';
+    const addr1 = loan.currentAddrLine1 || loan.aadhaarAddrLine1 || loan.aadhaarFormattedAddr || customer?.addressLine1 || customer?.address || '';
+    const addr2 = loan.currentAddrLine2 || loan.aadhaarAddrLine2 || customer?.addressLine2 || '';
+    const city = loan.currentAddrCity || loan.aadhaarCity || customer?.residentialCity || customer?.city || '';
+    const state = loan.currentAddrState || loan.aadhaarState || customer?.residentialState || customer?.state || '';
+    const pincode = loan.currentAddrPincode || loan.aadhaarPincode || customer?.residentialPincode || customer?.pincode || '';
 
     const addressParts = [addr1, addr2, city, state, pincode ? `- ${pincode}` : ''].filter(Boolean);
     const formattedAddress =
-      addressParts.length > 0 ? addressParts.join(', ') : 'Borrower Address, City, State - Pincode';
+      addressParts.length > 0 ? addressParts.join(', ') : (loan.aadhaarFormattedAddr || 'Borrower Address, City, State - Pincode');
 
     const rawPan = customer?.panNumber || '';
     const maskedPan =
       rawPan.length === 10 ? `${rawPan.slice(0, 2)}XXXX${rawPan.slice(-2)}` : rawPan || '—';
 
-    // Financial Values
-    const sanctionedAmount = Number(loan.approvedAmount || rawLoanAny.offeredAmount || 500000);
-    const tenureDays = Number(loan.acceptedTenureDays || 365);
-    const interestRate = Number(loan.acceptedInterestRate || 24);
-    const emiAmount = Number(loan.acceptedEmiAmount || sanctionedAmount);
-    const totalRepayment = Number(loan.acceptedTotalRepayment || sanctionedAmount * 1.2);
-    const processingFee = Number(rawLoanAny.processingFeeAmount || sanctionedAmount * 0.15);
-    const totalInterest = Math.max(0, totalRepayment - sanctionedAmount);
-    const netDisbursed = Math.max(0, sanctionedAmount - processingFee);
-    const apr = Number(rawLoanAny.aprRate || 42);
+    // Financial Values (pl_loans table fields as primary source)
+    const sanctionedAmount = Number(loan.approvedAmount || rawLoanAny.acceptedAmount || rawLoanAny.offeredAmount || application?.approvedAmount || application?.requestedAmount || 50000);
+    const tenureDays = Number(loan.acceptedTenureDays || application?.lenderApprovedTenure || application?.selectedTenure || application?.requestedTenure || 30);
+    const interestRate = Number(loan.acceptedInterestRate || application?.lenderApprovedRoi || 18);
+    const processingFee = Number(loan.acceptedProcessingFee || rawLoanAny.processingFeeAmount || 0);
+    const totalInterest = Math.max(0, loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) - sanctionedAmount : Math.round((sanctionedAmount * interestRate * tenureDays) / (365 * 100)));
+    const totalRepayment = Number(loan.acceptedTotalRepayment || (sanctionedAmount + totalInterest));
+    const emiAmount = Number(loan.acceptedEmiAmount || totalRepayment);
+    const netDisbursed = Number(loan.disbursalAmount || Math.max(0, sanctionedAmount - processingFee));
+    const apr = Number(rawLoanAny.aprRate || Math.round(interestRate + (processingFee / Math.max(1, sanctionedAmount)) * (365 / Math.max(1, tenureDays)) * 100));
 
     // Dynamic Repayment Schedule (1 single installment or EMI)
     const repayments = [
@@ -178,14 +178,14 @@ export class LoanAgreementDataBuilder {
     ];
 
     // Electronic Acceptance Status
-    const isSigned = esignTx?.status === 'SIGNED';
+    const isSigned = loan.esignCompleted || esignTx?.status === 'SIGNED';
 
     let electronicAcceptance: BorrowerAgreementTemplateData['electronicAcceptance'];
     if (esignTx) {
       const showEnvLabel = process.env.ELECTRONIC_SIGN_SHOW_ENVIRONMENT_LABEL === 'true';
       electronicAcceptance = {
         completed: isSigned,
-        signerName: esignTx.signerName || customer?.fullName || 'Borrower',
+        signerName: esignTx.signerName || loan.bankAccountHolderName || loan.aadhaarVerifiedName || customer?.fullName || 'Borrower',
         maskedMobile: esignTx.verifiedMobileMasked || maskedMobile,
         acceptedAt: esignTx.signedAt || undefined,
         acceptedAtFormatted: esignTx.signedAt
@@ -218,12 +218,14 @@ export class LoanAgreementDataBuilder {
     } else {
       electronicAcceptance = {
         completed: false,
-        signerName: customer?.fullName || 'Borrower',
+        signerName: loan.bankAccountHolderName || loan.aadhaarVerifiedName || customer?.fullName || 'Borrower',
         maskedMobile,
         stampHeading: 'ELECTRONICALLY ACCEPTED ',
         stampFooterText: 'OTP-verified electronic acceptance',
       };
     }
+
+    const borrowerFullName = loan.bankAccountHolderName || loan.aadhaarVerifiedName || customer?.fullName || (customer?.firstName ? `${customer.firstName} ${customer.lastName || ''}`.trim() : 'Borrower');
 
     return {
       document: {
@@ -237,7 +239,7 @@ export class LoanAgreementDataBuilder {
       lender,
       borrower: {
         customerId: String(loan.customerId),
-        fullName: customer?.fullName || loan.bankAccountHolderName || 'VISHAL RAMASHANKAR YADAV',
+        fullName: borrowerFullName,
         email: customer?.email || 'customer@example.com',
         mobile: customer?.mobileNumber || '9876543210',
         maskedMobile,
@@ -248,7 +250,7 @@ export class LoanAgreementDataBuilder {
           city: city || 'City',
           state: state || 'State',
           pincode: pincode || '400001',
-          country: 'India',
+          country: loan.currentAddrCountry || loan.aadhaarCountry || 'India',
           formatted: formattedAddress,
         },
         annualHouseholdIncome: Number(customer?.annualHouseholdIncome || customer?.monthlyIncome * 12 || 350000),
@@ -297,16 +299,16 @@ export class LoanAgreementDataBuilder {
         processingFeeAmountFormatted: `₹${processingFee.toLocaleString('en-IN')}`,
       },
       bank: {
-        bankName: bank?.bankName || loan.bankName || 'Verified Bank',
-        accountHolderName: bank?.accountHolderName || loan.bankAccountHolderName || customer?.fullName || 'Borrower',
-        maskedAccountNumber: bank?.accountNumberMasked || loan.bankAccountMasked || 'XXXXXXXX3684',
-        ifscCode: bank?.ifscCode || loan.bankIfsc || 'KKBK0000629',
-        accountType: 'SAVINGS',
+        bankName: loan.bankName || bank?.bankName || 'Verified Bank',
+        accountHolderName: loan.bankAccountHolderName || bank?.accountHolderName || borrowerFullName,
+        maskedAccountNumber: loan.bankAccountMasked || bank?.accountNumberMasked || 'XXXXXXXX3684',
+        ifscCode: loan.bankIfsc || bank?.ifscCode || 'KKBK0000629',
+        accountType: loan.bankAccountType || bank?.accountType || 'SAVINGS',
       },
       mandate: {
-        status: mandate?.status || (loan.mandateCompleted ? 'AUTHORIZED' : 'PENDING'),
+        status: loan.mandateStatus || mandate?.status || (loan.mandateCompleted ? 'AUTHORIZED' : 'PENDING'),
         mandateType: mandate?.mandateType || 'ENACH',
-        mandateReference: mandate?.mandateReference || mandate?.umrn || 'N/A',
+        mandateReference: loan.mandateProviderRef || mandate?.providerMandateId || mandate?.umrn || mandate?.mandateReference || 'N/A',
       },
       kfs: {
         loanProposalNumber: loan.lan,
