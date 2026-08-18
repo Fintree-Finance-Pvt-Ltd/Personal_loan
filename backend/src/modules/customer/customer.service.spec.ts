@@ -16,6 +16,7 @@ describe('CustomerService Integration', () => {
   let prisma: PrismaService;
   let policyEvalService: PolicyEvaluationService;
   let mlmService: MlmAllocationEngineService;
+  let outboxService: LenderIntegrationOutboxService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -38,6 +39,7 @@ describe('CustomerService Integration', () => {
             kycVerificationStatus: { upsert: jest.fn(), findFirst: jest.fn() },
             applicationStageConsent: { findMany: jest.fn().mockResolvedValue([]) },
             customerAccountAggregatorRequest: { findFirst: jest.fn().mockResolvedValue(null) },
+            applicationAddress: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn() },
           },
         },
         { provide: LoanService, useValue: {} },
@@ -81,6 +83,8 @@ describe('CustomerService Integration', () => {
     prisma = module.get<PrismaService>(PrismaService);
     policyEvalService = module.get<PolicyEvaluationService>(PolicyEvaluationService);
     mlmService = module.get<MlmAllocationEngineService>(MlmAllocationEngineService);
+    outboxService = module.get<LenderIntegrationOutboxService>(LenderIntegrationOutboxService);
+    jest.spyOn(outboxService, 'enqueueUpdateWhenReady').mockResolvedValue({ readiness: { ready: true, reasons: [] } } as any);
   });
 
   describe('runEligibility', () => {
@@ -274,5 +278,72 @@ describe('CustomerService Integration', () => {
     } finally {
       process.env.NODE_ENV = previous;
     }
+  });
+
+  describe('saveApplicationAddress', () => {
+    const priorPermanent = {
+      id: 'addr-old', applicationId: 10n, addressType: 'PERMANENT', source: 'DIGILOCKER',
+      addressLine1: '1 MG Road', addressLine2: null, landmark: null, locality: null, district: null,
+      city: 'Mumbai', state: 'Maharashtra', country: 'India', pincode: '400001', sourceVerifiedAt: new Date('2026-01-01'),
+    };
+
+    beforeEach(() => {
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue({ id: 20n, customerId: 1n } as any);
+      (prisma as any).applicationAddress.upsert.mockResolvedValue({ id: 'addr-current' });
+    });
+
+    it('backfills this application\'s PERMANENT address from a prior application when saving CURRENT as same-as-permanent', async () => {
+      (prisma as any).applicationAddress.findUnique.mockResolvedValue(null);
+      (prisma as any).applicationAddress.findFirst.mockResolvedValue(priorPermanent);
+      (prisma as any).applicationAddress.create.mockResolvedValue({ ...priorPermanent, id: 'addr-new', applicationId: 20n });
+
+      await service.saveApplicationAddress(1n, { addressType: 'CURRENT', sameAsPermanent: true });
+
+      expect((prisma as any).applicationAddress.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { addressType: 'PERMANENT', application: { customerId: 1n } },
+      }));
+      expect((prisma as any).applicationAddress.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ applicationId: 20n, addressType: 'PERMANENT', city: 'Mumbai', pincode: '400001' }),
+      }));
+      expect((prisma as any).applicationAddress.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({ applicationId: 20n, addressType: 'CURRENT', city: 'Mumbai', pincode: '400001', sameAsPermanent: true }),
+      }));
+    });
+
+    it('throws when saving CURRENT as same-as-permanent and the customer has no PERMANENT address anywhere', async () => {
+      (prisma as any).applicationAddress.findUnique.mockResolvedValue(null);
+      (prisma as any).applicationAddress.findFirst.mockResolvedValue(null);
+
+      await expect(service.saveApplicationAddress(1n, { addressType: 'CURRENT', sameAsPermanent: true }))
+        .rejects.toThrow('Permanent address must be saved first.');
+      expect((prisma as any).applicationAddress.create).not.toHaveBeenCalled();
+    });
+
+    it('backfills the missing PERMANENT row even when the customer enters a different CURRENT address', async () => {
+      (prisma as any).applicationAddress.findUnique.mockResolvedValue(null);
+      (prisma as any).applicationAddress.findFirst.mockResolvedValue(priorPermanent);
+      (prisma as any).applicationAddress.create.mockResolvedValue({ ...priorPermanent, id: 'addr-new', applicationId: 20n });
+
+      await service.saveApplicationAddress(1n, {
+        addressType: 'CURRENT', sameAsPermanent: false,
+        addressLine1: '99 New Street', city: 'Pune', state: 'Maharashtra', pincode: '411001',
+      });
+
+      expect((prisma as any).applicationAddress.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ applicationId: 20n, addressType: 'PERMANENT' }),
+      }));
+      expect((prisma as any).applicationAddress.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({ city: 'Pune', pincode: '411001', sameAsPermanent: false }),
+      }));
+    });
+
+    it('does not backfill when this application already has its own PERMANENT address', async () => {
+      (prisma as any).applicationAddress.findUnique.mockResolvedValue({ ...priorPermanent, id: 'addr-own', applicationId: 20n });
+
+      await service.saveApplicationAddress(1n, { addressType: 'CURRENT', sameAsPermanent: true });
+
+      expect((prisma as any).applicationAddress.findFirst).not.toHaveBeenCalled();
+      expect((prisma as any).applicationAddress.create).not.toHaveBeenCalled();
+    });
   });
 });
