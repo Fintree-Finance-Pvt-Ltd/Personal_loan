@@ -12,6 +12,11 @@ export class LoanController {
     return BigInt(customer.customerId);
   }
 
+  @Get()
+  listMyLoans(@CurrentCustomer() customer: any) {
+    return this.loanService.listLoansForCustomer(this.customerId(customer));
+  }
+
   @Get(':lan/post-approval')
   getPostApprovalJourney(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
     return this.loanService.getPostApprovalJourney(lan, this.customerId(customer));

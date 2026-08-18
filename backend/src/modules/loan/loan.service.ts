@@ -2615,6 +2615,38 @@ export class LoanService {
     return rows;
   }
 
+  async listLoansForCustomer(customerId: bigint) {
+    const loans = await this.prisma.plLoan.findMany({
+      where: { customerId },
+      orderBy: { id: 'desc' },
+      select: {
+        lan: true,
+        status: true,
+        disbursalStatus: true,
+        approvedAmount: true,
+        disbursalAmount: true,
+        disbursalDate: true,
+        acceptedTenureDays: true,
+        acceptedInterestRate: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      loans: loans.map((loan) => ({
+        lan: loan.lan,
+        status: loan.status,
+        disbursalStatus: loan.disbursalStatus,
+        approvedAmount: loan.approvedAmount ? Number(loan.approvedAmount) : null,
+        disbursedAmount: loan.disbursalAmount ? Number(loan.disbursalAmount) : null,
+        disbursalDate: loan.disbursalDate,
+        tenure: loan.acceptedTenureDays,
+        interestRate: loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : null,
+        createdAt: loan.createdAt,
+      })),
+    };
+  }
+
   async getLoanDetails(lan: string, customerId: bigint) {
     const loan = await this.prisma.plLoan.findFirst({
       where: { lan, customerId },
