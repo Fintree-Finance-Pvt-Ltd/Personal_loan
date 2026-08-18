@@ -5,8 +5,8 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 const buildService = () => {
   const prisma: any = {
     $transaction: jest.fn((cb: any) => cb(prisma)),
-    plLoan: { findFirst: jest.fn() },
-    plRepaymentSchedule: { findUnique: jest.fn(), update: jest.fn() },
+    plLoan: { findFirst: jest.fn(), update: jest.fn() },
+    plRepaymentSchedule: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(1) },
     plRepayment: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn().mockResolvedValue(null), create: jest.fn() },
     plRepaymentAllocation: { create: jest.fn() },
     plLoanCharge: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
@@ -51,6 +51,44 @@ describe('LoanService.processRepayment', () => {
     expect(result.success).toBe(true);
     expect(prisma.plRepayment.create).toHaveBeenCalled();
     expect(lenderIntegrationOutbox.enqueueRepaymentNotification).toHaveBeenCalledWith(1n, 501n);
+  });
+
+  it('sets the loan to FULLY_PAID when this was the last outstanding installment', async () => {
+    const { service, prisma, auditLogs } = buildService();
+    setUpFullPayment(prisma);
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+
+    const result = await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 1000 });
+
+    expect(result.paymentStatus).toBe('PAID');
+    expect((result as any).loanFullyPaid).toBe(true);
+    expect(prisma.plRepaymentSchedule.count).toHaveBeenCalledWith({ where: { lan: 'FTPL00000001', paymentStatus: { not: 'PAID' } } });
+    expect(prisma.plLoan.update).toHaveBeenCalledWith({ where: { id: 20n }, data: { status: 'FULLY_PAID' } });
+    expect(auditLogs.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'LOAN_FULLY_PAID' }));
+  });
+
+  it('does not mark the loan fully paid while other installments remain outstanding', async () => {
+    const { service, prisma } = buildService();
+    setUpFullPayment(prisma);
+    prisma.plRepaymentSchedule.count.mockResolvedValue(2);
+
+    const result = await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 1000 });
+
+    expect(result.paymentStatus).toBe('PAID');
+    expect((result as any).loanFullyPaid).toBe(false);
+    expect(prisma.plLoan.update).not.toHaveBeenCalled();
+  });
+
+  it('does not check for full repayment on a partial installment payment', async () => {
+    const { service, prisma } = buildService();
+    setUpFullPayment(prisma);
+
+    const result = await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 400 });
+
+    expect(result.paymentStatus).toBe('PARTIAL');
+    expect((result as any).loanFullyPaid).toBe(false);
+    expect(prisma.plRepaymentSchedule.count).not.toHaveBeenCalled();
+    expect(prisma.plLoan.update).not.toHaveBeenCalled();
   });
 
   it('does not enqueue a notification on a duplicate-by-referenceNumber replay', async () => {

@@ -34,6 +34,7 @@ import {
   verifySigningOtp,
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
+import { resolveFileUrl } from '../../../lib/files';
 
 function getCustomerSession() {
   try {
@@ -821,7 +822,7 @@ function KfsStep({ lan, data, onNext }) {
   const apr = kfs?.apr ?? (loanAmount > 0 ? Number((((totalInterest + totalCharges) / loanAmount) * (365 / tenureDays) * 100).toFixed(2)) : interestRate);
 
   const dueDate = kfs?.dueDate ?? offer?.dueDate;
-  const kfsDocumentUrl = kfs?.documentUrl || kfs?.fileUrl || kfs?.previewUrl || null;
+  const kfsDocumentUrl = resolveFileUrl(kfs?.documentUrl || kfs?.fileUrl || kfs?.previewUrl || null);
 
   const handleViewKfs = () => {
     setErrorMsg('');

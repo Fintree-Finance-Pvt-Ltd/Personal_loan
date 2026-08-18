@@ -139,6 +139,9 @@ export class OtpService {
     });
 
     const otp = this.generateOtp();
+    // TEMP DEBUG LOGGING — REMOVE BEFORE SHIPPING. Logs the raw OTP for local
+    // testing convenience only; never acceptable for real customer traffic.
+    this.logger.warn(`[DEBUG-ONLY] Mobile OTP for ${mobileNumber}: ${otp}`);
     const otpHash = await this.hashOtp(otp);
     const now = new Date();
     const expiresAt = this.getOtpExpiry(now);
@@ -432,6 +435,9 @@ export class OtpService {
     });
 
     const otp = this.generateOtp();
+    // TEMP DEBUG LOGGING — REMOVE BEFORE SHIPPING. Logs the raw OTP for local
+    // testing convenience only; never acceptable for real customer traffic.
+    this.logger.warn(`[DEBUG-ONLY] Email OTP for ${email}: ${otp}`);
     const otpHash = await this.hashOtp(otp);
     const now = new Date();
     const expiresAt = this.getOtpExpiry(now);
