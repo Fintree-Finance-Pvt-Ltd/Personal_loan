@@ -1005,7 +1005,7 @@ export class CustomerService {
                if (validTenures.length === 0) {
                  throw new BadRequestException('The allocated product has no configured tenure options.');
                }
-               const completedLoans = await tx.plLoan.count({ where: { customerId, status: 'DISBURSED' } });
+               const completedLoans = await tx.plLoan.count({ where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } } });
                const initialSimulation = this.productCalculationService.simulate(
                  completedLoans,
                  validTenures[0],

@@ -55,6 +55,7 @@ import {
 } from '../customerApi';
 import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi';
 import { authApi } from '../../auth/authApi';
+import { resolveFileUrl } from '../../../lib/files';
 import { AccountAggregatorStep } from '../components/AccountAggregatorStep';
 
 const FLOW_STEPS = [
@@ -3917,7 +3918,7 @@ function LivePhotographSection({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-lg border border-emerald-300 bg-slate-100">
               <img
-                src={savedPhotoDocument.fileUrl}
+                src={resolveFileUrl(savedPhotoDocument.fileUrl)}
                 alt="Saved customer photo"
                 className="h-full w-full object-cover"
               />

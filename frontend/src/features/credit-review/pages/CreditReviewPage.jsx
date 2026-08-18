@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { creditReviewApi } from '../api/creditReview.api';
 import { apiError } from '../../../lib/api';
+import { resolveFileUrl } from '../../../lib/files';
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined) return '-';
@@ -108,7 +109,7 @@ function ApplicationDetailsPanel({ applicationId }) {
                   </div>
                 </div>
                 <a
-                  href={document.fileUrl}
+                  href={resolveFileUrl(document.fileUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="shrink-0 text-brand-700 hover:underline"

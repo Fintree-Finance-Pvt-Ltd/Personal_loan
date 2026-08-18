@@ -5,6 +5,7 @@ const STATUS_STYLES = {
   DISBURSED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   LENDER_APPROVED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   PAID: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  FULLY_PAID: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
 
   PENDING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
   PROCESSING: 'bg-amber-50 text-amber-700 ring-amber-600/20',

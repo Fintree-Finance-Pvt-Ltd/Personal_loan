@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
+import { resolveFileUrl } from '../../../lib/files';
 import { useAuth } from '../../../auth/AuthContext';
 import { Alert, Card, PageHeader, Spinner } from '../../../components/ui';
 import { StageStatusBadge } from '../components/StageStatusBadge';
@@ -79,7 +80,7 @@ export default function ApplicationDetailsPage() {
 
   if (!details) return null;
 
-  const { application, customer, link, loan, stages } = details;
+  const { application, customer, link, loan, stages, documents } = details;
   const canRetry = auth.hasPermission('LENDER_UPDATE');
 
   return (
@@ -101,6 +102,17 @@ export default function ApplicationDetailsPage() {
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card>
+          <div className="text-xs font-semibold uppercase text-gray-500">Customer</div>
+          <dl className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between"><dt className="text-gray-500">Name</dt><dd>{customer.fullName || '-'}</dd></div>
+            <div className="flex justify-between"><dt className="text-gray-500">Code</dt><dd>{customer.customerCode || '-'}</dd></div>
+            <div className="flex justify-between"><dt className="text-gray-500">Mobile</dt><dd>{customer.mobileNumber || '-'}</dd></div>
+            <div className="flex justify-between"><dt className="text-gray-500">Email</dt><dd className="truncate">{customer.email || '-'}</dd></div>
+            <div className="flex justify-between"><dt className="text-gray-500">PAN</dt><dd>{customer.panNumber || '-'}</dd></div>
+          </dl>
+        </Card>
+
         <Card>
           <div className="text-xs font-semibold uppercase text-gray-500">Application</div>
           <dl className="mt-3 space-y-2 text-sm">
@@ -182,6 +194,59 @@ export default function ApplicationDetailsPage() {
           onChanged={load}
         />
       )}
+
+      <Card className="mb-6 !p-0 overflow-hidden">
+        <div className="border-b bg-gray-50 px-6 py-4">
+          <div className="font-bold text-gray-700">Documents</div>
+          <p className="mt-1 text-sm text-gray-500">All documents uploaded by the customer for this application.</p>
+        </div>
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Applicant</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded</th>
+              <th className="px-6 py-3"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {!documents || documents.length === 0 ? (
+              <tr>
+                <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  No documents uploaded yet for this application.
+                </td>
+              </tr>
+            ) : (
+              documents.map((document) => (
+                <tr key={document.documentId} className="align-top hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <div className="font-medium">{formatLabel(document.documentType)}</div>
+                    <div className="text-xs text-gray-500">{document.fileName}</div>
+                  </td>
+                  <td className="px-6 py-4">{formatLabel(document.applicantType)}</td>
+                  <td className="px-6 py-4"><StageStatusBadge value={document.status} /></td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{formatLabel(document.source)}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{formatDate(document.uploadedAt)}</td>
+                  <td className="px-6 py-4 text-right whitespace-nowrap">
+                    {document.fileUrl && (
+                      <a
+                        href={resolveFileUrl(document.fileUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
+                      >
+                        View
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </Card>
 
       <Card className="!p-0 overflow-hidden">
         <div className="border-b bg-gray-50 px-6 py-4">

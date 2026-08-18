@@ -529,7 +529,8 @@ export class LoanService {
           ) ||
           loan.status === PlLoanStatus.READY_FOR_DISBURSAL ||
           loan.status === PlLoanStatus.DISBURSAL_PROCESSING ||
-          loan.status === PlLoanStatus.DISBURSED,
+          loan.status === PlLoanStatus.DISBURSED ||
+          loan.status === PlLoanStatus.FULLY_PAID,
         disbursalStatus: loan.disbursalStatus || 'NOT_STARTED',
         currentStep,
       },
@@ -697,7 +698,7 @@ export class LoanService {
     if (!productVersion) throw new BadRequestException('Allocated product configuration is missing.');
     const validTenures = productVersion.tenures.map((t) => t.tenure);
     if (validTenures.length === 0) throw new BadRequestException('The allocated product has no configured tenure options.');
-    const completedLoans = await this.prisma.plLoan.count({ where: { customerId: application.customerId, status: 'DISBURSED' } });
+    const completedLoans = await this.prisma.plLoan.count({ where: { customerId: application.customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } } });
     return { config: productVersion as any, multipliers: productVersion.multipliers, validTenures, completedLoans };
   }
 
@@ -2945,6 +2946,25 @@ export class LoanService {
         },
       });
 
+      // 5b. If every installment on this loan is now PAID, the loan itself is fully
+      // repaid — flip PlLoan.status to FULLY_PAID. disbursalStatus is left untouched
+      // (stays 'DISBURSED'): the existing `loan.disbursalStatus === 'DISBURSED' ||
+      // loan.status === PlLoanStatus.DISBURSED` idempotency checks elsewhere (webhook
+      // replay guards, etc.) still resolve true via disbursalStatus after this change.
+      let loanFullyPaid = false;
+      if (newPaymentStatus === 'PAID') {
+        const outstandingInstallments = await tx.plRepaymentSchedule.count({
+          where: { lan, paymentStatus: { not: 'PAID' } },
+        });
+        if (outstandingInstallments === 0) {
+          await tx.plLoan.update({
+            where: { id: loan.id },
+            data: { status: 'FULLY_PAID' },
+          });
+          loanFullyPaid = true;
+        }
+      }
+
       // 6. Record Audit Log
       this.auditLogs
         .record({
@@ -2959,6 +2979,21 @@ export class LoanService {
         })
         .catch(() => {});
 
+      if (loanFullyPaid) {
+        this.auditLogs
+          .record({
+            actorUserId: null,
+            module: 'LOAN',
+            action: 'LOAN_FULLY_PAID',
+            entityType: 'PlLoan',
+            entityId: loan.id.toString(),
+            outcome: 'SUCCESS',
+            requestId: randomBytes(16).toString('hex'),
+            newValue: { lan, status: 'FULLY_PAID' },
+          })
+          .catch(() => {});
+      }
+
       return {
         success: true,
         message: `Repayment of ₹${amountNum} recorded successfully for Installment #${instNum}`,
@@ -2966,6 +3001,7 @@ export class LoanService {
         installmentNumber: instNum,
         newRemainingAmount,
         paymentStatus: newPaymentStatus,
+        loanFullyPaid,
         applicationId: loan.applicationId,
         repaymentId: repayment.id,
       };
