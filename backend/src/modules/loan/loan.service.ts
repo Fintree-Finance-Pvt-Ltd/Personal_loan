@@ -366,8 +366,25 @@ export class LoanService {
     const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
     const interestRate = loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : 18;
     const tenureDays = loan.acceptedTenureDays || 30;
-    const processingFee = loan.acceptedProcessingFee ? Number(loan.acceptedProcessingFee) : Math.round(approvedAmount * 0.02);
-    const processingFeeGst = Math.round(processingFee * 0.18);
+
+    // The processing fee % and its GST % must reflect the allocated product's actual
+    // configured values, not a hardcoded guess — this figure is shown to the customer on
+    // the KFS (a regulatory disclosure) and must match what the lender will actually deduct.
+    let pfPercent = 2;
+    let pfGstPercent = 18;
+    if ((loan as any).application?.productStrategyVersionId) {
+      const productVersion = await this.prisma.lenderProductVersion.findUnique({
+        where: { id: (loan as any).application.productStrategyVersionId },
+        select: { processingFeePercent: true, processingFeeGstPercent: true },
+      });
+      if (productVersion) {
+        pfPercent = Number(productVersion.processingFeePercent);
+        pfGstPercent = Number(productVersion.processingFeeGstPercent);
+      }
+    }
+
+    const processingFee = loan.acceptedProcessingFee ? Number(loan.acceptedProcessingFee) : Math.round(approvedAmount * (pfPercent / 100));
+    const processingFeeGst = Math.round(processingFee * (pfGstPercent / 100));
     const netDisbursalAmount = approvedAmount - processingFee - processingFeeGst;
 
     let totalInterest = 0;
@@ -561,8 +578,30 @@ export class LoanService {
     // Bullet Payment Pricing Calculation
     // Formula from Excel: Interest = ROUND(loan amount * interest rate * 1/365 * tenure, 0)
     const principal = Number(loan.approvedAmount) || 0;
-    const interestRate = 18.0;
-    const processingFee = Math.round(principal * 0.02);
+
+    // Rate and fee must come from the lender-approved ROI / the allocated product's
+    // configured processingFeePercent — never hardcoded, or a product configured with a
+    // different rate/fee silently charges the customer the wrong amount.
+    let interestRate = (loan as any).application?.lenderApprovedRoi ? Number((loan as any).application.lenderApprovedRoi) : null;
+    let pfPercent: number | null = null;
+    if ((loan as any).application?.productStrategyVersionId) {
+      const productVersion = await this.prisma.lenderProductVersion.findUnique({
+        where: { id: (loan as any).application.productStrategyVersionId },
+        select: { annualRoiPercent: true, processingFeePercent: true },
+      });
+      if (productVersion) {
+        if (interestRate === null) interestRate = Number(productVersion.annualRoiPercent);
+        pfPercent = Number(productVersion.processingFeePercent);
+      }
+    }
+    if (interestRate === null || Number.isNaN(interestRate)) {
+      throw new BadRequestException('Unable to determine the applicable interest rate for this product.');
+    }
+    if (pfPercent === null || Number.isNaN(pfPercent)) {
+      throw new BadRequestException('Unable to determine the applicable processing fee for this product.');
+    }
+
+    const processingFee = Math.round(principal * (pfPercent / 100));
     const tenureFraction = tenureDays / 365;
     const interestAmount = Math.round(principal * (interestRate / 100) * tenureFraction);
     const totalRepayment = principal + interestAmount;
