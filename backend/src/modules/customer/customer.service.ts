@@ -427,6 +427,15 @@ export class CustomerService {
       })
       : null;
     const latestLoan = latestApp?.loans[0] ?? null;
+    // Deliberately NOT scoped to latestApp — once a repeat customer's fresh (loan-less)
+    // application exists, latestApp.loans is empty and latestLoan above correctly becomes
+    // null for nextPermittedStep()'s purposes. But the Dashboard's "you have a fully repaid
+    // loan" signal must survive that: it needs the customer's most recent loan across ALL
+    // their applications, not just whichever application happens to be "latest".
+    const mostRecentLoan = await this.prisma.plLoan.findFirst({
+      where: { customerId },
+      orderBy: { id: 'desc' },
+    });
 
     let allocatedLenderName: string | null = null;
     if (latestApp?.lenderId) {
@@ -527,10 +536,10 @@ export class CustomerService {
         latestApplicationStatus: latestApp?.status ?? null,
         latestApplicationPlatformProductId: latestApp?.platformProductId ?? null,
         latestApplicationRequestedAmount: latestApp?.requestedAmount ? Number(latestApp.requestedAmount) : null,
-        latestLan: latestLoan?.lan ?? null,
-        latestLoanId: latestLoan?.id?.toString() ?? null,
-        latestLoanStatus: latestLoan?.status ?? null,
-        latestDisbursalStatus: latestLoan?.disbursalStatus ?? null,
+        latestLan: mostRecentLoan?.lan ?? null,
+        latestLoanId: mostRecentLoan?.id?.toString() ?? null,
+        latestLoanStatus: mostRecentLoan?.status ?? null,
+        latestDisbursalStatus: mostRecentLoan?.disbursalStatus ?? null,
         // Payment
         assessmentFeePaid: Boolean(latestSuccessPayment),
         latestPayment: latestSuccessPayment ? {
