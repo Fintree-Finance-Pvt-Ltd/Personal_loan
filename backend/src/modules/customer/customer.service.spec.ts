@@ -40,6 +40,7 @@ describe('CustomerService Integration', () => {
             applicationStageConsent: { findMany: jest.fn().mockResolvedValue([]) },
             customerAccountAggregatorRequest: { findFirst: jest.fn().mockResolvedValue(null) },
             applicationAddress: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn() },
+            applicationKycSnapshot: { findFirst: jest.fn(), create: jest.fn() },
           },
         },
         { provide: LoanService, useValue: {} },
@@ -267,6 +268,57 @@ describe('CustomerService Integration', () => {
     expect((prisma as any).customerAccountAggregatorRequest.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { customerId: 1n, applicationId: 20n, status: 'SUCCESS' },
     }));
+  });
+
+  describe('ApplicationKycSnapshot backfill for repeat customers', () => {
+    const priorSnapshot = {
+      id: 'snap-old', applicationId: 10n, provider: 'DIGITAP_DIGILOCKER', providerReference: 'REF-1',
+      verificationStatus: 'VERIFIED', maskedAadhaar: 'XXXX-XXXX-1234', verifiedName: 'Test Customer',
+      verifiedDateOfBirth: '1990-05-15', verifiedGender: 'MALE', verifiedAt: new Date('2026-01-01'),
+    };
+    const buildApplication = (overrides: any = {}) => ({
+      id: 20n, applicationNumber: 'APP-20', status: 'LENDER_ALLOCATED', platformDecisionOutcome: 'PASS',
+      lenderId: null, loans: [], lenderApplicationLink: null, lenderIntegrationOutbox: [],
+      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null,
+      ...overrides,
+    });
+
+    it('backfills this application\'s KYC snapshot from a prior verified application when the customer is already Aadhaar-verified', async () => {
+      const application = buildApplication();
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, aadhaarVerified: true, applications: [application] } as any);
+      (prisma as any).plPaymentLink.findFirst.mockResolvedValue(null);
+      (prisma as any).applicationKycSnapshot.findFirst.mockResolvedValue(priorSnapshot);
+      (prisma as any).applicationKycSnapshot.create.mockResolvedValue({ ...priorSnapshot, id: 'snap-new', applicationId: 20n });
+
+      await service.findById(1n);
+
+      expect((prisma as any).applicationKycSnapshot.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { verificationStatus: 'VERIFIED', application: { customerId: 1n } },
+      }));
+      expect((prisma as any).applicationKycSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ applicationId: 20n, verifiedName: 'Test Customer', verificationStatus: 'VERIFIED' }),
+      }));
+    });
+
+    it('does not backfill when the customer has not verified Aadhaar at the customer level', async () => {
+      const application = buildApplication();
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, aadhaarVerified: false, applications: [application] } as any);
+      (prisma as any).plPaymentLink.findFirst.mockResolvedValue(null);
+
+      await service.findById(1n);
+
+      expect((prisma as any).applicationKycSnapshot.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('does not backfill when this application already has its own KYC snapshot', async () => {
+      const application = buildApplication({ kycSnapshot: { verificationStatus: 'VERIFIED', verifiedName: 'Already There' } });
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, aadhaarVerified: true, applications: [application] } as any);
+      (prisma as any).plPaymentLink.findFirst.mockResolvedValue(null);
+
+      await service.findById(1n);
+
+      expect((prisma as any).applicationKycSnapshot.findFirst).not.toHaveBeenCalled();
+    });
   });
 
   it('disables simulated lender approval in production', async () => {

@@ -12,6 +12,7 @@ const buildService = () => {
     plRepaymentAllocation: { create: jest.fn() },
     plLoanCharge: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     plLoanChargeWaiver: { create: jest.fn() },
+    lenderProductVersion: { findUnique: jest.fn() },
   };
   const auditLogs: any = { record: jest.fn().mockResolvedValue(undefined) };
   const lenderIntegrationOutbox: any = {
@@ -221,5 +222,56 @@ describe('LoanService.waiveLoanCharge', () => {
     prisma.plLoanCharge.findFirst.mockResolvedValue(null);
 
     await expect(service.waiveLoanCharge('FTPL00000001', 999n, { waiverAmount: 100 })).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('LoanService.acceptOffer', () => {
+  const baseLoan = {
+    id: 20n, applicationId: 1n, lan: 'FTPL00000001', customerId: 5n,
+    approvedAmount: new Prisma.Decimal('5000'), acceptedTenureDays: null, offerAllowedTenures: null,
+    application: { lenderApprovedRoi: new Prisma.Decimal('24'), productStrategyVersionId: 'PSV-1' },
+  };
+
+  it('computes the processing fee from the allocated product\'s configured percentage, using the lender-approved ROI', async () => {
+    const { service, prisma } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan });
+    prisma.lenderProductVersion.findUnique.mockResolvedValue({ annualRoiPercent: new Prisma.Decimal('99'), processingFeePercent: new Prisma.Decimal('3') });
+
+    await service.acceptOffer('FTPL00000001', 5n, 30);
+
+    expect(prisma.plLoan.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 20n },
+      data: expect.objectContaining({
+        acceptedInterestRate: 24,
+        acceptedProcessingFee: 150,
+      }),
+    }));
+  });
+
+  it('falls back to the product\'s annualRoiPercent when the application has no lenderApprovedRoi yet', async () => {
+    const { service, prisma } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan, application: { lenderApprovedRoi: null, productStrategyVersionId: 'PSV-1' } });
+    prisma.lenderProductVersion.findUnique.mockResolvedValue({ annualRoiPercent: new Prisma.Decimal('20'), processingFeePercent: new Prisma.Decimal('2') });
+
+    await service.acceptOffer('FTPL00000001', 5n, 30);
+
+    expect(prisma.plLoan.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ acceptedInterestRate: 20 }),
+    }));
+  });
+
+  it('throws when the allocated product configuration cannot be found', async () => {
+    const { service, prisma } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan, application: { lenderApprovedRoi: null, productStrategyVersionId: 'PSV-1' } });
+    prisma.lenderProductVersion.findUnique.mockResolvedValue(null);
+
+    await expect(service.acceptOffer('FTPL00000001', 5n, 30)).rejects.toThrow('Unable to determine the applicable interest rate for this product.');
+  });
+
+  it('throws when the offer was already accepted', async () => {
+    const { service, prisma } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan, acceptedTenureDays: 30 });
+
+    await expect(service.acceptOffer('FTPL00000001', 5n, 30)).rejects.toThrow('Offer already accepted');
   });
 });
