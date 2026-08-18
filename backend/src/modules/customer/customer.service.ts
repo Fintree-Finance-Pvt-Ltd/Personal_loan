@@ -415,6 +415,38 @@ export class CustomerService {
     }
 
     const latestApp = customer.applications[0] ?? null;
+
+    // Repeat customers reuse their Customer-level Aadhaar verification and never go through
+    // DigiLocker again for a fresh application, so the side effect that normally seeds this
+    // application's own ApplicationKycSnapshot (customer-aadhaar-kyc.service.ts's
+    // snapshotVerifiedApplicationKyc, triggered only by a live DigiLocker callback) never runs
+    // here. Without it, getUpdateReadiness() keeps reporting DIGILOCKER_KYC_NOT_VERIFIED /
+    // AADHAAR_VERIFIED_NAME_MISSING for this application forever, looping the customer back to
+    // the Aadhaar step every time they click Save & Next. Backfill it from their most recently
+    // verified application instead of forcing a re-verification (same pattern as the
+    // ApplicationAddress backfill in saveApplicationAddress()).
+    if (latestApp && !latestApp.kycSnapshot && customer.aadhaarVerified) {
+      const priorSnapshot = await this.prisma.applicationKycSnapshot.findFirst({
+        where: { verificationStatus: 'VERIFIED', application: { customerId } },
+        orderBy: { applicationId: 'desc' },
+      });
+      if (priorSnapshot) {
+        (latestApp as any).kycSnapshot = await this.prisma.applicationKycSnapshot.create({
+          data: {
+            applicationId: latestApp.id,
+            provider: priorSnapshot.provider,
+            providerReference: priorSnapshot.providerReference,
+            verificationStatus: priorSnapshot.verificationStatus,
+            maskedAadhaar: priorSnapshot.maskedAadhaar,
+            verifiedName: priorSnapshot.verifiedName,
+            verifiedDateOfBirth: priorSnapshot.verifiedDateOfBirth,
+            verifiedGender: priorSnapshot.verifiedGender,
+            verifiedAt: priorSnapshot.verifiedAt,
+          },
+        });
+      }
+    }
+
     const latestSuccessPayment = latestApp
       ? await this.prisma.plPaymentLink.findFirst({
         where: {

@@ -93,6 +93,12 @@ export function mapFintreeCreatePayload(
     processingFeePercent:
       context.application.processingFeePercent,
 
+    previousDisbursedApplicationCount:
+      context.application.previousDisbursedApplicationCount,
+
+    previousLoanAmount:
+      context.application.previousLoanAmount,
+
     customer: {
       fullName:
         requireString(

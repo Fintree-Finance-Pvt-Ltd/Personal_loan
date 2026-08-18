@@ -43,15 +43,20 @@ export class CreditReviewService {
       }
 
       let approvedRoi = application.lenderApprovedRoi;
-      if (!approvedRoi && application.productStrategyVersionId) {
+      let processingFeePercent: any = null;
+      if (application.productStrategyVersionId) {
         const productVersion = await tx.lenderProductVersion.findUnique({
           where: { id: application.productStrategyVersionId },
-          select: { annualRoiPercent: true },
+          select: { annualRoiPercent: true, processingFeePercent: true },
         });
-        approvedRoi = productVersion?.annualRoiPercent ?? null;
+        if (!approvedRoi) approvedRoi = productVersion?.annualRoiPercent ?? null;
+        processingFeePercent = productVersion?.processingFeePercent ?? null;
       }
       if (!approvedRoi) {
         throw new BadRequestException('Unable to determine the applicable interest rate for this product.');
+      }
+      if (processingFeePercent === null) {
+        throw new BadRequestException('Unable to determine the applicable processing fee for this product.');
       }
 
       const decidedAt = new Date();
@@ -88,7 +93,7 @@ export class CreditReviewService {
       // its own acceptedTotalRepayment fallback, so the two stay consistent).
       const principal = Number(application.selectedAmount);
       const tenureDays = application.selectedTenure;
-      const processingFee = Math.round(principal * 0.02);
+      const processingFee = Math.round(principal * (Number(processingFeePercent) / 100));
       const totalInterest = Math.round((principal * Number(approvedRoi) * tenureDays) / 36500);
       const totalRepayment = principal + totalInterest;
 

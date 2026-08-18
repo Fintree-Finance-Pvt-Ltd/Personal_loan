@@ -17,7 +17,7 @@ describe('CreditReviewService', () => {
     lenderApprovedRoi: new Prisma.Decimal('14.25'),
   };
 
-  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25') }, kycStatus: any = null, permanentAddress: any = null, currentAddress: any = null) => {
+  const buildService = (application: any = pendingApplication, productVersion: any = { annualRoiPercent: new Prisma.Decimal('14.25'), processingFeePercent: new Prisma.Decimal('2') }, kycStatus: any = null, permanentAddress: any = null, currentAddress: any = null) => {
     const tx: any = {
       plApplication: { findUnique: jest.fn().mockResolvedValue(application), update: jest.fn().mockImplementation(({ data }: any) => ({ ...application, ...data })) },
       customer: { update: jest.fn() },
@@ -119,12 +119,26 @@ describe('CreditReviewService', () => {
     });
 
     it('defaults ROI from the allocated product version when not already persisted', async () => {
-      const { service, tx } = buildService({ ...pendingApplication, lenderApprovedRoi: null }, { annualRoiPercent: new Prisma.Decimal('16.5') });
+      const { service, tx } = buildService({ ...pendingApplication, lenderApprovedRoi: null }, { annualRoiPercent: new Prisma.Decimal('16.5'), processingFeePercent: new Prisma.Decimal('2') });
       await service.approve(1n, 'USER-1');
       expect(tx.lenderProductVersion.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'PSV-1' } }));
       expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ lenderApprovedRoi: new Prisma.Decimal('16.5') }),
       }));
+    });
+
+    it('computes the processing fee from the allocated product\'s configured percentage, not a hardcoded rate', async () => {
+      const { service, tx } = buildService(pendingApplication, { annualRoiPercent: new Prisma.Decimal('14.25'), processingFeePercent: new Prisma.Decimal('3.5') });
+      await service.approve(1n, 'USER-1');
+      // selectedAmount is 8000 -> 8000 * 3.5% = 280, not the old hardcoded 8000 * 2% = 160
+      expect(tx.plLoan.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({ acceptedProcessingFee: 280 }),
+      }));
+    });
+
+    it('rejects approval when the allocated product has no configured processing fee', async () => {
+      const { service } = buildService(pendingApplication, { annualRoiPercent: new Prisma.Decimal('14.25'), processingFeePercent: null });
+      await expect(service.approve(1n, 'USER-1')).rejects.toThrow('Unable to determine the applicable processing fee for this product.');
     });
 
     it('rejects approving an application that is not pending final approval', async () => {
