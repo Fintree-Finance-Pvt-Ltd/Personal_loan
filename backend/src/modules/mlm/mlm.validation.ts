@@ -64,4 +64,9 @@ export const executeMlmAllocationSchema = z.object({
   platformEvaluationReference: z.string().optional(),
   platformDecisionOutcome: z.string(),
   platformProductId: z.string().min(1),
+  customerSegment: z.enum(['ALL', 'NEW', 'REPEAT']).optional().default('NEW'),
+  // Present only for repeat customers — a hint (not a hard requirement) that the engine
+  // should prefer this exact lender+product route over a fresh SWRR draw, provided it
+  // still passes every normal eligibility check.
+  stickyRouteHint: z.object({ lenderId: z.string(), productId: z.string() }).nullable().optional(),
 });

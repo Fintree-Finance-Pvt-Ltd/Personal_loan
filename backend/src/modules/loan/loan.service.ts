@@ -2615,6 +2615,38 @@ export class LoanService {
     return rows;
   }
 
+  async listLoansForCustomer(customerId: bigint) {
+    const loans = await this.prisma.plLoan.findMany({
+      where: { customerId },
+      orderBy: { id: 'desc' },
+      select: {
+        lan: true,
+        status: true,
+        disbursalStatus: true,
+        approvedAmount: true,
+        disbursalAmount: true,
+        disbursalDate: true,
+        acceptedTenureDays: true,
+        acceptedInterestRate: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      loans: loans.map((loan) => ({
+        lan: loan.lan,
+        status: loan.status,
+        disbursalStatus: loan.disbursalStatus,
+        approvedAmount: loan.approvedAmount ? Number(loan.approvedAmount) : null,
+        disbursedAmount: loan.disbursalAmount ? Number(loan.disbursalAmount) : null,
+        disbursalDate: loan.disbursalDate,
+        tenure: loan.acceptedTenureDays,
+        interestRate: loan.acceptedInterestRate ? Number(loan.acceptedInterestRate) : null,
+        createdAt: loan.createdAt,
+      })),
+    };
+  }
+
   async getLoanDetails(lan: string, customerId: bigint) {
     const loan = await this.prisma.plLoan.findFirst({
       where: { lan, customerId },
@@ -2962,6 +2994,16 @@ export class LoanService {
             data: { status: 'FULLY_PAID' },
           });
           loanFullyPaid = true;
+
+          // Advance the canonical PlApplication to its terminal state too, so
+          // ApplicationTransitionService.createOrResumeApplication() creates a genuinely
+          // new application the next time this customer applies — ACTIVE_APPLICATION_STATUSES
+          // does not include LOAN_CLOSED, unlike LENDER_APPROVED (which PlApplication.status
+          // would otherwise stay stuck at forever, since nothing else ever advances it).
+          await tx.plApplication.update({
+            where: { id: loan.applicationId },
+            data: { status: 'LOAN_CLOSED' },
+          });
         }
       }
 

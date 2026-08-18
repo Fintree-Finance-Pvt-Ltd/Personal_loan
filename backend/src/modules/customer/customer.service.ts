@@ -427,6 +427,15 @@ export class CustomerService {
       })
       : null;
     const latestLoan = latestApp?.loans[0] ?? null;
+    // Deliberately NOT scoped to latestApp — once a repeat customer's fresh (loan-less)
+    // application exists, latestApp.loans is empty and latestLoan above correctly becomes
+    // null for nextPermittedStep()'s purposes. But the Dashboard's "you have a fully repaid
+    // loan" signal must survive that: it needs the customer's most recent loan across ALL
+    // their applications, not just whichever application happens to be "latest".
+    const mostRecentLoan = await this.prisma.plLoan.findFirst({
+      where: { customerId },
+      orderBy: { id: 'desc' },
+    });
 
     let allocatedLenderName: string | null = null;
     if (latestApp?.lenderId) {
@@ -454,9 +463,15 @@ export class CustomerService {
       });
       hasDecisionConsents = requiredConsentTypes.every((type) => decisionConsents.some((c) => c.consentType === type));
     }
-    const aaRequest = await this.prisma.customerAccountAggregatorRequest.findFirst({
-      where: { customerId: customer.id, status: 'SUCCESS' },
-    });
+    // Scoped to the customer's current application, not just their customerId — an
+    // Account Aggregator success from a PREVIOUS (now closed) loan must not silently
+    // satisfy this step for a fresh application; the customer must reconnect their bank
+    // statement again for every new loan.
+    const aaRequest = latestApp
+      ? await this.prisma.customerAccountAggregatorRequest.findFirst({
+          where: { customerId: customer.id, applicationId: latestApp.id, status: 'SUCCESS' },
+        })
+      : null;
     const aaCompleted = Boolean(aaRequest);
     const aaStatus = aaRequest?.status || 'NOT_STARTED';
 
@@ -521,10 +536,10 @@ export class CustomerService {
         latestApplicationStatus: latestApp?.status ?? null,
         latestApplicationPlatformProductId: latestApp?.platformProductId ?? null,
         latestApplicationRequestedAmount: latestApp?.requestedAmount ? Number(latestApp.requestedAmount) : null,
-        latestLan: latestLoan?.lan ?? null,
-        latestLoanId: latestLoan?.id?.toString() ?? null,
-        latestLoanStatus: latestLoan?.status ?? null,
-        latestDisbursalStatus: latestLoan?.disbursalStatus ?? null,
+        latestLan: mostRecentLoan?.lan ?? null,
+        latestLoanId: mostRecentLoan?.id?.toString() ?? null,
+        latestLoanStatus: mostRecentLoan?.status ?? null,
+        latestDisbursalStatus: mostRecentLoan?.disbursalStatus ?? null,
         // Payment
         assessmentFeePaid: Boolean(latestSuccessPayment),
         latestPayment: latestSuccessPayment ? {
@@ -960,6 +975,19 @@ export class CustomerService {
 
       // 7. Invoke MLM Allocation
       try {
+        // Repeat-customer detection: a customer with a prior DISBURSED/FULLY_PAID loan
+        // should be routed back to that exact lender+product whenever it's still eligible,
+        // not put through a fresh round-robin draw — see mlm-allocation-engine.service.ts's
+        // stickyRouteHint handling.
+        const previousLoan = await tx.plLoan.findFirst({
+          where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+          orderBy: { id: 'desc' },
+          include: { application: { select: { lenderId: true, lenderProductId: true } } },
+        });
+        const isRepeatCustomer = Boolean(previousLoan);
+        const previousLenderId = previousLoan?.application?.lenderId ?? null;
+        const previousLenderProductId = previousLoan?.application?.lenderProductId ?? null;
+
         const activeMlmPolicies = await tx.mlmPolicy.findMany({
           where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
           include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
@@ -974,7 +1002,10 @@ export class CustomerService {
               : Number(application.requestedAmount),
             platformDecisionOutcome: 'PASS',
             platformProductId: application.platformProductId,
-            customerSegment: 'NEW'
+            customerSegment: (isRepeatCustomer ? 'REPEAT' : 'NEW') as 'REPEAT' | 'NEW',
+            stickyRouteHint: isRepeatCustomer && previousLenderId && previousLenderProductId
+              ? { lenderId: previousLenderId, productId: previousLenderProductId }
+              : null,
           };
 
             const allocationDecision = await this.mlmAllocationEngineService.executeWithTx(tx, mlmDto, mlmVersion as any);
@@ -1112,11 +1143,48 @@ export class CustomerService {
     if (!application) throw new BadRequestException('Canonical application was not found.');
     const addressType = String(body?.addressType || '').toUpperCase();
     if (!['PERMANENT', 'CURRENT'].includes(addressType)) throw new BadRequestException('Address type must be PERMANENT or CURRENT.');
+    let permanentForApplication: any = null;
+    if (addressType === 'CURRENT') {
+      permanentForApplication = await this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } });
+      if (!permanentForApplication) {
+        // Repeat customers reuse their Customer-level Aadhaar verification and never go
+        // through DigiLocker again for a fresh application, so the side effect that
+        // normally seeds this application's own PERMANENT row (customer-aadhaar-kyc
+        // service's snapshotVerifiedApplicationKyc, triggered only by a live DigiLocker
+        // callback) never runs here. Backfill it from their most recently verified
+        // application instead of forcing a re-verification — needed both when they keep
+        // the same address (copied into CURRENT below) and when they enter a different one
+        // (PERMANENT_ADDRESS_MISSING must still clear for this application either way).
+        const priorPermanent = await this.prisma.applicationAddress.findFirst({
+          where: { addressType: 'PERMANENT', application: { customerId } },
+          orderBy: { applicationId: 'desc' },
+        });
+        if (priorPermanent) {
+          permanentForApplication = await this.prisma.applicationAddress.create({
+            data: {
+              applicationId: application.id,
+              addressType: 'PERMANENT',
+              source: priorPermanent.source,
+              addressLine1: priorPermanent.addressLine1,
+              addressLine2: priorPermanent.addressLine2,
+              landmark: priorPermanent.landmark,
+              locality: priorPermanent.locality,
+              district: priorPermanent.district,
+              city: priorPermanent.city,
+              state: priorPermanent.state,
+              country: priorPermanent.country,
+              pincode: priorPermanent.pincode,
+              sourceVerifiedAt: priorPermanent.sourceVerifiedAt,
+            },
+          });
+        }
+      }
+    }
+
     let address = body;
     if (addressType === 'CURRENT' && body?.sameAsPermanent === true) {
-      const permanent = await this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } });
-      if (!permanent) throw new BadRequestException('Permanent address must be saved first.');
-      address = { ...permanent, addressType: 'CURRENT', sameAsPermanent: true, source: permanent.source };
+      if (!permanentForApplication) throw new BadRequestException('Permanent address must be saved first.');
+      address = { ...permanentForApplication, addressType: 'CURRENT', sameAsPermanent: true, source: permanentForApplication.source };
     }
     const required = ['addressLine1', 'city', 'state', 'pincode'];
     if (required.some((field) => !String(address?.[field] || '').trim()) || !/^[1-9][0-9]{5}$/.test(String(address.pincode))) throw new BadRequestException('Complete structured address details are required.');

@@ -29,15 +29,20 @@ import {
 import {
   confirmRepayment,
   getCustomerLoanDetails,
+  getCustomerLoans,
   initiateRepaymentPayment,
 } from '../postApprovalApi';
-import { getCustomerMe } from '../customerApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 
 export function CustomerLoanDetailsPage() {
   const { lan: paramLan } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const listMode = !(
+    paramLan ||
+    location.state?.lan
+  );
 
   const [lan, setLan] = useState(
     paramLan ||
@@ -49,7 +54,7 @@ export function CustomerLoanDetailsPage() {
     useState(null);
 
   const [loading, setLoading] =
-    useState(true);
+    useState(!listMode);
 
   const [error, setError] =
     useState('');
@@ -91,58 +96,68 @@ export function CustomerLoanDetailsPage() {
 
   const timerRef = useRef(null);
 
+  const [allLoans, setAllLoans] =
+    useState([]);
+
+  const [
+    loansLoaded,
+    setLoansLoaded,
+  ] = useState(false);
+
   useEffect(() => {
     let isMounted = true;
 
-    const resolveLan = async () => {
-      if (paramLan) {
-        setLan(paramLan);
-      } else if (
-        location.state?.lan
-      ) {
-        setLan(
-          location.state.lan,
+    const loadLoanHistory = async () => {
+      try {
+        const data =
+          await getCustomerLoans();
+
+        if (isMounted) {
+          setAllLoans(
+            data?.loans || [],
+          );
+        }
+      } catch (err) {
+        console.error(
+          'Failed to load loan history:',
+          err,
         );
-      } else {
-        try {
-          const me =
-            await getCustomerMe();
-
-          if (
-            isMounted &&
-            me?.latestLan
-          ) {
-            setLan(me.latestLan);
-          } else if (
-            isMounted
-          ) {
-            setLoading(false);
-
-            setError(
-              'No active loan found for this account.',
-            );
-          }
-        } catch {
-          if (isMounted) {
-            setLoading(false);
-
-            setError(
-              'Failed to load active loan account.',
-            );
-          }
+      } finally {
+        if (isMounted) {
+          setLoansLoaded(true);
         }
       }
     };
 
-    resolveLan();
+    loadLoanHistory();
 
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    if (paramLan) {
+      setLan(paramLan);
+    } else if (
+      location.state?.lan
+    ) {
+      setLan(
+        location.state.lan,
+      );
+    }
   }, [
     paramLan,
     location.state,
   ]);
+
+  const handleSelectLoan = (
+    selectedLoan,
+  ) => {
+    navigate(
+      `/customer/loan/${selectedLoan.lan}/details`,
+    );
+  };
 
   const fetchDetails =
     useCallback(
@@ -532,6 +547,16 @@ export function CustomerLoanDetailsPage() {
     status,
   ) => {
     switch (status) {
+      case 'FULLY_PAID':
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
+            <ShieldCheck
+              size={14}
+            />
+            FULLY PAID
+          </span>
+        );
+
       case 'DISBURSED':
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
@@ -576,6 +601,159 @@ export function CustomerLoanDetailsPage() {
         );
     }
   };
+
+  const compactStatusPill = (
+    status,
+  ) => {
+    const normalized =
+      status || 'UNKNOWN';
+
+    const tone =
+      normalized === 'FULLY_PAID'
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        : normalized === 'DISBURSED'
+        ? 'border-blue-200 bg-blue-50 text-blue-700'
+        : normalized === 'FAILED' ||
+          normalized === 'REJECTED'
+        ? 'border-amber-200 bg-amber-50 text-amber-700'
+        : 'border-slate-200 bg-slate-50 text-slate-600';
+
+    return (
+      <span
+        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${tone}`}
+      >
+        {normalized.replace(
+          /_/g,
+          ' ',
+        )}
+      </span>
+    );
+  };
+
+  const loanHistoryList = (
+    <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      {allLoans.map(
+        (item) => (
+          <button
+            key={item.lan}
+            type="button"
+            onClick={() =>
+              handleSelectLoan(
+                item,
+              )
+            }
+            className={`flex w-full flex-col gap-2 px-5 py-4 text-left transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between ${
+              item.lan === lan
+                ? 'bg-emerald-50/60'
+                : ''
+            }`}
+          >
+            <div className="min-w-0">
+              <p className="font-mono text-xs font-bold text-slate-800">
+                {item.lan}
+              </p>
+
+              <p className="mt-1 text-[11px] text-slate-500">
+                {item.disbursalDate
+                  ? formatDate(
+                      item.disbursalDate,
+                    )
+                  : formatDate(
+                      item.createdAt,
+                    )}
+                {item.tenure
+                  ? ` · ${item.tenure} days`
+                  : ''}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-bold text-slate-900">
+                {formatCurrency(
+                  item.disbursedAmount ??
+                    item.approvedAmount,
+                )}
+              </span>
+
+              {compactStatusPill(
+                item.status,
+              )}
+            </div>
+          </button>
+        ),
+      )}
+    </div>
+  );
+
+  if (listMode) {
+    return (
+      <div className="mx-auto w-full max-w-4xl px-1 py-6">
+        <div className="mb-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">
+            Loan account
+          </p>
+
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+            Loan Details
+          </h1>
+        </div>
+
+        {!loansLoaded ? (
+          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
+            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50">
+              <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
+            </div>
+
+            <h2 className="mt-5 text-lg font-bold text-slate-900">
+              Loading your loans
+            </h2>
+          </div>
+        ) : allLoans.length > 0 ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h3 className="text-base font-bold text-slate-900">
+                Your Loans
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Select a loan below to view its full details and repayment schedule.
+              </p>
+            </div>
+
+            {loanHistoryList}
+          </div>
+        ) : (
+          <div className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-sm sm:p-12">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-slate-50 text-slate-400">
+              <History
+                size={30}
+              />
+            </div>
+
+            <h3 className="mt-5 text-xl font-bold text-slate-950">
+              No loans yet
+            </h3>
+
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+              You haven&apos;t taken a loan with us yet. Apply now to get started.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate(
+                  '/customer/application',
+                )
+              }
+              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/15 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+            >
+              Apply Now
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -665,6 +843,12 @@ export function CustomerLoanDetailsPage() {
     allocations = [],
   } = details || {};
 
+  const displayStatus =
+    loan.status === 'FULLY_PAID'
+      ? 'FULLY_PAID'
+      : disbursal.status ||
+        loan.status;
+
   const isPendingDisbursal =
     disbursal.status ===
     'DISBURSAL_REQUESTED' ||
@@ -713,8 +897,7 @@ export function CustomerLoanDetailsPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             {getStatusBadge(
-              disbursal.status ||
-              loan.status,
+              displayStatus,
             )}
 
             <button
@@ -745,6 +928,25 @@ export function CustomerLoanDetailsPage() {
           </div>
         </div>
       </section>
+
+      {/* Your loans */}
+      {loansLoaded &&
+        allLoans.length > 1 && (
+          <section className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
+            <div className="mb-4 flex items-center gap-2">
+              <History
+                size={16}
+                className="text-slate-400"
+              />
+
+              <h2 className="text-sm font-bold text-slate-900">
+                Your Loans
+              </h2>
+            </div>
+
+            {loanHistoryList}
+          </section>
+        )}
 
       {/* Pending banner */}
       {isPendingDisbursal && (
@@ -820,8 +1022,7 @@ export function CustomerLoanDetailsPage() {
             </div>
 
             {getStatusBadge(
-              disbursal.status ||
-              loan.status,
+              displayStatus,
             )}
           </div>
 

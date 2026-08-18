@@ -513,7 +513,19 @@ export default function MyApplicationPage() {
     setCustomerLoadError('');
 
     try {
-      const customerData = await getCustomerMe();
+      let customerData = await getCustomerMe();
+
+      // A repeat customer whose previous loan is fully repaid still has their old,
+      // now-closed application as their "latest" one until a fresh application is
+      // created — deriveCustomerWorkflow() would otherwise compute a stale
+      // "processing" step for that closed application with no way forward. Self-heal
+      // here regardless of entry path (direct URL, back button, bookmark) rather than
+      // relying solely on the Dashboard's "Apply for a New Loan" button to trigger this.
+      if (customerData.latestApplicationStatus === 'LOAN_CLOSED') {
+        await resumeApplication(customerId);
+        customerData = await getCustomerMe();
+      }
+
       setCustomer(customerData);
 
       const mappedForm = mapCustomerToForm(customerData);

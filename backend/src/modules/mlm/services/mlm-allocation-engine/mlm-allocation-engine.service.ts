@@ -283,13 +283,31 @@ export class MlmAllocationEngineService {
     let selectedRoute: MlmAllocationRoute | null = null;
     let updatedRoutesStates: any[] = [];
     let reasonCode = isPlatformPassed ? 'NO_ELIGIBLE_ROUTE' : 'PLATFORM_POLICY_NOT_PASSED';
+    let isStickyAssignment = false;
 
     if (eligibleRoutes.length > 0) {
-      const swrrResult = this.swrrService.selectNext(swrrRoutes);
-      selectedRouteId = swrrResult.selectedRouteId;
-      selectedRoute = policyVersion.routes.find(r => r.id === selectedRouteId) || null;
-      updatedRoutesStates = swrrResult.updatedRoutes;
-      if (selectedRouteId) reasonCode = 'ASSIGNED';
+      const hint = dto.stickyRouteHint as { lenderId: string; productId: string } | null | undefined;
+      const stickyRoute = hint
+        ? eligibleRoutes.find(r => r.lenderId === hint.lenderId && r.productId === hint.productId)
+        : null;
+
+      if (stickyRoute) {
+        // Repeat customer whose previous lender+product route is still eligible: assign
+        // directly, bypassing SWRR selection entirely. stickyRoute was only ever pulled
+        // from eligibleRoutes, which already passed every check above — no new eligibility
+        // path is introduced here.
+        selectedRouteId = stickyRoute.id;
+        selectedRoute = stickyRoute;
+        updatedRoutesStates = [];
+        reasonCode = 'REPEAT_CUSTOMER_STICKY_LENDER';
+        isStickyAssignment = true;
+      } else {
+        const swrrResult = this.swrrService.selectNext(swrrRoutes);
+        selectedRouteId = swrrResult.selectedRouteId;
+        selectedRoute = policyVersion.routes.find(r => r.id === selectedRouteId) || null;
+        updatedRoutesStates = swrrResult.updatedRoutes;
+        if (selectedRouteId) reasonCode = 'ASSIGNED';
+      }
     }
 
     const nextAttemptNumber = decision ? decision.attemptCount + 1 : 1;
@@ -313,7 +331,7 @@ export class MlmAllocationEngineService {
           platformPolicyVersionId: dto.platformEvaluationReference,
           platformEvaluationReference: dto.platformEvaluationReference,
           requestedAmount: amount,
-          customerSegment: 'ALL',
+          customerSegment: dto.customerSegment || 'ALL',
           platformDecisionOutcome: (dto.platformDecisionOutcome || 'APPROVED') as any,
           platformProductId: (policyVersion as any).policy?.platformProductId || undefined,
           status,
@@ -366,7 +384,7 @@ export class MlmAllocationEngineService {
       });
     }
 
-    if (selectedRouteId && isPlatformPassed) {
+    if (selectedRouteId && isPlatformPassed && !isStickyAssignment) {
       // Update SWRR states
       for (const updatedState of updatedRoutesStates) {
          let deltaApp = 0;
@@ -387,6 +405,20 @@ export class MlmAllocationEngineService {
              }
          });
       }
+    } else if (isStickyAssignment && selectedRouteId) {
+      // Sticky assignments bypass SWRR entirely, so they never appear in
+      // updatedRoutesStates — but the route's volume counters should still reflect this
+      // allocation for reporting. currentWeight is deliberately left untouched: sticky
+      // assignments must never affect round-robin weighting for other routes.
+      await tx.mlmAllocationRouteState.update({
+        where: { routeId: selectedRouteId },
+        data: {
+          allocatedApplicationCount: { increment: 1 },
+          ...(amount !== null ? { allocatedAmount: { increment: amount } } : {}),
+          lastAllocatedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
     }
 
     return decision;

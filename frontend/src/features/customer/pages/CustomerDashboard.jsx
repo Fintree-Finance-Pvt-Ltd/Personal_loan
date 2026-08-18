@@ -32,6 +32,7 @@ import {
   customerApi,
   doCustomerRefresh,
   getCustomerAccessToken,
+  resumeApplication,
 } from '../customerApi';
 
 export default function CustomerDashboard() {
@@ -265,8 +266,28 @@ export default function CustomerDashboard() {
     backendCustomer?.latestLoanStatus ===
     'DISBURSED';
 
+  // onboardingStatus never advances past 'LENDER_APPROVED' in production (nothing sets
+  // it to 'DISBURSED'), so isApproved stays true forever even after the loan is fully
+  // repaid — this flag catches that case explicitly before the stale isApproved branch
+  // would otherwise send a repeat customer back into their old, closed loan's
+  // post-approval journey.
+  const isFullyPaidRepeatCustomer =
+    backendCustomer?.latestLoanStatus ===
+    'FULLY_PAID';
+
   const handleApplicationButton =
-    () => {
+    async () => {
+      if (
+        isFullyPaidRepeatCustomer
+      ) {
+        await resumeApplication(
+          customerId,
+        );
+        navigate(
+          '/customer/application',
+        );
+        return;
+      }
       if (
         isApproved &&
         hasLan
@@ -351,16 +372,18 @@ export default function CustomerDashboard() {
   }
 
   const buttonLabel =
-    isApproved &&
-      hasLan
-      ? isDisbursalRequestedOrDisbursed
-        ? 'View Loan Details'
-        : 'Continue Approved Loan Journey'
-      : applicationSubmitted
-        ? 'View Application'
-        : hasBackendProgress
-          ? 'Continue Application'
-          : 'Start Application';
+    isFullyPaidRepeatCustomer
+      ? 'Apply for a New Loan'
+      : isApproved &&
+        hasLan
+        ? isDisbursalRequestedOrDisbursed
+          ? 'View Loan Details'
+          : 'Continue Approved Loan Journey'
+        : applicationSubmitted
+          ? 'View Application'
+          : hasBackendProgress
+            ? 'Continue Application'
+            : 'Start Application';
 
   const firstName =
     applicant.fullName
@@ -403,15 +426,19 @@ export default function CustomerDashboard() {
 
             <div className="mt-4 max-w-2xl">
               <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-2xl">
-                {applicationSubmitted
-                  ? 'Your loan application is moving forward.'
-                  : 'Complete your personal loan application.'}
+                {isFullyPaidRepeatCustomer
+                  ? 'Your previous loan is fully repaid.'
+                  : applicationSubmitted
+                    ? 'Your loan application is moving forward.'
+                    : 'Complete your personal loan application.'}
               </h1>
 
               <p className="mt-2 max-w-xl text-sm leading-6 text-emerald-50/80">
-                {applicationSubmitted
-                  ? 'Review your submitted details, track the lender decision and continue the next available step.'
-                  : 'Finish your secure digital application and track every step from verification to disbursal.'}
+                {isFullyPaidRepeatCustomer
+                  ? 'Congratulations on clearing your loan! Start a new application whenever you need to borrow again.'
+                  : applicationSubmitted
+                    ? 'Review your submitted details, track the lender decision and continue the next available step.'
+                    : 'Finish your secure digital application and track every step from verification to disbursal.'}
               </p>
             </div>
 

@@ -330,8 +330,15 @@ if (!platformLan) {
     const application = await this.prisma.plApplication.findUnique({ where: { id: event.applicationId }, include: { lenderApplicationLink: true } });
     // A DISBURSE-stage event is expected to run while the application is already
     // LENDER_APPROVED (disbursal only happens post-approval) — that is not "terminal"
-    // for this stage the way it is for CREATE/UPDATE/DECISION.
-    if (!application || (event.integrationStage !== 'DISBURSE' && ['LENDER_APPROVED', 'LENDER_REJECTED'].includes(application.status))) {
+    // for this stage the way it is for CREATE/UPDATE/DECISION. LOAN_CLOSED (the loan
+    // linked to this application has been fully repaid) is unconditionally terminal
+    // for every stage, including DISBURSE — there is nothing left to replay once the
+    // loan itself is closed.
+    if (
+      !application ||
+      application.status === 'LOAN_CLOSED' ||
+      (event.integrationStage !== 'DISBURSE' && ['LENDER_APPROVED', 'LENDER_REJECTED'].includes(application.status))
+    ) {
       throw new BadRequestException('Terminal lender decisions cannot be replayed.');
     }
     await this.prisma.$transaction(async (tx) => {
