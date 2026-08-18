@@ -366,7 +366,7 @@
       </tr>
       <tr>
         <td>Interest rate</td>
-        <td>42% per Annum</td>
+        <td>{{formatPercentage pricing.annualInterestRate}} per Annum</td>
       </tr>
       <tr>
         <td>Bounce Charges</td>
@@ -385,7 +385,8 @@
   <div class="signature-area avoid-break">
     <div class="signature-box">
       {{#if authorizedSignatoryImage}}
-      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
+      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory"
+        style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
       {{/if}}
       <div class="signature-line">Authorized Signatory</div>
     </div>
@@ -393,13 +394,18 @@
       {{#if electronicAcceptance.completed}}
       <div class="acceptance-stamp">
         <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-        <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
         {{#if electronicAcceptance.environmentLabel}}
-        <div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
         {{/if}}
-        <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
         <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
       </div>
       {{else}}
@@ -572,7 +578,9 @@
         <td>(i)</td>
         <td>Processing fees</td>
         <td>One Time</td>
-        <td>15%</td>
+        <td>{{#if
+          pricing.processingFeeAmountFormatted}}{{pricing.processingFeeAmountFormatted}}{{else}}{{formatPercentage
+          pricing.processingFeeRate}}{{/if}}</td>
         <td>NIL</td>
         <td>NIL</td>
         <td>NIL</td>
@@ -683,7 +691,8 @@
   <div class="signature-area avoid-break">
     <div class="signature-box">
       {{#if authorizedSignatoryImage}}
-      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
+      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory"
+        style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
       {{/if}}
       <div class="signature-line">Authorized Signatory</div>
     </div>
@@ -691,13 +700,18 @@
       {{#if electronicAcceptance.completed}}
       <div class="acceptance-stamp">
         <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-        <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
         {{#if electronicAcceptance.environmentLabel}}
-        <div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
         {{/if}}
-        <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
         <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
       </div>
       {{else}}
@@ -815,7 +829,8 @@
   <div class="signature-area avoid-break">
     <div class="signature-box">
       {{#if authorizedSignatoryImage}}
-      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
+      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory"
+        style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
       {{/if}}
       <div class="signature-line">Authorized Signatory</div>
     </div>
@@ -823,13 +838,18 @@
       {{#if electronicAcceptance.completed}}
       <div class="acceptance-stamp">
         <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-        <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
         {{#if electronicAcceptance.environmentLabel}}
-        <div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
         {{/if}}
-        <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
         <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
       </div>
       {{else}}
@@ -938,7 +958,8 @@
   <div class="signature-area avoid-break">
     <div class="signature-box">
       {{#if authorizedSignatoryImage}}
-      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
+      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory"
+        style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
       {{/if}}
       <div class="signature-line">Authorized Signatory</div>
     </div>
@@ -946,13 +967,18 @@
       {{#if electronicAcceptance.completed}}
       <div class="acceptance-stamp">
         <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-        <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
         {{#if electronicAcceptance.environmentLabel}}
-        <div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
         {{/if}}
-        <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
         <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
       </div>
       {{else}}
@@ -1355,7 +1381,8 @@
   <div class="signature-area avoid-break">
     <div class="signature-box">
       {{#if authorizedSignatoryImage}}
-      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
+      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory"
+        style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
       {{/if}}
       <div class="signature-line">Authorized Signatory</div>
     </div>
@@ -1363,13 +1390,18 @@
       {{#if electronicAcceptance.completed}}
       <div class="acceptance-stamp">
         <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-        <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
         {{#if electronicAcceptance.environmentLabel}}
-        <div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
         {{/if}}
-        <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
         <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
       </div>
       {{else}}
@@ -1573,7 +1605,8 @@
   <div class="signature-area avoid-break">
     <div class="signature-box">
       {{#if authorizedSignatoryImage}}
-      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
+      <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory"
+        style="height: 42px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto 4px;" />
       {{/if}}
       <div class="signature-line">Authorized Signatory</div>
     </div>
@@ -1581,13 +1614,18 @@
       {{#if electronicAcceptance.completed}}
       <div class="acceptance-stamp">
         <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-        <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-        <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
         {{#if electronicAcceptance.environmentLabel}}
-        <div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>
         {{/if}}
-        <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+        <div class="acceptance-row"><span
+            class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
         <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
       </div>
       {{else}}
