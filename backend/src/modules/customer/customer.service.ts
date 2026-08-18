@@ -1143,11 +1143,48 @@ export class CustomerService {
     if (!application) throw new BadRequestException('Canonical application was not found.');
     const addressType = String(body?.addressType || '').toUpperCase();
     if (!['PERMANENT', 'CURRENT'].includes(addressType)) throw new BadRequestException('Address type must be PERMANENT or CURRENT.');
+    let permanentForApplication: any = null;
+    if (addressType === 'CURRENT') {
+      permanentForApplication = await this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } });
+      if (!permanentForApplication) {
+        // Repeat customers reuse their Customer-level Aadhaar verification and never go
+        // through DigiLocker again for a fresh application, so the side effect that
+        // normally seeds this application's own PERMANENT row (customer-aadhaar-kyc
+        // service's snapshotVerifiedApplicationKyc, triggered only by a live DigiLocker
+        // callback) never runs here. Backfill it from their most recently verified
+        // application instead of forcing a re-verification — needed both when they keep
+        // the same address (copied into CURRENT below) and when they enter a different one
+        // (PERMANENT_ADDRESS_MISSING must still clear for this application either way).
+        const priorPermanent = await this.prisma.applicationAddress.findFirst({
+          where: { addressType: 'PERMANENT', application: { customerId } },
+          orderBy: { applicationId: 'desc' },
+        });
+        if (priorPermanent) {
+          permanentForApplication = await this.prisma.applicationAddress.create({
+            data: {
+              applicationId: application.id,
+              addressType: 'PERMANENT',
+              source: priorPermanent.source,
+              addressLine1: priorPermanent.addressLine1,
+              addressLine2: priorPermanent.addressLine2,
+              landmark: priorPermanent.landmark,
+              locality: priorPermanent.locality,
+              district: priorPermanent.district,
+              city: priorPermanent.city,
+              state: priorPermanent.state,
+              country: priorPermanent.country,
+              pincode: priorPermanent.pincode,
+              sourceVerifiedAt: priorPermanent.sourceVerifiedAt,
+            },
+          });
+        }
+      }
+    }
+
     let address = body;
     if (addressType === 'CURRENT' && body?.sameAsPermanent === true) {
-      const permanent = await this.prisma.applicationAddress.findUnique({ where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } } });
-      if (!permanent) throw new BadRequestException('Permanent address must be saved first.');
-      address = { ...permanent, addressType: 'CURRENT', sameAsPermanent: true, source: permanent.source };
+      if (!permanentForApplication) throw new BadRequestException('Permanent address must be saved first.');
+      address = { ...permanentForApplication, addressType: 'CURRENT', sameAsPermanent: true, source: permanentForApplication.source };
     }
     const required = ['addressLine1', 'city', 'state', 'pincode'];
     if (required.some((field) => !String(address?.[field] || '').trim()) || !/^[1-9][0-9]{5}$/.test(String(address.pincode))) throw new BadRequestException('Complete structured address details are required.');
