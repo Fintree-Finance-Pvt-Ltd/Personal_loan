@@ -32,13 +32,17 @@ import {
   getCustomerLoans,
   initiateRepaymentPayment,
 } from '../postApprovalApi';
-import { getCustomerMe } from '../customerApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 
 export function CustomerLoanDetailsPage() {
   const { lan: paramLan } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const listMode = !(
+    paramLan ||
+    location.state?.lan
+  );
 
   const [lan, setLan] = useState(
     paramLan ||
@@ -50,7 +54,7 @@ export function CustomerLoanDetailsPage() {
     useState(null);
 
   const [loading, setLoading] =
-    useState(true);
+    useState(!listMode);
 
   const [error, setError] =
     useState('');
@@ -100,9 +104,6 @@ export function CustomerLoanDetailsPage() {
     setLoansLoaded,
   ] = useState(false);
 
-  const [noActiveLoan, setNoActiveLoan] =
-    useState(false);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -136,51 +137,15 @@ export function CustomerLoanDetailsPage() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const resolveLan = async () => {
-      if (paramLan) {
-        setLan(paramLan);
-      } else if (
-        location.state?.lan
-      ) {
-        setLan(
-          location.state.lan,
-        );
-      } else {
-        try {
-          const me =
-            await getCustomerMe();
-
-          if (
-            isMounted &&
-            me?.latestLan
-          ) {
-            setLan(me.latestLan);
-          } else if (
-            isMounted
-          ) {
-            setLoading(false);
-
-            setNoActiveLoan(true);
-          }
-        } catch {
-          if (isMounted) {
-            setLoading(false);
-
-            setError(
-              'Failed to load active loan account.',
-            );
-          }
-        }
-      }
-    };
-
-    resolveLan();
-
-    return () => {
-      isMounted = false;
-    };
+    if (paramLan) {
+      setLan(paramLan);
+    } else if (
+      location.state?.lan
+    ) {
+      setLan(
+        location.state.lan,
+      );
+    }
   }, [
     paramLan,
     location.state,
@@ -189,12 +154,9 @@ export function CustomerLoanDetailsPage() {
   const handleSelectLoan = (
     selectedLoan,
   ) => {
-    setNoActiveLoan(false);
-    setError('');
-    setDetails(null);
-    setLoading(true);
-    setPollCount(0);
-    setLan(selectedLoan.lan);
+    navigate(
+      `/customer/loan/${selectedLoan.lan}/details`,
+    );
   };
 
   const fetchDetails =
@@ -585,6 +547,16 @@ export function CustomerLoanDetailsPage() {
     status,
   ) => {
     switch (status) {
+      case 'FULLY_PAID':
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
+            <ShieldCheck
+              size={14}
+            />
+            FULLY PAID
+          </span>
+        );
+
       case 'DISBURSED':
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
@@ -629,26 +601,6 @@ export function CustomerLoanDetailsPage() {
         );
     }
   };
-
-  if (loading) {
-    return (
-      <div className="mx-auto w-full max-w-7xl">
-        <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
-          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50">
-            <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
-          </div>
-
-          <h2 className="mt-5 text-lg font-bold text-slate-900">
-            Loading loan details
-          </h2>
-
-          <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
-            Please wait while we securely fetch your loan account, repayment schedule and payment history.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   const compactStatusPill = (
     status,
@@ -733,25 +685,30 @@ export function CustomerLoanDetailsPage() {
     </div>
   );
 
-  if (noActiveLoan) {
+  if (listMode) {
     return (
       <div className="mx-auto w-full max-w-4xl px-1 py-6">
-        <button
-          type="button"
-          onClick={() =>
-            navigate(
-              '/customer/dashboard',
-            )
-          }
-          className="mb-5 inline-flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-        >
-          <ArrowLeft
-            size={16}
-          />
-          Back to Dashboard
-        </button>
+        <div className="mb-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">
+            Loan account
+          </p>
 
-        {allLoans.length > 0 ? (
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+            Loan Details
+          </h1>
+        </div>
+
+        {!loansLoaded ? (
+          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
+            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50">
+              <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
+            </div>
+
+            <h2 className="mt-5 text-lg font-bold text-slate-900">
+              Loading your loans
+            </h2>
+          </div>
+        ) : allLoans.length > 0 ? (
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <h3 className="text-base font-bold text-slate-900">
@@ -794,6 +751,26 @@ export function CustomerLoanDetailsPage() {
             </button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="mx-auto w-full max-w-7xl">
+        <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
+          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50">
+            <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
+          </div>
+
+          <h2 className="mt-5 text-lg font-bold text-slate-900">
+            Loading loan details
+          </h2>
+
+          <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+            Please wait while we securely fetch your loan account, repayment schedule and payment history.
+          </p>
+        </div>
       </div>
     );
   }
@@ -866,6 +843,12 @@ export function CustomerLoanDetailsPage() {
     allocations = [],
   } = details || {};
 
+  const displayStatus =
+    loan.status === 'FULLY_PAID'
+      ? 'FULLY_PAID'
+      : disbursal.status ||
+        loan.status;
+
   const isPendingDisbursal =
     disbursal.status ===
     'DISBURSAL_REQUESTED' ||
@@ -914,8 +897,7 @@ export function CustomerLoanDetailsPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             {getStatusBadge(
-              disbursal.status ||
-              loan.status,
+              displayStatus,
             )}
 
             <button
@@ -1040,8 +1022,7 @@ export function CustomerLoanDetailsPage() {
             </div>
 
             {getStatusBadge(
-              disbursal.status ||
-              loan.status,
+              displayStatus,
             )}
           </div>
 
