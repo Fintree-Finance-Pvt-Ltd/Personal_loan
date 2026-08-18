@@ -25,7 +25,7 @@ export class LenderDecisionProcessor {
       const isFinal = (link.decisionPayloadVersion ?? 1) >= 2;
 
       const alreadyResolved = isFinal
-        ? application.status === 'PENDING_CREDIT_REVIEW' || application.status === 'LENDER_APPROVED' || application.status === 'LENDER_REJECTED'
+        ? application.status === 'PENDING_CREDIT_REVIEW' || application.status === 'LENDER_APPROVED' || application.status === 'LENDER_REJECTED' || application.status === 'LOAN_CLOSED'
         : application.status === 'LENDER_PRE_APPROVED' || application.status === 'LENDER_REJECTED';
       if (alreadyResolved) {
         await this.completeEvent(tx, eventId, lockToken);

@@ -2962,6 +2962,16 @@ export class LoanService {
             data: { status: 'FULLY_PAID' },
           });
           loanFullyPaid = true;
+
+          // Advance the canonical PlApplication to its terminal state too, so
+          // ApplicationTransitionService.createOrResumeApplication() creates a genuinely
+          // new application the next time this customer applies — ACTIVE_APPLICATION_STATUSES
+          // does not include LOAN_CLOSED, unlike LENDER_APPROVED (which PlApplication.status
+          // would otherwise stay stuck at forever, since nothing else ever advances it).
+          await tx.plApplication.update({
+            where: { id: loan.applicationId },
+            data: { status: 'LOAN_CLOSED' },
+          });
         }
       }
 

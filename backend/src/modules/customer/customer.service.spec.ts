@@ -34,7 +34,7 @@ describe('CustomerService Integration', () => {
             mlmPolicy: { findMany: jest.fn() },
             platformProduct: { findFirst: jest.fn() },
             platformPolicy: { findMany: jest.fn() },
-            plLoan: { count: jest.fn() },
+            plLoan: { count: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
             kycVerificationStatus: { upsert: jest.fn(), findFirst: jest.fn() },
             applicationStageConsent: { findMany: jest.fn().mockResolvedValue([]) },
             customerAccountAggregatorRequest: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -161,6 +161,74 @@ describe('CustomerService Integration', () => {
         data: expect.objectContaining({ productStrategyVersionId: 'HISTORICAL-PV-7' }),
       }));
     });
+
+    const setUpBaseEligibility = () => {
+      const application = {
+        id: 10n, customerId: 1n, applicationNumber: 'APP-10', status: 'DRAFT',
+        platformProductId: 'PLATFORM-1', scopeCode: 'PLATFORM_DEFAULT', requestedAmount: null,
+      };
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, dateOfBirth: new Date('1990-01-01'), applications: [application] } as any);
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue(application as any);
+      jest.spyOn(prisma.plApplication, 'update').mockResolvedValue(application as any);
+      jest.spyOn(prisma.customer, 'update').mockResolvedValue({ id: 1n } as any);
+      (service as any).platformPoliciesService.resolveActivePolicyVersion = jest.fn().mockResolvedValue({ id: 'BRE-V1', rules: [] });
+      jest.spyOn(policyEvalService, 'evaluate').mockReturnValue({ finalOutcome: 'PASS', ruleResults: [] } as any);
+      (prisma as any).mlmPolicy.findMany.mockResolvedValue([{ versions: [{ id: 'MLM-V1', routes: [] }] }]);
+      jest.spyOn(mlmService, 'executeWithTx').mockResolvedValue({
+        id: 'DEC-1', status: 'ASSIGNED', policyId: 'MLM-1', policyVersionId: 'MLM-V1',
+        lenderId: 'LENDER-1', productId: 'PRODUCT-1', productVersionId: 'HISTORICAL-PV-7',
+      } as any);
+      (prisma as any).lenderProductVersion.findUnique.mockResolvedValue({
+        id: 'HISTORICAL-PV-7', productId: 'PRODUCT-1', assessmentFeeAmount: 500, assessmentFeeGstPercent: 18,
+        minimumAmount: 1000, firstLoanBaseAmount: 5000, maximumAmountCap: 50000,
+        roundingMethod: 'NONE', roundingUnit: null,
+        interestMethod: 'FLAT_RATE', annualRoiPercent: 18, processingFeePercent: 2, processingFeeGstPercent: 18,
+        penalChargeAmount: 0, bounceChargeAmount: 0, emiDueDay: 5, includeAssessmentFeeInApr: false, tenureType: 'DAYS',
+        multipliers: [{ minimumCompletedLoans: 0, multiplier: '1.0000' }],
+        tenures: [{ tenure: 90, sortOrder: 0 }],
+      });
+      (prisma as any).lender.findUnique.mockResolvedValue({ id: 'LENDER-1', code: 'L1' });
+      (prisma as any).plLoan.count.mockResolvedValue(0);
+    };
+
+    it('flags a repeat customer and passes a stickyRouteHint pointing at their previous lender/product', async () => {
+      setUpBaseEligibility();
+      (prisma as any).plLoan.findFirst.mockResolvedValue({
+        id: 99n, customerId: 1n, status: 'FULLY_PAID',
+        application: { lenderId: 'PREVIOUS-LENDER', lenderProductId: 'PREVIOUS-PRODUCT' },
+      });
+
+      await service.runEligibility(1n, {});
+
+      expect((prisma as any).plLoan.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { customerId: 1n, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+        orderBy: { id: 'desc' },
+      }));
+      expect(mlmService.executeWithTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          customerSegment: 'REPEAT',
+          stickyRouteHint: { lenderId: 'PREVIOUS-LENDER', productId: 'PREVIOUS-PRODUCT' },
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('treats a customer with no prior completed loan as NEW with no sticky hint', async () => {
+      setUpBaseEligibility();
+      (prisma as any).plLoan.findFirst.mockResolvedValue(null);
+
+      await service.runEligibility(1n, {});
+
+      expect(mlmService.executeWithTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          customerSegment: 'NEW',
+          stickyRouteHint: null,
+        }),
+        expect.anything(),
+      );
+    });
   });
 
   it('uses only this application assessment-fee payment when building resume state', async () => {
@@ -179,6 +247,22 @@ describe('CustomerService Integration', () => {
     }));
     expect(result.data.assessmentFeePaid).toBe(false);
     expect(result.data.journey.assessmentFee.paid).toBe(false);
+  });
+
+  it('scopes the Account Aggregator success check to the current application, not just the customer', async () => {
+    const application: any = {
+      id: 20n, applicationNumber: 'APP-20', status: 'LENDER_ALLOCATED', platformDecisionOutcome: 'PASS',
+      lenderId: null, loans: [], lenderApplicationLink: null, lenderIntegrationOutbox: [],
+      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null,
+    };
+    jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, applications: [application] } as any);
+    (prisma as any).plPaymentLink.findFirst.mockResolvedValue(null);
+
+    await service.findById(1n);
+
+    expect((prisma as any).customerAccountAggregatorRequest.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { customerId: 1n, applicationId: 20n, status: 'SUCCESS' },
+    }));
   });
 
   it('disables simulated lender approval in production', async () => {
