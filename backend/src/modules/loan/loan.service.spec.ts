@@ -6,6 +6,7 @@ const buildService = () => {
   const prisma: any = {
     $transaction: jest.fn((cb: any) => cb(prisma)),
     plLoan: { findFirst: jest.fn(), update: jest.fn() },
+    plApplication: { update: jest.fn() },
     plRepaymentSchedule: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(1) },
     plRepayment: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn().mockResolvedValue(null), create: jest.fn() },
     plRepaymentAllocation: { create: jest.fn() },
@@ -64,7 +65,17 @@ describe('LoanService.processRepayment', () => {
     expect((result as any).loanFullyPaid).toBe(true);
     expect(prisma.plRepaymentSchedule.count).toHaveBeenCalledWith({ where: { lan: 'FTPL00000001', paymentStatus: { not: 'PAID' } } });
     expect(prisma.plLoan.update).toHaveBeenCalledWith({ where: { id: 20n }, data: { status: 'FULLY_PAID' } });
+    expect(prisma.plApplication.update).toHaveBeenCalledWith({ where: { id: 1n }, data: { status: 'LOAN_CLOSED' } });
     expect(auditLogs.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'LOAN_FULLY_PAID' }));
+  });
+
+  it('does not close the application on a partial installment payment', async () => {
+    const { service, prisma } = buildService();
+    setUpFullPayment(prisma);
+
+    await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 400 });
+
+    expect(prisma.plApplication.update).not.toHaveBeenCalled();
   });
 
   it('does not mark the loan fully paid while other installments remain outstanding', async () => {
@@ -77,6 +88,7 @@ describe('LoanService.processRepayment', () => {
     expect(result.paymentStatus).toBe('PAID');
     expect((result as any).loanFullyPaid).toBe(false);
     expect(prisma.plLoan.update).not.toHaveBeenCalled();
+    expect(prisma.plApplication.update).not.toHaveBeenCalled();
   });
 
   it('does not check for full repayment on a partial installment payment', async () => {

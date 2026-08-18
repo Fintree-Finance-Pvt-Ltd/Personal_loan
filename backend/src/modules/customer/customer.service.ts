@@ -454,9 +454,15 @@ export class CustomerService {
       });
       hasDecisionConsents = requiredConsentTypes.every((type) => decisionConsents.some((c) => c.consentType === type));
     }
-    const aaRequest = await this.prisma.customerAccountAggregatorRequest.findFirst({
-      where: { customerId: customer.id, status: 'SUCCESS' },
-    });
+    // Scoped to the customer's current application, not just their customerId — an
+    // Account Aggregator success from a PREVIOUS (now closed) loan must not silently
+    // satisfy this step for a fresh application; the customer must reconnect their bank
+    // statement again for every new loan.
+    const aaRequest = latestApp
+      ? await this.prisma.customerAccountAggregatorRequest.findFirst({
+          where: { customerId: customer.id, applicationId: latestApp.id, status: 'SUCCESS' },
+        })
+      : null;
     const aaCompleted = Boolean(aaRequest);
     const aaStatus = aaRequest?.status || 'NOT_STARTED';
 
@@ -960,6 +966,19 @@ export class CustomerService {
 
       // 7. Invoke MLM Allocation
       try {
+        // Repeat-customer detection: a customer with a prior DISBURSED/FULLY_PAID loan
+        // should be routed back to that exact lender+product whenever it's still eligible,
+        // not put through a fresh round-robin draw — see mlm-allocation-engine.service.ts's
+        // stickyRouteHint handling.
+        const previousLoan = await tx.plLoan.findFirst({
+          where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+          orderBy: { id: 'desc' },
+          include: { application: { select: { lenderId: true, lenderProductId: true } } },
+        });
+        const isRepeatCustomer = Boolean(previousLoan);
+        const previousLenderId = previousLoan?.application?.lenderId ?? null;
+        const previousLenderProductId = previousLoan?.application?.lenderProductId ?? null;
+
         const activeMlmPolicies = await tx.mlmPolicy.findMany({
           where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
           include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
@@ -974,7 +993,10 @@ export class CustomerService {
               : Number(application.requestedAmount),
             platformDecisionOutcome: 'PASS',
             platformProductId: application.platformProductId,
-            customerSegment: 'NEW'
+            customerSegment: (isRepeatCustomer ? 'REPEAT' : 'NEW') as 'REPEAT' | 'NEW',
+            stickyRouteHint: isRepeatCustomer && previousLenderId && previousLenderProductId
+              ? { lenderId: previousLenderId, productId: previousLenderProductId }
+              : null,
           };
 
             const allocationDecision = await this.mlmAllocationEngineService.executeWithTx(tx, mlmDto, mlmVersion as any);

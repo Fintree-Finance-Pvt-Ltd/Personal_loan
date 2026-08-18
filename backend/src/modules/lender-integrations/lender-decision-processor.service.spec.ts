@@ -119,7 +119,7 @@ describe('LenderDecisionProcessor', () => {
       expect(tx.plLoan.upsert).not.toHaveBeenCalled();
     });
 
-    it.each(['PENDING_CREDIT_REVIEW', 'LENDER_APPROVED', 'LENDER_REJECTED'])('is a no-op replay once final approval has already resolved to %s', async (terminal) => {
+    it.each(['PENDING_CREDIT_REVIEW', 'LENDER_APPROVED', 'LENDER_REJECTED', 'LOAN_CLOSED'])('is a no-op replay once final approval has already resolved to %s', async (terminal) => {
       const { processor, tx } = base({ applicationStatus: terminal, decisionPayloadVersion: 2 });
       await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
         decision: 'APPROVED', providerStatus: 'APPROVED', decisionReference: 'DEC-2',

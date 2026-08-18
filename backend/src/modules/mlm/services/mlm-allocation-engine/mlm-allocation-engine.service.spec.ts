@@ -195,4 +195,119 @@ describe('MlmAllocationEngineService - Readiness Checks', () => {
     expect(result!.status).toBe('NO_ELIGIBLE_ROUTE');
     expect(result!.decisionReasonCode).toBe('PLATFORM_POLICY_NOT_PASSED');
   });
+
+  it('persists customerSegment from the dto instead of the previously hardcoded ALL', async () => {
+    const tx = createMockTx();
+    const repeatDto = { ...baseDto, customerSegment: 'REPEAT' };
+    await service.executeWithTx(tx as any, repeatDto as any, basePolicyVersion as any);
+    expect(tx.mlmAllocationDecision.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ customerSegment: 'REPEAT' }) }),
+    );
+  });
+
+  describe('repeat-customer sticky lender allocation', () => {
+    // Route-aware mock tx: unlike createMockTx (fixed return regardless of which route
+    // is being checked), this resolves lender/product/PSV per the specific id queried,
+    // so two routes in the same policyVersion can have different eligibility outcomes.
+    const createRouteAwareMockTx = (lenders: Record<string, any>, products: Record<string, any>) => ({
+      lender: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(lenders[where.id] ?? null)),
+      },
+      lenderProduct: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(products[where.id] ?? null)),
+      },
+      lenderProductVersion: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'PSV1', status: 'ACTIVE', effectiveFrom: null }]),
+      },
+      mlmAllocationDecision: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }: any) => ({ ...data, id: 'DEC1', attempts: [] })),
+        update: jest.fn().mockImplementation(({ data }: any) => ({ ...data, id: 'DEC1', attempts: [] })),
+      },
+      mlmAllocationRouteState: {
+        update: jest.fn(),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    });
+
+    const twoRoutePolicyVersion = {
+      id: 'PV1',
+      policyId: 'POL1',
+      routes: [
+        {
+          id: 'R1', isActive: true, lenderId: 'L1', productId: 'P1',
+          allocationWeightPercent: new Prisma.Decimal(50), sortOrder: 1,
+          minimumTicketAmount: null, maximumTicketAmount: null,
+          routeState: { currentWeight: new Prisma.Decimal(0) },
+        },
+        {
+          id: 'R2', isActive: true, lenderId: 'L2', productId: 'P2',
+          allocationWeightPercent: new Prisma.Decimal(50), sortOrder: 2,
+          minimumTicketAmount: null, maximumTicketAmount: null,
+          routeState: { currentWeight: new Prisma.Decimal(0) },
+        },
+      ],
+    };
+
+    it('assigns the hinted route directly and skips SWRR weight updates', async () => {
+      const tx = createMockTx(); // single eligible route R1 / L1 / P1
+      const stickyDto = { ...baseDto, customerSegment: 'REPEAT', stickyRouteHint: { lenderId: 'L1', productId: 'P1' } };
+
+      const result = await service.executeWithTx(tx as any, stickyDto as any, basePolicyVersion as any);
+
+      expect(result!.status).toBe('ASSIGNED');
+      expect(result!.routeId).toBe('R1');
+      expect(result!.decisionReasonCode).toBe('REPEAT_CUSTOMER_STICKY_LENDER');
+      expect(tx.mlmAllocationRouteState.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { routeId: 'R1' },
+        data: expect.objectContaining({ allocatedApplicationCount: { increment: 1 } }),
+      }));
+      // currentWeight must never be touched for a sticky assignment — it must not
+      // participate in round-robin weighting.
+      const call = tx.mlmAllocationRouteState.update.mock.calls[0][0];
+      expect(call.data).not.toHaveProperty('currentWeight');
+    });
+
+    it('falls back to normal SWRR allocation when the hinted route is no longer eligible', async () => {
+      const tx = createRouteAwareMockTx(
+        {
+          L1: { id: 'L1', operationalStatus: 'INACTIVE', approvalStatus: 'APPROVED' }, // hinted lender, now inactive
+          L2: { id: 'L2', operationalStatus: 'ACTIVE', approvalStatus: 'APPROVED' },
+        },
+        {
+          P1: { id: 'P1', operationalStatus: 'ACTIVE', platformProductId: 'PLAT1' },
+          P2: { id: 'P2', operationalStatus: 'ACTIVE', platformProductId: 'PLAT1' },
+        },
+      );
+      const stickyDto = { ...baseDto, customerSegment: 'REPEAT', stickyRouteHint: { lenderId: 'L1', productId: 'P1' } };
+
+      const result = await service.executeWithTx(tx as any, stickyDto as any, twoRoutePolicyVersion as any);
+
+      expect(result!.status).toBe('ASSIGNED');
+      expect(result!.routeId).toBe('R2');
+      expect(result!.decisionReasonCode).toBe('ASSIGNED');
+      // Normal SWRR path was used, not the sticky counter-only path — currentWeight IS updated.
+      expect(tx.mlmAllocationRouteState.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ currentWeight: expect.anything() }),
+      }));
+    });
+
+    it('falls back to normal SWRR allocation when the sticky hint matches no route at all', async () => {
+      const tx = createMockTx(); // single eligible route R1 / L1 / P1
+      const stickyDto = {
+        ...baseDto,
+        customerSegment: 'REPEAT',
+        stickyRouteHint: { lenderId: 'LENDER-THAT-NO-LONGER-HAS-A-ROUTE', productId: 'GONE' },
+      };
+
+      const result = await service.executeWithTx(tx as any, stickyDto as any, basePolicyVersion as any);
+
+      expect(result!.status).toBe('ASSIGNED');
+      expect(result!.routeId).toBe('R1');
+      expect(result!.decisionReasonCode).toBe('ASSIGNED');
+      expect(tx.mlmAllocationRouteState.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ currentWeight: expect.anything() }),
+      }));
+    });
+  });
 });
