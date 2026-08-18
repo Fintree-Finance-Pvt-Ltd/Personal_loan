@@ -653,7 +653,7 @@ export default function CustomerSignIn() {
                 <div className="absolute bottom-2 left-1/2 h-56 w-72 -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
 
                 <img
-                  src="/image/Img_@1.png"
+                  src="/image/DSC_7504-4_copy_v_n.jpg"
                   alt="FinLeaf digital loan assistance"
                   className="relative z-10 mx-auto mb-1 h-auto max-h-[445px] w-full object-contain object-bottom xl:max-h-[370px]"
                 />
@@ -696,7 +696,7 @@ export default function CustomerSignIn() {
           {/* Right form */}
           <section className="flex min-h-[650px] flex-col bg-white px-5 py-6 sm:px-8 sm:py-8 lg:min-h-[720px] lg:px-10 lg:py-9 xl:px-14 xl:py-10">
             {/* Mobile logo */}
-            <div className="mb-8 flex items-center justify-between lg:hidden">
+            {/* <div className="mb-8 flex items-center justify-between lg:hidden">
               <img
                 src="/image/IMG_0007-removebg-preview.png"
                 alt="FinLeaf"
@@ -707,7 +707,7 @@ export default function CustomerSignIn() {
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 Secure login
               </span>
-            </div>
+            </div> */}
 
             <div className="mx-auto flex w-full max-w-[430px] flex-1 flex-col justify-center">
               <header className="mb-7 sm:mb-8">
