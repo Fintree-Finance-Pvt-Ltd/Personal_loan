@@ -341,8 +341,15 @@ export class UnaportService {
       return this.buildStatusResponse(null);
     }
 
-    // Auto-fetch data if sessionId is present and data is pending/ready
-    if (request.sessionId && request.status !== 'SUCCESS' && ['READY', 'DATA_PENDING', 'COMPLETED'].includes(request.dataStatus || request.status)) {
+    const existingBankData = await this.prisma.customerBankAccountData.findFirst({
+      where: { requestId: request.id },
+      orderBy: { id: 'desc' },
+    });
+
+    const isDataIncomplete = !existingBankData || existingBankData.currentBalance == null;
+
+    // Auto-fetch data if sessionId is present and data is pending/ready or incomplete
+    if (request.sessionId && (request.status !== 'SUCCESS' || isDataIncomplete) && ['READY', 'DATA_PENDING', 'COMPLETED', 'SUCCESS'].includes(request.dataStatus || request.status)) {
       try {
         await this.fetchDataBySession(request.sessionId);
         const updated = await this.prisma.customerAccountAggregatorRequest.findUnique({
@@ -392,13 +399,20 @@ export class UnaportService {
       return this.getStatus(customerId, cleanLan);
     }
 
-    // If already in terminal state, return directly with bank summary
-    if (['SUCCESS', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(request.status)) {
+    const existingBankData = await this.prisma.customerBankAccountData.findFirst({
+      where: { requestId: request.id },
+      orderBy: { id: 'desc' },
+    });
+
+    const isDataIncomplete = !existingBankData || existingBankData.currentBalance == null;
+
+    // If already in complete terminal state, return directly with bank summary
+    if (['SUCCESS', 'FAILED', 'EXPIRED', 'CANCELLED'].includes(request.status) && !isDataIncomplete) {
       return this.buildStatusResponse(request);
     }
 
     // Check if sessionId is present and data is ready to fetch
-    if (request.sessionId && request.status !== 'SUCCESS') {
+    if (request.sessionId && (request.status !== 'SUCCESS' || isDataIncomplete)) {
       try {
         await this.fetchDataBySession(request.sessionId);
       } catch (err: any) {
@@ -696,8 +710,8 @@ export class UnaportService {
   /**
    * Fetch bank data by sessionId from Unaport FIU Fetch Data API.
    */
-  async fetchDataBySession(sessionId: string): Promise<any> {
-    console.log(`[AA SERVICE] [CALL] fetchDataBySession - sessionId: ${sessionId}`);
+  async fetchDataBySession(sessionId: string, retryCount: number = 0): Promise<any> {
+    console.log(`[AA SERVICE] [CALL] fetchDataBySession - sessionId: ${sessionId}, retryCount: ${retryCount}`);
     const startTime = Date.now();
     const cleanSessionId = String(sessionId || '').trim();
 
@@ -947,6 +961,32 @@ export class UnaportService {
       accGroup.txns.push(...rawTxns);
     }
 
+    // Check if Unaport returned empty tabs/no accounts yet
+    const hasData = groupedAccounts.size > 0 && Array.from(groupedAccounts.values()).some((g) => (g.txns && g.txns.length > 0) || g.meta?.summary || g.meta?.accountHolderName);
+
+    if (!hasData) {
+      if (retryCount === 0) {
+        this.logger.log(`[AA SERVICE] Unaport returned empty tabs data on first attempt for session ${cleanSessionId}. Waiting 2.5s and retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        return this.fetchDataBySession(sessionId, 1);
+      }
+
+      this.logger.warn(`[AA SERVICE] Unaport response is still empty for session ${cleanSessionId}. Keeping dataStatus=DATA_PENDING for status polling.`);
+      await this.prisma.customerAccountAggregatorRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'DATA_PENDING',
+          dataStatus: 'DATA_PENDING',
+          providerResponseEncrypted: encryptedRawResponse,
+        },
+      });
+
+      return {
+        success: false,
+        message: 'Bank financial data is still being compiled by Account Aggregator provider.',
+      };
+    }
+
     const now = new Date();
 
     await this.prisma.$transaction(
@@ -1129,7 +1169,7 @@ export class UnaportService {
           }
         }
 
-        // Mark request as SUCCESS
+        // Mark request as SUCCESS only when valid account/transaction data exists
         await tx.customerAccountAggregatorRequest.update({
           where: { id: request.id },
           data: {
