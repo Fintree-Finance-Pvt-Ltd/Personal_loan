@@ -99,6 +99,13 @@ components:
           type: string
           nullable: true
           description: Processing fee percent, from the allocated product version's configured processingFeePercent.
+        previousDisbursedApplicationCount:
+          type: number
+          description: Count of this customer's own DISBURSED/FULLY_PAID loans with this same lender (0 for a genuinely first-time applicant). Provided so the lender's own new-vs-repeat credit-limit determination can factor in the applicant's history with them, since that history is otherwise only visible on the platform's side.
+        previousLoanAmount:
+          type: string
+          nullable: true
+          description: The approved principal amount of this customer's most recent DISBURSED/FULLY_PAID loan with this same lender. Null if previousDisbursedApplicationCount is 0.
         customer:
           type: object
         panVerification:
