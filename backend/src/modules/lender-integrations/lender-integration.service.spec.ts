@@ -62,7 +62,12 @@ describe('LenderIntegrationService explicit requirements', () => {
       plLoanMandate: { findFirst: jest.fn().mockResolvedValue(null) },
       lenderDataSharingConsent: { findFirst: jest.fn().mockResolvedValue({ id: 'CONS-1', consentText: 'Test Consent', consentTextHash: 'hash123' }) },
       lenderApplicationLink: { update: jest.fn() },
-      plLoan: { findUnique: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      plLoan: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(0),
+      },
     };
     service = new LenderIntegrationService(prisma, registry, outbox, decisions, documentFiles as any);
   });
@@ -88,6 +93,51 @@ describe('LenderIntegrationService explicit requirements', () => {
     expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { idempotencyKey: 'APP-001:LENDER_SUBMIT_CONSENT:V1' },
       create: expect.objectContaining({ integrationStage: 'CONSENT' })
+    }));
+  });
+
+  it('sends previousDisbursedApplicationCount=0 and previousLoanAmount=null for a genuinely first-time applicant', async () => {
+    const config = configFor('FINTREE_FINANCE_V1');
+    const application = applicationFor(config);
+    prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-1', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'CREATE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_CREATE_APPLICATION:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+    prisma.plApplication.findUnique.mockResolvedValue(application);
+    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+    prisma.lenderProduct.findUnique.mockResolvedValue({ id: 'PRODUCT-1', lenderId: config.lenderId, code: 'EXTERNAL-PL' });
+    prisma.plPaymentLink.findFirst.mockResolvedValue({ txnid: 'PAY-1', easebuzzId: 'EZ-1', paidAt: new Date('2026-08-01T01:00:00Z') });
+    prisma.lenderDataSharingConsent.findFirst.mockResolvedValue({ consentVersion: '1.0', consentTextHash: 'a'.repeat(64), consentReference: 'CONSENT', acceptedAt: new Date('2026-08-01T00:30:00Z'), ipAddress: null, userAgent: null, lenderId: config.lenderId });
+    adapter.createApplication.mockResolvedValue({ acknowledged: true, providerStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1' });
+
+    await service.processEvent('EVENT-1', 'LOCK-1');
+
+    expect(adapter.createApplication).toHaveBeenCalledWith(expect.objectContaining({
+      application: expect.objectContaining({ previousDisbursedApplicationCount: 0, previousLoanAmount: null }),
+    }));
+  });
+
+  it('sends the customer\'s prior DISBURSED/FULLY_PAID loan count and most recent amount, scoped to this same lender', async () => {
+    const config = configFor('FINTREE_FINANCE_V1');
+    const application = applicationFor(config);
+    prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-1', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'CREATE', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_CREATE_APPLICATION:V1', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+    prisma.plApplication.findUnique.mockResolvedValue(application);
+    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+    prisma.lenderProduct.findUnique.mockResolvedValue({ id: 'PRODUCT-1', lenderId: config.lenderId, code: 'EXTERNAL-PL' });
+    prisma.plPaymentLink.findFirst.mockResolvedValue({ txnid: 'PAY-1', easebuzzId: 'EZ-1', paidAt: new Date('2026-08-01T01:00:00Z') });
+    prisma.lenderDataSharingConsent.findFirst.mockResolvedValue({ consentVersion: '1.0', consentTextHash: 'a'.repeat(64), consentReference: 'CONSENT', acceptedAt: new Date('2026-08-01T00:30:00Z'), ipAddress: null, userAgent: null, lenderId: config.lenderId });
+    prisma.plLoan.count.mockResolvedValue(1);
+    prisma.plLoan.findFirst.mockResolvedValue({ id: 900n, approvedAmount: new Prisma.Decimal('5000') });
+    adapter.createApplication.mockResolvedValue({ acknowledged: true, providerStatus: 'ACKNOWLEDGED', partnerApplicationId: 'PARTNER-1' });
+
+    await service.processEvent('EVENT-1', 'LOCK-1');
+
+    expect(prisma.plLoan.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        customerId: 10n,
+        status: { in: ['DISBURSED', 'FULLY_PAID'] },
+        application: { lenderId: config.lenderId },
+      }),
+    }));
+    expect(adapter.createApplication).toHaveBeenCalledWith(expect.objectContaining({
+      application: expect.objectContaining({ previousDisbursedApplicationCount: 1, previousLoanAmount: '5000' }),
     }));
   });
 

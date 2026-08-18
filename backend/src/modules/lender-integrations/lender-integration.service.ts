@@ -2353,6 +2353,44 @@ async markStageFailure(
   const customer =
     application.customer;
 
+  // Scoped to this SAME lender (not the customer's whole cross-lender history) — the
+  // lender's own new-vs-repeat credit-limit determination is about their relationship
+  // with this customer specifically, matching this product's repeatTierScope semantics.
+  const previousLoanWithLender =
+    await this.prisma
+      .plLoan
+      .findFirst({
+        where: {
+          customerId:
+            application.customerId,
+          status: {
+            in: ['DISBURSED', 'FULLY_PAID'],
+          },
+          application: {
+            lenderId:
+              application.lenderId,
+          },
+        },
+        orderBy: { id: 'desc' },
+      });
+
+  const previousDisbursedApplicationCount =
+    await this.prisma
+      .plLoan
+      .count({
+        where: {
+          customerId:
+            application.customerId,
+          status: {
+            in: ['DISBURSED', 'FULLY_PAID'],
+          },
+          application: {
+            lenderId:
+              application.lenderId,
+          },
+        },
+      });
+
   return {
     idempotencyKey:
       event.idempotencyKey,
@@ -2407,6 +2445,13 @@ async markStageFailure(
 
       scopeCode:
         application.scopeCode,
+
+      previousDisbursedApplicationCount,
+
+      previousLoanAmount:
+        previousLoanWithLender?.approvedAmount
+          ?.toString() ??
+        null,
     },
 
     allocation: {

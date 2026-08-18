@@ -70,6 +70,13 @@ export interface LenderCreateApplicationContext {
     interestRate: string | null;
     processingFeePercent: string | null;
     scopeCode: string | null;
+
+    // Count and most recent amount of this customer's own DISBURSED/FULLY_PAID loans with
+    // this SAME lender — lets the lender factor the applicant's history with them into
+    // their own credit-limit/new-vs-repeat decision, since that's derived purely on their
+    // side today and has no visibility into our platform's loan history otherwise.
+    previousDisbursedApplicationCount: number;
+    previousLoanAmount: string | null;
   };
 
   allocation: {
