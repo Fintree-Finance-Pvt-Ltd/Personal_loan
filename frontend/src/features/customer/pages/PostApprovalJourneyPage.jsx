@@ -23,6 +23,7 @@ import {
   getPostApprovalJourney,
   acceptLoanOffer,
   verifyBankAccount,
+  getPreviousBankDetails,
   acceptKfs,
   initiateMandate,
   getMandateStatus,
@@ -421,6 +422,34 @@ function BankVerificationStep({ lan, data, onNext }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
+  const [previousBank, setPreviousBank] = useState(null);
+  const [loadingPrevious, setLoadingPrevious] = useState(true);
+  const [useSameAccount, setUseSameAccount] = useState(true);
+
+  useEffect(() => {
+    if (isVerified) {
+      setLoadingPrevious(false);
+      return;
+    }
+    let isMounted = true;
+    (async () => {
+      try {
+        const previous = await getPreviousBankDetails(lan);
+        if (isMounted) {
+          setPreviousBank(previous);
+          setUseSameAccount(Boolean(previous?.available));
+        }
+      } catch {
+        if (isMounted) setPreviousBank(null);
+      } finally {
+        if (isMounted) setLoadingPrevious(false);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [lan, isVerified]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     let val = value;
@@ -513,21 +542,26 @@ function BankVerificationStep({ lan, data, onNext }) {
       onNext();
       return;
     }
-    if (!validate()) return;
+
+    const reusingPreviousAccount = useSameAccount && previousBank?.available;
+
+    if (!reusingPreviousAccount && !validate()) return;
 
     setIsLoading(true);
     setErrorMsg('');
 
     try {
-      const payload = {
-        accountHolderName: formData.accountHolderName.trim(),
-        accountNumber: formData.accountNumber.trim(),
-        confirmAccountNumber: formData.confirmAccountNumber.trim(),
-        ifscCode: formData.ifscCode.trim().toUpperCase(),
-        bankName: formData.bankName.trim(),
-        branchName: formData.branchName.trim(),
-        accountType: formData.accountType,
-      };
+      const payload = reusingPreviousAccount
+        ? { reuseFromPreviousLoan: true }
+        : {
+          accountHolderName: formData.accountHolderName.trim(),
+          accountNumber: formData.accountNumber.trim(),
+          confirmAccountNumber: formData.confirmAccountNumber.trim(),
+          ifscCode: formData.ifscCode.trim().toUpperCase(),
+          bankName: formData.bankName.trim(),
+          branchName: formData.branchName.trim(),
+          accountType: formData.accountType,
+        };
 
       const res = await verifyBankAccount(lan, payload);
       const status = String(res?.status || res?.data?.status || '').toUpperCase();
@@ -614,7 +648,69 @@ function BankVerificationStep({ lan, data, onNext }) {
             </div>
           )}
 
+          {loadingPrevious ? (
+            <div className="mb-6 flex items-center gap-2 text-xs font-medium text-slate-500">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Checking for a previously verified bank account...
+            </div>
+          ) : previousBank?.available && useSameAccount ? (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+                    Use your previously verified bank account
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setUseSameAccount(false)}
+                    disabled={isLoading}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 transition hover:text-blue-900 disabled:opacity-50"
+                  >
+                    <PenLine className="h-3.5 w-3.5" />
+                    Use a different account
+                  </button>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Account Holder Name</p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">{previousBank.accountHolderName || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Bank Name</p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">{previousBank.bankName || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Account Number</p>
+                    <p className="mt-1 font-mono text-sm font-bold text-slate-900">{previousBank.accountNumberMasked || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">IFSC Code</p>
+                    <p className="mt-1 font-mono text-sm font-bold text-slate-900">{previousBank.ifscCode || '—'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <ActionButton onClick={handleVerify} loading={isLoading} variant="blue">
+                  Send ₹1.00 & Verify Bank
+                </ActionButton>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleVerify} className="space-y-5">
+            {previousBank?.available && (
+              <button
+                type="button"
+                onClick={() => setUseSameAccount(true)}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 transition hover:text-blue-900 disabled:opacity-50"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Use my previous bank account instead
+              </button>
+            )}
+
             <div>
               <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                 Account Holder Name <span className="text-red-500">*</span>
@@ -769,6 +865,7 @@ function BankVerificationStep({ lan, data, onNext }) {
               </ActionButton>
             </div>
           </form>
+          )}
         </div>
       )}
     </StepCard>
