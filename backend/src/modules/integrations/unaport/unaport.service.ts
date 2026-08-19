@@ -492,18 +492,25 @@ export class UnaportService {
     const consentId = notif?.consentId || rawPayload?.consentId || rawPayload?.consent_id;
     const rawConsentStatus = String(notif?.consentStatus || rawPayload?.consentStatus || rawPayload?.consent_status || '').toUpperCase();
 
-    if (!trackingId && !consentHandle && !consentId) {
+    let lanFromTracking: string | null = null;
+    if (trackingId && typeof trackingId === 'string' && trackingId.includes('FTPL')) {
+      const match = trackingId.match(/FTPL\d+/i);
+      if (match) lanFromTracking = match[0].toUpperCase();
+    }
+
+    if (!trackingId && !consentHandle && !consentId && !lanFromTracking) {
       this.forwardToN8nConsentWebhook(payload).catch(() => { });
       throw new BadRequestException('Notification payload lacks identifying reference.');
     }
 
-    // Locate request by trackingId, consentHandle, or consentId
+    // Locate request by trackingId, consentHandle, consentId, or extracted LAN
     const request = await this.prisma.customerAccountAggregatorRequest.findFirst({
       where: {
         OR: [
           ...(trackingId ? [{ trackingId }] : []),
           ...(consentHandle ? [{ consentHandle }] : []),
           ...(consentId ? [{ consentId }] : []),
+          ...(lanFromTracking ? [{ lan: lanFromTracking }] : []),
         ],
       },
       orderBy: { id: 'desc' },
@@ -520,6 +527,7 @@ export class UnaportService {
         trackingId,
         consentHandle,
         consentId,
+        lanFromTracking,
       });
       return { success: true, message: 'Request not found, acknowledged.' };
     }
@@ -528,6 +536,7 @@ export class UnaportService {
     const now = new Date();
 
     let newStatus = request.status;
+    let newDataStatus = request.dataStatus;
     let normalizedConsentStatus = rawConsentStatus;
     let failureReason = request.failureReason;
     let failedAt = request.failedAt;
@@ -540,16 +549,19 @@ export class UnaportService {
     } else if (['REJECTED', 'DENIED'].includes(rawConsentStatus)) {
       normalizedConsentStatus = 'REJECTED';
       newStatus = 'FAILED';
+      newDataStatus = 'CANCELLED';
       failureReason = 'Customer rejected bank consent.';
       failedAt = now;
     } else if (['EXPIRED'].includes(rawConsentStatus)) {
       normalizedConsentStatus = 'EXPIRED';
       newStatus = 'EXPIRED';
+      newDataStatus = 'EXPIRED';
       failureReason = 'Consent session expired.';
       failedAt = now;
     } else if (['REVOKED', 'PAUSED'].includes(rawConsentStatus)) {
       normalizedConsentStatus = 'REVOKED';
       newStatus = 'CANCELLED';
+      newDataStatus = 'CANCELLED';
       failureReason = 'Consent was revoked by customer.';
       failedAt = now;
     }
@@ -561,6 +573,7 @@ export class UnaportService {
         consentHandle: consentHandle || request.consentHandle,
         consentStatus: normalizedConsentStatus,
         status: newStatus,
+        dataStatus: newDataStatus,
         consentedAt,
         failedAt,
         failureReason,
