@@ -63,6 +63,11 @@ export class LoanController {
     return this.loanService.saveAddress(lan, this.customerId(customer), body);
   }
 
+  @Get(':lan/bank-account/previous')
+  getPreviousBankDetails(@CurrentCustomer() customer: any) {
+    return this.loanService.getPreviousVerifiedBankDetails(this.customerId(customer));
+  }
+
   @Post(':lan/bank-accounts/verify')
   verifyBankAccount(@Param('lan') lan: string, @CurrentCustomer() customer: any, @Body() body: Record<string, any>, @Req() req: any) {
     return this.loanService.verifyBankAccount(lan, this.customerId(customer), body, {
