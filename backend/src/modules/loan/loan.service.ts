@@ -1395,6 +1395,30 @@ export class LoanService {
     );
   }
 
+  // Masked prefill for the "use my previous bank account" option on the bank verification
+  // step — never exposes the real account number, only what's safe to display back to the
+  // customer for confirmation before they decide to keep it or enter a different account.
+  async getPreviousVerifiedBankDetails(customerId: bigint) {
+    const previous = await this.prisma.plBankVerification.findFirst({
+      where: { customerId, status: 'VERIFIED' },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!previous) {
+      return { available: false };
+    }
+
+    return {
+      available: true,
+      accountHolderName: previous.accountHolderName,
+      accountNumberMasked: previous.accountNumberMasked,
+      ifscCode: previous.ifscCode,
+      bankName: previous.bankName,
+      branchName: previous.branchName,
+      accountType: previous.accountType,
+    };
+  }
+
   async generateKfs(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
     return {

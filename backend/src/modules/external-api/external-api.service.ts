@@ -29,6 +29,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigioBankService } from './integrations/digio-bank.service';
 import {
   encryptBankAccountNumber,
+  decryptBankAccountNumber,
   createBankAccountFingerprint,
   maskBankAccountNumber,
   maskIfscForAudit,
@@ -993,14 +994,40 @@ export class ExternalApiService {
       throw new NotFoundException('Loan not found or does not belong to this customer.');
     }
 
+    // Repeat-customer "keep same bank account" path: the customer never re-types their
+    // account details, so substitute in the decrypted details from their most recent
+    // verified bank account before falling through to the normal validation + Digio penny
+    // drop below — this loan still gets its own genuine, fresh verification call and
+    // PlBankVerification row, it just doesn't require the customer to retype anything.
+    let effectiveBody = body;
+    if (body?.reuseFromPreviousLoan === true) {
+      const previous = await this.prisma.plBankVerification.findFirst({
+        where: { customerId: BigInt(principalCustomerId), status: 'VERIFIED' },
+        orderBy: { id: 'desc' },
+      });
+      if (!previous) {
+        throw new BadRequestException('No previously verified bank account was found to reuse.');
+      }
+      const previousAccountNumber = decryptBankAccountNumber(previous.accountNumberEncrypted);
+      effectiveBody = {
+        accountHolderName: previous.accountHolderName,
+        accountNumber: previousAccountNumber,
+        confirmAccountNumber: previousAccountNumber,
+        ifscCode: previous.ifscCode,
+        bankName: previous.bankName,
+        branchName: previous.branchName,
+        accountType: previous.accountType,
+      };
+    }
+
     // Validate request payload
-    const accountHolderName = String(body?.accountHolderName || '').trim();
-    const accountNumber = String(body?.accountNumber || '').replace(/\D/g, '');
-    const confirmAccountNumber = String(body?.confirmAccountNumber || '').replace(/\D/g, '');
-    const ifscCode = String(body?.ifscCode || '').trim().toUpperCase();
-    const bankName = String(body?.bankName || '').trim();
-    const branchName = String(body?.branchName || '').trim();
-    const rawAccountType = String(body?.accountType || '').trim().toUpperCase();
+    const accountHolderName = String(effectiveBody?.accountHolderName || '').trim();
+    const accountNumber = String(effectiveBody?.accountNumber || '').replace(/\D/g, '');
+    const confirmAccountNumber = String(effectiveBody?.confirmAccountNumber || '').replace(/\D/g, '');
+    const ifscCode = String(effectiveBody?.ifscCode || '').trim().toUpperCase();
+    const bankName = String(effectiveBody?.bankName || '').trim();
+    const branchName = String(effectiveBody?.branchName || '').trim();
+    const rawAccountType = String(effectiveBody?.accountType || '').trim().toUpperCase();
 
     if (!accountHolderName || !/^[a-zA-Z][a-zA-Z .'-]{1,149}$/.test(accountHolderName)) {
       throw new BadRequestException('Please enter a valid account holder name.');
