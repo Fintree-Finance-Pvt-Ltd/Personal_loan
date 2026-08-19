@@ -18,6 +18,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../../common/types/auth-user.type';
 import { LoanService } from './loan.service';
+import { EasebuzzCollectionCronService } from './services/easebuzz-collection-cron.service';
 
 export class AddLoanChargeDto {
   @IsString()
@@ -51,7 +52,10 @@ export class WaiveLoanChargeDto {
 
 @Controller('admin/loans')
 export class AdminLoanServicingController {
-  constructor(private readonly loanService: LoanService) {}
+  constructor(
+    private readonly loanService: LoanService,
+    private readonly easebuzzCollectionCronService: EasebuzzCollectionCronService,
+  ) { }
 
   private parseChargeId(chargeId: string): bigint {
     if (!/^[1-9][0-9]*$/.test(chargeId)) {
@@ -99,4 +103,15 @@ export class AdminLoanServicingController {
       user.userId,
     );
   }
+
+  @Permissions('LOAN_MANAGE')
+  @Post('repayment-schedule/:rpsId/retry-debit')
+  @HttpCode(HttpStatus.OK)
+  retryDebit(@Param('rpsId') rpsId: string) {
+    if (!/^[1-9][0-9]*$/.test(rpsId)) {
+      throw new BadRequestException('Invalid repayment schedule ID.');
+    }
+    return this.easebuzzCollectionCronService.retryDebit(rpsId, 'MANUAL');
+  }
 }
+

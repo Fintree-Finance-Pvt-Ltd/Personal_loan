@@ -1708,6 +1708,7 @@ model PlLoan {
   repayments                 PlRepayment[]
   allocations                PlRepaymentAllocation[]
   charges                    PlLoanCharge[]
+  debitRequests              EasebuzzDebitRequest[]
 
   @@unique([applicationId], map: "uk_pl_loans_application_id")
   @@index([customerId], map: "idx_pl_loans_customer_id")
@@ -1814,6 +1815,8 @@ model PlLoanMandate {
 
   initiationCount Int @default(1) @map("initiation_count")
 
+  debitRequests EasebuzzDebitRequest[]
+
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
 
@@ -1886,6 +1889,7 @@ model PlRepaymentSchedule {
   paidAmount           Decimal   @default(0.00) @map("paid_amount") @db.Decimal(15, 2)
   paymentDate          DateTime? @map("payment_date") @db.DateTime(0)
   remainingAmount      Decimal   @map("remaining_amount") @db.Decimal(15, 2)
+  debitRequests        EasebuzzDebitRequest[]
   createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(0)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
 
@@ -1893,6 +1897,66 @@ model PlRepaymentSchedule {
   @@index([loanId], map: "idx_pl_rps_loan_id")
   @@index([lan], map: "idx_pl_rps_lan")
   @@map("pl_repayment_schedules")
+}
+
+model EasebuzzDebitRequest {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  loanId BigInt @map("loan_id") @db.UnsignedBigInt
+  loan   PlLoan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  applicationId BigInt? @map("application_id") @db.UnsignedBigInt
+
+  lan String @db.VarChar(30)
+
+  rpsId BigInt              @map("rps_id") @db.UnsignedBigInt
+  rps   PlRepaymentSchedule @relation(fields: [rpsId], references: [id], onDelete: Cascade)
+
+  installmentNumber Int @map("installment_number")
+
+  mandateId BigInt        @map("mandate_id") @db.UnsignedBigInt
+  mandate   PlLoanMandate @relation(fields: [mandateId], references: [id], onDelete: Cascade)
+
+  mandateTransactionId String        @map("mandate_transaction_id") @db.VarChar(100)
+  mandateType          PlMandateType @map("mandate_type")
+
+  merchantRequestNumber     String  @unique(map: "uk_eb_debit_merchant_req") @map("merchant_request_number") @db.VarChar(40)
+  notificationRequestNumber String? @map("notification_request_number") @db.VarChar(100)
+
+  amount Decimal @db.Decimal(15, 2)
+
+  presentmentDate DateTime? @map("presentment_date") @db.Date
+
+  status String @default("CREATED") @db.VarChar(30)
+
+  statusAtBank               String? @map("status_at_bank") @db.VarChar(100)
+  easebuzzRequestId          String? @map("easebuzz_request_id") @db.VarChar(100)
+  pgTransactionId            String? @map("pg_transaction_id") @db.VarChar(100)
+  transactionReferenceNumber String? @map("transaction_reference_number") @db.VarChar(100)
+  bankReferenceNumber        String? @map("bank_reference_number") @db.VarChar(255)
+
+  attemptNumber Int    @default(1) @map("attempt_number")
+  source        String @default("CRON") @db.VarChar(30)
+
+  requestEncrypted  String? @map("request_encrypted") @db.LongText
+  responseEncrypted String? @map("response_encrypted") @db.LongText
+
+  failureCode   String? @map("failure_code") @db.VarChar(100)
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  initiatedAt DateTime? @map("initiated_at") @db.DateTime(0)
+  completedAt DateTime? @map("completed_at") @db.DateTime(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([lan], map: "idx_eb_debit_lan")
+  @@index([rpsId], map: "idx_eb_debit_rps_id")
+  @@index([mandateTransactionId], map: "idx_eb_debit_mandate_tx_id")
+  @@index([status], map: "idx_eb_debit_status")
+  @@index([presentmentDate], map: "idx_eb_debit_presentment_date")
+  @@index([lan, rpsId, attemptNumber], map: "idx_eb_debit_lan_rps_attempt")
+  @@map("easebuzz_debit_requests")
 }
 
 model PlRepayment {

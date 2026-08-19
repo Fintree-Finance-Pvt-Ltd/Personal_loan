@@ -3790,6 +3790,9 @@ function LivePhotographSection({
           setTaggedBlob(blob);
           setIsWatermarking(false);
           stopCameraStream();
+
+          // Automatically trigger face liveness verification & photo save on capture
+          handleVerifyAndSave(blob);
         },
         'image/jpeg',
         0.85,
@@ -3801,8 +3804,9 @@ function LivePhotographSection({
     }
   };
 
-  const handleVerifyAndSave = async () => {
-    if (!taggedBlob || !locationData) {
+  const handleVerifyAndSave = async (overrideBlob = null) => {
+    const activeBlob = overrideBlob || taggedBlob;
+    if (!activeBlob || !locationData) {
       setPhotoError('Please capture a photo first.');
       return;
     }
@@ -3816,7 +3820,7 @@ function LivePhotographSection({
         reader.onloadend = () => resolve(reader.result);
         reader.onerror = reject;
       });
-      reader.readAsDataURL(taggedBlob);
+      reader.readAsDataURL(activeBlob);
       const base64Image = await base64Promise;
 
       const livenessResultJson = await verifyFaceLiveness(applicationId, base64Image);
@@ -3832,7 +3836,7 @@ function LivePhotographSection({
       setIsUploading(true);
 
       const formData = new FormData();
-      const imageFile = new File([taggedBlob], `customer-${customerId}-live-photo.jpg`, {
+      const imageFile = new File([activeBlob], `customer-${customerId}-live-photo.jpg`, {
         type: 'image/jpeg',
       });
 

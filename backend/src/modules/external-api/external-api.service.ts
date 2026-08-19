@@ -117,7 +117,11 @@ export class ExternalApiService {
       throw new BadRequestException('Input image is required for Face Liveness verification.');
     }
 
-    const customerId = this.parseCustomerId(String(input.customerId || ''));
+    const rawCustId = String(input.customerId || '').trim();
+    if (!rawCustId || rawCustId === 'null' || rawCustId === 'undefined' || !/^\d+$/.test(rawCustId)) {
+      throw new BadRequestException('Valid customerId is required for Face Liveness verification.');
+    }
+    const customerId = BigInt(rawCustId);
 
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -136,12 +140,27 @@ export class ExternalApiService {
       throw new BadRequestException('Customer account is blocked.');
     }
 
-    const hintedApplicationId = input.applicationId ? BigInt(input.applicationId) : null;
-    const application = hintedApplicationId
+    const rawAppId = String(input.applicationId || '').trim();
+    const isValidAppId = rawAppId !== '' && rawAppId !== 'null' && rawAppId !== 'undefined' && /^\d+$/.test(rawAppId);
+    const hintedApplicationId = isValidAppId ? BigInt(rawAppId) : null;
+
+    let application = hintedApplicationId
       ? await this.prisma.plApplication.findFirst({ where: { id: hintedApplicationId, customerId } })
       : await this.prisma.plApplication.findFirst({ where: { customerId }, orderBy: { id: 'desc' } });
+
     if (!application) {
-      throw new NotFoundException('Canonical application not found for customer.');
+      const datePart = new Date().toISOString().slice(2, 10).replaceAll('-', '');
+      const randomPart = Math.floor(1000 + Math.random() * 9000).toString();
+      const applicationNumber = `APP-${datePart}-${randomPart}`;
+
+      application = await this.prisma.plApplication.create({
+        data: {
+          customerId,
+          applicationNumber,
+          status: 'DRAFT',
+        },
+      });
+      this.logger.log(`Auto-created DRAFT application ${applicationNumber} for customer ${customerId} during face liveness check.`);
     }
 
     const clientRefNum = input.clientRefNum || `LIVENESS_${customerId}_${Date.now()}`.slice(0, 45);

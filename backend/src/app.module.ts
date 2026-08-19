@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { backendEnvPath, validateEnvironment } from './config/environment';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { LoggingModule } from './infrastructure/logging/logging.module';
@@ -48,6 +49,7 @@ import { PartnerApiModule } from './modules/partner-api/partner-api.module';
       validate: validateEnvironment,
       cache: true,
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     PrismaModule,
     LoggingModule,
