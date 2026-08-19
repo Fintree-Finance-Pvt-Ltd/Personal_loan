@@ -8,12 +8,13 @@ import { ProductsModule } from '../products/products.module';
 import { LenderIntegrationModule } from '../lender-integrations/lender-integration.module';
 
 import { ApplicationTransitionService } from './services/application-transition.service';
+import { EasebuzzCollectionCronService } from './services/easebuzz-collection-cron.service';
 
 @Module({
   imports: [ExternalApiModule, ProductsModule, LenderIntegrationModule],
   controllers: [LoanController, AdminLoanServicingController],
-  providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService],
-  exports: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService],
+  providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService],
+  exports: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService],
 })
 export class LoanModule { }
 

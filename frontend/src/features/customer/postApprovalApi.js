@@ -54,6 +54,41 @@ async function apiRequest(endpoint, options = {}) {
   return result;
 }
 
+// For protected document endpoints (PDF preview/download) that can't be reached via a plain
+// <a href>/<iframe src> — those are raw browser navigations and can't carry the Authorization
+// header, so the backend's customer auth guard always rejects them. Fetch with the header
+// like every other API call, then hand back a blob: URL the DOM element can point at.
+// Caller is responsible for URL.revokeObjectURL(...) once the blob URL is no longer shown.
+export async function fetchAuthenticatedBlobUrl(endpoint) {
+  const url = getFullApiUrl(endpoint);
+  const send = (token) => fetch(url, {
+    credentials: 'include',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  let response = await send(getCustomerAccessToken());
+  if (response.status === 401) {
+    const refreshedToken = await doCustomerRefresh();
+    response = await send(refreshedToken);
+  }
+
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}.`;
+    try {
+      const errJson = await response.json();
+      message = errJson?.message || errJson?.error?.message || message;
+    } catch {
+      // response body wasn't JSON (e.g. an HTML error page) — keep the generic message
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
 function encodeLan(lan) {
   const value = String(lan || '').trim();
   if (!value) throw new Error('LAN is required.');

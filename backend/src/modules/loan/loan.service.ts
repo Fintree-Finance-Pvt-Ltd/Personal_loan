@@ -117,46 +117,46 @@ export class LoanService {
         offerValidUntil,
         ...(kycStatus?.aadhaarStatus === 'VERIFIED'
           ? {
-              digilockerStatus: 'VERIFIED',
-              digilockerVerifiedAt: kycStatus.updatedAt,
-              aadhaarMaskedNumber: kycStatus.aadhaarMaskedNumber,
-              aadhaarLastFour: kycStatus.aadhaarMaskedNumber?.slice(-4) ?? null,
-              aadhaarVerifiedName: kycStatus.aadhaarName,
-              aadhaarDateOfBirth: kycStatus.aadhaarDob,
-              ...(permanentAddress
-                ? {
-                    aadhaarAddrLine1: permanentAddress.addressLine1,
-                    aadhaarAddrLine2: permanentAddress.addressLine2,
-                    aadhaarLandmark: permanentAddress.landmark,
-                    aadhaarLocality: permanentAddress.locality,
-                    aadhaarDistrict: permanentAddress.district,
-                    aadhaarCity: permanentAddress.city,
-                    aadhaarState: permanentAddress.state,
-                    aadhaarCountry: permanentAddress.country,
-                    aadhaarPincode: permanentAddress.pincode,
-                    aadhaarFormattedAddr: [permanentAddress.addressLine1, permanentAddress.addressLine2, permanentAddress.landmark, permanentAddress.locality, permanentAddress.city, permanentAddress.state, permanentAddress.pincode].filter(Boolean).join(', '),
-                  }
-                : kycStatus.aadhaarAddress
-                  ? { aadhaarFormattedAddr: kycStatus.aadhaarAddress }
-                  : {}),
-            }
+            digilockerStatus: 'VERIFIED',
+            digilockerVerifiedAt: kycStatus.updatedAt,
+            aadhaarMaskedNumber: kycStatus.aadhaarMaskedNumber,
+            aadhaarLastFour: kycStatus.aadhaarMaskedNumber?.slice(-4) ?? null,
+            aadhaarVerifiedName: kycStatus.aadhaarName,
+            aadhaarDateOfBirth: kycStatus.aadhaarDob,
+            ...(permanentAddress
+              ? {
+                aadhaarAddrLine1: permanentAddress.addressLine1,
+                aadhaarAddrLine2: permanentAddress.addressLine2,
+                aadhaarLandmark: permanentAddress.landmark,
+                aadhaarLocality: permanentAddress.locality,
+                aadhaarDistrict: permanentAddress.district,
+                aadhaarCity: permanentAddress.city,
+                aadhaarState: permanentAddress.state,
+                aadhaarCountry: permanentAddress.country,
+                aadhaarPincode: permanentAddress.pincode,
+                aadhaarFormattedAddr: [permanentAddress.addressLine1, permanentAddress.addressLine2, permanentAddress.landmark, permanentAddress.locality, permanentAddress.city, permanentAddress.state, permanentAddress.pincode].filter(Boolean).join(', '),
+              }
+              : kycStatus.aadhaarAddress
+                ? { aadhaarFormattedAddr: kycStatus.aadhaarAddress }
+                : {}),
+          }
           : {}),
         ...(currentAddress
           ? {
-              addressConfirmed: true,
-              addressConfirmedAt: new Date(),
-              addressSameAsPermanent: currentAddress.sameAsPermanent ?? false,
-              currentAddrLine1: currentAddress.addressLine1,
-              currentAddrLine2: currentAddress.addressLine2,
-              currentAddrLandmark: currentAddress.landmark,
-              currentAddrLocality: currentAddress.locality,
-              currentAddrDistrict: currentAddress.district,
-              currentAddrCity: currentAddress.city,
-              currentAddrState: currentAddress.state,
-              currentAddrCountry: currentAddress.country,
-              currentAddrPincode: currentAddress.pincode,
-              currentAddrProofType: currentAddress.source === 'DIGILOCKER' ? 'AADHAAR' : null,
-            }
+            addressConfirmed: true,
+            addressConfirmedAt: new Date(),
+            addressSameAsPermanent: currentAddress.sameAsPermanent ?? false,
+            currentAddrLine1: currentAddress.addressLine1,
+            currentAddrLine2: currentAddress.addressLine2,
+            currentAddrLandmark: currentAddress.landmark,
+            currentAddrLocality: currentAddress.locality,
+            currentAddrDistrict: currentAddress.district,
+            currentAddrCity: currentAddress.city,
+            currentAddrState: currentAddress.state,
+            currentAddrCountry: currentAddress.country,
+            currentAddrPincode: currentAddress.pincode,
+            currentAddrProofType: currentAddress.source === 'DIGILOCKER' ? 'AADHAAR' : null,
+          }
           : {}),
       },
     });
@@ -809,7 +809,7 @@ export class LoanService {
 
   async initiateDigilocker(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
-    
+
     if (loan.digilockerStatus === 'VERIFIED') {
       return { success: true, message: 'Already verified' };
     }
@@ -895,7 +895,7 @@ export class LoanService {
       entityId: loan.id.toString(),
       outcome: 'SUCCESS',
       requestId: randomBytes(16).toString('hex'),
-    }).catch(() => {});
+    }).catch(() => { });
 
     return {
       success: true,
@@ -914,11 +914,11 @@ export class LoanService {
 
   async getDigilockerStatus(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
-    
+
     // Auto-fetch if initiated and we want to double check provider (optional)
     // but the instruction says "optionally call get-digilocker-details" 
     // We'll rely on the frontend explicitly calling fetch-details or just the webhook.
-    
+
     const response = {
       lan,
       status: loan.digilockerStatus || 'NOT_STARTED',
@@ -949,14 +949,14 @@ export class LoanService {
         }
       });
     }
-    
+
     return { success: true, data: response };
   }
 
   async fetchDigilockerDetails(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
     const transactionId = loan.digilockerSessionId;
-    
+
     if (!transactionId) {
       throw new BadRequestException('No active DigiLocker transaction');
     }
@@ -1009,7 +1009,7 @@ export class LoanService {
         requestId: randomBytes(16).toString('hex'),
         ipAddress: metadata?.ipAddress,
         userAgent: metadata?.userAgent,
-      }).catch(() => {});
+      }).catch(() => { });
 
       return {
         status: 'Success',
@@ -1073,7 +1073,7 @@ export class LoanService {
         requestId: randomBytes(16).toString('hex'),
         ipAddress: metadata?.ipAddress,
         userAgent: metadata?.userAgent,
-      }).catch(() => {});
+      }).catch(() => { });
 
       return {
         status: 'Success',
@@ -1212,7 +1212,7 @@ export class LoanService {
           entityId: loanId.toString(),
           outcome: 'FAILURE',
           requestId: randomBytes(16).toString('hex'),
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
 
@@ -1229,7 +1229,7 @@ export class LoanService {
           entityId: loanId.toString(),
           outcome: 'FAILURE',
           requestId: randomBytes(16).toString('hex'),
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
 
@@ -1243,7 +1243,7 @@ export class LoanService {
       requestId: randomBytes(16).toString('hex'),
       ipAddress: metadata?.ipAddress,
       userAgent: metadata?.userAgent,
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   private async processAndStoreDigitapDocuments(
@@ -1271,25 +1271,25 @@ export class LoanService {
       ext: string;
       mimeType: string;
     }> = [
-      {
-        type: PlDocumentType.CUSTOMER_LIVE_PHOTO,
-        source: rawModel?.image || rawModel?.photo || rawModel?.imageBase64 || null,
-        ext: 'jpg',
-        mimeType: 'image/jpeg',
-      },
-      {
-        type: PlDocumentType.AADHAAR_CARD,
-        source: rawModel?.pdfLink || rawModel?.pdf_url || rawModel?.pdfData || null,
-        ext: 'pdf',
-        mimeType: 'application/pdf',
-      },
-      {
-        type: PlDocumentType.OTHER,
-        source: rawModel?.xmlLink || rawModel?.xml_url || rawModel?.xmlResponse || rawModel?.link || null,
-        ext: 'xml',
-        mimeType: 'application/xml',
-      },
-    ];
+        {
+          type: PlDocumentType.CUSTOMER_LIVE_PHOTO,
+          source: rawModel?.image || rawModel?.photo || rawModel?.imageBase64 || null,
+          ext: 'jpg',
+          mimeType: 'image/jpeg',
+        },
+        {
+          type: PlDocumentType.AADHAAR_CARD,
+          source: rawModel?.pdfLink || rawModel?.pdf_url || rawModel?.pdfData || null,
+          ext: 'pdf',
+          mimeType: 'application/pdf',
+        },
+        {
+          type: PlDocumentType.OTHER,
+          source: rawModel?.xmlLink || rawModel?.xml_url || rawModel?.xmlResponse || rawModel?.link || null,
+          ext: 'xml',
+          mimeType: 'application/xml',
+        },
+      ];
 
     for (const doc of docSources) {
       if (!doc.source || doc.source === '[REMOVED]') continue;
@@ -1461,7 +1461,7 @@ export class LoanService {
         outcome: 'SUCCESS',
         requestId: randomBytes(16).toString('hex'),
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return {
       success: true,
@@ -1483,7 +1483,7 @@ export class LoanService {
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
     const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly';
     const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
-    
+
     let mandateType = (requestedMandateType || configMandateType) as PlMandateType;
     if (mandateType !== 'UPI' && mandateType !== 'ENACH') {
       mandateType = 'ENACH' as PlMandateType;
@@ -1811,7 +1811,7 @@ export class LoanService {
       outcome: 'SUCCESS',
       newValue: { lan: loan.lan, transactionId, status: 'ACCESS_KEY_GENERATED' },
       requestId: randomBytes(16).toString('hex'),
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Generate Mandate Creation form payload with AES-256-CBC encrypted fields and SHA-512 Authorization hash
     let mandateRegistrationRes: any = null;
@@ -1972,7 +1972,7 @@ export class LoanService {
           outcome: 'SUCCESS',
           newValue: { lan: loan.lan, transactionId: activeMandate.merchantTransactionId, status: 'AUTHORIZED' },
           requestId: randomBytes(16).toString('hex'),
-        }).catch(() => {});
+        }).catch(() => { });
       } else if (([PlMandateStatus.FAILED, PlMandateStatus.REJECTED, PlMandateStatus.CANCELLED, PlMandateStatus.USER_CANCELLED, PlMandateStatus.EXPIRED] as PlMandateStatus[]).includes(normalizedStatus)) {
         await this.prisma.plLoanMandate.update({
           where: { id: activeMandate.id },
@@ -2135,7 +2135,7 @@ export class LoanService {
             webhookResponseJson: JSON.stringify(sanitized || {}),
           },
         });
-        
+
         await tx.plLoan.update({
           where: { id: mandate.loanId },
           data: {
@@ -2158,7 +2158,7 @@ export class LoanService {
           ipAddress: metadata?.ipAddress,
           userAgent: metadata?.userAgent,
           requestId: randomBytes(16).toString('hex'),
-        }).catch(() => {});
+        }).catch(() => { });
 
         return { success: true, acknowledged: true, processed: true, mandateJustAuthorized: true, applicationId: mandate.loan.applicationId };
       } else {
@@ -2291,7 +2291,7 @@ export class LoanService {
         outcome: 'SUCCESS',
         requestId: randomBytes(16).toString('hex'),
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return {
       success: true,
@@ -2378,7 +2378,7 @@ export class LoanService {
         requestId: randomBytes(16).toString('hex'),
         newValue: { lan: loan.lan, customerId: loan.customerId.toString() },
       })
-      .catch(() => {});
+      .catch(() => { });
 
     // Trigger the lender's disburse API via the existing outbox/worker pipeline (same
     // idempotency/retry/auth machinery as CREATE/UPDATE/DECISION) — never a direct HTTP
@@ -2537,24 +2537,24 @@ export class LoanService {
       // Upsert DisbursalWebhookEvent
       const webhookEventRecord = existingEvent
         ? await tx.disbursalWebhookEvent.update({
-            where: { id: existingEvent.id },
-            data: {
-              processingStatus: 'PROCESSED',
-              processedAt: new Date(),
-              sanitizedPayload,
-            },
-          })
+          where: { id: existingEvent.id },
+          data: {
+            processingStatus: 'PROCESSED',
+            processedAt: new Date(),
+            sanitizedPayload,
+          },
+        })
         : await tx.disbursalWebhookEvent.create({
-            data: {
-              provider: lenderCode,
-              eventId: eventId || null,
-              lan,
-              payloadHash,
-              sanitizedPayload,
-              processingStatus: 'PROCESSED',
-              processedAt: new Date(),
-            },
-          });
+          data: {
+            provider: lenderCode,
+            eventId: eventId || null,
+            lan,
+            payloadHash,
+            sanitizedPayload,
+            processingStatus: 'PROCESSED',
+            processedAt: new Date(),
+          },
+        });
 
       // 3. Update Loan Record
       const updatedLoan = await tx.plLoan.update({
@@ -3082,7 +3082,7 @@ export class LoanService {
           requestId: randomBytes(16).toString('hex'),
           newValue: { lan, installmentNumber: instNum, amount: amountNum, paymentId },
         })
-        .catch(() => {});
+        .catch(() => { });
 
       if (loanFullyPaid) {
         this.auditLogs
@@ -3096,7 +3096,7 @@ export class LoanService {
             requestId: randomBytes(16).toString('hex'),
             newValue: { lan, status: 'FULLY_PAID' },
           })
-          .catch(() => {});
+          .catch(() => { });
       }
 
       return {
@@ -3175,7 +3175,7 @@ export class LoanService {
         requestId: randomBytes(16).toString('hex'),
         newValue: { lan, chargeType, amount: amountNum, dueDate: payload.dueDate },
       })
-      .catch(() => {});
+      .catch(() => { });
 
     // Trigger the lender's charge-notification API via the existing outbox/worker
     // pipeline — never a direct HTTP call from here, never allowed to fail the charge
@@ -3252,7 +3252,7 @@ export class LoanService {
         requestId: randomBytes(16).toString('hex'),
         newValue: { lan, waiverAmount: waiverAmountNum, remainingAfter: newRemaining },
       })
-      .catch(() => {});
+      .catch(() => { });
 
     this.lenderIntegrationOutbox.enqueueChargeWaiverNotification(charge.loan.applicationId, waiver.id).catch((err) => {
       this.logger.warn(`Failed to enqueue charge waiver notification for loan ${lan}: ${err?.message || err}`);
@@ -3355,7 +3355,7 @@ export class LoanService {
       await tx.plRepaymentSchedule.deleteMany({ where: { loanId: loan.id } });
       try {
         await (tx as any).plLoanCharge.deleteMany({ where: { loanId: loan.id } });
-      } catch (_e) {}
+      } catch (_e) { }
       await tx.disbursalWebhookEvent.deleteMany({ where: { lan: loan.lan } });
 
       await tx.plLoan.update({

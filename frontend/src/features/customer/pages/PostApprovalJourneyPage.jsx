@@ -18,7 +18,6 @@ import {
   Eye,
   X,
 } from 'lucide-react';
-import { getCustomerAccessToken } from '../customerApi';
 import {
   getPostApprovalJourney,
   acceptLoanOffer,
@@ -33,6 +32,7 @@ import {
   markDocumentViewed,
   sendSigningOtp,
   verifySigningOtp,
+  fetchAuthenticatedBlobUrl,
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 import { resolveFileUrl } from '../../../lib/files';
@@ -1109,6 +1109,11 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
   const apr = kfs?.apr ?? (loanAmount > 0 ? Number((((totalInterest + totalCharges) / loanAmount) * (365 / tenureDays) * 100).toFixed(2)) : interestRate);
   const dueDate = kfs?.dueDate ?? offer?.dueDate;
 
+  // Derived from the actual amounts above (not a hardcoded guess) so this label always
+  // matches whatever percentage the backend actually charged, on this product or any other.
+  const processingFeePercentLabel = loanAmount > 0 ? Number(((processingFee / loanAmount) * 100).toFixed(2)) : 0;
+  const processingFeeGstPercentLabel = processingFee > 0 ? Number(((processingFeeGst / processingFee) * 100).toFixed(2)) : 0;
+
   const handlePrint = () => {
     window.print();
   };
@@ -1185,12 +1190,12 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
                 </tr>
                 <tr>
                   <td className="p-3 font-medium text-slate-900">(B) Processing Fee</td>
-                  <td className="p-3 text-right text-slate-500">2% of Principal</td>
+                  <td className="p-3 text-right text-slate-500">{processingFeePercentLabel}% of Principal</td>
                   <td className="p-3 text-right font-semibold text-rose-600">- {formatCurrency(processingFee)}</td>
                 </tr>
                 <tr>
                   <td className="p-3 font-medium text-slate-900">(C) Goods & Services Tax (GST)</td>
-                  <td className="p-3 text-right text-slate-500">18% on Processing Fee</td>
+                  <td className="p-3 text-right text-slate-500">{processingFeeGstPercentLabel}% on Processing Fee</td>
                   <td className="p-3 text-right font-semibold text-rose-600">- {formatCurrency(processingFeeGst)}</td>
                 </tr>
                 <tr className="bg-emerald-50/60 font-bold">
@@ -1734,6 +1739,8 @@ function EsignStep({ lan, data, onNext }) {
 
   const [isLoading, setIsLoading] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [documentViewed, setDocumentViewed] = useState(false);
   const [consent, setConsent] = useState(isCompleted);
   const [otpSessionId, setOtpSessionId] = useState('');
@@ -1742,6 +1749,13 @@ function EsignStep({ lan, data, onNext }) {
   const [otpSent, setOtpSent] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
+  const [downloadingDoc, setDownloadingDoc] = useState('');
+
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    };
+  }, [previewBlobUrl]);
 
   // Countdown Timers
   const [expiresTimer, setExpiresTimer] = useState(0);
@@ -1762,11 +1776,43 @@ function EsignStep({ lan, data, onNext }) {
 
   const handleOpenPreview = async () => {
     setIsPreviewOpen(true);
+    setErrorMsg('');
+    setPreviewLoading(true);
+    try {
+      const blobUrl = await fetchAuthenticatedBlobUrl(`/customer/loans/${lan}/electronic-sign/document`);
+      setPreviewBlobUrl(blobUrl);
+    } catch (err) {
+      setErrorMsg(err?.message || 'Failed to load the agreement preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
     try {
       await markDocumentViewed(lan);
       setDocumentViewed(true);
     } catch {
       setDocumentViewed(true);
+    }
+  };
+
+  const handleDownloadDocument = async (kind) => {
+    setDownloadingDoc(kind);
+    setErrorMsg('');
+    try {
+      const endpoint = kind === 'accepted'
+        ? `/customer/loans/${lan}/electronic-sign/accepted-document`
+        : `/customer/loans/${lan}/electronic-sign/audit-certificate`;
+      const blobUrl = await fetchAuthenticatedBlobUrl(endpoint);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = kind === 'accepted' ? `${lan}-accepted-agreement.pdf` : `${lan}-audit-certificate.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      setErrorMsg(err?.message || 'Failed to download the document.');
+    } finally {
+      setDownloadingDoc('');
     }
   };
 
@@ -1819,16 +1865,6 @@ function EsignStep({ lan, data, onNext }) {
     }
   };
 
-  // const previewUrl = `/api/customer/loans/${lan}/electronic-sign/document`;
-  // const acceptedDocUrl = `/api/customer/loans/${lan}/electronic-sign/accepted-document`;
-  // const auditCertUrl = `/api/customer/loans/${lan}/electronic-sign/audit-certificate`;
-
-  const customerToken = getCustomerAccessToken() || '';
-  const tokenQuery = customerToken ? `?token=${encodeURIComponent(customerToken)}` : '';
-  const previewUrl = `/api/customer/loans/${lan}/electronic-sign/document${tokenQuery}`;
-  const acceptedDocUrl = `/api/customer/loans/${lan}/electronic-sign/accepted-document${tokenQuery}`;
-  const auditCertUrl = `/api/customer/loans/${lan}/electronic-sign/audit-certificate${tokenQuery}`;
-
   return (
     <StepCard title="e-Sign Loan Agreement" subtitle="Electronically accept your loan agreement using mobile OTP authentication." icon={PenLine}>
       {isCompleted ? (
@@ -1838,26 +1874,33 @@ function EsignStep({ lan, data, onNext }) {
             description="Agreement electronically accepted via OTP authentication and stamped with legal evidence"
           />
 
-          <div className="mb-6 flex flex-wrap gap-3">
-            <a
-              href={acceptedDocUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
-            >
-              <ExternalLink size={14} />
-              <span>Download Accepted Agreement</span>
-            </a>
+          {errorMsg && (
+            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4 text-xs font-medium text-red-800">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div className="flex-1 leading-relaxed">{errorMsg}</div>
+            </div>
+          )}
 
-            <a
-              href={auditCertUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+          <div className="mb-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => handleDownloadDocument('accepted')}
+              disabled={downloadingDoc === 'accepted'}
+              className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <ExternalLink size={14} />
+              {downloadingDoc === 'accepted' ? <LoaderCircle size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+              <span>Download Accepted Agreement</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleDownloadDocument('audit')}
+              disabled={downloadingDoc === 'audit'}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {downloadingDoc === 'audit' ? <LoaderCircle size={14} className="animate-spin" /> : <ExternalLink size={14} />}
               <span>Download Audit Certificate</span>
-            </a>
+            </button>
           </div>
 
           <div className="flex justify-end">
@@ -2001,11 +2044,23 @@ function EsignStep({ lan, data, onNext }) {
                 </div>
 
                 <div className="flex-1 w-full bg-slate-100 relative overflow-hidden">
-                  <iframe
-                    src={previewUrl}
-                    title="Personal Loan Agreement Preview"
-                    className="h-full w-full border-0"
-                  />
+                  {previewLoading ? (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-slate-500">
+                      <LoaderCircle className="h-6 w-6 animate-spin" />
+                      <span className="text-xs font-semibold">Loading agreement...</span>
+                    </div>
+                  ) : previewBlobUrl ? (
+                    <iframe
+                      src={previewBlobUrl}
+                      title="Personal Loan Agreement Preview"
+                      className="h-full w-full border-0"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center text-slate-500">
+                      <AlertCircle className="h-6 w-6 text-red-500" />
+                      <span className="text-xs font-semibold">{errorMsg || 'Unable to load the agreement.'}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3.5 bg-slate-50 text-xs">

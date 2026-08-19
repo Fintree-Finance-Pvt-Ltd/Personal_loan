@@ -43,9 +43,15 @@ export class EasebuzzAutocollectService {
   private readonly portalBaseUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.merchantKey = this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_KEY') || '';
-    this.merchantSalt = this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SALT') || '';
-    this.subMerchantId = this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SUB_MERCHANT_ID') || '';
+    this.merchantKey =
+      this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_KEY') ||
+      this.configService.get<string>('EASEBUZZ_MERCHANT_KEY') || '';
+    this.merchantSalt =
+      this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SALT') ||
+      this.configService.get<string>('EASEBUZZ_SALT') || '';
+    this.subMerchantId =
+      this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SUB_MERCHANT_ID') ||
+      this.configService.get<string>('EASEBUZZ_SUB_MERCHANT_ID') || '';
     
     this.apiBaseUrl = (
       this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_API_BASE_URL') ||
@@ -685,4 +691,452 @@ export class EasebuzzAutocollectService {
     sanitizeRecursive(copy);
     return copy;
   }
+
+  /**
+   * Generates SHA-512 Authorization Hash for eNACH Presentment / UPI / SI Execute API:
+   * SHA-512(<key>|<transaction_id>|<merchant_request_number>|<amount>|<salt>)
+   */
+  public generatePresentmentHash(input: {
+    key?: string;
+    transactionId: string;
+    merchantRequestNumber: string;
+    amount: number;
+    salt?: string;
+  }): string {
+    const key = input.key || this.merchantKey;
+    const salt = input.salt || this.merchantSalt;
+    const amountStr = Number(input.amount).toFixed(2);
+    const hashInput = `${key}|${input.transactionId}|${input.merchantRequestNumber}|${amountStr}|${salt}`;
+    return this.sha512Hex(hashInput);
+  }
+
+  /**
+   * Generates SHA-512 Authorization Hash for GET Mandate Presentment Status API:
+   * SHA-512(<key>|<created_at_start>|<created_at_end>|<created_at>|<salt>)
+   */
+  public generatePresentmentListHash(input: {
+    key?: string;
+    createdAtStart?: string;
+    createdAtEnd?: string;
+    createdAt?: string;
+    salt?: string;
+  }): string {
+    const key = input.key || this.merchantKey;
+    const salt = input.salt || this.merchantSalt;
+    const start = input.createdAtStart || '';
+    const end = input.createdAtEnd || '';
+    const date = input.createdAt || '';
+    const hashInput = `${key}|${start}|${end}|${date}|${salt}`;
+    return this.sha512Hex(hashInput);
+  }
+
+  /**
+   * Initiates eNACH Presentment API:
+   * POST /autocollect/v1/mandate/presentment/
+   */
+  async initiateEnachPresentment(input: {
+    transactionId: string;
+    amount: number;
+    merchantRequestNumber: string;
+    presentmentDate: string;
+    udf1?: string;
+    udf2?: string;
+    udf3?: string;
+    udf4?: string;
+    udf5?: string;
+    udf6?: string;
+    udf7?: string;
+    fetchBalance?: boolean;
+    forcePresentment?: boolean;
+    subMerchantId?: string;
+  }): Promise<{
+    success: boolean;
+    isUnknown?: boolean;
+    data?: any;
+    error?: string;
+    rawResponse?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz merchant credentials not configured.');
+    }
+
+    const authorization = this.generatePresentmentHash({
+      transactionId: input.transactionId,
+      merchantRequestNumber: input.merchantRequestNumber,
+      amount: input.amount,
+    });
+
+    const subMerchantId = input.subMerchantId || this.subMerchantId;
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (subMerchantId) {
+      headers['X-EB-SUB-MERCHANT-ID'] = subMerchantId;
+    }
+
+    const envFetchBalance = this.configService.get<string>('EASEBUZZ_PRESENTMENT_FETCH_BALANCE') === 'true';
+    const envForce = this.configService.get<string>('EASEBUZZ_PRESENTMENT_FORCE') === 'true';
+
+    const payload: Record<string, any> = {
+      key: this.merchantKey,
+      transaction_id: input.transactionId,
+      amount: Number(Number(input.amount).toFixed(2)),
+      merchant_request_number: input.merchantRequestNumber,
+      presentment_date: input.presentmentDate,
+      udf1: input.udf1 || '',
+      udf2: input.udf2 || '',
+      udf3: input.udf3 || '',
+      udf4: input.udf4 || '',
+      udf5: input.udf5 || '',
+      udf6: input.udf6 || '',
+      udf7: input.udf7 || '',
+      fetch_balance: input.fetchBalance ?? envFetchBalance,
+      force_presentment: input.forcePresentment ?? envForce,
+    };
+
+    const endpoint = `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/presentment/`;
+
+    try {
+      const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
+      const resData = response.data;
+      const status = resData?.status ?? resData?.success;
+      const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
+
+      return {
+        success: isSuccess,
+        data: resData?.data || resData,
+        rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+        error: !isSuccess ? (resData?.message || resData?.error || 'Presentment request rejected.') : undefined,
+      };
+    } catch (err: any) {
+      const is5xxOrTimeout =
+        !err.response ||
+        (err.response.status >= 500 && err.response.status < 600) ||
+        ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(err.code);
+
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Presentment network failure.';
+      this.logger.warn(`eNACH presentment exception [MerchantReq: ${input.merchantRequestNumber}, Is5xx/Timeout: ${is5xxOrTimeout}]: ${errorMsg}`);
+
+      return {
+        success: false,
+        isUnknown: is5xxOrTimeout,
+        error: errorMsg,
+        rawResponse: err.response?.data ? this.sanitizeEasebuzzMandatePayload(err.response.data) : null,
+      };
+    }
+  }
+
+  /**
+   * Pre-debit Notification API for UPI Mandates:
+   * POST /autocollect/v1/mandate/notification/
+   */
+  async sendUpiPreDebitNotification(input: {
+    transactionId: string;
+    amount: number;
+    merchantRequestNumber: string;
+    debitDate: string;
+    udf1?: string;
+    udf2?: string;
+    udf3?: string;
+    udf4?: string;
+    subMerchantId?: string;
+  }): Promise<{
+    success: boolean;
+    isUnknown?: boolean;
+    notificationRequestNumber?: string;
+    data?: any;
+    error?: string;
+    rawResponse?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz merchant credentials not configured.');
+    }
+
+    const authorization = this.generatePresentmentHash({
+      transactionId: input.transactionId,
+      merchantRequestNumber: input.merchantRequestNumber,
+      amount: input.amount,
+    });
+
+    const subMerchantId = input.subMerchantId || this.subMerchantId;
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (subMerchantId) {
+      headers['X-EB-SUB-MERCHANT-ID'] = subMerchantId;
+    }
+
+    const payload: Record<string, any> = {
+      key: this.merchantKey,
+      transaction_id: input.transactionId,
+      amount: Number(Number(input.amount).toFixed(2)),
+      merchant_request_number: input.merchantRequestNumber,
+      debit_date: input.debitDate,
+      udf1: input.udf1 || '',
+      udf2: input.udf2 || '',
+      udf3: input.udf3 || '',
+      udf4: input.udf4 || '',
+    };
+
+    const candidateUrls = [
+      `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/notification/`,
+      `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/pre_debit_notification/`,
+    ];
+
+    let lastRes: any = null;
+    let lastErr: any = null;
+
+    for (const endpoint of candidateUrls) {
+      try {
+        const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
+        const resData = response.data;
+        const status = resData?.status ?? resData?.success;
+        const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
+
+        const notifNumber =
+          resData?.notification_request_number ||
+          resData?.data?.notification_request_number ||
+          resData?.request_id ||
+          resData?.data?.request_id ||
+          input.merchantRequestNumber;
+
+        if (isSuccess) {
+          return {
+            success: true,
+            notificationRequestNumber: notifNumber,
+            data: resData?.data || resData,
+            rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+          };
+        }
+        lastRes = resData;
+      } catch (err: any) {
+        lastErr = err;
+      }
+    }
+
+    const is5xxOrTimeout =
+      !lastErr?.response ||
+      (lastErr?.response?.status >= 500 && lastErr?.response?.status < 600) ||
+      ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(lastErr?.code);
+
+    const errorMsg = lastRes?.message || lastRes?.error || lastErr?.response?.data?.message || lastErr?.message || 'Pre-debit notification failed.';
+    return {
+      success: false,
+      isUnknown: is5xxOrTimeout,
+      error: errorMsg,
+      rawResponse: lastErr?.response?.data ? this.sanitizeEasebuzzMandatePayload(lastErr.response.data) : null,
+    };
+  }
+
+  /**
+   * Execute API for UPI / SI Mandates:
+   * POST /autocollect/v1/mandate/execute/
+   */
+  async executeUpiOrSiDebit(input: {
+    transactionId: string;
+    amount: number;
+    merchantRequestNumber: string;
+    notificationRequestNumber?: string;
+    udf1?: string;
+    udf2?: string;
+    udf3?: string;
+    udf4?: string;
+    subMerchantId?: string;
+  }): Promise<{
+    success: boolean;
+    isUnknown?: boolean;
+    data?: any;
+    error?: string;
+    rawResponse?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz merchant credentials not configured.');
+    }
+
+    const authorization = this.generatePresentmentHash({
+      transactionId: input.transactionId,
+      merchantRequestNumber: input.merchantRequestNumber,
+      amount: input.amount,
+    });
+
+    const subMerchantId = input.subMerchantId || this.subMerchantId;
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (subMerchantId) {
+      headers['X-EB-SUB-MERCHANT-ID'] = subMerchantId;
+    }
+
+    const payload: Record<string, any> = {
+      key: this.merchantKey,
+      transaction_id: input.transactionId,
+      amount: Number(Number(input.amount).toFixed(2)),
+      merchant_request_number: input.merchantRequestNumber,
+      udf1: input.udf1 || '',
+      udf2: input.udf2 || '',
+      udf3: input.udf3 || '',
+      udf4: input.udf4 || '',
+    };
+
+    if (input.notificationRequestNumber) {
+      payload.notification_request_number = input.notificationRequestNumber;
+    }
+
+    const endpoint = `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/execute/`;
+
+    try {
+      const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
+      const resData = response.data;
+      const status = resData?.status ?? resData?.success;
+      const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
+
+      return {
+        success: isSuccess,
+        data: resData?.data || resData,
+        rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+        error: !isSuccess ? (resData?.message || resData?.error || 'Execute request rejected.') : undefined,
+      };
+    } catch (err: any) {
+      const is5xxOrTimeout =
+        !err.response ||
+        (err.response.status >= 500 && err.response.status < 600) ||
+        ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(err.code);
+
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Mandate execute network failure.';
+      this.logger.warn(`UPI/SI execute exception [MerchantReq: ${input.merchantRequestNumber}, Is5xx/Timeout: ${is5xxOrTimeout}]: ${errorMsg}`);
+
+      return {
+        success: false,
+        isUnknown: is5xxOrTimeout,
+        error: errorMsg,
+        rawResponse: err.response?.data ? this.sanitizeEasebuzzMandatePayload(err.response.data) : null,
+      };
+    }
+  }
+
+  /**
+   * Retrieves Presentment / Debit Requests Status from Easebuzz:
+   * GET /autocollect/v1/mandate/presentment
+   */
+  async getDebitRequests(input: {
+    merchantRequestNumber?: string;
+    createdAtStart?: string;
+    createdAtEnd?: string;
+    createdAt?: string;
+    mandateId?: string;
+    mandateTransactionId?: string;
+    mandateType?: string;
+    notificationRequestNumber?: string;
+    status?: string;
+    pageSize?: number;
+    current?: number;
+    subMerchantId?: string;
+  }): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+    sanitizedResponse?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz merchant credentials not configured.');
+    }
+
+    const createdAt = input.createdAt || (!input.createdAtStart && !input.createdAtEnd ? new Date().toISOString().slice(0, 10) : undefined);
+
+    const authorization = this.generatePresentmentListHash({
+      createdAtStart: input.createdAtStart,
+      createdAtEnd: input.createdAtEnd,
+      createdAt,
+    });
+
+    const subMerchantId = input.subMerchantId || this.subMerchantId;
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      Accept: 'application/json',
+    };
+    if (subMerchantId) {
+      headers['X-EB-SUB-MERCHANT-ID'] = subMerchantId;
+    }
+
+    const queryParams = new URLSearchParams();
+    queryParams.append('key', this.merchantKey);
+    if (input.merchantRequestNumber) queryParams.append('merchant_request_number', input.merchantRequestNumber);
+    if (input.createdAtStart) queryParams.append('created_at_start', input.createdAtStart);
+    if (input.createdAtEnd) queryParams.append('created_at_end', input.createdAtEnd);
+    if (createdAt) queryParams.append('created_at', createdAt);
+    if (input.mandateId) queryParams.append('mandate_id', input.mandateId);
+    if (input.mandateTransactionId) queryParams.append('mandate_transaction_id', input.mandateTransactionId);
+    if (input.mandateType) queryParams.append('mandate_type', input.mandateType);
+    if (input.notificationRequestNumber) queryParams.append('notification_request_number', input.notificationRequestNumber);
+    if (input.status) queryParams.append('status', input.status);
+    if (input.pageSize) queryParams.append('pageSize', String(Math.min(100, Math.max(1, input.pageSize || 50))));
+    if (input.current) queryParams.append('current', String(Math.max(1, input.current || 1)));
+
+    const endpoint = `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/presentment?${queryParams.toString()}`;
+
+    try {
+      const response = await this.axiosClient.get(endpoint, { headers, timeout: 30000 });
+      const resData = response.data;
+
+      return {
+        success: true,
+        data: resData?.data || resData,
+        sanitizedResponse: this.sanitizeEasebuzzMandatePayload(resData),
+      };
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Get debit requests failed.';
+      this.logger.error(`Easebuzz getDebitRequests error: ${errorMsg}`);
+      return {
+        success: false,
+        error: errorMsg,
+        sanitizedResponse: err.response?.data ? this.sanitizeEasebuzzMandatePayload(err.response.data) : null,
+      };
+    }
+  }
+
+  /**
+   * Verifies mandate status safely before initiating debit
+   */
+  async getMandateStatus(transactionId: string): Promise<{
+    isActive: boolean;
+    status: string;
+    raw?: any;
+  }> {
+    try {
+      const res = await this.retrieveMandate(transactionId);
+      if (!res.success || !res.data) {
+        return { isActive: false, status: 'UNKNOWN' };
+      }
+
+      const rawStatus = String(
+        res.data.status ||
+        res.data.mandate_status ||
+        res.data.state ||
+        res.data.provider_status ||
+        ''
+      ).toUpperCase();
+
+      const isActive = ['AUTHORIZED', 'ACTIVE', 'COMPLETED', 'SUCCESS'].includes(rawStatus);
+
+      return {
+        isActive,
+        status: rawStatus || 'UNKNOWN',
+        raw: res.sanitizedResponse,
+      };
+    } catch (err: any) {
+      this.logger.warn(`getMandateStatus failed for TxID ${transactionId}: ${err?.message || err}`);
+      return { isActive: false, status: 'UNKNOWN' };
+    }
+  }
 }
+
