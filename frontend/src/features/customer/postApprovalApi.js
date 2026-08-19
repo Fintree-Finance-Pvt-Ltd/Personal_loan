@@ -137,6 +137,11 @@ export const verifyBankAccount = async (lan, payload) => {
   return extractApiData(response);
 };
 
+export const getPreviousBankDetails = async (lan) => {
+  const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/bank-account/previous`, { method: 'GET' });
+  return extractApiData(response);
+};
+
 export const generateKfs = async (lan) => {
   const response = await apiRequest(`/customer/loans/${encodeLan(lan)}/kfs/generate`, {
     method: 'POST',
