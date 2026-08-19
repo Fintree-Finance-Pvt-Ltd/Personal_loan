@@ -7,8 +7,11 @@ describe('AdminLoanServicingController', () => {
       addLoanCharge: jest.fn().mockResolvedValue({ success: true, chargeId: '601' }),
       waiveLoanCharge: jest.fn().mockResolvedValue({ success: true, waiverId: '701', remainingAmount: 0 }),
     };
-    const controller = new AdminLoanServicingController(loanService);
-    return { controller, loanService };
+    const cronService: any = {
+      retryDebit: jest.fn().mockResolvedValue({ success: true, status: 'IN_PROCESS' }),
+    };
+    const controller = new AdminLoanServicingController(loanService, cronService);
+    return { controller, loanService, cronService };
   };
 
   it('addCharge parses amount/dueDate and forwards the acting user id', async () => {
@@ -40,5 +43,20 @@ describe('AdminLoanServicingController', () => {
 
     expect(() => controller.waiveCharge('FTPL00000001', 'not-a-number', { waiverAmount: '100' } as any, { userId: 'USER-1' } as any)).toThrow(BadRequestException);
     expect(loanService.waiveLoanCharge).not.toHaveBeenCalled();
+  });
+
+  it('retryDebit delegates to easebuzzCollectionCronService for valid rpsId', async () => {
+    const { controller, cronService } = buildController();
+
+    const res = await controller.retryDebit('92');
+    expect(res).toEqual({ success: true, status: 'IN_PROCESS' });
+    expect(cronService.retryDebit).toHaveBeenCalledWith('92', 'MANUAL');
+  });
+
+  it('retryDebit throws BadRequestException for non-numeric rpsId', () => {
+    const { controller, cronService } = buildController();
+
+    expect(() => controller.retryDebit('abc')).toThrow(BadRequestException);
+    expect(cronService.retryDebit).not.toHaveBeenCalled();
   });
 });

@@ -63,6 +63,16 @@ const schema = z
     UNAPORT_FIU_ID: z.string().optional().default('UNACORES-FIU-UAT'),
     UNAPORT_FI_TYPE: z.string().optional().default('Deposits'),
     UNAPORT_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).optional().default(15000),
+    EASEBUZZ_AUTOCOLLECT_BASE_URL: z.string().optional().default('https://api.easebuzz.in/autocollect'),
+    EASEBUZZ_AUTOCOLLECT_KEY: z.string().optional().default(''),
+    EASEBUZZ_AUTOCOLLECT_SALT: z.string().optional().default(''),
+    EASEBUZZ_AUTOCOLLECT_SUB_MERCHANT_ID: z.string().optional().default(''),
+    EASEBUZZ_PRESENTMENT_FETCH_BALANCE: booleanString.default('false'),
+    EASEBUZZ_PRESENTMENT_FORCE: booleanString.default('false'),
+    EASEBUZZ_COLLECTION_CRON_ENABLED: booleanString.default('true'),
+    EASEBUZZ_RECONCILIATION_CRON_ENABLED: booleanString.default('true'),
+    EASEBUZZ_TIMEZONE: z.string().default('Asia/Kolkata'),
+    EASEBUZZ_MAX_DEBIT_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   })
   .superRefine((env, context) => {
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {
