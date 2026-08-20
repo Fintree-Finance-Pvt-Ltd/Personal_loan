@@ -211,7 +211,7 @@ export class UnaportService {
       fiuId,
       FIType: fiType || 'Deposits',
       ...(templateId ? { templateId } : {}),
-      accessToken: '',
+      accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
     };
 
