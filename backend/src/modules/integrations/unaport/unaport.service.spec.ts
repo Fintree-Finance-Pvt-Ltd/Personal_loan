@@ -123,7 +123,7 @@ describe('UnaportService', () => {
       expect(decodedJson.phoneNumber).toBe('9876543210');
       expect(decodedJson.productId).toBe('529684db-7241-44d7-95a3-fdc4ee9f8c11');
       expect(decodedJson.fiuId).toBe('UNACORES-FIU-UAT');
-      expect(decodedJson.accessToken).toBe('');
+      expect(decodedJson.accessToken).toBe('mock_access_token_123');
       expect(decodedJson.refreshToken).toBe('mock_refresh_token_456');
     });
   });
