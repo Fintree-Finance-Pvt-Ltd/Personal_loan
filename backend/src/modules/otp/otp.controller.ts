@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
+import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 import {
   OtpService,
   SendMobileOtpInput,
@@ -85,16 +87,21 @@ export class OtpController {
     return result;
   }
 
-  @Public()
+  // customerId is deliberately taken only from the verified session token, never from
+  // the request body (VAPT C3: this was previously @Public() and trusted a
+  // client-supplied customerId — since Customer.id is a plain sequential integer, that
+  // let anyone hijack any account's email by just incrementing the number).
+  @CustomerProtected()
   @Post('email/send')
   @HttpCode(HttpStatus.OK)
   sendEmailOtp(
     @Body() body: Record<string, unknown>,
+    @CurrentCustomer() customer: any,
     @Ip() ipAddress: string,
     @Req() request: Request,
   ) {
     const input: SendEmailOtpInput = {
-      customerId: body.customerId,
+      customerId: customer.customerId,
       email: body.email,
       ipAddress,
       userAgent: request.headers['user-agent'] || null,
@@ -103,12 +110,15 @@ export class OtpController {
     return this.otpService.sendEmailOtp(input);
   }
 
-  @Public()
+  @CustomerProtected()
   @Post('email/verify')
   @HttpCode(HttpStatus.OK)
-  verifyEmailOtp(@Body() body: Record<string, unknown>) {
+  verifyEmailOtp(
+    @Body() body: Record<string, unknown>,
+    @CurrentCustomer() customer: any,
+  ) {
     const input: VerifyEmailOtpInput = {
-      customerId: body.customerId,
+      customerId: customer.customerId,
       email: body.email,
       otp: body.otp,
     };

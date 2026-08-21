@@ -36,7 +36,7 @@ describe('CustomerService Integration', () => {
             platformProduct: { findFirst: jest.fn() },
             platformPolicy: { findMany: jest.fn() },
             plLoan: { count: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
-            kycVerificationStatus: { upsert: jest.fn(), findFirst: jest.fn() },
+            kycVerificationStatus: { upsert: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn() },
             applicationStageConsent: { findMany: jest.fn().mockResolvedValue([]) },
             customerAccountAggregatorRequest: { findFirst: jest.fn().mockResolvedValue(null) },
             applicationAddress: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn() },
@@ -365,10 +365,49 @@ describe('CustomerService Integration', () => {
     it('throws when saving CURRENT as same-as-permanent and the customer has no PERMANENT address anywhere', async () => {
       (prisma as any).applicationAddress.findUnique.mockResolvedValue(null);
       (prisma as any).applicationAddress.findFirst.mockResolvedValue(null);
+      (prisma.customer.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.saveApplicationAddress(1n, { addressType: 'CURRENT', sameAsPermanent: true }))
         .rejects.toThrow('Permanent address must be saved first.');
       expect((prisma as any).applicationAddress.create).not.toHaveBeenCalled();
+    });
+
+    it('self-heals a missing PERMANENT row for a first-time customer from their already-verified Aadhaar/residential fields', async () => {
+      // Reproduces the bug: Aadhaar verified (webhook succeeded), but the
+      // applicationAddress PERMANENT row was never created (e.g. an incomplete Aadhaar
+      // address previously skipped it entirely — see snapshotVerifiedApplicationKyc),
+      // and there's no prior application to backfill from since this is a new customer.
+      (prisma as any).applicationAddress.findUnique.mockResolvedValue(null);
+      (prisma as any).applicationAddress.findFirst.mockResolvedValue(null);
+      (prisma.customer.findUnique as jest.Mock).mockResolvedValue({
+        id: 1n,
+        residentialCity: 'Mumbai',
+        residentialState: 'Maharashtra',
+        residentialPincode: '400001',
+        aadhaarVerifiedAt: new Date('2026-01-01'),
+      });
+      ((prisma as any).kycVerificationStatus.findUnique as jest.Mock).mockResolvedValue({
+        aadhaarAddress: '12 MG Road, Mumbai',
+      });
+      (prisma as any).applicationAddress.create.mockResolvedValue({
+        id: 'addr-healed',
+        applicationId: 20n,
+        addressType: 'PERMANENT',
+        addressLine1: '12 MG Road, Mumbai',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pincode: '400001',
+        source: 'DIGILOCKER',
+      });
+
+      await service.saveApplicationAddress(1n, { addressType: 'CURRENT', sameAsPermanent: true });
+
+      expect((prisma as any).applicationAddress.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ applicationId: 20n, addressType: 'PERMANENT', city: 'Mumbai', state: 'Maharashtra', pincode: '400001' }),
+      }));
+      expect((prisma as any).applicationAddress.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({ applicationId: 20n, addressType: 'CURRENT', city: 'Mumbai', pincode: '400001', sameAsPermanent: true }),
+      }));
     });
 
     it('backfills the missing PERMANENT row even when the customer enters a different CURRENT address', async () => {

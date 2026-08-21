@@ -36,6 +36,7 @@ import {
 } from '../postApprovalApi';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 import { resolveFileUrl } from '../../../lib/files';
+import { OtpInput } from '../../../components/ui/OtpInput';
 
 function getCustomerSession() {
   try {
@@ -92,23 +93,23 @@ export default function PostApprovalJourneyPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white text-center shadow-sm">
-        <LoaderCircle className="h-10 w-10 animate-spin text-emerald-600" />
-        <p className="mt-4 text-sm font-medium text-slate-600">Loading your loan journey details…</p>
+      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-3xl border border-neutral-200 bg-white text-center shadow-sm">
+        <LoaderCircle className="h-10 w-10 animate-spin text-brand-600" />
+        <p className="mt-4 text-sm font-medium text-neutral-600">Loading your loan journey details…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-3xl border border-rose-200 bg-rose-50/50 p-8 text-center shadow-sm">
-        <AlertCircle className="mx-auto h-12 w-12 text-rose-500" />
-        <h2 className="mt-3 text-lg font-bold text-slate-900">Something went wrong</h2>
-        <p className="mt-1 text-sm text-slate-600">{error}</p>
+      <div className="rounded-3xl border border-danger-200 bg-danger-50/50 p-8 text-center shadow-sm">
+        <AlertCircle className="mx-auto h-12 w-12 text-danger-500" />
+        <h2 className="mt-3 text-lg font-bold text-neutral-900">Something went wrong</h2>
+        <p className="mt-1 text-sm text-neutral-600">{error}</p>
         <button
           type="button"
           onClick={fetchJourney}
-          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow hover:bg-emerald-700 cursor-pointer"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow hover:bg-brand-700 cursor-pointer"
         >
           <RotateCcw size={16} /> Try Again
         </button>
@@ -142,20 +143,20 @@ export default function PostApprovalJourneyPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Header banner */}
-      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-800 via-emerald-700 to-emerald-500 p-6 text-white shadow-xl sm:p-8">
+      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-brand-800 via-brand-700 to-brand-500 p-6 text-white shadow-xl sm:p-8">
         <div className="relative z-10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-emerald-200">Final Disbursal Journey</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-brand-200">Final Disbursal Journey</p>
           <h1 className="mt-2 text-2xl font-extrabold sm:text-3xl">
             {isDisbursed ? 'Loan Disbursed Successfully!' : 'Complete Your Loan Steps'}
           </h1>
-          <p className="mt-1 text-sm text-emerald-100">
+          <p className="mt-1 text-sm text-brand-100">
             LAN: <span className="font-mono font-bold text-white">{data?.loan?.lan || normalizedLan}</span>
           </p>
 
           {/* Progress */}
           <div className="mt-5 w-full max-w-sm rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-emerald-100">Progress</span>
+              <span className="text-brand-100">Progress</span>
               <strong>{progress}% Complete</strong>
             </div>
             <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/20">
@@ -169,7 +170,7 @@ export default function PostApprovalJourneyPage() {
       </section>
 
       {/* Steps progress strip */}
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex overflow-x-auto">
           {STEPS.map((step, idx) => {
             const isDone = idx < currentIdx || (idx === currentIdx && isDisbursed);
@@ -186,24 +187,24 @@ export default function PostApprovalJourneyPage() {
                 }}
                 disabled={!isClickable}
                 className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors cursor-pointer disabled:cursor-not-allowed ${isActive
-                  ? 'border-emerald-600 bg-emerald-50'
+                  ? 'border-brand-600 bg-brand-50'
                   : isDone
-                    ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50'
+                    ? 'border-brand-400 bg-brand-50/50 hover:bg-brand-50'
                     : 'border-transparent bg-white opacity-60'
                   }`}
               >
                 <div
                   className={`grid h-8 w-8 place-items-center rounded-full transition ${isDone
-                    ? 'bg-emerald-500 text-white'
+                    ? 'bg-brand-500 text-white'
                     : isActive
-                      ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400'
-                      : 'bg-slate-100 text-slate-400'
+                      ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-400'
+                      : 'bg-neutral-100 text-neutral-400'
                     }`}
                 >
                   {isDone ? <CheckCircle2 size={16} /> : <Icon size={15} />}
                 </div>
                 <p
-                  className={`text-[11px] font-semibold leading-tight ${isActive ? 'text-emerald-900 font-bold' : isDone ? 'text-emerald-700' : 'text-slate-400'
+                  className={`text-[11px] font-semibold leading-tight ${isActive ? 'text-brand-900 font-bold' : isDone ? 'text-brand-700' : 'text-neutral-400'
                     }`}
                 >
                   {step.label}
@@ -214,8 +215,9 @@ export default function PostApprovalJourneyPage() {
         </div>
       </section>
 
-      {/* Active step content */}
-      <div>
+      {/* Active step content — key={activeStepId} remounts this wrapper on every step
+          change, replaying the CSS entrance animation for a smooth step-to-step transition. */}
+      <div key={activeStepId} className="animate-step-enter">
         {activeStepId === 'APPROVAL_SUMMARY' && (
           <ApprovalSummaryStep data={data} onNext={handleNextStep} />
         )}
@@ -248,14 +250,14 @@ export default function PostApprovalJourneyPage() {
 
 function StepCard({ title, subtitle, icon: Icon, children }) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50/60 px-6 py-5">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+    <div className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
+      <div className="flex items-center gap-4 border-b border-neutral-100 bg-neutral-50/60 px-6 py-5">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
           <Icon size={22} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+          <h2 className="text-lg font-bold text-neutral-900">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-sm text-neutral-500">{subtitle}</p>}
         </div>
       </div>
       <div className="p-6 sm:p-8">{children}</div>
@@ -266,8 +268,8 @@ function StepCard({ title, subtitle, icon: Icon, children }) {
 function ActionButton({ onClick, disabled, loading, children, variant = 'primary', type = 'button' }) {
   const base = 'inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold shadow transition disabled:opacity-50 cursor-pointer';
   const styles = {
-    primary: 'bg-emerald-600 text-white hover:bg-emerald-700',
-    blue: 'bg-blue-600 text-white hover:bg-blue-700',
+    primary: 'bg-brand-600 text-white hover:bg-brand-700',
+    blue: 'bg-info-600 text-white hover:bg-info-700',
   };
   return (
     <button type={type} onClick={onClick} disabled={disabled || loading} className={`${base} ${styles[variant] || styles.primary}`}>
@@ -280,17 +282,17 @@ function ActionButton({ onClick, disabled, loading, children, variant = 'primary
 
 function CompletedBadge({ title, description }) {
   return (
-    <div className="mb-6 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-900">
+    <div className="mb-6 flex items-center justify-between rounded-2xl border border-brand-200 bg-brand-50/80 p-4 text-brand-900">
       <div className="flex items-center gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-600 text-white">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
           <ShieldCheck size={20} />
         </div>
         <div>
           <h4 className="text-sm font-bold">{title || 'Step Completed'}</h4>
-          {description && <p className="text-xs text-emerald-700 mt-0.5">{description}</p>}
+          {description && <p className="text-xs text-brand-700 mt-0.5">{description}</p>}
         </div>
       </div>
-      <span className="rounded-lg bg-emerald-200/60 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-emerald-800">
+      <span className="rounded-lg bg-brand-200/60 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-brand-800">
         Saved in DB
       </span>
     </div>
@@ -335,12 +337,12 @@ function ApprovalSummaryStep({ data, onNext }) {
           description={`Selected tenure: ${data?.offer?.acceptedTenureDays} Days`}
         />
       ) : (
-        <div className="mb-6 flex flex-col items-center rounded-2xl bg-emerald-50 py-8 text-center">
-          <div className="grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50">
+        <div className="mb-6 flex flex-col items-center rounded-2xl bg-brand-50 py-8 text-center">
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-brand-100 text-brand-600 ring-8 ring-brand-50">
             <CheckCircle2 size={36} />
           </div>
-          <h3 className="mt-4 text-xl font-extrabold text-slate-900">Your Loan is Approved!</h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <h3 className="mt-4 text-xl font-extrabold text-neutral-900">Your Loan is Approved!</h3>
+          <p className="mt-1 text-sm text-neutral-500">
             Approved by <strong>{data?.lender?.name || 'Fintree Finance'}</strong>
           </p>
         </div>
@@ -348,20 +350,20 @@ function ApprovalSummaryStep({ data, onNext }) {
 
       {/* Details grid */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-          <p className="text-xs font-semibold text-slate-500">Loan Account Number (LAN)</p>
-          <p className="mt-1 font-mono text-lg font-bold text-slate-900">{data?.loan?.lan}</p>
+        <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+          <p className="text-xs font-semibold text-neutral-500">Loan Account Number (LAN)</p>
+          <p className="mt-1 font-mono text-lg font-bold text-neutral-900">{data?.loan?.lan}</p>
         </div>
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-          <p className="text-xs font-semibold text-slate-500">Approved Amount</p>
-          <p className="mt-1 text-lg font-bold text-emerald-700">{approvedAmount}</p>
+        <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
+          <p className="text-xs font-semibold text-neutral-500">Approved Amount</p>
+          <p className="mt-1 text-lg font-bold text-brand-700">{approvedAmount}</p>
         </div>
       </div>
 
       {/* Tenure selection */}
       {!isAccepted ? (
         <div className="mb-8">
-          <p className="mb-3 text-sm font-bold text-slate-900">Select Repayment Tenure</p>
+          <p className="mb-3 text-sm font-bold text-neutral-900">Select Repayment Tenure</p>
           <div className="flex flex-wrap gap-3">
             {tenures.map(t => (
               <button
@@ -369,8 +371,8 @@ function ApprovalSummaryStep({ data, onNext }) {
                 type="button"
                 onClick={() => setSelectedTenure(t)}
                 className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
-                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
-                  : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
+                  ? 'border-brand-500 bg-brand-50 text-brand-700 shadow-sm'
+                  : 'border-neutral-200 text-neutral-600 hover:border-brand-300 hover:bg-neutral-50'
                   }`}
               >
                 {t} Days
@@ -380,17 +382,17 @@ function ApprovalSummaryStep({ data, onNext }) {
         </div>
       ) : (
         <div className="mb-8 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Tenure</p>
-            <p className="mt-1 text-base font-bold text-slate-900">{data?.offer?.acceptedTenureDays} Days</p>
+          <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+            <p className="text-xs font-semibold text-neutral-500">Tenure</p>
+            <p className="mt-1 text-base font-bold text-neutral-900">{data?.offer?.acceptedTenureDays} Days</p>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Bullet Repayment Dues</p>
-            <p className="mt-1 text-base font-bold text-slate-900">{formatCurrency(data?.offer?.acceptedEmiAmount)}</p>
+          <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+            <p className="text-xs font-semibold text-neutral-500">Bullet Repayment Dues</p>
+            <p className="mt-1 text-base font-bold text-neutral-900">{formatCurrency(data?.offer?.acceptedEmiAmount)}</p>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-xs font-semibold text-slate-500">Total Repayment</p>
-            <p className="mt-1 text-base font-bold text-slate-900">{formatCurrency(data?.offer?.acceptedTotalRepayment)}</p>
+          <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+            <p className="text-xs font-semibold text-neutral-500">Total Repayment</p>
+            <p className="mt-1 text-base font-bold text-neutral-900">{formatCurrency(data?.offer?.acceptedTotalRepayment)}</p>
           </div>
         </div>
       )}
@@ -579,9 +581,9 @@ function BankVerificationStep({ lan, data, onNext }) {
   };
 
   const inputClass = (fieldName) =>
-    `w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:ring-4 disabled:bg-slate-100 disabled:cursor-not-allowed ${fieldErrors[fieldName]
-      ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
-      : 'border-slate-200 focus:border-blue-500 focus:ring-blue-100'
+    `w-full rounded-xl border bg-white px-4 py-3 text-sm text-neutral-900 shadow-sm outline-none transition placeholder:text-neutral-400 focus:ring-4 disabled:bg-neutral-100 disabled:cursor-not-allowed ${fieldErrors[fieldName]
+      ? 'border-danger-300 focus:border-danger-500 focus:ring-danger-100'
+      : 'border-neutral-200 focus:border-info-500 focus:ring-info-100'
     }`;
 
   return (
@@ -598,21 +600,21 @@ function BankVerificationStep({ lan, data, onNext }) {
           />
 
           <div className="mb-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Account Holder Name</p>
-              <p className="mt-1 text-base font-bold text-slate-900">{bankData.accountHolderName || '—'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Account Holder Name</p>
+              <p className="mt-1 text-base font-bold text-neutral-900">{bankData.accountHolderName || '—'}</p>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Bank Name</p>
-              <p className="mt-1 text-base font-bold text-slate-900">{bankData.bankName || '—'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Bank Name</p>
+              <p className="mt-1 text-base font-bold text-neutral-900">{bankData.bankName || '—'}</p>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Account Number</p>
-              <p className="mt-1 font-mono text-base font-bold text-slate-900">{bankData.accountMasked || '—'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Account Number</p>
+              <p className="mt-1 font-mono text-base font-bold text-neutral-900">{bankData.accountMasked || '—'}</p>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">IFSC Code</p>
-              <p className="mt-1 font-mono text-base font-bold text-slate-900">{bankData.ifsc || '—'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">IFSC Code</p>
+              <p className="mt-1 font-mono text-base font-bold text-neutral-900">{bankData.ifsc || '—'}</p>
             </div>
           </div>
 
@@ -625,16 +627,16 @@ function BankVerificationStep({ lan, data, onNext }) {
       ) : (
         <div>
           {/* Penny Drop Info Card */}
-          <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5">
+          <div className="mb-6 rounded-2xl border border-info-100 bg-gradient-to-r from-info-50/80 to-accent-50/50 p-4 sm:p-5">
             <div className="flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-600 text-white shadow-md shadow-info-500/20">
                 <Building2 className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-info-900">
                   Instant ₹1.00 Penny Drop Verification
                 </h4>
-                <p className="mt-1 text-xs text-blue-700 leading-relaxed">
+                <p className="mt-1 text-xs text-info-700 leading-relaxed">
                   We will deposit ₹1.00 into your account to verify your name and ownership. Please ensure the account belongs to the applicant.
                 </p>
               </div>
@@ -642,29 +644,29 @@ function BankVerificationStep({ lan, data, onNext }) {
           </div>
 
           {errorMsg && (
-            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4 text-xs font-medium text-red-800">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50/90 p-4 text-xs font-medium text-danger-800">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" />
               <div className="flex-1 leading-relaxed">{errorMsg}</div>
             </div>
           )}
 
           {loadingPrevious ? (
-            <div className="mb-6 flex items-center gap-2 text-xs font-medium text-slate-500">
+            <div className="mb-6 flex items-center gap-2 text-xs font-medium text-neutral-500">
               <LoaderCircle className="h-4 w-4 animate-spin" />
               Checking for a previously verified bank account...
             </div>
           ) : previousBank?.available && useSameAccount ? (
             <div className="space-y-5">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+              <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-5">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-brand-800">
                     Use your previously verified bank account
                   </h4>
                   <button
                     type="button"
                     onClick={() => setUseSameAccount(false)}
                     disabled={isLoading}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 transition hover:text-blue-900 disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-info-700 transition hover:text-info-900 disabled:opacity-50"
                   >
                     <PenLine className="h-3.5 w-3.5" />
                     Use a different account
@@ -673,20 +675,20 @@ function BankVerificationStep({ lan, data, onNext }) {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs font-semibold text-slate-500">Account Holder Name</p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">{previousBank.accountHolderName || '—'}</p>
+                    <p className="text-xs font-semibold text-neutral-500">Account Holder Name</p>
+                    <p className="mt-1 text-sm font-bold text-neutral-900">{previousBank.accountHolderName || '—'}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-slate-500">Bank Name</p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">{previousBank.bankName || '—'}</p>
+                    <p className="text-xs font-semibold text-neutral-500">Bank Name</p>
+                    <p className="mt-1 text-sm font-bold text-neutral-900">{previousBank.bankName || '—'}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-slate-500">Account Number</p>
-                    <p className="mt-1 font-mono text-sm font-bold text-slate-900">{previousBank.accountNumberMasked || '—'}</p>
+                    <p className="text-xs font-semibold text-neutral-500">Account Number</p>
+                    <p className="mt-1 font-mono text-sm font-bold text-neutral-900">{previousBank.accountNumberMasked || '—'}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-slate-500">IFSC Code</p>
-                    <p className="mt-1 font-mono text-sm font-bold text-slate-900">{previousBank.ifscCode || '—'}</p>
+                    <p className="text-xs font-semibold text-neutral-500">IFSC Code</p>
+                    <p className="mt-1 font-mono text-sm font-bold text-neutral-900">{previousBank.ifscCode || '—'}</p>
                   </div>
                 </div>
               </div>
@@ -704,7 +706,7 @@ function BankVerificationStep({ lan, data, onNext }) {
                 type="button"
                 onClick={() => setUseSameAccount(true)}
                 disabled={isLoading}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 transition hover:text-blue-900 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-info-700 transition hover:text-info-900 disabled:opacity-50"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Use my previous bank account instead
@@ -712,8 +714,8 @@ function BankVerificationStep({ lan, data, onNext }) {
             )}
 
             <div>
-              <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Account Holder Name <span className="text-red-500">*</span>
+              <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                Account Holder Name <span className="text-danger-500">*</span>
               </label>
               <input
                 id="accountHolderName"
@@ -726,14 +728,14 @@ function BankVerificationStep({ lan, data, onNext }) {
                 className={inputClass('accountHolderName')}
               />
               {fieldErrors.accountHolderName && (
-                <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.accountHolderName}</p>
+                <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountHolderName}</p>
               )}
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
-                <label htmlFor="accountNumber" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Bank Account Number <span className="text-red-500">*</span>
+                <label htmlFor="accountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  Bank Account Number <span className="text-danger-500">*</span>
                 </label>
                 <input
                   id="accountNumber"
@@ -747,13 +749,13 @@ function BankVerificationStep({ lan, data, onNext }) {
                   className={inputClass('accountNumber')}
                 />
                 {fieldErrors.accountNumber && (
-                  <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.accountNumber}</p>
+                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountNumber}</p>
                 )}
               </div>
 
               <div>
-                <label htmlFor="confirmAccountNumber" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Confirm Account Number <span className="text-red-500">*</span>
+                <label htmlFor="confirmAccountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  Confirm Account Number <span className="text-danger-500">*</span>
                 </label>
                 <input
                   id="confirmAccountNumber"
@@ -768,15 +770,15 @@ function BankVerificationStep({ lan, data, onNext }) {
                   className={inputClass('confirmAccountNumber')}
                 />
                 {fieldErrors.confirmAccountNumber && (
-                  <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.confirmAccountNumber}</p>
+                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.confirmAccountNumber}</p>
                 )}
               </div>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
-                <label htmlFor="ifscCode" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  IFSC Code <span className="text-red-500">*</span>
+                <label htmlFor="ifscCode" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  IFSC Code <span className="text-danger-500">*</span>
                 </label>
                 <input
                   id="ifscCode"
@@ -789,13 +791,13 @@ function BankVerificationStep({ lan, data, onNext }) {
                   className={`${inputClass('ifscCode')} uppercase tracking-wider font-mono`}
                 />
                 {fieldErrors.ifscCode && (
-                  <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.ifscCode}</p>
+                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.ifscCode}</p>
                 )}
               </div>
 
               <div>
-                <label htmlFor="accountType" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Account Type <span className="text-red-500">*</span>
+                <label htmlFor="accountType" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  Account Type <span className="text-danger-500">*</span>
                 </label>
                 <select
                   id="accountType"
@@ -813,8 +815,8 @@ function BankVerificationStep({ lan, data, onNext }) {
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
-                <label htmlFor="bankName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Bank Name <span className="text-red-500">*</span>
+                <label htmlFor="bankName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  Bank Name <span className="text-danger-500">*</span>
                 </label>
                 <input
                   id="bankName"
@@ -827,13 +829,13 @@ function BankVerificationStep({ lan, data, onNext }) {
                   className={inputClass('bankName')}
                 />
                 {fieldErrors.bankName && (
-                  <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.bankName}</p>
+                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.bankName}</p>
                 )}
               </div>
 
               <div>
-                <label htmlFor="branchName" className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Branch Name <span className="text-red-500">*</span>
+                <label htmlFor="branchName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  Branch Name <span className="text-danger-500">*</span>
                 </label>
                 <input
                   id="branchName"
@@ -846,17 +848,17 @@ function BankVerificationStep({ lan, data, onNext }) {
                   className={inputClass('branchName')}
                 />
                 {fieldErrors.branchName && (
-                  <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.branchName}</p>
+                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.branchName}</p>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-xs text-slate-500">
+            <div className="flex items-center justify-between rounded-xl bg-neutral-50 border border-neutral-100 p-3.5 text-xs text-neutral-500">
               <div className="flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4 text-emerald-600" />
+                <BadgeCheck className="h-4 w-4 text-brand-600" />
                 <span>256-bit AES Encrypted Storage</span>
               </div>
-              <span className="font-semibold text-slate-700">PCI-DSS Compliant</span>
+              <span className="font-semibold text-neutral-700">PCI-DSS Compliant</span>
             </div>
 
             <div className="mt-8 flex justify-end pt-2">
@@ -962,7 +964,7 @@ function KfsStep({ lan, data, onNext }) {
   ];
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
       <div className="p-6 sm:p-8">
         {isAccepted && (
           <CompletedBadge
@@ -973,13 +975,13 @@ function KfsStep({ lan, data, onNext }) {
 
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-info-50 text-info-600">
               <FileText size={26} />
             </div>
             <div>
-              <h2 className="text-2xl font-extrabold text-slate-950">Key Fact Statement (KFS)</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Personal Loan Statement · {lender?.name || 'Fintree Finance Private Limited'} · LAN: <span className="font-mono font-semibold text-slate-700">{lan}</span>
+              <h2 className="text-2xl font-extrabold text-neutral-950">Key Fact Statement (KFS)</h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                Personal Loan Statement · {lender?.name || 'Fintree Finance Private Limited'} · LAN: <span className="font-mono font-semibold text-neutral-700">{lan}</span>
               </p>
             </div>
           </div>
@@ -990,7 +992,7 @@ function KfsStep({ lan, data, onNext }) {
                 href={kfsDocumentUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-4 py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
               >
                 <ExternalLink size={14} /> PDF File
               </a>
@@ -998,7 +1000,7 @@ function KfsStep({ lan, data, onNext }) {
             <button
               type="button"
               onClick={handleViewKfs}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-info-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-info-700"
             >
               <Eye size={16} />
               View Full Mini-Statement
@@ -1013,25 +1015,25 @@ function KfsStep({ lan, data, onNext }) {
               key={item.label}
               className={`rounded-2xl border p-5 transition-all ${
                 item.highlight
-                  ? 'border-emerald-200 bg-emerald-50/50 shadow-sm'
-                  : 'border-slate-200 bg-slate-50/30'
+                  ? 'border-brand-200 bg-brand-50/50 shadow-sm'
+                  : 'border-neutral-200 bg-neutral-50/30'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{item.label}</span>
                 <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                  item.highlight ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/70 text-slate-700'
+                  item.highlight ? 'bg-brand-100 text-brand-800' : 'bg-neutral-200/70 text-neutral-700'
                 }`}>
                   {item.tag}
                 </span>
               </div>
-              <p className="mt-2 text-2xl font-extrabold text-slate-950">{item.value}</p>
+              <p className="mt-2 text-2xl font-extrabold text-neutral-950">{item.value}</p>
             </div>
           ))}
         </div>
 
         {!isAccepted && (
-          <label className="mt-7 flex cursor-pointer items-start gap-4 rounded-2xl border border-slate-200 p-5 transition hover:bg-slate-50">
+          <label className="mt-7 flex cursor-pointer items-start gap-4 rounded-2xl border border-neutral-200 p-5 transition hover:bg-neutral-50">
             <input
               type="checkbox"
               checked={isConsentChecked}
@@ -1040,16 +1042,16 @@ function KfsStep({ lan, data, onNext }) {
                 setErrorMsg('');
               }}
               disabled={isLoading}
-              className="mt-0.5 h-6 w-6 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              className="mt-0.5 h-6 w-6 shrink-0 rounded border-neutral-300 text-info-600 focus:ring-info-500"
             />
-            <span className="text-sm font-semibold leading-6 text-slate-800">
+            <span className="text-sm font-semibold leading-6 text-neutral-800">
               I have read and accept the KFS, charges, repayment obligation and penal charge terms.
             </span>
           </label>
         )}
 
         {errorMsg && (
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+          <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger-100 bg-danger-50 p-3 text-sm text-danger-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
@@ -1119,20 +1121,20 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/60 p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8 max-h-[90vh] overflow-y-auto print:max-w-none print:shadow-none print:p-0">
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-5 print:border-b-2">
+        <div className="flex items-center justify-between border-b border-neutral-200 pb-5 print:border-b-2">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-600 text-white font-extrabold text-lg">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent-600 text-white font-extrabold text-lg">
               F
             </div>
             <div>
-              <h3 className="text-xl font-extrabold text-slate-950 sm:text-2xl">
+              <h3 className="text-xl font-extrabold text-neutral-950 sm:text-2xl">
                 KEY FACT STATEMENT & MINI-STATEMENT
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-neutral-500">
                 Issued by {lender?.name || 'Fintree Finance Private Limited'} (RBI Regulated NBFC)
               </p>
             </div>
@@ -1141,13 +1143,13 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
           <div className="flex items-center gap-2 print:hidden">
             <button
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 shadow-sm"
             >
               Print / Save PDF
             </button>
             <button
               onClick={onClose}
-              className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="grid h-9 w-9 place-items-center rounded-xl text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
             >
               <X size={20} />
             </button>
@@ -1155,68 +1157,68 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
         </div>
 
         {/* Borrower & Loan Metadata */}
-        <div className="mt-6 grid gap-4 rounded-2xl bg-slate-50 p-5 sm:grid-cols-2 text-xs border border-slate-200">
+        <div className="mt-6 grid gap-4 rounded-2xl bg-neutral-50 p-5 sm:grid-cols-2 text-xs border border-neutral-200">
           <div>
-            <p className="text-slate-500 font-medium">Borrower Name:</p>
-            <p className="font-bold text-slate-900 text-sm">{kfs?.borrowerName || customer?.fullName || 'Borrower'}</p>
-            <p className="text-slate-500 font-medium mt-2">PAN Number:</p>
-            <p className="font-bold text-slate-900">{kfs?.borrowerPan || customer?.panNumber || '—'}</p>
+            <p className="text-neutral-500 font-medium">Borrower Name:</p>
+            <p className="font-bold text-neutral-900 text-sm">{kfs?.borrowerName || customer?.fullName || 'Borrower'}</p>
+            <p className="text-neutral-500 font-medium mt-2">PAN Number:</p>
+            <p className="font-bold text-neutral-900">{kfs?.borrowerPan || customer?.panNumber || '—'}</p>
           </div>
           <div>
-            <p className="text-slate-500 font-medium">Loan Application Reference (LAN):</p>
-            <p className="font-mono font-bold text-indigo-700 text-sm">{lan}</p>
-            <p className="text-slate-500 font-medium mt-2">Disbursal Bank Account:</p>
-            <p className="font-bold text-slate-900">{bank?.bankName || kfs?.bankName || 'Verified Bank'} ({bank?.accountMasked || kfs?.accountMasked || 'XXXX'})</p>
+            <p className="text-neutral-500 font-medium">Loan Application Reference (LAN):</p>
+            <p className="font-mono font-bold text-accent-700 text-sm">{lan}</p>
+            <p className="text-neutral-500 font-medium mt-2">Disbursal Bank Account:</p>
+            <p className="font-bold text-neutral-900">{bank?.bankName || kfs?.bankName || 'Verified Bank'} ({bank?.accountMasked || kfs?.accountMasked || 'XXXX'})</p>
           </div>
         </div>
 
         {/* Summary Table */}
         <div className="mt-6">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">1. Key Financial Terms & Cost Breakdown</h4>
-          <div className="overflow-hidden rounded-xl border border-slate-200 text-xs">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">1. Key Financial Terms & Cost Breakdown</h4>
+          <div className="overflow-hidden rounded-xl border border-neutral-200 text-xs">
             <table className="w-full text-left">
-              <thead className="bg-slate-100 font-semibold text-slate-700">
+              <thead className="bg-neutral-100 font-semibold text-neutral-700">
                 <tr>
                   <th className="p-3">Component / Description</th>
                   <th className="p-3 text-right">Calculation / Rate</th>
                   <th className="p-3 text-right">Amount (INR)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 <tr>
-                  <td className="p-3 font-medium text-slate-900">(A) Sanctioned Loan Amount</td>
-                  <td className="p-3 text-right text-slate-500">Principal Sum</td>
-                  <td className="p-3 text-right font-bold text-slate-900">{formatCurrency(loanAmount)}</td>
-                </tr>
-                <tr>
-                  <td className="p-3 font-medium text-slate-900">(B) Processing Fee</td>
-                  <td className="p-3 text-right text-slate-500">{processingFeePercentLabel}% of Principal</td>
-                  <td className="p-3 text-right font-semibold text-rose-600">- {formatCurrency(processingFee)}</td>
+                  <td className="p-3 font-medium text-neutral-900">(A) Sanctioned Loan Amount</td>
+                  <td className="p-3 text-right text-neutral-500">Principal Sum</td>
+                  <td className="p-3 text-right font-bold text-neutral-900">{formatCurrency(loanAmount)}</td>
                 </tr>
                 <tr>
-                  <td className="p-3 font-medium text-slate-900">(C) Goods & Services Tax (GST)</td>
-                  <td className="p-3 text-right text-slate-500">{processingFeeGstPercentLabel}% on Processing Fee</td>
-                  <td className="p-3 text-right font-semibold text-rose-600">- {formatCurrency(processingFeeGst)}</td>
-                </tr>
-                <tr className="bg-emerald-50/60 font-bold">
-                  <td className="p-3 text-emerald-950">(D) Net Disbursal Amount (A - B - C)</td>
-                  <td className="p-3 text-right text-emerald-700">Credited to Bank Account</td>
-                  <td className="p-3 text-right text-emerald-700 text-sm">{formatCurrency(netDisbursalAmount)}</td>
+                  <td className="p-3 font-medium text-neutral-900">(B) Processing Fee</td>
+                  <td className="p-3 text-right text-neutral-500">{processingFeePercentLabel}% of Principal</td>
+                  <td className="p-3 text-right font-semibold text-danger-600">- {formatCurrency(processingFee)}</td>
                 </tr>
                 <tr>
-                  <td className="p-3 font-medium text-slate-900">(E) Total Interest Charge</td>
-                  <td className="p-3 text-right text-slate-500">{interestRate}% p.a. over {tenureDays} Days</td>
-                  <td className="p-3 text-right font-semibold text-slate-900">+ {formatCurrency(totalInterest)}</td>
+                  <td className="p-3 font-medium text-neutral-900">(C) Goods & Services Tax (GST)</td>
+                  <td className="p-3 text-right text-neutral-500">{processingFeeGstPercentLabel}% on Processing Fee</td>
+                  <td className="p-3 text-right font-semibold text-danger-600">- {formatCurrency(processingFeeGst)}</td>
                 </tr>
-                <tr className="bg-indigo-50/70 font-extrabold text-indigo-950">
-                  <td className="p-3 text-indigo-950">(F) Total Repayment Amount (A + E)</td>
-                  <td className="p-3 text-right text-indigo-700">Due on {formatDate(dueDate)}</td>
-                  <td className="p-3 text-right text-indigo-900 text-base">{formatCurrency(totalRepaymentAmount)}</td>
+                <tr className="bg-brand-50/60 font-bold">
+                  <td className="p-3 text-brand-950">(D) Net Disbursal Amount (A - B - C)</td>
+                  <td className="p-3 text-right text-brand-700">Credited to Bank Account</td>
+                  <td className="p-3 text-right text-brand-700 text-sm">{formatCurrency(netDisbursalAmount)}</td>
                 </tr>
-                <tr className="bg-amber-50/50 font-semibold text-amber-950">
+                <tr>
+                  <td className="p-3 font-medium text-neutral-900">(E) Total Interest Charge</td>
+                  <td className="p-3 text-right text-neutral-500">{interestRate}% p.a. over {tenureDays} Days</td>
+                  <td className="p-3 text-right font-semibold text-neutral-900">+ {formatCurrency(totalInterest)}</td>
+                </tr>
+                <tr className="bg-accent-50/70 font-extrabold text-accent-950">
+                  <td className="p-3 text-accent-950">(F) Total Repayment Amount (A + E)</td>
+                  <td className="p-3 text-right text-accent-700">Due on {formatDate(dueDate)}</td>
+                  <td className="p-3 text-right text-accent-900 text-base">{formatCurrency(totalRepaymentAmount)}</td>
+                </tr>
+                <tr className="bg-caution-50/50 font-semibold text-caution-950">
                   <td className="p-3">(G) Annual Percentage Rate (APR)</td>
-                  <td className="p-3 text-right text-amber-800">Total Cost of Credit per Annum</td>
-                  <td className="p-3 text-right font-extrabold text-amber-950 text-sm">{apr}% p.a.</td>
+                  <td className="p-3 text-right text-caution-800">Total Cost of Credit per Annum</td>
+                  <td className="p-3 text-right font-extrabold text-caution-950 text-sm">{apr}% p.a.</td>
                 </tr>
               </tbody>
             </table>
@@ -1225,10 +1227,10 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
 
         {/* Repayment Schedule Mini Statement */}
         <div className="mt-6">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">2. Repayment Schedule (Mini-Statement)</h4>
-          <div className="overflow-hidden rounded-xl border border-slate-200 text-xs">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">2. Repayment Schedule (Mini-Statement)</h4>
+          <div className="overflow-hidden rounded-xl border border-neutral-200 text-xs">
             <table className="w-full text-left">
-              <thead className="bg-slate-100 font-semibold text-slate-700">
+              <thead className="bg-neutral-100 font-semibold text-neutral-700">
                 <tr>
                   <th className="p-3">Instalment #</th>
                   <th className="p-3">Due Date</th>
@@ -1237,13 +1239,13 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
                   <th className="p-3 text-right">Total Payable</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-neutral-200">
                 <tr className="bg-white">
-                  <td className="p-3 font-semibold text-slate-900">#1 (Bullet Repayment)</td>
-                  <td className="p-3 text-slate-700 font-medium">{formatDate(dueDate)}</td>
-                  <td className="p-3 text-right font-medium text-slate-900">{formatCurrency(loanAmount)}</td>
-                  <td className="p-3 text-right font-medium text-slate-900">{formatCurrency(totalInterest)}</td>
-                  <td className="p-3 text-right font-extrabold text-indigo-700">{formatCurrency(totalRepaymentAmount)}</td>
+                  <td className="p-3 font-semibold text-neutral-900">#1 (Bullet Repayment)</td>
+                  <td className="p-3 text-neutral-700 font-medium">{formatDate(dueDate)}</td>
+                  <td className="p-3 text-right font-medium text-neutral-900">{formatCurrency(loanAmount)}</td>
+                  <td className="p-3 text-right font-medium text-neutral-900">{formatCurrency(totalInterest)}</td>
+                  <td className="p-3 text-right font-extrabold text-accent-700">{formatCurrency(totalRepaymentAmount)}</td>
                 </tr>
               </tbody>
             </table>
@@ -1251,8 +1253,8 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
         </div>
 
         {/* Regulatory Notices */}
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-[11px] text-slate-600 leading-relaxed">
-          <p className="font-bold text-slate-800">Penal & Late Payment Policy:</p>
+        <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-[11px] text-neutral-600 leading-relaxed">
+          <p className="font-bold text-neutral-800">Penal & Late Payment Policy:</p>
           <p className="mt-1">
             Penal charges of 0.1% per day will be levied on overdue principal for any delay post due date. Cheque/E-NACH bounce charges of ₹500 + GST apply per bounce attempt. Cooling-off period of 3 days is provided during which the borrower can exit by paying principal + proportionate APR.
           </p>
@@ -1261,7 +1263,7 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
         <div className="mt-6 flex justify-end print:hidden">
           <button
             onClick={onClose}
-            className="rounded-xl bg-slate-900 px-6 py-2.5 text-xs font-bold text-white hover:bg-slate-800 shadow"
+            className="rounded-xl bg-neutral-900 px-6 py-2.5 text-xs font-bold text-white hover:bg-neutral-800 shadow"
           >
             Close Statement View
           </button>
@@ -1499,21 +1501,21 @@ function MandateStep({ lan, data, onNext }) {
           />
 
           <div className="mb-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Bank Name</p>
-              <p className="mt-1 text-base font-bold text-slate-900">{mandateData.bankName || bankData.bankName || '—'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Bank Name</p>
+              <p className="mt-1 text-base font-bold text-neutral-900">{mandateData.bankName || bankData.bankName || '—'}</p>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Account Number</p>
-              <p className="mt-1 font-mono text-base font-bold text-slate-900">{mandateData.maskedAccountNumber || bankData.accountMasked || '—'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Account Number</p>
+              <p className="mt-1 font-mono text-base font-bold text-neutral-900">{mandateData.maskedAccountNumber || bankData.accountMasked || '—'}</p>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Maximum Debit Amount</p>
-              <p className="mt-1 text-base font-bold text-slate-900">{mandateAmount}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Maximum Debit Amount</p>
+              <p className="mt-1 text-base font-bold text-neutral-900">{mandateAmount}</p>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-xs font-semibold text-slate-500">Frequency</p>
-              <p className="mt-1 text-base font-bold text-slate-900 uppercase">{mandateData.frequency || 'Monthly'}</p>
+            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold text-neutral-500">Frequency</p>
+              <p className="mt-1 text-base font-bold text-neutral-900 uppercase">{mandateData.frequency || 'Monthly'}</p>
             </div>
           </div>
 
@@ -1526,33 +1528,33 @@ function MandateStep({ lan, data, onNext }) {
       ) : (
         <div>
           {/* Summary Box */}
-          <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/80 p-5">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 mb-3">
+          <div className="mb-6 rounded-2xl border border-info-100 bg-info-50/80 p-5">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-info-900 mb-3">
               e-Mandate Authorization Summary
             </h4>
             <div className="grid gap-3 text-sm sm:grid-cols-2">
               <div>
-                <span className="text-xs text-slate-500 block">Bank Account</span>
-                <strong className="text-slate-900">{bankData.bankName || 'Verified Bank Account'} ({bankData.accountMasked || '—'})</strong>
+                <span className="text-xs text-neutral-500 block">Bank Account</span>
+                <strong className="text-neutral-900">{bankData.bankName || 'Verified Bank Account'} ({bankData.accountMasked || '—'})</strong>
               </div>
               <div>
-                <span className="text-xs text-slate-500 block">Maximum Mandate Ceiling</span>
-                <strong className="text-emerald-700">{mandateAmount}</strong>
+                <span className="text-xs text-neutral-500 block">Maximum Mandate Ceiling</span>
+                <strong className="text-brand-700">{mandateAmount}</strong>
               </div>
               <div>
-                <span className="text-xs text-slate-500 block">Mandate Type</span>
-                <strong className="text-slate-900">UPI Autopay / eNACH</strong>
+                <span className="text-xs text-neutral-500 block">Mandate Type</span>
+                <strong className="text-neutral-900">UPI Autopay / eNACH</strong>
               </div>
               <div>
-                <span className="text-xs text-slate-500 block">Debit Frequency</span>
-                <strong className="text-slate-900">Monthly</strong>
+                <span className="text-xs text-neutral-500 block">Debit Frequency</span>
+                <strong className="text-neutral-900">Monthly</strong>
               </div>
             </div>
           </div>
 
           {/* Informational Note */}
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs leading-relaxed text-slate-600">
-            <p className="font-semibold text-slate-800">Important Information:</p>
+          <div className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs leading-relaxed text-neutral-600">
+            <p className="font-semibold text-neutral-800">Important Information:</p>
             <p className="mt-1">
               Your mandate authorizes automatic EMI debit according to the repayment schedule. No amount will be debited during setup unless specifically disclosed by the provider.
             </p>
@@ -1567,22 +1569,22 @@ function MandateStep({ lan, data, onNext }) {
                 setConsent(e.target.checked);
                 setErrorMsg('');
               }}
-              className="mt-1 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer"
+              className="mt-1 h-5 w-5 rounded border-neutral-300 text-info-600 focus:ring-info-600 cursor-pointer"
             />
-            <label htmlFor="mandateConsent" className="text-sm text-slate-700 cursor-pointer leading-relaxed">
+            <label htmlFor="mandateConsent" className="text-sm text-neutral-700 cursor-pointer leading-relaxed">
               I authorize Fintree Finance Private Limited to register an electronic mandate on my verified bank account for repayment obligations under this loan.
             </label>
           </div>
 
           {errorMsg && (
-            <div className="mb-4 rounded-xl bg-red-50 p-3.5 text-sm text-red-700 flex items-start gap-2.5 border border-red-200">
-              <AlertCircle className="h-5 w-5 shrink-0 text-red-600 mt-0.5" />
+            <div className="mb-4 rounded-xl bg-danger-50 p-3.5 text-sm text-danger-700 flex items-start gap-2.5 border border-danger-200">
+              <AlertCircle className="h-5 w-5 shrink-0 text-danger-600 mt-0.5" />
               <div className="flex-1">{errorMsg}</div>
             </div>
           )}
 
           {statusMsg && !errorMsg && (
-            <div className="mb-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800 font-medium border border-blue-200">
+            <div className="mb-4 rounded-xl bg-info-50 p-3 text-xs text-info-800 font-medium border border-info-200">
               {statusMsg}
             </div>
           )}
@@ -1594,7 +1596,7 @@ function MandateStep({ lan, data, onNext }) {
                 type="button"
                 onClick={() => handleInitiate(true)}
                 disabled={isLoading || isCheckingStatus || !consent}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-xs font-bold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer disabled:opacity-50"
               >
                 <RotateCcw size={14} />
                 <span>Start New Authorization Session</span>
@@ -1606,7 +1608,7 @@ function MandateStep({ lan, data, onNext }) {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(true)}
-                  className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                  className="rounded-xl border border-info-200 bg-info-50 px-4 py-2.5 text-xs font-bold text-info-700 hover:bg-info-100 transition cursor-pointer"
                 >
                   Resume e-Mandate
                 </button>
@@ -1619,7 +1621,7 @@ function MandateStep({ lan, data, onNext }) {
                     loading={isLoading || isCheckingStatus}
                     disabled={!consent}
                     variant="slate"
-                    className="!bg-slate-800 hover:!bg-slate-900 text-white"
+                    className="!bg-neutral-800 hover:!bg-neutral-900 text-white"
                   >
                     Set Up via Netbanking / Debit Card
                   </ActionButton>
@@ -1647,22 +1649,22 @@ function MandateStep({ lan, data, onNext }) {
 
           {/* Secure Same-Page Modal Overlay */}
           {isModalOpen && portalUrl && isAllowedEasebuzzUrl(portalUrl) && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="relative w-full max-w-4xl h-[90vh] sm:h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="relative w-full max-w-4xl h-[90vh] sm:h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-neutral-200">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-slate-50">
+                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 bg-neutral-50">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-                      <h3 className="text-base font-bold text-slate-900">e-Mandate Authorization</h3>
+                      <div className="h-3 w-3 rounded-full bg-brand-500 animate-pulse" />
+                      <h3 className="text-base font-bold text-neutral-900">e-Mandate Authorization</h3>
                     </div>
                     {transactionId && (
-                      <span className="rounded-lg bg-slate-200/80 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700">
+                      <span className="rounded-lg bg-neutral-200/80 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-neutral-700">
                         TxID: {transactionId}
                       </span>
                     )}
                     {mandateStatus && (
-                      <span className="rounded-lg bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-blue-800">
+                      <span className="rounded-lg bg-info-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-info-800">
                         {mandateStatus}
                       </span>
                     )}
@@ -1671,7 +1673,7 @@ function MandateStep({ lan, data, onNext }) {
                     <button
                       type="button"
                       onClick={() => window.open(portalUrl, '_blank', 'noopener,noreferrer')}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-info-600 bg-info-50 px-3 py-1.5 text-xs font-semibold text-info-700 hover:bg-info-100 transition cursor-pointer"
                       title="Open in new window if provider frame is restricted"
                     >
                       <ExternalLink size={14} />
@@ -1681,7 +1683,7 @@ function MandateStep({ lan, data, onNext }) {
                       type="button"
                       onClick={handleCloseModal}
                       disabled={isLoading}
-                      className="rounded-full p-2 text-slate-400 hover:bg-slate-200/80 hover:text-slate-700 transition cursor-pointer"
+                      className="rounded-full p-2 text-neutral-400 hover:bg-neutral-200/80 hover:text-neutral-700 transition cursor-pointer"
                       title="Close Window"
                     >
                       <X size={20} />
@@ -1701,9 +1703,9 @@ function MandateStep({ lan, data, onNext }) {
                 </div>
 
                 {/* Modal Footer */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3.5 bg-slate-50 text-xs">
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" />
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-5 py-3.5 bg-neutral-50 text-xs">
+                  <div className="flex items-center gap-2 text-neutral-600">
+                    <LoaderCircle className="h-4 w-4 animate-spin text-info-600" />
                     <span>Checking mandate status with your bank…</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1711,7 +1713,7 @@ function MandateStep({ lan, data, onNext }) {
                       type="button"
                       onClick={handleManualCheckStatus}
                       disabled={isLoading}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
                     >
                       {isLoading ? <LoaderCircle size={14} className="animate-spin" /> : <RotateCcw size={14} />}
                       <span>Refresh Status</span>
@@ -1719,7 +1721,7 @@ function MandateStep({ lan, data, onNext }) {
                     <button
                       type="button"
                       onClick={handleCloseModal}
-                      className="rounded-lg border border-slate-300 bg-slate-200/60 px-3 py-1.5 font-semibold text-slate-800 hover:bg-slate-300 transition cursor-pointer"
+                      className="rounded-lg border border-neutral-300 bg-neutral-200/60 px-3 py-1.5 font-semibold text-neutral-800 hover:bg-neutral-300 transition cursor-pointer"
                     >
                       Cancel / Close
                     </button>
@@ -1875,8 +1877,8 @@ function EsignStep({ lan, data, onNext }) {
           />
 
           {errorMsg && (
-            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4 text-xs font-medium text-red-800">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50/90 p-4 text-xs font-medium text-danger-800">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" />
               <div className="flex-1 leading-relaxed">{errorMsg}</div>
             </div>
           )}
@@ -1886,7 +1888,7 @@ function EsignStep({ lan, data, onNext }) {
               type="button"
               onClick={() => handleDownloadDocument('accepted')}
               disabled={downloadingDoc === 'accepted'}
-              className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-info-200 bg-info-50 px-4 py-2.5 text-xs font-bold text-info-700 transition hover:bg-info-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {downloadingDoc === 'accepted' ? <LoaderCircle size={14} className="animate-spin" /> : <ExternalLink size={14} />}
               <span>Download Accepted Agreement</span>
@@ -1896,7 +1898,7 @@ function EsignStep({ lan, data, onNext }) {
               type="button"
               onClick={() => handleDownloadDocument('audit')}
               disabled={downloadingDoc === 'audit'}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-xs font-bold text-neutral-700 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {downloadingDoc === 'audit' ? <LoaderCircle size={14} className="animate-spin" /> : <ExternalLink size={14} />}
               <span>Download Audit Certificate</span>
@@ -1912,9 +1914,9 @@ function EsignStep({ lan, data, onNext }) {
       ) : (
         <div>
           {/* Information & Preview Action */}
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-            <h4 className="text-sm font-bold text-slate-900 mb-1">Electronic Agreement Acceptance</h4>
-            <p className="text-xs text-slate-600 mb-4">
+          <div className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
+            <h4 className="text-sm font-bold text-neutral-900 mb-1">Electronic Agreement Acceptance</h4>
+            <p className="text-xs text-neutral-600 mb-4">
               Please preview your complete loan agreement. Once viewed, check the consent box and enter the OTP sent to your registered mobile number to execute acceptance.
             </p>
 
@@ -1922,13 +1924,13 @@ function EsignStep({ lan, data, onNext }) {
               <button
                 type="button"
                 onClick={handleOpenPreview}
-                className="inline-flex items-center gap-2 rounded-xl border border-blue-600 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl border border-info-600 bg-info-50 px-4 py-2.5 text-xs font-bold text-info-700 hover:bg-info-100 transition cursor-pointer"
               >
                 <Eye size={15} />
                 <span>View Agreement Document</span>
               </button>
               {documentViewed && (
-                <span className="inline-flex items-center gap-1 font-semibold text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                <span className="inline-flex items-center gap-1 font-semibold text-xs text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200">
                   <CheckCircle2 size={13} />
                   <span>Document Viewed</span>
                 </span>
@@ -1937,29 +1939,29 @@ function EsignStep({ lan, data, onNext }) {
           </div>
 
           {/* Consent Checkbox */}
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 bg-white shadow-xs">
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-neutral-200 p-4 bg-white shadow-xs">
             <input
               type="checkbox"
               id="esignConsent"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
               disabled={!documentViewed}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+              className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-info-600 focus:ring-info-500 cursor-pointer disabled:opacity-50"
             />
-            <label htmlFor="esignConsent" className="text-xs leading-relaxed text-slate-700 cursor-pointer">
+            <label htmlFor="esignConsent" className="text-xs leading-relaxed text-neutral-700 cursor-pointer">
               I confirm that I have read and understood the Personal Loan Agreement. I consent to execute and accept this agreement electronically using the OTP sent to my verified mobile number. I acknowledge that my authenticated session, document hash, timestamp, IP address and device information will be recorded as evidence of this acceptance.
             </label>
           </div>
 
           {errorMsg && (
-            <div className="mb-4 rounded-xl bg-red-50 p-3.5 text-xs text-red-700 flex items-start gap-2 border border-red-200">
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+            <div className="mb-4 rounded-xl bg-danger-50 p-3.5 text-xs text-danger-700 flex items-start gap-2 border border-danger-200">
+              <AlertCircle className="h-4 w-4 shrink-0 text-danger-600 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           {statusMsg && !errorMsg && (
-            <div className="mb-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800 font-medium border border-blue-200">
+            <div className="mb-4 rounded-xl bg-info-50 p-3 text-xs text-info-800 font-medium border border-info-200">
               {statusMsg}
             </div>
           )}
@@ -1977,30 +1979,23 @@ function EsignStep({ lan, data, onNext }) {
               </ActionButton>
             </div>
           ) : (
-            <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-5 mb-4">
+            <div className="rounded-2xl border border-info-100 bg-info-50/50 p-5 mb-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <label className="text-xs font-bold text-slate-900">
+                <label className="text-xs font-bold text-neutral-900">
                   Enter 6-Digit Signing OTP
                 </label>
-                <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-500">
+                <div className="flex items-center gap-3 text-[11px] font-semibold text-neutral-500">
                   <span>Sent to {maskedMobile}</span>
                   {expiresTimer > 0 && (
-                    <span className="text-blue-700 font-mono">
+                    <span className="text-info-700 font-mono">
                       Expires in {Math.floor(expiresTimer / 60)}:{(expiresTimer % 60).toString().padStart(2, '0')}
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="123456"
-                  className="w-full sm:w-48 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-center font-mono text-lg font-bold tracking-widest text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
-                />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <OtpInput length={6} value={otp} onChange={setOtp} autoFocus />
 
                 <div className="flex items-center gap-2">
                   <ActionButton
@@ -2016,7 +2011,7 @@ function EsignStep({ lan, data, onNext }) {
                     type="button"
                     onClick={handleSendOtp}
                     disabled={isLoading || resendTimer > 0}
-                    className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
+                    className="rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-xs font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 transition cursor-pointer"
                   >
                     {resendTimer > 0 ? `Resend (${resendTimer}s)` : 'Resend OTP'}
                   </button>
@@ -2027,25 +2022,25 @@ function EsignStep({ lan, data, onNext }) {
 
           {/* Document Preview Modal */}
           {isPreviewOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="relative w-full max-w-4xl h-[90vh] sm:h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-slate-50">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="relative w-full max-w-4xl h-[90vh] sm:h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-neutral-200">
+                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 bg-neutral-50">
                   <div className="flex items-center gap-2">
-                    <PenLine className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-base font-bold text-slate-900">Personal Loan Agreement Preview</h3>
+                    <PenLine className="h-5 w-5 text-info-600" />
+                    <h3 className="text-base font-bold text-neutral-900">Personal Loan Agreement Preview</h3>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsPreviewOpen(false)}
-                    className="rounded-full p-2 text-slate-400 hover:bg-slate-200/80 hover:text-slate-700 transition cursor-pointer"
+                    className="rounded-full p-2 text-neutral-400 hover:bg-neutral-200/80 hover:text-neutral-700 transition cursor-pointer"
                   >
                     <X size={20} />
                   </button>
                 </div>
 
-                <div className="flex-1 w-full bg-slate-100 relative overflow-hidden">
+                <div className="flex-1 w-full bg-neutral-100 relative overflow-hidden">
                   {previewLoading ? (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-slate-500">
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-500">
                       <LoaderCircle className="h-6 w-6 animate-spin" />
                       <span className="text-xs font-semibold">Loading agreement...</span>
                     </div>
@@ -2056,19 +2051,19 @@ function EsignStep({ lan, data, onNext }) {
                       className="h-full w-full border-0"
                     />
                   ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center text-slate-500">
-                      <AlertCircle className="h-6 w-6 text-red-500" />
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center text-neutral-500">
+                      <AlertCircle className="h-6 w-6 text-danger-500" />
                       <span className="text-xs font-semibold">{errorMsg || 'Unable to load the agreement.'}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3.5 bg-slate-50 text-xs">
-                  <span className="text-slate-600 font-medium">Please review all pages of your agreement before accepting.</span>
+                <div className="flex items-center justify-between border-t border-neutral-100 px-5 py-3.5 bg-neutral-50 text-xs">
+                  <span className="text-neutral-600 font-medium">Please review all pages of your agreement before accepting.</span>
                   <button
                     type="button"
                     onClick={() => setIsPreviewOpen(false)}
-                    className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition cursor-pointer"
+                    className="rounded-xl border border-info-600 bg-info-600 px-4 py-2 text-xs font-bold text-white hover:bg-info-700 transition cursor-pointer"
                   >
                     Close Preview
                   </button>
@@ -2140,53 +2135,53 @@ function DisbursalStep({ lan, data, onRefresh: _onRefresh, onGoToStep }) {
         {/* Case A: Already Disbursed */}
         {isDisbursed ? (
           <div className="text-center">
-            <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50">
+            <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-brand-100 text-brand-600 ring-8 ring-brand-50">
               <CheckCircle2 size={40} />
             </div>
-            <h3 className="mt-5 text-2xl font-extrabold text-slate-900">
+            <h3 className="mt-5 text-2xl font-extrabold text-neutral-900">
               Disbursement Successful!
             </h3>
-            <p className="mt-2 text-sm text-slate-600 max-w-md mx-auto">
-              The loan amount of <strong className="text-emerald-700">{disbursalAmount}</strong> has been credited to your bank account.
+            <p className="mt-2 text-sm text-neutral-600 max-w-md mx-auto">
+              The loan amount of <strong className="text-brand-700">{disbursalAmount}</strong> has been credited to your bank account.
             </p>
 
-            <div className="mt-6 max-w-lg mx-auto rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 text-left text-sm space-y-3">
-              <div className="flex justify-between border-b border-emerald-100 pb-2">
-                <span className="text-slate-500 font-medium">Loan Account Number (LAN)</span>
-                <span className="font-mono font-bold text-slate-900">{data?.loan?.lan}</span>
+            <div className="mt-6 max-w-lg mx-auto rounded-2xl border border-brand-200 bg-brand-50/50 p-5 text-left text-sm space-y-3">
+              <div className="flex justify-between border-b border-brand-100 pb-2">
+                <span className="text-neutral-500 font-medium">Loan Account Number (LAN)</span>
+                <span className="font-mono font-bold text-neutral-900">{data?.loan?.lan}</span>
               </div>
-              <div className="flex justify-between border-b border-emerald-100 pb-2">
-                <span className="text-slate-500 font-medium">Bank Name</span>
-                <span className="font-bold text-slate-900">{data?.bank?.bankName || '—'}</span>
+              <div className="flex justify-between border-b border-brand-100 pb-2">
+                <span className="text-neutral-500 font-medium">Bank Name</span>
+                <span className="font-bold text-neutral-900">{data?.bank?.bankName || '—'}</span>
               </div>
-              <div className="flex justify-between border-b border-emerald-100 pb-2">
-                <span className="text-slate-500 font-medium">Account Number</span>
-                <span className="font-mono font-bold text-slate-900">{data?.bank?.accountMasked || '—'}</span>
+              <div className="flex justify-between border-b border-brand-100 pb-2">
+                <span className="text-neutral-500 font-medium">Account Number</span>
+                <span className="font-mono font-bold text-neutral-900">{data?.bank?.accountMasked || '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Account Holder</span>
-                <span className="font-bold text-slate-900">{data?.bank?.accountHolderName || data?.customer?.fullName || '—'}</span>
+                <span className="text-neutral-500 font-medium">Account Holder</span>
+                <span className="font-bold text-neutral-900">{data?.bank?.accountHolderName || data?.customer?.fullName || '—'}</span>
               </div>
             </div>
           </div>
         ) : !allCompleted ? (
           /* Case B: Incomplete Steps */
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6 text-amber-950">
-            <div className="flex items-center gap-3 text-amber-800 font-bold text-lg">
+          <div className="rounded-2xl border border-caution-200 bg-caution-50/80 p-6 text-caution-950">
+            <div className="flex items-center gap-3 text-caution-800 font-bold text-lg">
               <AlertCircle size={22} />
               <span>Complete Pending Steps</span>
             </div>
-            <p className="mt-2 text-sm text-amber-900 leading-relaxed">
+            <p className="mt-2 text-sm text-caution-900 leading-relaxed">
               Disbursal cannot be requested until all post-approval steps are stored in the database. Please complete the following pending steps:
             </p>
             <ul className="mt-4 space-y-2">
               {missingSteps.map((step) => (
-                <li key={step.id} className="flex items-center justify-between rounded-xl bg-white/80 p-3 border border-amber-200 text-sm">
-                  <span className="font-semibold text-slate-800">{step.name}</span>
+                <li key={step.id} className="flex items-center justify-between rounded-xl bg-white/80 p-3 border border-caution-200 text-sm">
+                  <span className="font-semibold text-neutral-800">{step.name}</span>
                   <button
                     type="button"
                     onClick={() => onGoToStep(step.id)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-700 hover:text-brand-800 cursor-pointer"
                   >
                     Complete step <ChevronRight size={14} />
                   </button>
@@ -2197,33 +2192,33 @@ function DisbursalStep({ lan, data, onRefresh: _onRefresh, onGoToStep }) {
         ) : (
           /* Case C: All Completed & Ready for Disbursal */
           <div className="text-center">
-            <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-blue-100 text-blue-600 ring-8 ring-blue-50">
+            <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-info-100 text-info-600 ring-8 ring-info-50">
               <Landmark size={36} />
             </div>
-            <h3 className="mt-5 text-xl font-extrabold text-slate-900">
+            <h3 className="mt-5 text-xl font-extrabold text-neutral-900">
               All Steps Completed Successfully!
             </h3>
-            <p className="mt-2 text-sm text-slate-500 max-w-md mx-auto">
+            <p className="mt-2 text-sm text-neutral-500 max-w-md mx-auto">
               All your verification documents, bank details, KFS agreement, and mandate are verified and stored in the DB.
             </p>
 
-            <div className="mt-6 max-w-lg mx-auto rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left text-sm space-y-3">
-              <div className="flex justify-between border-b border-slate-200 pb-2">
-                <span className="text-slate-500 font-medium">Net Disbursal Amount</span>
-                <span className="font-extrabold text-emerald-700 text-base">{disbursalAmount}</span>
+            <div className="mt-6 max-w-lg mx-auto rounded-2xl border border-neutral-200 bg-neutral-50 p-5 text-left text-sm space-y-3">
+              <div className="flex justify-between border-b border-neutral-200 pb-2">
+                <span className="text-neutral-500 font-medium">Net Disbursal Amount</span>
+                <span className="font-extrabold text-brand-700 text-base">{disbursalAmount}</span>
               </div>
-              <div className="flex justify-between border-b border-slate-200 pb-2">
-                <span className="text-slate-500 font-medium">Destination Bank</span>
-                <span className="font-bold text-slate-900">{data?.bank?.bankName || '—'}</span>
+              <div className="flex justify-between border-b border-neutral-200 pb-2">
+                <span className="text-neutral-500 font-medium">Destination Bank</span>
+                <span className="font-bold text-neutral-900">{data?.bank?.bankName || '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Destination Account</span>
-                <span className="font-mono font-bold text-slate-900">{data?.bank?.accountMasked || '—'}</span>
+                <span className="text-neutral-500 font-medium">Destination Account</span>
+                <span className="font-mono font-bold text-neutral-900">{data?.bank?.accountMasked || '—'}</span>
               </div>
             </div>
 
             {errorMsg && (
-              <div className="mt-4 max-w-lg mx-auto rounded-xl bg-red-50 p-3 text-sm text-red-700 flex items-center gap-2 text-left">
+              <div className="mt-4 max-w-lg mx-auto rounded-xl bg-danger-50 p-3 text-sm text-danger-700 flex items-center gap-2 text-left">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{errorMsg}</span>
               </div>

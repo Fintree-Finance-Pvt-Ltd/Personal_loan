@@ -1029,11 +1029,25 @@ export class CustomerAadhaarKycService {
         ...(verifiedGender ? { verifiedGender } : {}),
       },
     });
-    const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
+    // addressLine1 previously required house/careOf/co/street to be non-empty, and if
+    // none of those four sub-fields were populated on this Aadhaar record (common —
+    // many real Aadhaar addresses have an empty "house" field with no fallback), the
+    // ENTIRE applicationAddress PERMANENT row was silently never created, even though
+    // Aadhaar verification itself succeeded. For a first-time customer (no prior
+    // application to backfill from — see saveApplicationAddress in customer.service.ts)
+    // this left them permanently stuck at "Permanent address must be saved first" with
+    // no way to proceed, since the UI only ever confirms CURRENT address and assumes
+    // PERMANENT already exists. city/state/pincode are far more reliably populated on
+    // any Aadhaar record, so only those three actually gate creation now; addressLine1
+    // falls back through locality/district/a formatted-address string rather than ever
+    // leaving the row unsaved.
+    const addressLine1 = String(
+      address.house || address.careOf || address.co || address.street || address.loc || address.landmark || address.dist || 'Address as per Aadhaar',
+    ).trim();
     const city = String(address.vtc || address.city || address.dist || '').trim();
     const state = String(address.state || '').trim();
     const pincode = String(address.pc || address.pincode || '').trim();
-    if (addressLine1 && city && state && /^[1-9][0-9]{5}$/.test(pincode)) {
+    if (city && state && /^[1-9][0-9]{5}$/.test(pincode)) {
       await this.prisma.applicationAddress.upsert({
         where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } },
         create: { applicationId: application.id, addressType: 'PERMANENT', source: 'DIGILOCKER', addressLine1, addressLine2: address.street || null, locality: address.loc || null, district: address.dist || null, city, state, pincode, country: address.country || 'India', sourceVerifiedAt: verifiedAt },

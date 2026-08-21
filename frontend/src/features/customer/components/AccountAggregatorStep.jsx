@@ -171,38 +171,61 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+    <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
       {/* Step Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
             <Building2 className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-950 sm:text-2xl">
-              Connect your bank account
+            <h2 className="text-xl font-bold text-neutral-950 sm:text-2xl">
+              Share your bank statement
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Account Aggregator Verification
+            <p className="mt-1 text-sm text-neutral-600">
+              Lets us verify your income without you uploading a single document
             </p>
           </div>
         </div>
 
         {status === 'SUCCESS' && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
             <CheckCircle2 className="h-4 w-4" /> Connected
           </span>
         )}
       </div>
 
-      <div className="mt-6 border-t border-slate-100 pt-6">
-        <p className="text-sm leading-relaxed text-slate-600">
-          Securely connect your bank through RBI-regulated Account Aggregator to share the bank statement information required for your loan assessment.
+      <div className="mt-6 border-t border-neutral-100 pt-6">
+        <p className="text-sm leading-relaxed text-neutral-600">
+          We use <strong>Account Aggregator</strong> — an RBI-regulated system banks use to share statements securely — instead of asking you to find and upload PDF statements yourself.
         </p>
 
+        {status === 'NOT_STARTED' && (
+          <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50/80 p-5">
+            <h4 className="flex items-center gap-2 text-sm font-bold text-neutral-900">
+              <ShieldCheck size={17} className="text-brand-600" />
+              What happens next
+            </h4>
+            <ol className="mt-3 space-y-2.5 text-xs leading-5 text-neutral-600">
+              <li className="flex gap-2.5">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-100 text-[10px] font-bold text-accent-700">1</span>
+                A secure window opens where you pick your bank from a list.
+              </li>
+              <li className="flex gap-2.5">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-100 text-[10px] font-bold text-accent-700">2</span>
+                Log in the way you normally do for that bank, and approve sharing your statement — you're never asked for your net-banking password here.
+              </li>
+              <li className="flex gap-2.5">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-100 text-[10px] font-bold text-accent-700">3</span>
+                Come back to this tab — we'll detect it automatically once it's done.
+              </li>
+            </ol>
+          </div>
+        )}
+
         {/* Security assurance banner */}
-        <div className="mt-4 flex items-center gap-3 rounded-xl bg-slate-50 p-3.5 text-xs text-slate-600">
-          <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-600" />
+        <div className="mt-4 flex items-center gap-3 rounded-xl bg-neutral-50 p-3.5 text-xs text-neutral-600">
+          <ShieldCheck className="h-5 w-5 shrink-0 text-brand-600" />
           <span>
             100% Encrypted & RBI Consent Compliant. No net-banking credentials or passwords are stored.
           </span>
@@ -210,16 +233,16 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
         {/* Popup blocked notice */}
         {popupBlocked && sdkUrl && (
-          <div className="mt-4 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-caution-200 bg-caution-50 p-4 text-xs text-caution-900">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+              <AlertTriangle className="h-4 w-4 shrink-0 text-caution-600" />
               <span>Browser blocked the popup window. Please click below to open the bank consent portal directly.</span>
             </div>
             <a
               href={sdkUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-2 whitespace-nowrap rounded-lg bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700"
+              className="ml-2 whitespace-nowrap rounded-lg bg-caution-600 px-3 py-1.5 font-semibold text-white hover:bg-caution-700"
             >
               Launch Portal
             </a>
@@ -234,7 +257,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
             <button
               onClick={handleConnectBank}
               disabled={loading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 text-base font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-600 px-6 py-3.5 text-base font-semibold text-white shadow-md transition-all hover:bg-accent-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {loading ? (
                 <>
@@ -253,15 +276,15 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
         {/* INITIATED / SDK_OPENED / CONSENT_PENDING */}
         {['INITIATED', 'SDK_OPENED', 'CONSENT_PENDING'].includes(status) && (
-          <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/50 p-5">
+          <div className="mt-6 rounded-xl border border-accent-100 bg-accent-50/50 p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+                <Loader2 className="h-5 w-5 animate-spin text-accent-600" />
                 <div>
-                  <h4 className="text-sm font-semibold text-indigo-950">
+                  <h4 className="text-sm font-semibold text-accent-950">
                     Bank Connection In Progress
                   </h4>
-                  <p className="text-xs text-indigo-700 sm:text-sm">
+                  <p className="text-xs text-accent-700 sm:text-sm">
                     {status === 'CONSENT_PENDING'
                       ? 'Waiting for your consent authorization...'
                       : 'Complete bank selection and OTP authorization in the secure window.'}
@@ -272,7 +295,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleOpenSdk}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-indigo-700"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-accent-700"
                 >
                   <ExternalLink className="h-3.5 w-3.5" /> Re-open Bank Consent Window
                 </button>
@@ -282,7 +305,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                     href={sdkUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
                     title="Open in new tab"
                   >
                     New Tab
@@ -291,7 +314,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
                 <button
                   onClick={fetchStatus}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-xs font-semibold text-accent-700 hover:bg-accent-100"
                   title="Check current bank connection status"
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Check Status
@@ -303,14 +326,14 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
         {/* CONSENT_APPROVED / DATA_PENDING */}
         {['CONSENT_APPROVED', 'DATA_PENDING'].includes(status) && (
-          <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-5">
+          <div className="mt-6 rounded-xl border border-info-100 bg-info-50/50 p-5">
             <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+              <Loader2 className="h-5 w-5 animate-spin text-info-600" />
               <div>
-                <h4 className="text-sm font-semibold text-blue-950">
+                <h4 className="text-sm font-semibold text-info-950">
                   Fetching Bank Statement Data
                 </h4>
-                <p className="text-xs text-blue-700">
+                <p className="text-xs text-info-700">
                   Consent approved! Retrieving and validating your bank account information securely...
                 </p>
               </div>
@@ -320,38 +343,38 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
         {/* SUCCESS */}
         {status === 'SUCCESS' && (
-          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-xs">
+          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50/80 p-5 shadow-xs">
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0" />
+              <CheckCircle2 className="h-6 w-6 text-brand-600 shrink-0" />
               <div>
-                <h4 className="text-base font-semibold text-emerald-950">
+                <h4 className="text-base font-semibold text-brand-950">
                   Bank Account Connected Successfully
                 </h4>
-                <p className="text-xs text-emerald-700">
+                <p className="text-xs text-brand-700">
                   Your bank statement details have been verified and processed for loan assessment.
                 </p>
               </div>
             </div>
 
             {bankSummary && (
-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 border-t border-emerald-200/80 pt-4">
-                <div className="rounded-xl bg-white p-3.5 border border-emerald-100 shadow-2xs">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Connected Bank</span>
-                  <span className="text-sm font-bold text-slate-900 mt-1 block">
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3 border-t border-brand-200/80 pt-4">
+                <div className="rounded-xl bg-white p-3.5 border border-brand-100 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">Connected Bank</span>
+                  <span className="text-sm font-bold text-neutral-900 mt-1 block">
                     {bankSummary.fipName || 'Bank Account'} ({bankSummary.accountNumberMasked || 'XXXX'})
                   </span>
-                  <span className="text-[11px] text-slate-500 block truncate">{bankSummary.accountHolderName || 'Savings Account'}</span>
+                  <span className="text-[11px] text-neutral-500 block truncate">{bankSummary.accountHolderName || 'Savings Account'}</span>
                 </div>
 
-                <div className="rounded-xl bg-white p-3.5 border border-emerald-100 shadow-2xs">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Current Balance</span>
-                  <span className="text-base font-bold text-slate-900 mt-1 block">
+                <div className="rounded-xl bg-white p-3.5 border border-brand-100 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block">Current Balance</span>
+                  <span className="text-base font-bold text-neutral-900 mt-1 block">
                     ₹{Number(bankSummary.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
 
-                <div className="rounded-xl bg-emerald-600 p-3.5 text-white shadow-xs">
-                  <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider block">Average Bank Balance (ABB)</span>
+                <div className="rounded-xl bg-brand-600 p-3.5 text-white shadow-xs">
+                  <span className="text-[11px] font-semibold text-brand-100 uppercase tracking-wider block">Average Bank Balance (ABB)</span>
                   <span className="text-base font-extrabold text-white mt-1 block">
                     ₹{Number(bankSummary.averageBalance || bankSummary.abb || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
@@ -363,11 +386,11 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
         {/* FAILED / CANCELLED / EXPIRED / REJECTED */}
         {(['FAILED', 'CANCELLED', 'EXPIRED'].includes(status) || consentStatus === 'REJECTED') && (
-          <div className="mt-6 rounded-xl border border-rose-200 bg-rose-50 p-5">
+          <div className="mt-6 rounded-xl border border-danger-200 bg-danger-50 p-5">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600" />
+              <AlertTriangle className="h-5 w-5 shrink-0 text-danger-600" />
               <div className="flex-1">
-                <h4 className="text-sm font-semibold text-rose-950">
+                <h4 className="text-sm font-semibold text-danger-950">
                   {consentStatus === 'REJECTED'
                     ? 'Consent Rejected — Please Select Another Bank'
                     : status === 'EXPIRED'
@@ -376,7 +399,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                     ? 'Connection Cancelled'
                     : 'Bank Connection Failed'}
                 </h4>
-                <p className="mt-1 text-xs text-rose-800 leading-relaxed">
+                <p className="mt-1 text-xs text-danger-800 leading-relaxed">
                   {consentStatus === 'REJECTED'
                     ? 'You have rejected consent for this bank account. Please select another bank account to continue your loan verification.'
                     : failureReason ||
@@ -391,7 +414,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                   <button
                     onClick={handleRetry}
                     disabled={loading}
-                    className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-lg bg-danger-600 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-danger-700 disabled:opacity-50 cursor-pointer"
                   >
                     <Building2 className="h-4 w-4" />
                     {consentStatus === 'REJECTED' ? 'Select Another Bank' : status === 'EXPIRED' ? 'Start Again' : 'Retry Bank Connection'}

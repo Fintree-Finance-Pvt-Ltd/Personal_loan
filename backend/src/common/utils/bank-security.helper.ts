@@ -1,16 +1,25 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
-const DEFAULT_ENCRYPTION_KEY = 'plp_default_bank_enc_key_32_bytes_long_secret_key!';
-const DEFAULT_HMAC_KEY = 'plp_default_bank_hmac_key_32_bytes_long_secret_key!';
 
+// VAPT C5: these used to silently fall back to a hardcoded, source-visible key if the
+// env vars were ever unset — "encryption" in name only for anyone with source access.
+// Both are now required (see environment.ts), so a missing/misconfigured deployment
+// fails loudly at startup instead of silently encrypting bank account numbers with a
+// key anyone can read on GitHub.
 function getEncryptionKey(): Buffer {
-  const rawKey = process.env.BANK_ACCOUNT_ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY;
+  const rawKey = process.env.BANK_ACCOUNT_ENCRYPTION_KEY;
+  if (!rawKey) {
+    throw new Error('BANK_ACCOUNT_ENCRYPTION_KEY is not configured.');
+  }
   return Buffer.from(rawKey.padEnd(32, '0').slice(0, 32), 'utf-8');
 }
 
 function getHmacKey(): Buffer {
-  const rawKey = process.env.BANK_ACCOUNT_HMAC_KEY || DEFAULT_HMAC_KEY;
+  const rawKey = process.env.BANK_ACCOUNT_HMAC_KEY;
+  if (!rawKey) {
+    throw new Error('BANK_ACCOUNT_HMAC_KEY is not configured.');
+  }
   return Buffer.from(rawKey.padEnd(32, '0').slice(0, 32), 'utf-8');
 }
 

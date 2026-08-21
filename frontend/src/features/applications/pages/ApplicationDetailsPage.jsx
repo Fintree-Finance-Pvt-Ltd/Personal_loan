@@ -33,6 +33,8 @@ export default function ApplicationDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retryingEventId, setRetryingEventId] = useState(null);
+  const [sendingWelcomeLetter, setSendingWelcomeLetter] = useState(false);
+  const [welcomeLetterMessage, setWelcomeLetterMessage] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -59,6 +61,19 @@ export default function ApplicationDetailsPage() {
       setError(apiError(err, 'Unable to retry this stage.'));
     } finally {
       setRetryingEventId(null);
+    }
+  };
+
+  const handleSendWelcomeLetter = async (lan) => {
+    setSendingWelcomeLetter(true);
+    setWelcomeLetterMessage(null);
+    try {
+      const result = await applicationsApi.resendWelcomeLetter(lan);
+      setWelcomeLetterMessage({ type: 'success', text: result?.message || 'Welcome letter sent.' });
+    } catch (err) {
+      setWelcomeLetterMessage({ type: 'error', text: apiError(err, 'Unable to send the welcome letter.') });
+    } finally {
+      setSendingWelcomeLetter(false);
     }
   };
 
@@ -142,12 +157,31 @@ export default function ApplicationDetailsPage() {
         <Card>
           <div className="text-xs font-semibold uppercase text-gray-500">Loan</div>
           {loan ? (
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-gray-500">LAN</dt><dd>{loan.lan}</dd></div>
-              <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd><StageStatusBadge value={loan.status} /></dd></div>
-              <div className="flex justify-between"><dt className="text-gray-500">Disbursal</dt><dd><StageStatusBadge value={loan.disbursalStatus} /></dd></div>
-              <div className="flex justify-between"><dt className="text-gray-500">Approved amount</dt><dd>{formatCurrency(loan.approvedAmount)}</dd></div>
-            </dl>
+            <>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex justify-between"><dt className="text-gray-500">LAN</dt><dd>{loan.lan}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd><StageStatusBadge value={loan.status} /></dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Disbursal</dt><dd><StageStatusBadge value={loan.disbursalStatus} /></dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Approved amount</dt><dd>{formatCurrency(loan.approvedAmount)}</dd></div>
+              </dl>
+              {(loan.status === 'DISBURSED' || loan.status === 'FULLY_PAID') && auth.hasPermission('LOAN_MANAGE') && (
+                <div className="mt-4 border-t pt-4">
+                  <button
+                    type="button"
+                    disabled={sendingWelcomeLetter}
+                    onClick={() => handleSendWelcomeLetter(loan.lan)}
+                    className="w-full rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                  >
+                    {sendingWelcomeLetter ? 'Sending…' : 'Send Welcome Letter'}
+                  </button>
+                  {welcomeLetterMessage && (
+                    <p className={`mt-2 text-xs ${welcomeLetterMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+                      {welcomeLetterMessage.text}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <p className="mt-3 text-sm text-gray-500">No loan created yet.</p>
           )}

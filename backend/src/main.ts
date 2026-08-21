@@ -2,11 +2,12 @@ import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, Request, Response, NextFunction } from 'express';
 import * as express from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { Logger } from "@nestjs/common";
+import { verifyDocumentUrlSignature } from './common/utils/document-url-signer.helper';
 
 // Enable JSON.stringify serialization for BigInt values returned by Prisma
 (BigInt.prototype as any).toJSON = function () {
@@ -36,6 +37,21 @@ async function bootstrap(): Promise<void> {
     }
   }));
   app.use(urlencoded({ extended: false, limit: config.getOrThrow<string>('REQUEST_BODY_LIMIT') }));
+  // VAPT C6: /uploads used to be a fully public, unauthenticated static directory —
+  // anyone on the internet, no login required, could fetch other customers' PAN card
+  // photos etc. by guessing filenames (sequential customerId + plain timestamp — see
+  // document-url-signer.helper.ts). Every request now requires a short-lived HMAC
+  // signature (?exp=&sig=), issued only by our own API responses when a document is
+  // legitimately served to its owner (or authorized staff). A bare /uploads/... link
+  // with no valid signature is now rejected outright, not served.
+  app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
+    const [pathname] = req.originalUrl.split('?');
+    if (!verifyDocumentUrlSignature(pathname, req.query.exp, req.query.sig)) {
+      res.status(403).json({ success: false, message: 'Missing or invalid document access signature.' });
+      return;
+    }
+    next();
+  });
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
   app.enableCors({

@@ -15,6 +15,8 @@ import { decryptBankAccountNumber } from '../../common/utils/bank-security.helpe
 import { normalizeDigitapDetails, sanitizeDigitapPayload } from './digilocker-normalizer';
 import { ProductCalculationService } from '../products/product-calculation.service';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
+import { EmailService } from '../otp/email/email.service';
+import { SigningStorageService } from '../electronic-sign/services/signing-storage.service';
 
 @Injectable()
 export class LoanService {
@@ -29,6 +31,8 @@ export class LoanService {
     private readonly configService: ConfigService,
     private readonly productCalculationService: ProductCalculationService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
+    private readonly emailService: EmailService,
+    private readonly signingStorageService: SigningStorageService,
   ) { }
 
 
@@ -2263,47 +2267,8 @@ export class LoanService {
     };
   }
 
-  async initiateEsign(lan: string, customerId: bigint) {
-    const loan = await this.findLoanByLanAndCustomer(lan, customerId);
-
-    if (!loan.mandateCompleted) {
-      throw new BadRequestException('Please complete e-Mandate setup before e-Signing loan agreement.');
-    }
-
-    const updatedLoan = await this.prisma.plLoan.update({
-      where: { id: loan.id },
-      data: {
-        esignCompleted: true,
-        esignCompletedAt: new Date(),
-        esignStatus: 'SUCCESS',
-        status: PlLoanStatus.READY_FOR_DISBURSAL,
-        currentStep: 'READY_FOR_DISBURSAL',
-      },
-    });
-
-    this.auditLogs
-      .record({
-        actorUserId: null,
-        module: 'LOAN',
-        action: 'ESIGN_COMPLETED',
-        entityType: 'PlLoan',
-        entityId: loan.id.toString(),
-        outcome: 'SUCCESS',
-        requestId: randomBytes(16).toString('hex'),
-      })
-      .catch(() => { });
-
-    return {
-      success: true,
-      message: 'e-Sign completed successfully',
-      nextStep: 'READY_FOR_DISBURSAL',
-      loan: {
-        lan: updatedLoan.lan,
-        esignCompleted: updatedLoan.esignCompleted,
-        currentStep: 'READY_FOR_DISBURSAL',
-      },
-    };
-  }
+  // initiateEsign was removed (VAPT C4) — it short-circuited straight to a signed state
+  // with no real signing. The real flow lives in electronic-sign.service.ts.
 
   async requestDisbursal(lan: string, customerId?: bigint) {
     const where: Prisma.PlLoanWhereInput = { lan };
@@ -2456,7 +2421,13 @@ export class LoanService {
 
     const payloadHash = createHash('sha256').update(JSON.stringify(sanitizedPayload)).digest('hex');
 
-    return await this.prisma.$transaction(async (tx) => {
+    // Captured only on the genuinely-fresh disbursal path below (never on the
+    // already-disbursed replay short-circuit) — the welcome-letter send after the
+    // transaction commits keys off this, not off `result.status`, since the replay
+    // branch also returns status: 'DISBURSED' and must NOT re-trigger the email.
+    let freshlyDisbursedCustomer: { id: bigint; email: string | null; fullName: string | null; firstName: string | null; middleName: string | null; lastName: string | null } | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Check Webhook Event Duplicate Inbox Record
       const existingEvent = await tx.disbursalWebhookEvent.findUnique({
         where: {
@@ -2623,6 +2594,10 @@ export class LoanService {
         },
       });
 
+      if (normalizedStatus === 'DISBURSED') {
+        freshlyDisbursedCustomer = loan.customer;
+      }
+
       return {
         success: true,
         status: normalizedStatus,
@@ -2633,6 +2608,95 @@ export class LoanService {
         firstRepaymentDate: firstRepaymentDate.toISOString().slice(0, 10),
       };
     });
+
+    // Fire-and-forget, same pattern as enqueueRepaymentNotification below: the
+    // disbursal itself already succeeded and committed by this point, so a failure to
+    // send the welcome letter (missing email, SMTP hiccup, agreement not found) must
+    // never fail the webhook response back to the lender/provider.
+    if (freshlyDisbursedCustomer) {
+      this.sendDisbursalWelcomeLetter(lan, freshlyDisbursedCustomer, {
+        disbursedAmount: amountNum,
+        firstRepaymentDate: firstRepaymentDate.toISOString().slice(0, 10),
+      }).catch((err) => {
+        this.logger.error(`Failed to send welcome letter for loan ${lan}: ${err?.message || err}`);
+      });
+    }
+
+    return result;
+  }
+
+  private async sendDisbursalWelcomeLetter(
+    lan: string,
+    customer: { id: bigint; email: string | null; fullName: string | null; firstName: string | null; middleName: string | null; lastName: string | null },
+    disbursal: { disbursedAmount: number; firstRepaymentDate: string },
+  ): Promise<void> {
+    if (!customer.email) {
+      this.logger.warn(`Skipping welcome letter for loan ${lan}: customer has no email on file.`);
+      return;
+    }
+
+    // Inlined rather than calling ElectronicSignService.getAcceptedDocument directly:
+    // that service's module transitively imports puppeteer (PDF generation), which
+    // Jest can't parse — pulling it into LoanService broke every test that loads
+    // loan.service.ts. This replicates that method's small lookup using only
+    // SigningStorageService, which has no such dependency chain.
+    const signedTx = await this.prisma.plElectronicSignTransaction.findFirst({
+      where: { lan, customerId: customer.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!signedTx || !signedTx.acceptedDocumentPath || signedTx.status !== 'SIGNED') {
+      throw new Error(`No accepted, signed agreement found for loan ${lan}.`);
+    }
+    const agreement = {
+      buffer: this.signingStorageService.readBuffer(signedTx.acceptedDocumentPath),
+      filename: `Agreement_${lan}_Accepted.pdf`,
+    };
+
+    const customerName =
+      customer.fullName ||
+      [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' ').trim() ||
+      'Customer';
+
+    await this.emailService.sendWelcomeLetter(
+      customer.email,
+      {
+        customerName,
+        lan,
+        disbursedAmount: disbursal.disbursedAmount,
+        disbursalDate: new Date().toISOString().slice(0, 10),
+        firstRepaymentDate: disbursal.firstRepaymentDate,
+      },
+      { filename: agreement.filename, content: agreement.buffer },
+    );
+
+    this.logger.log(`Welcome letter sent for loan ${lan} to ${customer.email}.`);
+  }
+
+  /**
+   * Admin-triggered resend (e.g. the automatic one at disbursal-webhook time failed
+   * silently — no email on file at that moment, SMTP hiccup, etc.). Unlike the
+   * automatic send, this is NOT fire-and-forget: an admin clicking "Send Welcome
+   * Letter" needs to see whether it actually worked.
+   */
+  async resendWelcomeLetter(lan: string): Promise<{ success: true; message: string }> {
+    const loan = await this.prisma.plLoan.findFirst({
+      where: { lan },
+      include: { customer: true },
+    });
+    if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+    if (loan.status !== PlLoanStatus.DISBURSED && loan.status !== PlLoanStatus.FULLY_PAID) {
+      throw new BadRequestException(`Loan ${lan} has not been disbursed yet — nothing to send.`);
+    }
+    if (!loan.disbursalAmount || !loan.firstRepaymentDate) {
+      throw new BadRequestException(`Loan ${lan} is missing disbursal details required for the welcome letter.`);
+    }
+
+    await this.sendDisbursalWelcomeLetter(lan, loan.customer, {
+      disbursedAmount: Number(loan.disbursalAmount),
+      firstRepaymentDate: loan.firstRepaymentDate.toISOString().slice(0, 10),
+    });
+
+    return { success: true, message: `Welcome letter sent to ${loan.customer.email}.` };
   }
 
   private calculateRpsRows(
@@ -3276,9 +3340,10 @@ export class LoanService {
     const instNum = Number(installmentNumberInput);
     if (!lan) throw new BadRequestException('LAN is required.');
     if (!instNum || instNum < 1) throw new BadRequestException('Valid installmentNumber is required.');
+    const customerId = BigInt(customerIdInput);
 
     const loan = await this.prisma.plLoan.findFirst({
-      where: { lan },
+      where: { lan, customerId },
       include: { customer: true },
     });
     if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
@@ -3306,6 +3371,28 @@ export class LoanService {
       [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' ').trim() ||
       'Customer';
     const txnid = `RPY-${loan.id}-${instNum}-${Date.now()}`;
+
+    // Server-side snapshot of what this transaction is actually for. The Easebuzz
+    // webhook (handleEasebuzzWebhook) looks this row up by txnid after verifying the
+    // provider's signature, and credits the repayment using THESE stored lan/installment/
+    // amount values — never anything read back from the webhook payload itself. This is
+    // what closes the forged-repayment hole (VAPT C1/C2): without this row, a webhook
+    // (or a client calling repay/confirm directly) had nothing trustworthy to check
+    // installmentNumber/amount against.
+    await this.prisma.plPaymentLink.create({
+      data: {
+        applicationId: loan.applicationId,
+        customerId: loan.customerId,
+        customerName,
+        mobile: customer.mobileNumber || null,
+        email: customer.email || null,
+        purpose: 'OTHER',
+        amount: new Prisma.Decimal(payAmount),
+        txnid,
+        status: 'INITIATED',
+        rawRequest: JSON.stringify({ kind: 'EMI_REPAYMENT', lan, installmentNumber: instNum }),
+      },
+    });
 
     const successUrl =
       this.configService.get<string>('EASEBUZZ_SUCCESS_URL') ||
@@ -3339,6 +3426,45 @@ export class LoanService {
       lan,
       installmentNumber: instNum,
       amount: payAmount,
+    };
+  }
+
+  /**
+   * Customer-facing "did my payment go through" check. Deliberately read-only: it never
+   * writes a repayment itself. The only thing that actually credits money is the
+   * Easebuzz-signature-verified webhook (see PlPaymentsService.handleEasebuzzWebhook),
+   * which updates this same PlPaymentLink row once the provider confirms success. This
+   * closes VAPT C1 — a customer/attacker can no longer POST an arbitrary amount/
+   * installmentNumber and have it trusted.
+   */
+  async confirmRepaymentStatus(lanInput: string, customerId: bigint, txnidInput: string) {
+    const lan = String(lanInput || '').trim();
+    const txnid = String(txnidInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+    if (!txnid) throw new BadRequestException('A valid txnid from repay/initiate is required.');
+
+    const loan = await this.prisma.plLoan.findFirst({ where: { lan, customerId } });
+    if (!loan) throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+
+    const link = await this.prisma.plPaymentLink.findFirst({
+      where: { txnid, customerId, applicationId: loan.applicationId },
+    });
+    if (!link) throw new NotFoundException('No matching repayment transaction found for this loan.');
+
+    const paymentCompleted = link.status === 'SUCCESS';
+    const paymentFailed = link.status === 'FAILED';
+
+    return {
+      success: true,
+      message: paymentCompleted
+        ? 'Payment verified and completed successfully.'
+        : paymentFailed
+          ? 'Payment was not completed.'
+          : 'Payment is being verified. This can take a few seconds — please check again shortly.',
+      paymentCompleted,
+      paymentFailed,
+      status: link.status,
+      txnid: link.txnid,
     };
   }
 

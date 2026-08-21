@@ -13,6 +13,17 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     configureSessionExpiry(clear);
+
+    // This provider wraps the whole app (see main.jsx), including customer-facing routes,
+    // which have their own entirely separate auth system (see features/customer/customerApi.js).
+    // A customer obviously has no admin session, so attempting an admin token refresh on
+    // every customer page load/reload is pure waste — one guaranteed-401 network call plus
+    // an alarming-looking console error, with zero effect on the (unrelated) customer flow.
+    if (!window.location.pathname.startsWith('/admin-master')) {
+      clear();
+      return;
+    }
+
     let active = true;
     refreshAccess()
       .then(() => api.get('/auth/admin/me'))

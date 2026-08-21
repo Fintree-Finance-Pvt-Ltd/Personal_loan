@@ -113,5 +113,12 @@ export class AdminLoanServicingController {
     }
     return this.easebuzzCollectionCronService.retryDebit(rpsId, 'MANUAL');
   }
+
+  @Permissions('LOAN_MANAGE')
+  @Post(':lan/welcome-letter/resend')
+  @HttpCode(HttpStatus.OK)
+  resendWelcomeLetter(@Param('lan') lan: string) {
+    return this.loanService.resendWelcomeLetter(lan);
+  }
 }
 

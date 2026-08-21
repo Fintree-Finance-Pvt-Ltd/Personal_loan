@@ -2,7 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens — the ONLY place app colors are defined. tailwind.config.js maps each
+ * Tailwind color name (brand-500, neutral-200, ...) to one of these variables, so every
+ * component using those classes stays in sync automatically. To re-theme the app, edit
+ * values here — never add a new raw Tailwind color (bg-emerald-600, text-slate-500, etc.)
+ * to a component; use the matching semantic scale instead (bg-brand-600, text-neutral-500).
+ *
+ * Roles:
+ *   brand   — primary identity color (buttons, links, active states, the "Fintree green")
+ *   neutral — UI ink/surface grays (text, borders, backgrounds)
+ *   info    — informational status (processing, pending, neutral-positive states)
+ *   accent  — secondary highlight (loan-account/reference data, decorative emphasis)
+ *   caution — warning status (attention needed, in-review, disbursal-in-flight)
+ *   danger  — error/failure/destructive status
+ */
 :root {
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
+  --color-brand-400: #34d399;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+  --color-brand-950: #022c22;
+
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
+  --color-neutral-950: #020617;
+
+  --color-info-50: #eff6ff;
+  --color-info-100: #dbeafe;
+  --color-info-200: #bfdbfe;
+  --color-info-300: #93c5fd;
+  --color-info-400: #60a5fa;
+  --color-info-500: #3b82f6;
+  --color-info-600: #2563eb;
+  --color-info-700: #1d4ed8;
+  --color-info-800: #1e40af;
+  --color-info-900: #1e3a8a;
+  --color-info-950: #172554;
+
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-200: #ddd6fe;
+  --color-accent-300: #c4b5fd;
+  --color-accent-400: #a78bfa;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+  --color-accent-700: #6d28d9;
+  --color-accent-800: #5b21b6;
+  --color-accent-900: #4c1d95;
+  --color-accent-950: #2e1065;
+
+  --color-caution-50: #fffbeb;
+  --color-caution-100: #fef3c7;
+  --color-caution-200: #fde68a;
+  --color-caution-300: #fcd34d;
+  --color-caution-400: #fbbf24;
+  --color-caution-500: #f59e0b;
+  --color-caution-600: #d97706;
+  --color-caution-700: #b45309;
+  --color-caution-800: #92400e;
+  --color-caution-900: #78350f;
+  --color-caution-950: #451a03;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
+  --color-danger-300: #fca5a5;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-danger-800: #991b1b;
+  --color-danger-900: #7f1d1d;
+  --color-danger-950: #450a0a;
+
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #102a2e;
   background: #f5f8f7;
@@ -13,3 +100,74 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input { font: inherit; }
 :focus-visible { outline: 3px solid rgba(15, 138, 120, .35); outline-offset: 2px; }
+
+/*
+ * Step-transition motion. Applied by the wizard components (MyApplicationPage,
+ * PostApprovalJourneyPage) to whichever step/card is currently mounted, keyed by a
+ * per-step React `key` so the animation replays every time the visible step changes.
+ * Kept as plain CSS (no animation library) to avoid adding a new dependency for this.
+ */
+@keyframes step-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-step-enter {
+  animation: step-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+
+.animate-pop-in {
+  animation: pop-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-step-enter,
+  .animate-fade-in,
+  .animate-pop-in {
+    animation: none;
+  }
+}
+
+/* Applies a staggered pop-in to each direct child — e.g. a grid of summary cards on
+   page load. Pure CSS, no per-item props required. */
+.stagger-children > * {
+  animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-children > * {
+    animation: none;
+  }
+}

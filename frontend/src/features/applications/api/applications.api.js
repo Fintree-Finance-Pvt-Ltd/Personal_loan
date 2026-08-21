@@ -29,4 +29,8 @@ export const applicationsApi = {
     });
     return res.data.data;
   },
+  resendWelcomeLetter: async (lan) => {
+    const res = await api.post(`/admin/loans/${lan}/welcome-letter/resend`);
+    return res.data.data;
+  },
 };

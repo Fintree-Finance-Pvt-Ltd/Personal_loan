@@ -29,6 +29,8 @@ const buildService = () => {
     {} as any, // configService
     {} as any, // productCalculationService
     lenderIntegrationOutbox,
+    {} as any, // emailService
+    {} as any, // electronicSignService
   );
   return { service, prisma, auditLogs, lenderIntegrationOutbox };
 };

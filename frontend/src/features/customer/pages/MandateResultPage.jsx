@@ -82,40 +82,40 @@ export default function MandateResultPage() {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center p-4">
-      <div className="mx-auto max-w-md w-full rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+      <div className="mx-auto max-w-md w-full rounded-3xl border border-neutral-200 bg-white p-8 text-center shadow-xl">
         {statusState === 'CONFIRMING' && (
           <div>
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-blue-50 text-blue-600 ring-8 ring-blue-50/50">
-              <LoaderCircle size={36} className="animate-spin text-blue-600" />
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-info-50 text-info-600 ring-8 ring-info-50/50">
+              <LoaderCircle size={36} className="animate-spin text-info-600" />
             </div>
-            <h3 className="mt-5 text-xl font-extrabold text-slate-900">Verifying Mandate Status</h3>
-            <p className="mt-2 text-sm text-slate-500">{message}</p>
+            <h3 className="mt-5 text-xl font-extrabold text-neutral-900">Verifying Mandate Status</h3>
+            <p className="mt-2 text-sm text-neutral-500">{message}</p>
           </div>
         )}
 
         {statusState === 'SUCCESS' && (
           <div>
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-100 text-brand-600 ring-8 ring-brand-50">
               <CheckCircle2 size={36} />
             </div>
-            <h3 className="mt-5 text-xl font-extrabold text-slate-900">Mandate Authorized!</h3>
-            <p className="mt-2 text-sm text-emerald-700 font-medium">{message}</p>
+            <h3 className="mt-5 text-xl font-extrabold text-neutral-900">Mandate Authorized!</h3>
+            <p className="mt-2 text-sm text-brand-700 font-medium">{message}</p>
           </div>
         )}
 
         {(statusState === 'FAILED' || statusState === 'PENDING') && (
           <div>
-            <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${statusState === 'FAILED' ? 'bg-red-100 text-red-600 ring-8 ring-red-50' : 'bg-amber-100 text-amber-600 ring-8 ring-amber-50'}`}>
+            <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${statusState === 'FAILED' ? 'bg-danger-100 text-danger-600 ring-8 ring-danger-50' : 'bg-caution-100 text-caution-600 ring-8 ring-caution-50'}`}>
               <AlertCircle size={36} />
             </div>
-            <h3 className="mt-5 text-xl font-extrabold text-slate-900">
+            <h3 className="mt-5 text-xl font-extrabold text-neutral-900">
               {statusState === 'FAILED' ? 'Mandate Not Authorized' : 'Verification In Progress'}
             </h3>
-            <p className="mt-2 text-sm text-slate-600">{message}</p>
+            <p className="mt-2 text-sm text-neutral-600">{message}</p>
             <button
               type="button"
               onClick={handleReturn}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow hover:bg-emerald-700 transition cursor-pointer"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow hover:bg-brand-700 transition cursor-pointer"
             >
               <span>Return to Loan Journey</span>
               <ArrowRight size={16} />

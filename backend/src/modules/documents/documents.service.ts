@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { signDocumentUrl } from '../../common/utils/document-url-signer.helper';
 
 @Injectable()
 export class DocumentsService {
@@ -192,6 +193,7 @@ export class DocumentsService {
       applicationId: doc.applicationId?.toString() ?? null,
       createdBy: doc.createdBy?.toString() ?? null,
       updatedBy: doc.updatedBy?.toString() ?? null,
+      fileUrl: signDocumentUrl(doc.fileUrl),
     };
   }
 }

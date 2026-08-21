@@ -3,12 +3,12 @@ export default function CustomerPlaceholderPage({
   description,
 }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h2 className="text-2xl font-bold text-slate-900">
+    <section className="rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm">
+      <h2 className="text-2xl font-bold text-neutral-900">
         {title}
       </h2>
 
-      <p className="mt-2 text-sm text-slate-500">
+      <p className="mt-2 text-sm text-neutral-500">
         {description}
       </p>
     </section>

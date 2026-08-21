@@ -34,6 +34,7 @@ import {
   maskBankAccountNumber,
   maskIfscForAudit,
 } from '../../common/utils/bank-security.helper';
+import { signDocumentUrl } from '../../common/utils/document-url-signer.helper';
 import {
   FinanalyzPanResponse,
   NormalizedPanVerificationData,
@@ -1469,7 +1470,7 @@ export class ExternalApiService {
         fatherName,
         provider: responseData?.provider || 'FINANALYZ_OCR',
         filePath: relativePath,
-        fileUrl,
+        fileUrl: signDocumentUrl(fileUrl),
         rawResponse: responseData,
       },
     };

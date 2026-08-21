@@ -75,17 +75,17 @@ export default function CustomerSidebar({ isOpen, onClose }) {
           type="button"
           aria-label="Close sidebar"
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-neutral-950/50 backdrop-blur-sm lg:hidden"
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-neutral-200 bg-white transition-transform duration-300 lg:tranneutral-x-0 ${isOpen ? 'tranneutral-x-0' : '-tranneutral-x-full'
           }`}
       >
         {/* Logo */}
         {/* Logo */}
-        <div className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 px-6">
+        <div className="flex h-20 shrink-0 items-center justify-between border-b border-neutral-200 px-6">
           <button
             type="button"
             onClick={() =>
@@ -103,7 +103,7 @@ export default function CustomerSidebar({ isOpen, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+            className="grid h-10 w-10 place-items-center rounded-xl text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900 lg:hidden"
             aria-label="Close menu"
           >
             <X size={21} />
@@ -112,23 +112,23 @@ export default function CustomerSidebar({ isOpen, onClose }) {
 
         {/* Customer card */}
         <div className="shrink-0 px-5 py-4">
-          <div className="rounded-2xl bg-gradient-to-br from-emerald-700 to-emerald-500 p-4 text-white shadow-lg shadow-emerald-600/15">
+          <div className="rounded-2xl bg-gradient-to-br from-brand-700 to-brand-500 p-4 text-white shadow-lg shadow-brand-600/15">
             <div className="flex items-center gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/20">
                 <User size={18} />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold">Customer</p>
-                <p className="truncate text-xs text-emerald-100">{maskedMobile}</p>
+                <p className="truncate text-xs text-brand-100">{maskedMobile}</p>
               </div>
-              <BadgeCheck size={18} className="ml-auto shrink-0 text-emerald-200" />
+              <BadgeCheck size={18} className="ml-auto shrink-0 text-brand-200" />
             </div>
           </div>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-4 pb-4">
-          <p className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">
+          <p className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[0.15em] text-neutral-400">
             Main Menu
           </p>
 
@@ -142,8 +142,8 @@ export default function CustomerSidebar({ isOpen, onClose }) {
                   onClick={onClose}
                   className={({ isActive }) =>
                     `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${isActive
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-brand-50 text-brand-700'
+                      : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
                     }`
                   }
                 >
@@ -151,8 +151,8 @@ export default function CustomerSidebar({ isOpen, onClose }) {
                     <>
                       <span
                         className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${isActive
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-100 text-slate-500'
+                          ? 'bg-brand-100 text-brand-700'
+                          : 'bg-neutral-100 text-neutral-500'
                           }`}
                       >
                         <Icon size={18} />
@@ -168,28 +168,28 @@ export default function CustomerSidebar({ isOpen, onClose }) {
           {/* Loan Journey active indicator */}
           {isOnJourney && (
             <div className="mt-4">
-              <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">
+              <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.15em] text-neutral-400">
                 Active Journey
               </p>
-              <div className="flex items-center gap-3 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
+              <div className="flex items-center gap-3 rounded-xl bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-100 text-brand-700">
                   <BadgeCheck size={18} />
                 </span>
                 <span>Loan Journey</span>
-                <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-500" />
+                <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-500" />
               </div>
             </div>
           )}
         </nav>
 
         {/* Logout */}
-        <div className="shrink-0 border-t border-slate-200 p-4">
+        <div className="shrink-0 border-t border-neutral-200 p-4">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-danger-600 transition hover:bg-danger-50"
           >
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-red-500">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-danger-50 text-danger-500">
               <LogOut size={18} />
             </span>
             Logout

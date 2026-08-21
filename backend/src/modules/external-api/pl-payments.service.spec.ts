@@ -3,6 +3,7 @@ import { PlPaymentsService } from './pl-payments.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
+import { LoanService } from '../loan/loan.service';
 
 // Mock easebuzz-iframe.integration
 jest.mock('../../integrations/easebuzz-iframe.integration', () => ({
@@ -45,12 +46,16 @@ describe('PlPaymentsService - Webhook Security', () => {
       recordDataSharingConsent: jest.fn(),
       enqueueCreateAfterVerifiedPayment: jest.fn().mockResolvedValue({ id: 'OUTBOX-1' }),
     };
+    const loanService = {
+      processRepayment: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlPaymentsService,
         { provide: PrismaService, useValue: prisma },
         { provide: LenderIntegrationOutboxService, useValue: lenderIntegrationOutbox },
+        { provide: LoanService, useValue: loanService },
       ],
     }).compile();
 
