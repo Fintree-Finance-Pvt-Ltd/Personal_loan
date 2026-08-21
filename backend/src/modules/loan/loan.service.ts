@@ -235,6 +235,16 @@ export class LoanService {
   async getPostApprovalJourney(lan: string, customerId: bigint) {
     const loan = await this.findLoanByLanAndCustomer(lan, customerId);
 
+    // The lender name below used to be a hardcoded literal regardless of which lender
+    // was actually allocated — this platform allocates across multiple lenders (see
+    // the MLM allocation engine), so a loan on a different lender would have shown the
+    // wrong name to the customer on every document/screen that reads this response.
+    let lenderDisplayName = 'Lending Partner';
+    if (loan.lenderCode) {
+      const lenderRecord = await this.prisma.lender.findUnique({ where: { code: loan.lenderCode } });
+      lenderDisplayName = lenderRecord?.displayName ?? lenderRecord?.legalName ?? lenderDisplayName;
+    }
+
     // Fire-and-forget audit log — customer ID is not an admin user, so actorUserId is null
     this.auditLogs.record({
       actorUserId: null,
@@ -452,7 +462,7 @@ export class LoanService {
       },
       lender: {
         code: loan.lenderCode,
-        name: 'Fintree Finance Private Limited',
+        name: lenderDisplayName,
       },
       offer: {
         offerStatus: loan.offerStatus,

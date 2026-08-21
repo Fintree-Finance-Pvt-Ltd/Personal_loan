@@ -556,8 +556,8 @@ export default function MyApplicationPage() {
       }
       setApplicationSubmitted(wf.applicationSubmitted);
 
-      if (customerData.latestApplicationId) {
-        setApplicationNumber(`PL-APP-${customerData.latestApplicationId}`);
+      if (customerData.latestApplicationReference) {
+        setApplicationNumber(customerData.latestApplicationReference);
       }
 
       if (customerData.panVerified) {
@@ -1770,7 +1770,7 @@ export default function MyApplicationPage() {
       });
       await acceptLenderDecisionConsents();
       const res = await submitCustomerApplication(customerId);
-      const appNum = res?.applicationNumber || `PL-APP-${Date.now()}`;
+      const appNum = res?.applicationNumber || '';
 
       setApplicationNumber(appNum);
       setSubmissionData(res);

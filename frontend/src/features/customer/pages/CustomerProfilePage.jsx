@@ -335,7 +335,7 @@ export function CustomerProfilePage() {
             </div>
             <div>
               <h4 className="font-bold text-neutral-900 text-base">Active Loan Account ({customer.latestLan})</h4>
-              <p className="text-xs text-neutral-500">Application Number: {customer.latestApplicationId ? `PL-APP-${customer.latestApplicationId}` : '—'}</p>
+              <p className="text-xs text-neutral-500">Application Number: {customer.latestApplicationReference || '—'}</p>
             </div>
           </div>
 
