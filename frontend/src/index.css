@@ -134,16 +134,27 @@ button, input { font: inherit; }
   }
 }
 
+/* fill-mode is "backwards", not "both" — "both" holds the end keyframe's transform
+   permanently after the animation finishes (even the neutral translateY(0) scale(1)),
+   and any non-"none" transform on an ancestor becomes a containing block for
+   position:fixed descendants. That silently broke full-viewport fixed overlays (e.g.
+   the Easebuzz payment widget) mounted anywhere under a step using this class — they'd
+   get scoped to the small step container instead of the real viewport and collapse to
+   nothing. "backwards" keeps the pre-animation state applied before it starts (so
+   there's no flash-of-unanimated-content) but reverts to the element's normal,
+   non-transformed style once the 0.42s animation completes — visually identical end
+   state, since translateY(0) scale(1) already looks like no transform. */
 .animate-step-enter {
-  animation: step-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: step-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out both;
 }
 
+/* backwards, not both — same containing-block reasoning as .animate-step-enter above. */
 .animate-pop-in {
-  animation: pop-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: pop-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -157,7 +168,7 @@ button, input { font: inherit; }
 /* Applies a staggered pop-in to each direct child — e.g. a grid of summary cards on
    page load. Pure CSS, no per-item props required. */
 .stagger-children > * {
-  animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
 .stagger-children > *:nth-child(2) { animation-delay: 60ms; }
