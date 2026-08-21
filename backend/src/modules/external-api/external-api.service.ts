@@ -35,6 +35,7 @@ import {
   maskIfscForAudit,
 } from '../../common/utils/bank-security.helper';
 import { signDocumentUrl } from '../../common/utils/document-url-signer.helper';
+import { namesLikelyMatch } from '../../common/utils/name-matcher.helper';
 import {
   FinanalyzPanResponse,
   NormalizedPanVerificationData,
@@ -1230,6 +1231,17 @@ export class ExternalApiService {
         });
       }
 
+      // Direct Aadhaar-vs-bank name check, alongside the existing PAN-anchored one
+      // above (which compares against loan.customer.fullName — the PAN-verified name).
+      // Not a new blocking gate: the PAN-anchored check already blocks on mismatch, and
+      // this is the first time these two are compared directly rather than only via
+      // PAN as an intermediary. Local matcher, no third-party call — see
+      // checkPanAadhaarNameConsistency in customer-aadhaar-kyc.service.ts for the same
+      // reasoning applied to PAN vs Aadhaar.
+      const aadhaarBankMatch = loan.aadhaarVerifiedName && providerBeneficiaryName
+        ? namesLikelyMatch(loan.aadhaarVerifiedName, providerBeneficiaryName)
+        : null;
+
       await tx.plLoanAuditEvent.create({
         data: {
           loanId: loan.id,
@@ -1252,6 +1264,7 @@ export class ExternalApiService {
             fuzzyMatchScore,
             nameMatchThreshold,
             status,
+            ...(aadhaarBankMatch ? { aadhaarBankNameScore: aadhaarBankMatch.score, aadhaarBankNameMatched: aadhaarBankMatch.matched } : {}),
           },
 
           ipAddress,

@@ -14,6 +14,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { namesLikelyMatch } from '../../common/utils/name-matcher.helper';
 
 @Injectable()
 export class CustomerAadhaarKycService {
@@ -1054,6 +1055,48 @@ export class CustomerAadhaarKycService {
         update: { source: 'DIGILOCKER', addressLine1, addressLine2: address.street || null, locality: address.loc || null, district: address.dist || null, city, state, pincode, country: address.country || 'India', sourceVerifiedAt: verifiedAt },
       });
     }
+
+    await this.checkPanAadhaarNameConsistency(customerId, application.id, verifiedName);
+  }
+
+  /**
+   * Fraud-prevention: PAN and Aadhaar are two independently-verified identity
+   * documents, and until now nothing ever compared the names on them —
+   * Customer.fullName is set by PAN verification and deliberately never overwritten
+   * by Aadhaar (see the create/update above), so a customer completing PAN as one
+   * identity and Aadhaar as another would go completely unnoticed. This doesn't block
+   * the journey (name variations between PAN/Aadhaar are common enough in India —
+   * transliteration, missing middle names, reordering — that a hard block risks
+   * rejecting real customers); it logs a tamper-evident audit event so admins can
+   * review it. Uses a local matcher, not Digio's paid fuzzy-match API, since both
+   * names are already verified and already in our own DB — no new external call needed.
+   */
+  private async checkPanAadhaarNameConsistency(customerId: bigint, applicationId: bigint, aadhaarVerifiedName: string | null) {
+    if (!aadhaarVerifiedName) return;
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { fullName: true, panVerified: true, panNumber: true },
+    });
+    if (!customer?.panVerified || !customer.fullName) return;
+
+    const { score, matched } = namesLikelyMatch(customer.fullName, aadhaarVerifiedName);
+
+    if (!matched) {
+      this.logger.warn(`PAN/Aadhaar name mismatch flagged for customer ${customerId}: PAN="${customer.fullName}" Aadhaar="${aadhaarVerifiedName}" score=${score}`);
+    }
+
+    await this.auditLogs
+      .record({
+        actorUserId: null,
+        module: 'IDENTITY_VERIFICATION',
+        action: matched ? 'PAN_AADHAAR_NAME_MATCHED' : 'PAN_AADHAAR_NAME_MISMATCH',
+        entityType: 'PlApplication',
+        entityId: applicationId.toString(),
+        outcome: matched ? 'SUCCESS' : 'DENIED',
+        newValue: { panName: customer.fullName, aadhaarName: aadhaarVerifiedName, score, matched },
+        requestId: randomBytes(16).toString('hex'),
+      })
+      .catch(() => { /* non-critical */ });
   }
 
   /**
