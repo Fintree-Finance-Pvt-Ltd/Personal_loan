@@ -15,7 +15,8 @@ describe('EasyCollect Mandate Webhook Forwarding', () => {
       forwardToEasycollectMandateWebhook: jest.fn(),
     } as any;
 
-    webhooksService = new WebhooksService(loanService);
+    const plPaymentsService = { handleEasebuzzWebhook: jest.fn() } as any;
+    webhooksService = new WebhooksService(loanService, plPaymentsService);
     controller = new WebhooksController(webhooksService, new ConfigService());
   });
 
@@ -68,6 +69,8 @@ describe('EasyCollect Mandate Webhook Forwarding', () => {
         { get: jest.fn() } as any,
         {} as any,
         {} as any,
+        {} as any,
+        {} as any,
       );
 
       const forwardSpy = jest
@@ -98,6 +101,8 @@ describe('EasyCollect Mandate Webhook Forwarding', () => {
         {} as any,
         { sanitizeEasebuzzMandatePayload: jest.fn((p) => p), verifyEasebuzzMandateWebhookHash: jest.fn() } as any,
         { get: jest.fn() } as any,
+        {} as any,
+        {} as any,
         {} as any,
         {} as any,
       );

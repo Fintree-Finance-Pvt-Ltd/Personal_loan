@@ -299,11 +299,11 @@ export default function CustomerSupportPage() {
     return (
         <div className="mx-auto w-full max-w-[1440px] space-y-6 pb-10">
             {/* Header */}
-            <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-r from-[#064e3b] via-[#047857] to-[#0f766e] text-white shadow-lg shadow-emerald-900/10">
+            <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-r from-[#064e3b] via-[#047857] to-[#0f766e] text-white shadow-lg shadow-brand-900/10">
                 <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute -left-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl" />
+                    <div className="absolute -left-20 -top-24 h-72 w-72 rounded-full bg-brand-300/20 blur-3xl" />
 
-                    <div className="absolute -bottom-28 right-0 h-80 w-80 rounded-full bg-cyan-300/15 blur-3xl" />
+                    <div className="absolute -bottom-28 right-0 h-80 w-80 rounded-full bg-info-300/15 blur-3xl" />
 
                     <div
                         className="absolute inset-0 opacity-[0.04]"
@@ -325,7 +325,7 @@ export default function CustomerSupportPage() {
                                     '/customer/dashboard',
                                 )
                             }
-                            className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-xs font-semibold text-emerald-100 transition hover:text-white"
+                            className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-xs font-semibold text-brand-100 transition hover:text-white"
                         >
                             <ArrowLeft size={15} />
                             Back to Dashboard
@@ -337,7 +337,7 @@ export default function CustomerSupportPage() {
                             </div>
 
                             <div>
-                                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-200">
+                                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand-200">
                                     Customer Assistance
                                 </p>
 
@@ -347,7 +347,7 @@ export default function CustomerSupportPage() {
                             </div>
                         </div>
 
-                        <p className="mt-5 max-w-2xl text-sm leading-6 text-emerald-50/80 sm:text-base">
+                        <p className="mt-5 max-w-2xl text-sm leading-6 text-brand-50/80 sm:text-base">
                             Find answers, connect with our support team or raise a request regarding your loan journey.
                         </p>
 
@@ -414,17 +414,17 @@ export default function CustomerSupportPage() {
             </section>
 
             {/* Category selection */}
-            <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 px-5 py-5 sm:px-7">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+            <section className="overflow-hidden rounded-[26px] border border-neutral-200 bg-white shadow-sm">
+                <div className="border-b border-neutral-100 px-5 py-5 sm:px-7">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-700">
                         Select an issue
                     </p>
 
-                    <h2 className="mt-2 text-xl font-bold text-slate-950">
+                    <h2 className="mt-2 text-xl font-bold text-neutral-950">
                         How can we help you?
                     </h2>
 
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-neutral-500">
                         Choose the category that best describes your request.
                     </p>
                 </div>
@@ -449,14 +449,14 @@ export default function CustomerSupportPage() {
                                         )
                                     }
                                     className={`group flex items-start gap-4 rounded-2xl border p-4 text-left transition-all ${isSelected
-                                        ? 'border-emerald-400 bg-emerald-50 shadow-sm ring-4 ring-emerald-50'
-                                        : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg hover:shadow-slate-900/5'
+                                        ? 'border-brand-400 bg-brand-50 shadow-sm ring-4 ring-brand-50'
+                                        : 'border-neutral-200 bg-white hover:-tranneutral-y-0.5 hover:border-brand-200 hover:shadow-lg hover:shadow-neutral-900/5'
                                         }`}
                                 >
                                     <div
                                         className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl transition ${isSelected
-                                            ? 'bg-emerald-600 text-white'
-                                            : 'bg-slate-100 text-slate-600 group-hover:bg-emerald-100 group-hover:text-emerald-700'
+                                            ? 'bg-brand-600 text-white'
+                                            : 'bg-neutral-100 text-neutral-600 group-hover:bg-brand-100 group-hover:text-brand-700'
                                             }`}
                                     >
                                         <Icon size={20} />
@@ -464,24 +464,24 @@ export default function CustomerSupportPage() {
 
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center justify-between gap-2">
-                                            <h3 className="text-sm font-bold text-slate-950">
+                                            <h3 className="text-sm font-bold text-neutral-950">
                                                 {category.title}
                                             </h3>
 
                                             {isSelected ? (
                                                 <BadgeCheck
                                                     size={18}
-                                                    className="shrink-0 text-emerald-600"
+                                                    className="shrink-0 text-brand-600"
                                                 />
                                             ) : (
                                                 <ChevronRight
                                                     size={17}
-                                                    className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-emerald-600"
+                                                    className="shrink-0 text-neutral-400 transition group-hover:tranneutral-x-0.5 group-hover:text-brand-600"
                                                 />
                                             )}
                                         </div>
 
-                                        <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                                        <p className="mt-1.5 text-xs leading-5 text-neutral-500">
                                             {category.description}
                                         </p>
                                     </div>
@@ -497,20 +497,20 @@ export default function CustomerSupportPage() {
                 <form
                     id="support-request-form"
                     onSubmit={handleSubmit}
-                    className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm scroll-mt-6"
+                    className="overflow-hidden rounded-[26px] border border-neutral-200 bg-white shadow-sm scroll-mt-6"
                 >
-                    <div className="border-b border-slate-100 px-5 py-5 sm:px-7">
+                    <div className="border-b border-neutral-100 px-5 py-5 sm:px-7">
                         <div className="flex items-center gap-3">
-                            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+                            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-100 text-brand-700">
                                 <FileQuestion size={21} />
                             </div>
 
                             <div>
-                                <h2 className="text-lg font-bold text-slate-950">
+                                <h2 className="text-lg font-bold text-neutral-950">
                                     Raise a support request
                                 </h2>
 
-                                <p className="mt-0.5 text-xs text-slate-500">
+                                <p className="mt-0.5 text-xs text-neutral-500">
                                     Describe your issue so our team can assist you.
                                 </p>
                             </div>
@@ -521,7 +521,7 @@ export default function CustomerSupportPage() {
                         {formError && (
                             <div
                                 role="alert"
-                                className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                                className="flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700"
                             >
                                 <AlertCircle
                                     size={18}
@@ -537,7 +537,7 @@ export default function CustomerSupportPage() {
                         <div>
                             <label
                                 htmlFor="supportCategory"
-                                className="mb-2 block text-sm font-semibold text-slate-800"
+                                className="mb-2 block text-sm font-semibold text-neutral-800"
                             >
                                 Support category
                             </label>
@@ -551,7 +551,7 @@ export default function CustomerSupportPage() {
                                     );
                                     setFormError('');
                                 }}
-                                className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50"
+                                className="min-h-12 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-800 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-50"
                             >
                                 <option value="">
                                     Select a category
@@ -573,7 +573,7 @@ export default function CustomerSupportPage() {
                         <div>
                             <label
                                 htmlFor="supportSubject"
-                                className="mb-2 block text-sm font-semibold text-slate-800"
+                                className="mb-2 block text-sm font-semibold text-neutral-800"
                             >
                                 Subject
                             </label>
@@ -590,7 +590,7 @@ export default function CustomerSupportPage() {
                                     setFormError('');
                                 }}
                                 placeholder="Briefly describe the issue"
-                                className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50"
+                                className="min-h-12 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-900 outline-none transition placeholder:font-normal placeholder:text-neutral-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-50"
                             />
                         </div>
 
@@ -598,12 +598,12 @@ export default function CustomerSupportPage() {
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <label
                                     htmlFor="supportMessage"
-                                    className="text-sm font-semibold text-slate-800"
+                                    className="text-sm font-semibold text-neutral-800"
                                 >
                                     Description
                                 </label>
 
-                                <span className="text-[11px] text-slate-400">
+                                <span className="text-[11px] text-neutral-400">
                                     {message.length}/1000
                                 </span>
                             </div>
@@ -620,17 +620,17 @@ export default function CustomerSupportPage() {
                                     setFormError('');
                                 }}
                                 placeholder="Explain the issue, mention any error message, payment reference or relevant details..."
-                                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50"
+                                className="w-full resize-none rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm leading-6 text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-50"
                             />
                         </div>
 
-                        <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                        <div className="flex items-start gap-3 rounded-2xl border border-info-100 bg-info-50 p-4">
                             <ShieldCheck
                                 size={18}
-                                className="mt-0.5 shrink-0 text-blue-700"
+                                className="mt-0.5 shrink-0 text-info-700"
                             />
 
-                            <p className="text-xs leading-5 text-blue-800">
+                            <p className="text-xs leading-5 text-info-800">
                                 Do not include an OTP, UPI PIN, CVV, card PIN, password or internet-banking credentials.
                             </p>
                         </div>
@@ -638,7 +638,7 @@ export default function CustomerSupportPage() {
                         <button
                             type="submit"
                             disabled={isSubmitting}
-                            className="inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:-translate-y-0.5 hover:from-emerald-700 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 sm:w-auto"
+                            className="inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/20 transition hover:-tranneutral-y-0.5 hover:from-brand-700 hover:to-brand-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:tranneutral-y-0 sm:w-auto"
                         >
                             {isSubmitting ? (
                                 <>
@@ -659,24 +659,24 @@ export default function CustomerSupportPage() {
                 </form>
 
                 <aside className="space-y-5">
-                    <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                    <div className="rounded-[26px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
                         <div className="flex items-center gap-3">
-                            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-slate-700">
+                            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-neutral-100 text-neutral-700">
                                 <UserRound size={21} />
                             </div>
 
                             <div>
-                                <p className="text-xs text-slate-500">
+                                <p className="text-xs text-neutral-500">
                                     Customer reference
                                 </p>
 
-                                <p className="mt-0.5 break-all text-sm font-bold text-slate-950">
+                                <p className="mt-0.5 break-all text-sm font-bold text-neutral-950">
                                     {customerReference}
                                 </p>
                             </div>
                         </div>
 
-                        <div className="mt-5 divide-y divide-slate-100">
+                        <div className="mt-5 divide-y divide-neutral-100">
                             <CustomerInfoRow
                                 label="Registered mobile"
                                 value={
@@ -698,19 +698,19 @@ export default function CustomerSupportPage() {
                         </div>
                     </div>
 
-                    <div className="relative overflow-hidden rounded-[26px] border border-red-100 bg-gradient-to-br from-red-50 to-white p-5 shadow-sm sm:p-6">
-                        <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-red-100 blur-3xl" />
+                    <div className="relative overflow-hidden rounded-[26px] border border-danger-100 bg-gradient-to-br from-danger-50 to-white p-5 shadow-sm sm:p-6">
+                        <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-danger-100 blur-3xl" />
 
                         <div className="relative">
-                            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-red-100 text-red-700">
+                            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-danger-100 text-danger-700">
                                 <ShieldAlert size={21} />
                             </div>
 
-                            <h3 className="mt-4 text-base font-bold text-red-950">
+                            <h3 className="mt-4 text-base font-bold text-danger-950">
                                 Report suspected fraud
                             </h3>
 
-                            <p className="mt-2 text-xs leading-5 text-red-800/80">
+                            <p className="mt-2 text-xs leading-5 text-danger-800/80">
                                 Contact support immediately if someone asks for your OTP, PIN, password or requests payment to a personal account.
                             </p>
 
@@ -720,7 +720,7 @@ export default function CustomerSupportPage() {
                                     window.location.href =
                                         `tel:${SUPPORT_PHONE_LINK}`;
                                 }}
-                                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-red-700"
+                                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-danger-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-danger-700"
                             >
                                 <Phone size={15} />
                                 Call Fraud Support
@@ -731,26 +731,26 @@ export default function CustomerSupportPage() {
             </section>
 
             {/* FAQ */}
-            <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 px-5 py-5 sm:px-7">
+            <section className="overflow-hidden rounded-[26px] border border-neutral-200 bg-white shadow-sm">
+                <div className="border-b border-neutral-100 px-5 py-5 sm:px-7">
                     <div className="flex items-center gap-3">
-                        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-100 text-blue-700">
+                        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-info-100 text-info-700">
                             <CircleHelp size={21} />
                         </div>
 
                         <div>
-                            <h2 className="text-lg font-bold text-slate-950">
+                            <h2 className="text-lg font-bold text-neutral-950">
                                 Frequently asked questions
                             </h2>
 
-                            <p className="mt-0.5 text-xs text-slate-500">
+                            <p className="mt-0.5 text-xs text-neutral-500">
                                 Quick answers to common customer queries.
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-neutral-100">
                     {FAQ_ITEMS.map(
                         (item) => {
                             const isOpen =
@@ -774,14 +774,14 @@ export default function CustomerSupportPage() {
                                         className="flex w-full items-center justify-between gap-4 py-5 text-left"
                                         aria-expanded={isOpen}
                                     >
-                                        <span className="text-sm font-bold leading-6 text-slate-900">
+                                        <span className="text-sm font-bold leading-6 text-neutral-900">
                                             {item.question}
                                         </span>
 
                                         <span
                                             className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition ${isOpen
-                                                ? 'rotate-180 bg-emerald-100 text-emerald-700'
-                                                : 'bg-slate-100 text-slate-500'
+                                                ? 'rotate-180 bg-brand-100 text-brand-700'
+                                                : 'bg-neutral-100 text-neutral-500'
                                                 }`}
                                         >
                                             <ChevronDown
@@ -792,7 +792,7 @@ export default function CustomerSupportPage() {
 
                                     {isOpen && (
                                         <div className="pb-5 pr-10">
-                                            <p className="text-sm leading-6 text-slate-600">
+                                            <p className="text-sm leading-6 text-neutral-600">
                                                 {item.answer}
                                             </p>
                                         </div>
@@ -805,25 +805,25 @@ export default function CustomerSupportPage() {
             </section>
 
             {/* Footer note */}
-            <section className="flex flex-col gap-4 rounded-[24px] border border-emerald-100 bg-emerald-50/70 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <section className="flex flex-col gap-4 rounded-[24px] border border-brand-100 bg-brand-50/70 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
                     <BadgeCheck
                         size={20}
-                        className="mt-0.5 shrink-0 text-emerald-700"
+                        className="mt-0.5 shrink-0 text-brand-700"
                     />
 
                     <div>
-                        <p className="text-sm font-bold text-emerald-950">
+                        <p className="text-sm font-bold text-brand-950">
                             Official FinLeaf support
                         </p>
 
-                        <p className="mt-1 text-xs leading-5 text-emerald-800/75">
+                        <p className="mt-1 text-xs leading-5 text-brand-800/75">
                             FinLeaf will never ask you to transfer money to a personal bank account.
                         </p>
                     </div>
                 </div>
 
-                <span className="inline-flex w-fit items-center gap-2 rounded-full bg-white px-3 py-2 text-[11px] font-bold text-emerald-700 shadow-sm">
+                <span className="inline-flex w-fit items-center gap-2 rounded-full bg-white px-3 py-2 text-[11px] font-bold text-brand-700 shadow-sm">
                     <Smartphone size={14} />
                     Keep your registered mobile available
                 </span>
@@ -844,27 +844,27 @@ function ContactCard({
     const tones = {
         emerald: {
             card:
-                'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/70',
+                'border-brand-100 bg-gradient-to-br from-white to-brand-50/70',
             icon:
-                'bg-emerald-100 text-emerald-700',
+                'bg-brand-100 text-brand-700',
             action:
-                'text-emerald-700',
+                'text-brand-700',
         },
         green: {
             card:
-                'border-green-100 bg-gradient-to-br from-white to-green-50/70',
+                'border-brand-100 bg-gradient-to-br from-white to-brand-50/70',
             icon:
-                'bg-green-100 text-green-700',
+                'bg-brand-100 text-brand-700',
             action:
-                'text-green-700',
+                'text-brand-700',
         },
         blue: {
             card:
-                'border-blue-100 bg-gradient-to-br from-white to-blue-50/70',
+                'border-info-100 bg-gradient-to-br from-white to-info-50/70',
             icon:
-                'bg-blue-100 text-blue-700',
+                'bg-info-100 text-info-700',
             action:
-                'text-blue-700',
+                'text-info-700',
         },
     };
 
@@ -876,7 +876,7 @@ function ContactCard({
         <button
             type="button"
             onClick={onClick}
-            className={`group rounded-[22px] border p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-slate-900/5 ${selectedTone.card}`}
+            className={`group rounded-[22px] border p-5 text-left shadow-sm transition hover:-tranneutral-y-0.5 hover:shadow-lg hover:shadow-neutral-900/5 ${selectedTone.card}`}
         >
             <div className="flex items-start justify-between gap-4">
                 <div
@@ -887,19 +887,19 @@ function ContactCard({
 
                 <ChevronRight
                     size={19}
-                    className="text-slate-400 transition group-hover:translate-x-1"
+                    className="text-neutral-400 transition group-hover:tranneutral-x-1"
                 />
             </div>
 
-            <h3 className="mt-5 text-base font-bold text-slate-950">
+            <h3 className="mt-5 text-base font-bold text-neutral-950">
                 {title}
             </h3>
 
-            <p className="mt-1.5 text-xs leading-5 text-slate-500">
+            <p className="mt-1.5 text-xs leading-5 text-neutral-500">
                 {description}
             </p>
 
-            <p className="mt-4 break-all text-sm font-bold text-slate-800">
+            <p className="mt-4 break-all text-sm font-bold text-neutral-800">
                 {value}
             </p>
 
@@ -919,11 +919,11 @@ function CustomerInfoRow({
 }) {
     return (
         <div className="flex items-start justify-between gap-4 py-3.5">
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-neutral-500">
                 {label}
             </span>
 
-            <span className="max-w-[60%] break-words text-right text-xs font-bold text-slate-900">
+            <span className="max-w-[60%] break-words text-right text-xs font-bold text-neutral-900">
                 {value}
             </span>
         </div>

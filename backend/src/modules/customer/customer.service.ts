@@ -1211,6 +1211,34 @@ export class CustomerService {
           });
         }
       }
+      if (!permanentForApplication) {
+        // First-time customers with no prior application to backfill from used to hit a
+        // hard dead-end here if snapshotVerifiedApplicationKyc's webhook-time upsert had
+        // been silently skipped (see that method's comment — historically required
+        // house/careOf/co/street to be non-empty, which some real Aadhaar records don't
+        // populate). That gate is fixed going forward, but a customer already stuck in
+        // this exact state (Aadhaar verified, no PERMANENT row, no prior application)
+        // still needs a way out — reconstruct one from the Customer-level fields that
+        // ARE always saved unconditionally at verification time (see
+        // customer-aadhaar-kyc.service.ts's processAndPersistVerifiedDetails).
+        const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+        if (customer?.residentialCity && customer?.residentialState && customer?.residentialPincode) {
+          const kycRecord = await this.prisma.kycVerificationStatus.findUnique({ where: { customerId } });
+          permanentForApplication = await this.prisma.applicationAddress.create({
+            data: {
+              applicationId: application.id,
+              addressType: 'PERMANENT',
+              source: 'DIGILOCKER',
+              addressLine1: kycRecord?.aadhaarAddress?.trim() || 'Address as per Aadhaar',
+              city: customer.residentialCity,
+              state: customer.residentialState,
+              country: 'India',
+              pincode: customer.residentialPincode,
+              sourceVerifiedAt: customer.aadhaarVerifiedAt || customer.digilockerVerifiedAt || new Date(),
+            },
+          });
+        }
+      }
     }
 
     let address = body;

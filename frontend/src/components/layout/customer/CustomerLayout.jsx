@@ -57,11 +57,11 @@ export default function CustomerLayout() {
   }, [isInitializing]);
 
   if (isInitializing) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-neutral-50">Loading...</div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-neutral-50">
       <CustomerSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}

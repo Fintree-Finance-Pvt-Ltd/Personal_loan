@@ -313,19 +313,19 @@ export default function CustomerDashboard() {
   if (isLoadingCustomer) {
     return (
       <div className="mx-auto w-full max-w-7xl px-1">
-        <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 via-white to-cyan-50" />
+        <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-brand-50 via-white to-info-50" />
 
           <div className="relative flex min-h-[520px] flex-col items-center justify-center p-8 text-center">
-            <div className="grid h-20 w-20 place-items-center rounded-3xl border border-emerald-100 bg-white shadow-lg shadow-emerald-900/5">
-              <LoaderCircle className="h-10 w-10 animate-spin text-emerald-600" />
+            <div className="grid h-20 w-20 place-items-center rounded-3xl border border-brand-100 bg-white shadow-lg shadow-brand-900/5">
+              <LoaderCircle className="h-10 w-10 animate-spin text-brand-600" />
             </div>
 
-            <h2 className="mt-6 text-xl font-bold text-slate-900">
+            <h2 className="mt-6 text-xl font-bold text-neutral-900">
               Preparing your dashboard
             </h2>
 
-            <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+            <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
               We are securely loading your application and loan details.
             </p>
           </div>
@@ -337,19 +337,19 @@ export default function CustomerDashboard() {
   if (customerError) {
     return (
       <div className="mx-auto w-full max-w-7xl px-1">
-        <div className="relative overflow-hidden rounded-[28px] border border-red-100 bg-white p-8 text-center shadow-xl shadow-slate-900/5 sm:p-12">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-red-100/60 blur-3xl" />
+        <div className="relative overflow-hidden rounded-[28px] border border-danger-100 bg-white p-8 text-center shadow-xl shadow-neutral-900/5 sm:p-12">
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-danger-100/60 blur-3xl" />
 
           <div className="relative">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-red-50 text-red-600">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-danger-50 text-danger-600">
               <AlertCircle size={30} />
             </div>
 
-            <h3 className="mt-5 text-xl font-bold text-slate-900">
+            <h3 className="mt-5 text-xl font-bold text-neutral-900">
               Unable to load your dashboard
             </h3>
 
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-600">
               {customerError}
             </p>
 
@@ -358,7 +358,7 @@ export default function CustomerDashboard() {
               onClick={
                 fetchCustomerData
               }
-              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/20 transition hover:-tranneutral-y-0.5 hover:bg-brand-700"
             >
               <RotateCcw
                 size={17}
@@ -394,11 +394,11 @@ export default function CustomerDashboard() {
   return (
     <div className="mx-auto w-full max-w-[1440px] space-y-6 pb-8">
       {/* Main hero */}
-      <section className="relative overflow-hidden rounded-3xl border border-emerald-800/20 bg-gradient-to-r from-[#064e3b] via-[#047857] to-[#0f766e] text-white shadow-lg shadow-emerald-900/10">
+      <section className="relative overflow-hidden rounded-3xl border border-brand-800/20 bg-gradient-to-r from-[#064e3b] via-[#047857] to-[#0f766e] text-white shadow-lg shadow-brand-900/10">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-16 -top-20 h-56 w-56 rounded-full bg-emerald-300/15 blur-3xl" />
+          <div className="absolute -left-16 -top-20 h-56 w-56 rounded-full bg-brand-300/15 blur-3xl" />
 
-          <div className="absolute -bottom-20 right-8 h-64 w-64 rounded-full bg-cyan-300/15 blur-3xl" />
+          <div className="absolute -bottom-20 right-8 h-64 w-64 rounded-full bg-info-300/15 blur-3xl" />
 
           <div
             className="absolute inset-0 opacity-[0.035]"
@@ -413,12 +413,12 @@ export default function CustomerDashboard() {
         <div className="relative grid items-center gap-5 px-5 py-5 sm:px-6 sm:py-6 lg:grid-cols-[1fr_240px] lg:px-7 lg:py-6">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-50 backdrop-blur">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-brand-50 backdrop-blur">
                 <Sparkles size={13} />
                 Welcome back, {firstName}
               </span>
 
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-emerald-950/20 px-3 py-1.5 text-[11px] font-semibold text-emerald-100">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-brand-950/20 px-3 py-1.5 text-[11px] font-semibold text-brand-100">
                 <ShieldCheck size={13} />
                 Secure customer portal
               </span>
@@ -433,7 +433,7 @@ export default function CustomerDashboard() {
                     : 'Complete your personal loan application.'}
               </h1>
 
-              <p className="mt-2 max-w-xl text-sm leading-6 text-emerald-50/80">
+              <p className="mt-2 max-w-xl text-sm leading-6 text-brand-50/80">
                 {isFullyPaidRepeatCustomer
                   ? 'Congratulations on clearing your loan! Start a new application whenever you need to borrow again.'
                   : applicationSubmitted
@@ -446,7 +446,7 @@ export default function CustomerDashboard() {
               <button
                 type="button"
                 onClick={handleApplicationButton}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-50 hover:shadow-md"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-brand-800 shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-50 hover:shadow-md"
               >
                 {buttonLabel}
                 <ArrowRight size={16} />
@@ -468,7 +468,7 @@ export default function CustomerDashboard() {
           </div>
 
           <div className="relative hidden h-full min-h-[190px] lg:block">
-            <div className="absolute bottom-0 left-1/2 h-32 w-40 -translate-x-1/2 rounded-full bg-white/10 blur-2xl" />
+            <div className="absolute bottom-0 left-1/2 h-32 w-40 -tranneutral-x-1/2 rounded-full bg-white/10 blur-2xl" />
 
             <img
               src={
@@ -477,14 +477,14 @@ export default function CustomerDashboard() {
                   : '/image/Img_F.png'
               }
               alt="FinLeaf personal loan assistance"
-              className="absolute bottom-[-24px] left-1/2 z-10 max-h-[240px] w-full max-w-[280px] -translate-x-1/2 object-contain object-bottom"
+              className="absolute bottom-[-24px] left-1/2 z-10 max-h-[240px] w-full max-w-[280px] -tranneutral-x-1/2 object-contain object-bottom"
             />
           </div>
         </div>
       </section>
 
       {/* Status overview */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <DashboardMetricCard
           icon={FileText}
           label="Application"
@@ -545,18 +545,18 @@ export default function CustomerDashboard() {
 
       {/* Application details */}
       {applicationSubmitted && (
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col justify-between gap-4 border-b border-slate-100 px-6 py-6 sm:flex-row sm:items-center sm:px-8">
+        <section className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
+          <div className="flex flex-col justify-between gap-4 border-b border-neutral-100 px-6 py-6 sm:flex-row sm:items-center sm:px-8">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">
                 Submitted Application
               </p>
 
-              <h2 className="mt-2 text-xl font-bold text-slate-950 sm:text-2xl">
+              <h2 className="mt-2 text-xl font-bold text-neutral-950 sm:text-2xl">
                 Application overview
               </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-neutral-500">
                 Review the information shared with the lender.
               </p>
             </div>
@@ -566,7 +566,7 @@ export default function CustomerDashboard() {
               onClick={
                 handleApplicationButton
               }
-              className="inline-flex w-fit items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800"
+              className="inline-flex w-fit items-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-neutral-800"
             >
               View full journey
 
@@ -726,40 +726,40 @@ export default function CustomerDashboard() {
       {/* Lender and fee */}
       {applicationSubmitted && (
         <section className="grid gap-6 lg:grid-cols-[1fr_380px]">
-          <div className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div className="relative overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
             <div className="grid min-h-[330px] sm:grid-cols-[1fr_220px]">
               <div className="relative z-10 p-6 sm:p-8">
                 <div className="flex items-center gap-3">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-100 text-brand-700">
                     <Landmark
                       size={22}
                     />
                   </div>
 
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-700">
                       Assigned lender
                     </p>
 
-                    <h3 className="mt-1 text-lg font-bold text-slate-950">
+                    <h3 className="mt-1 text-lg font-bold text-neutral-950">
                       Lending partner
                     </h3>
                   </div>
                 </div>
 
-                <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+                <div className="mt-7 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-base font-bold text-slate-950">
+                      <p className="text-base font-bold text-neutral-950">
                         {lender}
                       </p>
 
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-neutral-500">
                         Personal Loan Partner
                       </p>
                     </div>
 
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[11px] font-bold text-emerald-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-100 px-3 py-1.5 text-[11px] font-bold text-brand-700">
                       <BadgeCheck
                         size={14}
                       />
@@ -785,7 +785,7 @@ export default function CustomerDashboard() {
                   </div>
                 </div>
 
-                <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+                <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-brand-700">
                   <CheckCircle2
                     size={15}
                   />
@@ -794,8 +794,8 @@ export default function CustomerDashboard() {
                 </div>
               </div>
 
-              <div className="relative hidden items-end justify-center overflow-hidden bg-gradient-to-b from-emerald-50 to-cyan-50 px-3 sm:flex">
-                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-emerald-100/70 to-transparent" />
+              <div className="relative hidden items-end justify-center overflow-hidden bg-gradient-to-b from-brand-50 to-info-50 px-3 sm:flex">
+                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-brand-100/70 to-transparent" />
 
                 <img
                   src="/image/Img_F.png"
@@ -806,20 +806,20 @@ export default function CustomerDashboard() {
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+          <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-sm sm:p-7">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-100 text-blue-700">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-info-100 text-info-700">
                 <ReceiptText
                   size={22}
                 />
               </div>
 
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-info-700">
                   Payment
                 </p>
 
-                <h3 className="mt-1 text-lg font-bold text-slate-950">
+                <h3 className="mt-1 text-lg font-bold text-neutral-950">
                   Assessment fee
                 </h3>
               </div>
@@ -850,7 +850,7 @@ export default function CustomerDashboard() {
                 }
               />
 
-              <div className="border-t border-dashed border-slate-200 pt-4">
+              <div className="border-t border-dashed border-neutral-200 pt-4">
                 <DetailRow
                   label="Total Paid"
                   value={
@@ -865,8 +865,8 @@ export default function CustomerDashboard() {
                 />
               </div>
 
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3.5">
-                <div className="flex items-center gap-2 text-xs font-bold text-emerald-700">
+              <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-brand-700">
                   <CheckCircle2
                     size={16}
                   />
@@ -888,43 +888,43 @@ export default function CustomerDashboard() {
               '/customer/support',
             )
           }
-          className="group flex items-center gap-4 rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg"
+          className="group flex items-center gap-4 rounded-[24px] border border-neutral-200 bg-white p-5 text-left shadow-sm transition hover:-tranneutral-y-0.5 hover:border-brand-200 hover:shadow-lg"
         >
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
             <Headphones
               size={22}
             />
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-slate-950">
+            <p className="text-sm font-bold text-neutral-950">
               Need assistance?
             </p>
 
-            <p className="mt-1 text-xs leading-5 text-slate-500">
+            <p className="mt-1 text-xs leading-5 text-neutral-500">
               Contact our customer support team for help with your loan journey.
             </p>
           </div>
 
           <ChevronRight
             size={19}
-            className="shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-emerald-600"
+            className="shrink-0 text-neutral-400 transition group-hover:tranneutral-x-1 group-hover:text-brand-600"
           />
         </button>
 
-        <div className="flex items-center gap-4 rounded-[24px] border border-blue-100 bg-blue-50/70 p-5">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-blue-700 shadow-sm">
+        <div className="flex items-center gap-4 rounded-[24px] border border-info-100 bg-info-50/70 p-5">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-info-700 shadow-sm">
             <CalendarDays
               size={22}
             />
           </div>
 
           <div>
-            <p className="text-sm font-bold text-blue-950">
+            <p className="text-sm font-bold text-info-950">
               What happens next?
             </p>
 
-            <p className="mt-1 text-xs leading-5 text-blue-800/75">
+            <p className="mt-1 text-xs leading-5 text-info-800/75">
               Your next action will appear automatically when the lender updates your application.
             </p>
           </div>
@@ -945,34 +945,34 @@ function DashboardMetricCard({
   const tones = {
     emerald: {
       container:
-        'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/70',
+        'border-brand-100 bg-gradient-to-br from-white to-brand-50/70',
 
       icon:
-        'bg-emerald-100 text-emerald-700',
+        'bg-brand-100 text-brand-700',
     },
 
     blue: {
       container:
-        'border-blue-100 bg-gradient-to-br from-white to-blue-50/70',
+        'border-info-100 bg-gradient-to-br from-white to-info-50/70',
 
       icon:
-        'bg-blue-100 text-blue-700',
+        'bg-info-100 text-info-700',
     },
 
     violet: {
       container:
-        'border-violet-100 bg-gradient-to-br from-white to-violet-50/70',
+        'border-accent-100 bg-gradient-to-br from-white to-accent-50/70',
 
       icon:
-        'bg-violet-100 text-violet-700',
+        'bg-accent-100 text-accent-700',
     },
 
     amber: {
       container:
-        'border-amber-100 bg-gradient-to-br from-white to-amber-50/70',
+        'border-caution-100 bg-gradient-to-br from-white to-caution-50/70',
 
       icon:
-        'bg-amber-100 text-amber-700',
+        'bg-caution-100 text-caution-700',
     },
   };
 
@@ -991,21 +991,21 @@ function DashboardMetricCard({
           <Icon size={20} />
         </div>
 
-        <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-slate-500 shadow-sm">
+        <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-neutral-500 shadow-sm">
           Live
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
         </span>
       </div>
 
-      <p className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+      <p className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
         {label}
       </p>
 
-      <p className="mt-2 break-words text-base font-bold leading-6 text-slate-950">
+      <p className="mt-2 break-words text-base font-bold leading-6 text-neutral-950">
         {value}
       </p>
 
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="mt-1 text-xs text-neutral-500">
         {helper}
       </p>
     </article>
@@ -1018,11 +1018,11 @@ function MiniInfoCard({
 }) {
   return (
     <div className="rounded-xl bg-white p-3.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
         {label}
       </p>
 
-      <p className="mt-1.5 break-words text-xs font-bold text-slate-900">
+      <p className="mt-1.5 break-words text-xs font-bold text-neutral-900">
         {value ||
           'Not available'}
       </p>
@@ -1049,19 +1049,19 @@ function ApplicationDetailCard({
   children,
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 transition hover:border-emerald-200 hover:bg-white hover:shadow-lg hover:shadow-slate-900/5">
-      <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-emerald-700 shadow-sm">
+    <article className="rounded-2xl border border-neutral-200 bg-neutral-50/50 p-5 transition hover:border-brand-200 hover:bg-white hover:shadow-lg hover:shadow-neutral-900/5">
+      <div className="flex items-center gap-3 border-b border-neutral-200 pb-4">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-brand-700 shadow-sm">
           <Icon size={19} />
         </div>
 
         <div>
-          <h3 className="text-sm font-bold text-slate-950">
+          <h3 className="text-sm font-bold text-neutral-950">
             {title}
           </h3>
 
           {subtitle && (
-            <p className="mt-0.5 text-[11px] text-slate-500">
+            <p className="mt-0.5 text-[11px] text-neutral-500">
               {subtitle}
             </p>
           )}
@@ -1083,7 +1083,7 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <span className="flex items-center gap-1.5 text-xs leading-5 text-slate-500">
+      <span className="flex items-center gap-1.5 text-xs leading-5 text-neutral-500">
         {Icon && (
           <Icon
             size={13}
@@ -1095,7 +1095,7 @@ function DetailRow({
       </span>
 
       <span
-        className={`max-w-[62%] break-words text-right leading-5 text-slate-950 ${prominent
+        className={`max-w-[62%] break-words text-right leading-5 text-neutral-950 ${prominent
           ? 'text-base font-bold'
           : 'text-xs font-bold sm:text-sm'
           }`}

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { signDocumentUrl } from '../../common/utils/document-url-signer.helper';
 
 @Injectable()
 export class ApplicationsService {
@@ -225,7 +226,7 @@ export class ApplicationsService {
         applicantType: document.applicantType,
         status: document.status,
         fileName: document.originalFileName || document.fileName,
-        fileUrl: document.fileUrl,
+        fileUrl: signDocumentUrl(document.fileUrl),
         mimeType: document.mimeType,
         fileSize: document.fileSize,
         source: document.source,

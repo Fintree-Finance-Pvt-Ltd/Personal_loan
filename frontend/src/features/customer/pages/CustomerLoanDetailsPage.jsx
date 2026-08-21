@@ -95,6 +95,7 @@ export function CustomerLoanDetailsPage() {
   ] = useState('');
 
   const timerRef = useRef(null);
+  const lastTxnidRef = useRef(null);
 
   const [allLoans, setAllLoans] =
     useState([]);
@@ -268,6 +269,36 @@ export function CustomerLoanDetailsPage() {
     setIsPayModalOpen(true);
   };
 
+  // Easebuzz's client-side checkout callback is not a server-verified fact — the actual
+  // crediting now happens only once our backend verifies the Easebuzz webhook signature
+  // (see loan.controller.ts repay/confirm). So after checkout reports success, poll our
+  // own backend for the server-verified outcome instead of trusting the callback directly.
+  const pollRepaymentStatus =
+    async (
+      lanValue,
+      txnid,
+      { maxAttempts = 10, intervalMs = 2000 } = {},
+    ) => {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const res = await confirmRepayment(
+          lanValue,
+          { paymentId: txnid },
+        );
+
+        if (res?.paymentCompleted || res?.paymentFailed) {
+          return res;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+
+      return {
+        paymentCompleted: false,
+        paymentFailed: false,
+        message: 'We are still verifying your payment. Please check back in a moment — this page will update automatically once confirmed.',
+      };
+    };
+
   const handleExecutePayment =
     async () => {
       if (!selectedInst) {
@@ -308,6 +339,7 @@ export function CustomerLoanDetailsPage() {
           env,
           txnid,
         } = initData;
+        lastTxnidRef.current = txnid;
 
         const EasebuzzCheckout =
           await loadEasebuzzCheckout();
@@ -355,29 +387,25 @@ export function CustomerLoanDetailsPage() {
                     status,
                   )
                 ) {
+                  setPaymentSuccessMsg(
+                    'Payment received — verifying with the bank, please wait...',
+                  );
+
                   const res =
-                    await confirmRepayment(
+                    await pollRepaymentStatus(
                       lan,
-                      {
-                        installmentNumber:
-                          selectedInst.installmentNumber,
-
-                        amount:
-                          selectedInst.remainingAmount,
-
-                        paymentId:
-                          response.txnid ||
-                          txnid,
-
-                        paymentMode:
-                          'EASEBUZZ',
-
-                        referenceNumber:
-                          response.easepayid ||
-                          response.txnid ||
-                          txnid,
-                      },
+                      response.txnid || txnid,
                     );
+
+                  if (res.paymentFailed) {
+                    setPaymentErrorMsg(
+                      res?.message ||
+                      'Payment could not be verified. If your bank has debited the amount, it will be credited automatically once confirmed — no need to pay again.',
+                    );
+                    setPaymentSuccessMsg('');
+                    setIsProcessingPayment(false);
+                    return;
+                  }
 
                   setPaymentSuccessMsg(
                     res?.message ||
@@ -388,15 +416,19 @@ export function CustomerLoanDetailsPage() {
                     true,
                   );
 
-                  setTimeout(() => {
-                    setIsPayModalOpen(
-                      false,
-                    );
+                  if (res.paymentCompleted) {
+                    setTimeout(() => {
+                      setIsPayModalOpen(
+                        false,
+                      );
 
-                    setSelectedInst(
-                      null,
-                    );
-                  }, 1800);
+                      setSelectedInst(
+                        null,
+                      );
+                    }, 1800);
+                  } else {
+                    setIsProcessingPayment(false);
+                  }
                 } else {
                   const errMsg =
                     response?.error_Message ||
@@ -422,53 +454,44 @@ export function CustomerLoanDetailsPage() {
           err,
         );
 
-        try {
-          const res =
-            await confirmRepayment(
-              lan,
-              {
-                installmentNumber:
-                  selectedInst.installmentNumber,
+        // A client-side error here does NOT mean no payment happened — Easebuzz may have
+        // already processed it before the error occurred. It also does NOT mean one did.
+        // Either way, we never declare success from the client: if a txnid was obtained,
+        // check our backend's server-verified status; otherwise there's nothing to check.
+        if (lastTxnidRef.current) {
+          try {
+            const res =
+              await pollRepaymentStatus(
+                lan,
+                lastTxnidRef.current,
+                { maxAttempts: 3, intervalMs: 2000 },
+              );
 
-                amount:
-                  selectedInst.remainingAmount,
-
-                paymentMode:
-                  'EASEBUZZ',
-              },
-            );
-
-          setPaymentSuccessMsg(
-            res?.message ||
-            'Repayment recorded successfully!',
-          );
-
-          await fetchDetails(
-            true,
-          );
-
-          setTimeout(() => {
-            setIsPayModalOpen(
-              false,
-            );
-
-            setSelectedInst(
-              null,
-            );
-          }, 1800);
-        } catch (
-        fallbackErr
-        ) {
-          setPaymentErrorMsg(
-            fallbackErr?.message ||
-            err?.message ||
-            'Failed to process payment. Please try again.',
-          );
-
-          setIsProcessingPayment(
-            false,
-          );
+            if (res.paymentCompleted) {
+              setPaymentSuccessMsg(
+                res?.message ||
+                'Payment verified & completed successfully!',
+              );
+              await fetchDetails(true);
+              setTimeout(() => {
+                setIsPayModalOpen(false);
+                setSelectedInst(null);
+              }, 1800);
+              return;
+            }
+          } catch {
+            // fall through to the generic error message below
+          }
         }
+
+        setPaymentErrorMsg(
+          err?.message ||
+          'Something went wrong before we could confirm your payment. If your bank has debited the amount, it will be credited automatically once confirmed — no need to pay again.',
+        );
+
+        setIsProcessingPayment(
+          false,
+        );
       }
     };
 
@@ -549,7 +572,7 @@ export function CustomerLoanDetailsPage() {
     switch (status) {
       case 'FULLY_PAID':
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-[11px] font-extrabold text-brand-700">
             <ShieldCheck
               size={14}
             />
@@ -559,7 +582,7 @@ export function CustomerLoanDetailsPage() {
 
       case 'DISBURSED':
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-extrabold text-emerald-700">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-[11px] font-extrabold text-brand-700">
             <CheckCircle2
               size={14}
             />
@@ -571,7 +594,7 @@ export function CustomerLoanDetailsPage() {
       case 'DISBURSAL_PROCESSING':
       case 'READY_FOR_DISBURSAL':
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-extrabold text-blue-700">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-info-200 bg-info-50 px-3 py-1.5 text-[11px] font-extrabold text-info-700">
             <Clock
               size={14}
               className="animate-pulse"
@@ -584,7 +607,7 @@ export function CustomerLoanDetailsPage() {
       case 'FAILED':
       case 'REJECTED':
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-extrabold text-red-700">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-danger-200 bg-danger-50 px-3 py-1.5 text-[11px] font-extrabold text-danger-700">
             <AlertTriangle
               size={14}
             />
@@ -594,7 +617,7 @@ export function CustomerLoanDetailsPage() {
 
       default:
         return (
-          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600">
+          <span className="inline-flex items-center rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-[11px] font-bold text-neutral-600">
             {status ||
               'UNKNOWN'}
           </span>
@@ -610,13 +633,13 @@ export function CustomerLoanDetailsPage() {
 
     const tone =
       normalized === 'FULLY_PAID'
-        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        ? 'border-brand-200 bg-brand-50 text-brand-700'
         : normalized === 'DISBURSED'
-        ? 'border-blue-200 bg-blue-50 text-blue-700'
+        ? 'border-info-200 bg-info-50 text-info-700'
         : normalized === 'FAILED' ||
           normalized === 'REJECTED'
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-slate-200 bg-slate-50 text-slate-600';
+        ? 'border-caution-200 bg-caution-50 text-caution-700'
+        : 'border-neutral-200 bg-neutral-50 text-neutral-600';
 
     return (
       <span
@@ -631,7 +654,7 @@ export function CustomerLoanDetailsPage() {
   };
 
   const loanHistoryList = (
-    <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+    <div className="divide-y divide-neutral-100 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
       {allLoans.map(
         (item) => (
           <button
@@ -642,18 +665,18 @@ export function CustomerLoanDetailsPage() {
                 item,
               )
             }
-            className={`flex w-full flex-col gap-2 px-5 py-4 text-left transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between ${
+            className={`flex w-full flex-col gap-2 px-5 py-4 text-left transition hover:bg-neutral-50 sm:flex-row sm:items-center sm:justify-between ${
               item.lan === lan
-                ? 'bg-emerald-50/60'
+                ? 'bg-brand-50/60'
                 : ''
             }`}
           >
             <div className="min-w-0">
-              <p className="font-mono text-xs font-bold text-slate-800">
+              <p className="font-mono text-xs font-bold text-neutral-800">
                 {item.lan}
               </p>
 
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-neutral-500">
                 {item.disbursalDate
                   ? formatDate(
                       item.disbursalDate,
@@ -668,7 +691,7 @@ export function CustomerLoanDetailsPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-sm font-bold text-slate-900">
+              <span className="text-sm font-bold text-neutral-900">
                 {formatCurrency(
                   item.disbursedAmount ??
                     item.approvedAmount,
@@ -689,33 +712,33 @@ export function CustomerLoanDetailsPage() {
     return (
       <div className="mx-auto w-full max-w-4xl px-1 py-6">
         <div className="mb-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand-700">
             Loan account
           </p>
 
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">
             Loan Details
           </h1>
         </div>
 
         {!loansLoaded ? (
-          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
-            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50">
-              <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
+          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-neutral-200 bg-white px-6 py-12 text-center shadow-sm">
+            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-brand-50">
+              <RefreshCw className="h-8 w-8 animate-spin text-brand-600" />
             </div>
 
-            <h2 className="mt-5 text-lg font-bold text-slate-900">
+            <h2 className="mt-5 text-lg font-bold text-neutral-900">
               Loading your loans
             </h2>
           </div>
         ) : allLoans.length > 0 ? (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="text-base font-bold text-slate-900">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+              <h3 className="text-base font-bold text-neutral-900">
                 Your Loans
               </h3>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-neutral-500">
                 Select a loan below to view its full details and repayment schedule.
               </p>
             </div>
@@ -723,18 +746,18 @@ export function CustomerLoanDetailsPage() {
             {loanHistoryList}
           </div>
         ) : (
-          <div className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-sm sm:p-12">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-slate-50 text-slate-400">
+          <div className="relative overflow-hidden rounded-[28px] border border-neutral-200 bg-white p-8 text-center shadow-sm sm:p-12">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-neutral-50 text-neutral-400">
               <History
                 size={30}
               />
             </div>
 
-            <h3 className="mt-5 text-xl font-bold text-slate-950">
+            <h3 className="mt-5 text-xl font-bold text-neutral-950">
               No loans yet
             </h3>
 
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-600">
               You haven&apos;t taken a loan with us yet. Apply now to get started.
             </p>
 
@@ -745,7 +768,7 @@ export function CustomerLoanDetailsPage() {
                   '/customer/application',
                 )
               }
-              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/15 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/15 transition hover:-tranneutral-y-0.5 hover:bg-brand-700"
             >
               Apply Now
             </button>
@@ -758,16 +781,16 @@ export function CustomerLoanDetailsPage() {
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-7xl">
-        <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
-          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50">
-            <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
+        <div className="flex min-h-[520px] flex-col items-center justify-center rounded-[28px] border border-neutral-200 bg-white px-6 py-12 text-center shadow-sm">
+          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-brand-50">
+            <RefreshCw className="h-8 w-8 animate-spin text-brand-600" />
           </div>
 
-          <h2 className="mt-5 text-lg font-bold text-slate-900">
+          <h2 className="mt-5 text-lg font-bold text-neutral-900">
             Loading loan details
           </h2>
 
-          <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+          <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
             Please wait while we securely fetch your loan account, repayment schedule and payment history.
           </p>
         </div>
@@ -788,7 +811,7 @@ export function CustomerLoanDetailsPage() {
               '/customer/dashboard',
             )
           }
-          className="mb-5 inline-flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+          className="mb-5 inline-flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-semibold text-neutral-600 transition hover:bg-neutral-100 hover:text-neutral-900"
         >
           <ArrowLeft
             size={16}
@@ -796,21 +819,21 @@ export function CustomerLoanDetailsPage() {
           Back to Dashboard
         </button>
 
-        <div className="relative overflow-hidden rounded-[28px] border border-red-100 bg-white p-8 text-center shadow-xl shadow-slate-900/5 sm:p-12">
-          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-red-100/60 blur-3xl" />
+        <div className="relative overflow-hidden rounded-[28px] border border-danger-100 bg-white p-8 text-center shadow-xl shadow-neutral-900/5 sm:p-12">
+          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-danger-100/60 blur-3xl" />
 
           <div className="relative">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-red-50 text-red-600">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-danger-50 text-danger-600">
               <AlertTriangle
                 size={30}
               />
             </div>
 
-            <h3 className="mt-5 text-xl font-bold text-slate-950">
+            <h3 className="mt-5 text-xl font-bold text-neutral-950">
               Unable to load loan details
             </h3>
 
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-600">
               {error}
             </p>
 
@@ -821,7 +844,7 @@ export function CustomerLoanDetailsPage() {
                   true,
                 )
               }
-              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-red-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/15 transition hover:-translate-y-0.5 hover:bg-red-700"
+              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-danger-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-danger-600/15 transition hover:-tranneutral-y-0.5 hover:bg-danger-700"
             >
               <RefreshCw
                 size={16}
@@ -860,7 +883,7 @@ export function CustomerLoanDetailsPage() {
   return (
     <div className="mx-auto w-full max-w-[1440px] space-y-6 pb-10">
       {/* Header */}
-      <section className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
+      <section className="rounded-[24px] border border-neutral-200 bg-white px-5 py-5 shadow-sm sm:px-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <button
@@ -870,7 +893,7 @@ export function CustomerLoanDetailsPage() {
                   '/customer/dashboard',
                 )
               }
-              className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-xs font-bold text-slate-500 transition hover:text-emerald-700"
+              className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-xs font-bold text-neutral-500 transition hover:text-brand-700"
             >
               <ArrowLeft
                 size={15}
@@ -880,16 +903,16 @@ export function CustomerLoanDetailsPage() {
 
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand-700">
                   Loan account
                 </p>
 
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                <h1 className="mt-1 text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">
                   Loan Details
                 </h1>
               </div>
 
-              <span className="w-fit break-all rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs font-bold text-slate-700">
+              <span className="w-fit break-all rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 font-mono text-xs font-bold text-neutral-700">
                 LAN: {loan.lan}
               </span>
             </div>
@@ -910,7 +933,7 @@ export function CustomerLoanDetailsPage() {
               disabled={
                 isRefreshing
               }
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-xs font-bold text-neutral-700 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw
                 size={15}
@@ -932,14 +955,14 @@ export function CustomerLoanDetailsPage() {
       {/* Your loans */}
       {loansLoaded &&
         allLoans.length > 1 && (
-          <section className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
+          <section className="rounded-[24px] border border-neutral-200 bg-white px-5 py-5 shadow-sm sm:px-6">
             <div className="mb-4 flex items-center gap-2">
               <History
                 size={16}
-                className="text-slate-400"
+                className="text-neutral-400"
               />
 
-              <h2 className="text-sm font-bold text-slate-900">
+              <h2 className="text-sm font-bold text-neutral-900">
                 Your Loans
               </h2>
             </div>
@@ -950,11 +973,11 @@ export function CustomerLoanDetailsPage() {
 
       {/* Pending banner */}
       {isPendingDisbursal && (
-        <section className="relative overflow-hidden rounded-[24px] border border-blue-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 p-5 shadow-sm sm:p-6">
-          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-200/50 blur-3xl" />
+        <section className="relative overflow-hidden rounded-[24px] border border-info-200 bg-gradient-to-r from-info-50 via-accent-50 to-info-50 p-5 shadow-sm sm:p-6">
+          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-info-200/50 blur-3xl" />
 
           <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-info-600 text-white shadow-lg shadow-info-600/20">
               <Clock
                 size={23}
                 className="animate-pulse"
@@ -963,7 +986,7 @@ export function CustomerLoanDetailsPage() {
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-base font-bold text-blue-950 sm:text-lg">
+                <h2 className="text-base font-bold text-info-950 sm:text-lg">
                   Disbursal request submitted
                 </h2>
 
@@ -973,11 +996,11 @@ export function CustomerLoanDetailsPage() {
                 )}
               </div>
 
-              <p className="mt-2 max-w-5xl text-sm leading-6 text-blue-900/75">
+              <p className="mt-2 max-w-5xl text-sm leading-6 text-info-900/75">
                 Your request has been sent to the lender. Once the lender confirms disbursal, the repayment schedule and UTR will appear automatically.
               </p>
 
-              <div className="mt-4 flex flex-col gap-2 text-xs font-semibold text-blue-700 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+              <div className="mt-4 flex flex-col gap-2 text-xs font-semibold text-info-700 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                 <span className="inline-flex items-center gap-2">
                   <RefreshCw
                     size={13}
@@ -1001,21 +1024,21 @@ export function CustomerLoanDetailsPage() {
 
       {/* Main overview */}
       <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <article className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <article className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-neutral-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
                 <Landmark
                   size={21}
                 />
               </div>
 
               <div>
-                <h2 className="text-base font-bold text-slate-950">
+                <h2 className="text-base font-bold text-neutral-950">
                   Loan Overview
                 </h2>
 
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-0.5 text-xs text-neutral-500">
                   Approved loan terms
                 </p>
               </div>
@@ -1026,13 +1049,13 @@ export function CustomerLoanDetailsPage() {
             )}
           </div>
 
-          <div className="grid gap-px bg-slate-100 sm:grid-cols-2">
+          <div className="grid gap-px bg-neutral-100 sm:grid-cols-2">
             <OverviewMetric
               label="Approved Amount"
               value={formatCurrency(
                 loan.approvedAmount,
               )}
-              valueClass="text-slate-950"
+              valueClass="text-neutral-950"
             />
 
             <OverviewMetric
@@ -1044,7 +1067,7 @@ export function CustomerLoanDetailsPage() {
                   )
                   : 'Pending Confirmation'
               }
-              valueClass="text-emerald-700"
+              valueClass="text-brand-700"
             />
 
             <OverviewMetric
@@ -1061,26 +1084,26 @@ export function CustomerLoanDetailsPage() {
           </div>
         </article>
 
-        <article className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-100 text-blue-700">
+        <article className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm">
+          <div className="flex items-center gap-3 border-b border-neutral-100 px-5 py-5 sm:px-6">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-info-100 text-info-700">
               <CreditCard
                 size={21}
               />
             </div>
 
             <div>
-              <h2 className="text-base font-bold text-slate-950">
+              <h2 className="text-base font-bold text-neutral-950">
                 Disbursal Information
               </h2>
 
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-neutral-500">
                 Bank transfer and lender confirmation
               </p>
             </div>
           </div>
 
-          <div className="divide-y divide-slate-100 px-5 sm:px-6">
+          <div className="divide-y divide-neutral-100 px-5 sm:px-6">
             <InfoRow
               label="Disbursal Status"
               value={
@@ -1129,20 +1152,20 @@ export function CustomerLoanDetailsPage() {
       </section>
 
       {/* Summary */}
-      <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-100 text-indigo-700">
+      <section className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3 border-b border-neutral-100 px-5 py-5 sm:px-6">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-accent-100 text-accent-700">
             <PieChart
               size={21}
             />
           </div>
 
           <div>
-            <h2 className="text-base font-bold text-slate-950">
+            <h2 className="text-base font-bold text-neutral-950">
               Repayment Summary
             </h2>
 
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-neutral-500">
               Current loan repayment position
             </p>
           </div>
@@ -1156,13 +1179,13 @@ export function CustomerLoanDetailsPage() {
             )}
             tone="slate"
           >
-            <div className="mt-3 space-y-1.5 text-[11px] text-slate-500">
+            <div className="mt-3 space-y-1.5 text-[11px] text-neutral-500">
               <div className="flex justify-between gap-3">
                 <span>
                   Principal
                 </span>
 
-                <span className="font-bold text-slate-700">
+                <span className="font-bold text-neutral-700">
                   {formatCurrency(
                     summary.principalOutstanding,
                   )}
@@ -1174,7 +1197,7 @@ export function CustomerLoanDetailsPage() {
                   Interest
                 </span>
 
-                <span className="font-bold text-slate-700">
+                <span className="font-bold text-neutral-700">
                   {formatCurrency(
                     summary.interestOutstanding,
                   )}
@@ -1220,27 +1243,27 @@ export function CustomerLoanDetailsPage() {
       </section>
 
       {/* RPS */}
-      <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <section className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-neutral-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex items-start gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
               <FileText
                 size={21}
               />
             </div>
 
             <div>
-              <h2 className="text-base font-bold text-slate-950">
+              <h2 className="text-base font-bold text-neutral-950">
                 Repayment Schedule
               </h2>
 
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-neutral-500">
                 Bullet repayment schedule and payment status
               </p>
             </div>
           </div>
 
-          <span className="w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600">
+          <span className="w-fit rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-[11px] font-bold text-neutral-600">
             {rps.length}{' '}
             Installment
           </span>
@@ -1248,18 +1271,18 @@ export function CustomerLoanDetailsPage() {
 
         {rps.length === 0 ? (
           <div className="px-6 py-14 text-center">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-info-50 text-info-600">
               <Clock
                 size={27}
                 className="animate-pulse"
               />
             </div>
 
-            <h3 className="mt-4 text-sm font-bold text-slate-900">
+            <h3 className="mt-4 text-sm font-bold text-neutral-900">
               Repayment schedule pending
             </h3>
 
-            <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-slate-500">
+            <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-neutral-500">
               Your repayment schedule will be generated automatically after the lender confirms the loan disbursal.
             </p>
           </div>
@@ -1273,15 +1296,15 @@ export function CustomerLoanDetailsPage() {
                     key={
                       row.installmentNumber
                     }
-                    className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4"
+                    className="rounded-2xl border border-neutral-200 bg-neutral-50/50 p-4"
                   >
-                    <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                    <div className="flex items-center justify-between gap-3 border-b border-neutral-200 pb-3">
                       <div>
-                        <p className="text-xs font-bold text-slate-950">
+                        <p className="text-xs font-bold text-neutral-950">
                           Installment #{row.installmentNumber}
                         </p>
 
-                        <p className="mt-1 text-[11px] text-slate-500">
+                        <p className="mt-1 text-[11px] text-neutral-500">
                           Due {formatDate(
                             row.dueDate,
                           )}
@@ -1339,7 +1362,7 @@ export function CustomerLoanDetailsPage() {
                               row,
                             )
                           }
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/15 transition hover:bg-emerald-700"
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-brand-600/15 transition hover:bg-brand-700"
                         >
                           <CreditCard
                             size={15}
@@ -1350,7 +1373,7 @@ export function CustomerLoanDetailsPage() {
                           )}
                         </button>
                       ) : (
-                        <span className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-700">
+                        <span className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-xs font-bold text-brand-700">
                           <CheckCircle2
                             size={15}
                           />
@@ -1366,8 +1389,8 @@ export function CustomerLoanDetailsPage() {
             {/* Desktop schedule */}
             <div className="hidden overflow-x-auto lg:block">
               <table className="min-w-[1250px] w-full text-left text-xs">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <thead className="border-b border-neutral-200 bg-neutral-50">
+                  <tr className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">
                     <th className="whitespace-nowrap px-4 py-4">
                       Inst. #
                     </th>
@@ -1384,7 +1407,7 @@ export function CustomerLoanDetailsPage() {
                       Interest
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right text-slate-700">
+                    <th className="whitespace-nowrap px-4 py-4 text-right text-neutral-700">
                       Bullet EMI
                     </th>
 
@@ -1414,50 +1437,50 @@ export function CustomerLoanDetailsPage() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-neutral-100">
                   {rps.map(
                     (row) => (
                       <tr
                         key={
                           row.installmentNumber
                         }
-                        className="transition hover:bg-emerald-50/30"
+                        className="transition hover:bg-brand-50/30"
                       >
-                        <td className="whitespace-nowrap px-4 py-4 font-bold text-slate-950">
+                        <td className="whitespace-nowrap px-4 py-4 font-bold text-neutral-950">
                           #{row.installmentNumber}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 font-semibold text-slate-700">
+                        <td className="whitespace-nowrap px-4 py-4 font-semibold text-neutral-700">
                           {formatDate(
                             row.dueDate,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-slate-700">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-700">
                           {formatCurrency(
                             row.principal,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-slate-500">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-500">
                           {formatCurrency(
                             row.interest,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-slate-950">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-neutral-950">
                           {formatCurrency(
                             row.emi,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-slate-600">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-600">
                           {formatCurrency(
                             row.openingPrincipal,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-slate-600">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-600">
                           {formatCurrency(
                             row.closingPrincipal,
                           )}
@@ -1471,13 +1494,13 @@ export function CustomerLoanDetailsPage() {
                           />
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-emerald-700">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-brand-700">
                           {formatCurrency(
                             row.paidAmount,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-slate-950">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-neutral-950">
                           {formatCurrency(
                             row.remainingAmount,
                           )}
@@ -1495,7 +1518,7 @@ export function CustomerLoanDetailsPage() {
                                   row,
                                 )
                               }
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white shadow-sm transition hover:bg-emerald-700"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-[11px] font-bold text-white shadow-sm transition hover:bg-brand-700"
                             >
                               <CreditCard
                                 size={13}
@@ -1503,7 +1526,7 @@ export function CustomerLoanDetailsPage() {
                               Pay Now
                             </button>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[10px] font-bold text-brand-700">
                               <CheckCircle2
                                 size={12}
                               />
@@ -1525,7 +1548,7 @@ export function CustomerLoanDetailsPage() {
       <section className="grid gap-5 xl:grid-cols-2">
         <HistoryTableCard
           icon={History}
-          iconStyle="bg-indigo-100 text-indigo-700"
+          iconStyle="bg-accent-100 text-accent-700"
           title="Repayment History"
           subtitle="Payment transactions received"
           empty={
@@ -1535,7 +1558,7 @@ export function CustomerLoanDetailsPage() {
           emptyText="No repayment transactions received yet."
         >
           <table className="min-w-[650px] w-full text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
               <tr>
                 <th className="px-4 py-3">
                   Payment ID
@@ -1559,37 +1582,37 @@ export function CustomerLoanDetailsPage() {
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-neutral-100">
               {repayments.map(
                 (rep) => (
                   <tr
                     key={
                       rep.paymentId
                     }
-                    className="hover:bg-slate-50"
+                    className="hover:bg-neutral-50"
                   >
-                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-slate-950">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-neutral-950">
                       {rep.paymentId}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                    <td className="whitespace-nowrap px-4 py-3 text-neutral-600">
                       {formatDate(
                         rep.paymentDate,
                       )}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono font-bold text-emerald-700">
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono font-bold text-brand-700">
                       {formatCurrency(
                         rep.amountReceived,
                       )}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
+                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-700">
                       {rep.paymentMode}
                     </td>
 
                     <td className="whitespace-nowrap px-4 py-3">
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                      <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-bold text-brand-700">
                         {rep.status}
                       </span>
                     </td>
@@ -1602,7 +1625,7 @@ export function CustomerLoanDetailsPage() {
 
         <HistoryTableCard
           icon={Layers}
-          iconStyle="bg-violet-100 text-violet-700"
+          iconStyle="bg-accent-100 text-accent-700"
           title="Allocation History"
           subtitle="Payment component allocations"
           empty={
@@ -1612,7 +1635,7 @@ export function CustomerLoanDetailsPage() {
           emptyText="No payment component allocations recorded yet."
         >
           <table className="min-w-[560px] w-full text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold uppercase tracking-wide text-neutral-500">
               <tr>
                 <th className="px-4 py-3">
                   Payment ID
@@ -1632,7 +1655,7 @@ export function CustomerLoanDetailsPage() {
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-neutral-100">
               {allocations.map(
                 (
                   alloc,
@@ -1640,21 +1663,21 @@ export function CustomerLoanDetailsPage() {
                 ) => (
                   <tr
                     key={idx}
-                    className="hover:bg-slate-50"
+                    className="hover:bg-neutral-50"
                   >
-                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-slate-950">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-neutral-950">
                       {alloc.paymentId}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-700">
+                    <td className="whitespace-nowrap px-4 py-3 font-bold text-neutral-700">
                       #{alloc.installmentNumber}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                    <td className="whitespace-nowrap px-4 py-3 text-neutral-600">
                       {alloc.component}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono font-bold text-slate-950">
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono font-bold text-neutral-950">
                       {formatCurrency(
                         alloc.allocatedAmount,
                       )}
@@ -1670,22 +1693,22 @@ export function CustomerLoanDetailsPage() {
       {/* Modal */}
       {isPayModalOpen &&
         selectedInst && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-neutral-950/65 p-4 backdrop-blur-sm">
             <div className="max-h-[calc(100vh-32px)] w-full max-w-md overflow-y-auto rounded-[28px] border border-white/20 bg-white shadow-2xl">
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-100 bg-white px-5 py-5 sm:px-6">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-neutral-100 bg-white px-5 py-5 sm:px-6">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
                     <CreditCard
                       size={21}
                     />
                   </div>
 
                   <div className="min-w-0">
-                    <h3 className="truncate text-sm font-bold text-slate-950 sm:text-base">
+                    <h3 className="truncate text-sm font-bold text-neutral-950 sm:text-base">
                       Pay Installment #{selectedInst.installmentNumber}
                     </h3>
 
-                    <p className="mt-0.5 text-[11px] text-slate-500">
+                    <p className="mt-0.5 text-[11px] text-neutral-500">
                       Easebuzz secure checkout
                     </p>
                   </div>
@@ -1701,7 +1724,7 @@ export function CustomerLoanDetailsPage() {
                   disabled={
                     isProcessingPayment
                   }
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-50"
                   aria-label="Close payment modal"
                 >
                   <X
@@ -1712,7 +1735,7 @@ export function CustomerLoanDetailsPage() {
 
               <div className="space-y-5 p-5 sm:p-6">
                 {paymentSuccessMsg && (
-                  <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-bold text-emerald-700">
+                  <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4 text-xs font-bold text-brand-700">
                     <CheckCircle2
                       size={17}
                       className="mt-0.5 shrink-0"
@@ -1727,7 +1750,7 @@ export function CustomerLoanDetailsPage() {
                 )}
 
                 {paymentErrorMsg && (
-                  <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700">
+                  <div className="flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-4 text-xs font-bold text-danger-700">
                     <AlertTriangle
                       size={17}
                       className="mt-0.5 shrink-0"
@@ -1743,7 +1766,7 @@ export function CustomerLoanDetailsPage() {
 
                 {!paymentSuccessMsg && (
                   <>
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
                       <ModalInfoRow
                         label="Installment Number"
                         value={`#${selectedInst.installmentNumber}`}
@@ -1763,12 +1786,12 @@ export function CustomerLoanDetailsPage() {
                         )}
                       />
 
-                      <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-white px-4 py-4">
-                        <span className="text-sm font-bold text-slate-950">
+                      <div className="flex items-center justify-between gap-4 border-t border-neutral-200 bg-white px-4 py-4">
+                        <span className="text-sm font-bold text-neutral-950">
                           Total Amount
                         </span>
 
-                        <span className="text-lg font-black text-emerald-700">
+                        <span className="text-lg font-black text-brand-700">
                           {formatCurrency(
                             selectedInst.remainingAmount,
                           )}
@@ -1776,7 +1799,7 @@ export function CustomerLoanDetailsPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-2 rounded-xl bg-emerald-50 px-3.5 py-3 text-[11px] leading-5 text-emerald-800">
+                    <div className="flex items-start gap-2 rounded-xl bg-brand-50 px-3.5 py-3 text-[11px] leading-5 text-brand-800">
                       <Lock
                         size={14}
                         className="mt-0.5 shrink-0"
@@ -1798,7 +1821,7 @@ export function CustomerLoanDetailsPage() {
                         disabled={
                           isProcessingPayment
                         }
-                        className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                        className="min-h-12 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
                       >
                         Cancel
                       </button>
@@ -1811,7 +1834,7 @@ export function CustomerLoanDetailsPage() {
                         disabled={
                           isProcessingPayment
                         }
-                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/20 transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isProcessingPayment ? (
                           <>
@@ -1835,7 +1858,7 @@ export function CustomerLoanDetailsPage() {
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-center gap-2 text-[10px] font-semibold text-slate-400">
+                    <div className="flex items-center justify-center gap-2 text-[10px] font-semibold text-neutral-400">
                       <ShieldCheck
                         size={13}
                       />
@@ -1855,7 +1878,7 @@ function OverviewMetric({
   label,
   value,
   icon: Icon,
-  valueClass = 'text-slate-900',
+  valueClass = 'text-neutral-900',
 }) {
   return (
     <div className="bg-white px-5 py-5 sm:px-6">
@@ -1863,11 +1886,11 @@ function OverviewMetric({
         {Icon && (
           <Icon
             size={14}
-            className="text-slate-400"
+            className="text-neutral-400"
           />
         )}
 
-        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-400">
           {label}
         </span>
       </div>
@@ -1888,12 +1911,12 @@ function InfoRow({
 }) {
   return (
     <div className="flex flex-col gap-1.5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-neutral-500">
         {label}
       </span>
 
       <span
-        className={`break-all text-xs font-bold text-slate-900 sm:max-w-[60%] sm:text-right sm:text-sm ${mono
+        className={`break-all text-xs font-bold text-neutral-900 sm:max-w-[60%] sm:text-right sm:text-sm ${mono
             ? 'font-mono'
             : ''
           }`}
@@ -1913,30 +1936,30 @@ function SummaryCard({
 }) {
   const tones = {
     slate:
-      'border-slate-200 bg-gradient-to-br from-slate-50 to-white',
+      'border-neutral-200 bg-gradient-to-br from-neutral-50 to-white',
 
     emerald:
-      'border-emerald-100 bg-gradient-to-br from-emerald-50 to-white',
+      'border-brand-100 bg-gradient-to-br from-brand-50 to-white',
 
     amber:
-      'border-amber-100 bg-gradient-to-br from-amber-50 to-white',
+      'border-caution-100 bg-gradient-to-br from-caution-50 to-white',
 
     red:
-      'border-red-100 bg-gradient-to-br from-red-50 to-white',
+      'border-danger-100 bg-gradient-to-br from-danger-50 to-white',
   };
 
   const valueTones = {
     slate:
-      'text-slate-950',
+      'text-neutral-950',
 
     emerald:
-      'text-emerald-700',
+      'text-brand-700',
 
     amber:
-      'text-amber-800',
+      'text-caution-800',
 
     red:
-      'text-red-700',
+      'text-danger-700',
   };
 
   return (
@@ -1945,7 +1968,7 @@ function SummaryCard({
         tones.slate
         }`}
     >
-      <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
+      <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-neutral-500">
         {label}
       </p>
 
@@ -1958,7 +1981,7 @@ function SummaryCard({
       </p>
 
       {helper && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-neutral-500">
           {helper}
         </p>
       )}
@@ -1977,18 +2000,18 @@ function PaymentStatusBadge({
     ).toUpperCase();
 
   let style =
-    'border-amber-200 bg-amber-50 text-amber-700';
+    'border-caution-200 bg-caution-50 text-caution-700';
 
   if (value === 'PAID') {
     style =
-      'border-emerald-200 bg-emerald-50 text-emerald-700';
+      'border-brand-200 bg-brand-50 text-brand-700';
   }
 
   if (
     value === 'OVERDUE'
   ) {
     style =
-      'border-red-200 bg-red-50 text-red-700';
+      'border-danger-200 bg-danger-50 text-danger-700';
   }
 
   return (
@@ -2008,14 +2031,14 @@ function MobileValue({
 }) {
   return (
     <div className="rounded-xl bg-white p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
         {label}
       </p>
 
       <p
         className={`mt-1.5 break-words ${prominent
-            ? 'text-sm font-black text-slate-950'
-            : 'text-xs font-bold text-slate-700'
+            ? 'text-sm font-black text-neutral-950'
+            : 'text-xs font-bold text-neutral-700'
           }`}
       >
         {value}
@@ -2034,8 +2057,8 @@ function HistoryTableCard({
   children,
 }) {
   return (
-    <article className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">
+    <article className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-sm">
+      <div className="flex items-center gap-3 border-b border-neutral-100 px-5 py-5 sm:px-6">
         <div
           className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${iconStyle}`}
         >
@@ -2045,11 +2068,11 @@ function HistoryTableCard({
         </div>
 
         <div>
-          <h2 className="text-base font-bold text-slate-950">
+          <h2 className="text-base font-bold text-neutral-950">
             {title}
           </h2>
 
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-neutral-500">
             {subtitle}
           </p>
         </div>
@@ -2057,7 +2080,7 @@ function HistoryTableCard({
 
       {empty ? (
         <div className="px-6 py-12 text-center">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-neutral-500">
             {emptyText}
           </p>
         </div>
@@ -2075,12 +2098,12 @@ function ModalInfoRow({
   value,
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3.5 last:border-b-0">
-      <span className="text-xs text-slate-500">
+    <div className="flex items-center justify-between gap-4 border-b border-neutral-200 px-4 py-3.5 last:border-b-0">
+      <span className="text-xs text-neutral-500">
         {label}
       </span>
 
-      <span className="break-words text-right text-xs font-bold text-slate-900">
+      <span className="break-words text-right text-xs font-bold text-neutral-900">
         {value}
       </span>
     </div>

@@ -36,6 +36,14 @@ const schema = z
     ARGON2_TIME_COST: z.coerce.number().int().min(2).max(10).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).max(8).default(1),
     SECURITY_HMAC_KEY: z.string().min(32),
+    // VAPT C6: signs short-lived /uploads document URLs (see
+    // document-url-signer.helper.ts) — kept separate from SECURITY_HMAC_KEY so
+    // rotating one purpose's key doesn't silently affect the other.
+    DOCUMENT_URL_SIGNING_KEY: z.string().min(32),
+    // VAPT C5: previously not in this schema at all, so bank-security.helper.ts had no
+    // enforcement they were ever set and silently used a hardcoded fallback if absent.
+    BANK_ACCOUNT_ENCRYPTION_KEY: z.string().min(32),
+    BANK_ACCOUNT_HMAC_KEY: z.string().min(32),
     AUDIT_INTEGRITY_KEY: z.string().min(32),
     SEED_SUPERADMIN_NAME: z.string().optional().default(''),
     SEED_SUPERADMIN_EMAIL: z.string().optional().default(''),
@@ -80,7 +88,7 @@ const schema = z
     }
     if (env.NODE_ENV !== 'production') return;
     const weakMarkers = ['development', 'replace', 'example', 'changeme', 'password'];
-    for (const key of ['JWT_ACCESS_SECRET', 'REFRESH_TOKEN_PEPPER', 'SECURITY_HMAC_KEY', 'AUDIT_INTEGRITY_KEY'] as const) {
+    for (const key of ['JWT_ACCESS_SECRET', 'REFRESH_TOKEN_PEPPER', 'SECURITY_HMAC_KEY', 'AUDIT_INTEGRITY_KEY', 'DOCUMENT_URL_SIGNING_KEY', 'BANK_ACCOUNT_ENCRYPTION_KEY', 'BANK_ACCOUNT_HMAC_KEY'] as const) {
       const value = env[key];
       if (value.length < 48 || weakMarkers.some((marker) => value.toLowerCase().includes(marker))) {
         context.addIssue({ code: 'custom', path: [key], message: 'must be a strong production secret' });

@@ -127,4 +127,55 @@ export class EmailService {
       );
     }
   }
+
+  async sendWelcomeLetter(
+    email: string,
+    details: {
+      customerName: string;
+      lan: string;
+      disbursedAmount: number;
+      disbursalDate: string;
+      firstRepaymentDate: string;
+    },
+    attachment: { filename: string; content: Buffer },
+  ): Promise<void> {
+    const amountFormatted = details.disbursedAmount.toLocaleString('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    });
+
+    try {
+      await this.transporter.sendMail({
+        from: this.smtpFrom,
+        to: email,
+        subject: `Welcome to Fintree — Loan ${details.lan} Disbursed`,
+        text: `Dear ${details.customerName},\n\nCongratulations! Your loan (${details.lan}) of ${amountFormatted} has been disbursed on ${details.disbursalDate}. Your first repayment is due on ${details.firstRepaymentDate}.\n\nYour signed loan agreement is attached to this email for your records.\n\nWelcome aboard,\nTeam Fintree`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:560px">
+            <h2>Welcome to Fintree!</h2>
+            <p>Dear ${details.customerName},</p>
+            <p>Congratulations — your loan has been successfully disbursed. Here are your loan details:</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0">
+              <tr><td style="padding:6px 0;color:#64748b">Loan Account Number</td><td style="padding:6px 0;font-weight:bold">${details.lan}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b">Disbursed Amount</td><td style="padding:6px 0;font-weight:bold">${amountFormatted}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b">Disbursal Date</td><td style="padding:6px 0;font-weight:bold">${details.disbursalDate}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b">First Repayment Due</td><td style="padding:6px 0;font-weight:bold">${details.firstRepaymentDate}</td></tr>
+            </table>
+            <p>Your signed loan agreement is attached to this email for your records — please keep it safe.</p>
+            <p>Welcome aboard,<br/>Team Fintree</p>
+          </div>
+        `,
+        attachments: [attachment],
+      });
+    } catch (error: any) {
+      console.error('Welcome letter email sending error:', {
+        message: error?.message,
+        code: error?.code,
+        command: error?.command,
+        response: error?.response,
+      });
+      throw error;
+    }
+  }
 }

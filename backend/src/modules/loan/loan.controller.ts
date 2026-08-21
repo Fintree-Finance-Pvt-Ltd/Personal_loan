@@ -107,10 +107,13 @@ export class LoanController {
     return this.loanService.refreshMandateStatus(lan, this.customerId(customer));
   }
 
-  @Post(':lan/esign/initiate')
-  initiateEsign(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
-    return this.loanService.initiateEsign(lan, this.customerId(customer));
-  }
+  // VAPT C4: this route used to just flip esignCompleted/esignStatus/status straight to
+  // READY_FOR_DISBURSAL the moment mandate was done — no document, no signer evidence, no
+  // interaction with the real e-sign flow below (electronic-sign.controller.ts /
+  // electronic-sign.service.ts, the legally-real one). It let a customer reach disbursal
+  // eligibility on a loan agreement that was never actually signed. Removed entirely
+  // rather than fixed in place, since the real flow already exists and nothing in the
+  // frontend called this route.
 
   @Get(':lan/esign/status')
   async getEsignStatus(@Param('lan') lan: string, @CurrentCustomer() customer: any) {
@@ -148,12 +151,18 @@ export class LoanController {
     );
   }
 
+  // Deliberately does NOT credit a repayment itself — it only reports whether the
+  // Easebuzz-signature-verified webhook has already done so. See
+  // LoanService.confirmRepaymentStatus for why (VAPT C1: this route used to trust a
+  // client-supplied amount/installmentNumber/status with no ownership check at all).
   @Post(':lan/repay/confirm')
   async processRepayment(
     @Param('lan') lan: string,
-    @Body() body: any,
+    @CurrentCustomer() customer: any,
+    @Body() body: { txnid?: string; paymentId?: string; referenceNumber?: string },
   ) {
-    return this.loanService.processRepayment(lan, body);
+    const txnid = body?.txnid || body?.paymentId || body?.referenceNumber || '';
+    return this.loanService.confirmRepaymentStatus(lan, this.customerId(customer), txnid);
   }
 
   @Post(':lan/reset-rps')

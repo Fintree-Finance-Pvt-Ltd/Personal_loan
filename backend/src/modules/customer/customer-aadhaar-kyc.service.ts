@@ -14,6 +14,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { namesLikelyMatch } from '../../common/utils/name-matcher.helper';
 
 @Injectable()
 export class CustomerAadhaarKycService {
@@ -1029,17 +1030,73 @@ export class CustomerAadhaarKycService {
         ...(verifiedGender ? { verifiedGender } : {}),
       },
     });
-    const addressLine1 = String(address.house || address.careOf || address.co || address.street || '').trim();
+    // addressLine1 previously required house/careOf/co/street to be non-empty, and if
+    // none of those four sub-fields were populated on this Aadhaar record (common —
+    // many real Aadhaar addresses have an empty "house" field with no fallback), the
+    // ENTIRE applicationAddress PERMANENT row was silently never created, even though
+    // Aadhaar verification itself succeeded. For a first-time customer (no prior
+    // application to backfill from — see saveApplicationAddress in customer.service.ts)
+    // this left them permanently stuck at "Permanent address must be saved first" with
+    // no way to proceed, since the UI only ever confirms CURRENT address and assumes
+    // PERMANENT already exists. city/state/pincode are far more reliably populated on
+    // any Aadhaar record, so only those three actually gate creation now; addressLine1
+    // falls back through locality/district/a formatted-address string rather than ever
+    // leaving the row unsaved.
+    const addressLine1 = String(
+      address.house || address.careOf || address.co || address.street || address.loc || address.landmark || address.dist || 'Address as per Aadhaar',
+    ).trim();
     const city = String(address.vtc || address.city || address.dist || '').trim();
     const state = String(address.state || '').trim();
     const pincode = String(address.pc || address.pincode || '').trim();
-    if (addressLine1 && city && state && /^[1-9][0-9]{5}$/.test(pincode)) {
+    if (city && state && /^[1-9][0-9]{5}$/.test(pincode)) {
       await this.prisma.applicationAddress.upsert({
         where: { applicationId_addressType: { applicationId: application.id, addressType: 'PERMANENT' } },
         create: { applicationId: application.id, addressType: 'PERMANENT', source: 'DIGILOCKER', addressLine1, addressLine2: address.street || null, locality: address.loc || null, district: address.dist || null, city, state, pincode, country: address.country || 'India', sourceVerifiedAt: verifiedAt },
         update: { source: 'DIGILOCKER', addressLine1, addressLine2: address.street || null, locality: address.loc || null, district: address.dist || null, city, state, pincode, country: address.country || 'India', sourceVerifiedAt: verifiedAt },
       });
     }
+
+    await this.checkPanAadhaarNameConsistency(customerId, application.id, verifiedName);
+  }
+
+  /**
+   * Fraud-prevention: PAN and Aadhaar are two independently-verified identity
+   * documents, and until now nothing ever compared the names on them —
+   * Customer.fullName is set by PAN verification and deliberately never overwritten
+   * by Aadhaar (see the create/update above), so a customer completing PAN as one
+   * identity and Aadhaar as another would go completely unnoticed. This doesn't block
+   * the journey (name variations between PAN/Aadhaar are common enough in India —
+   * transliteration, missing middle names, reordering — that a hard block risks
+   * rejecting real customers); it logs a tamper-evident audit event so admins can
+   * review it. Uses a local matcher, not Digio's paid fuzzy-match API, since both
+   * names are already verified and already in our own DB — no new external call needed.
+   */
+  private async checkPanAadhaarNameConsistency(customerId: bigint, applicationId: bigint, aadhaarVerifiedName: string | null) {
+    if (!aadhaarVerifiedName) return;
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { fullName: true, panVerified: true, panNumber: true },
+    });
+    if (!customer?.panVerified || !customer.fullName) return;
+
+    const { score, matched } = namesLikelyMatch(customer.fullName, aadhaarVerifiedName);
+
+    if (!matched) {
+      this.logger.warn(`PAN/Aadhaar name mismatch flagged for customer ${customerId}: PAN="${customer.fullName}" Aadhaar="${aadhaarVerifiedName}" score=${score}`);
+    }
+
+    await this.auditLogs
+      .record({
+        actorUserId: null,
+        module: 'IDENTITY_VERIFICATION',
+        action: matched ? 'PAN_AADHAAR_NAME_MATCHED' : 'PAN_AADHAAR_NAME_MISMATCH',
+        entityType: 'PlApplication',
+        entityId: applicationId.toString(),
+        outcome: matched ? 'SUCCESS' : 'DENIED',
+        newValue: { panName: customer.fullName, aadhaarName: aadhaarVerifiedName, score, matched },
+        requestId: randomBytes(16).toString('hex'),
+      })
+      .catch(() => { /* non-critical */ });
   }
 
   /**

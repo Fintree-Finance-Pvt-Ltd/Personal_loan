@@ -65,25 +65,25 @@ export default function CustomerHeader({
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/90 backdrop-blur-xl">
       <div className="flex min-h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         {/* Left section */}
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={onMenuClick}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 lg:hidden"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-neutral-200 text-neutral-600 transition hover:bg-neutral-50 hover:text-neutral-900 lg:hidden"
             aria-label="Open sidebar"
           >
             <Menu size={22} />
           </button>
 
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold text-slate-900 sm:text-xl">
+            <h1 className="truncate text-lg font-bold text-neutral-900 sm:text-xl">
               {pageInformation.title}
             </h1>
 
-            <p className="hidden truncate text-sm text-slate-500 sm:block">
+            <p className="hidden truncate text-sm text-neutral-500 sm:block">
               {pageInformation.subtitle}
             </p>
           </div>
@@ -93,37 +93,37 @@ export default function CustomerHeader({
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
-            className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+            className="relative grid h-11 w-11 place-items-center rounded-xl border border-neutral-200 text-neutral-600 transition hover:bg-neutral-50 hover:text-neutral-900"
             aria-label="Notifications"
           >
             <Bell size={20} />
 
-            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-danger-500 ring-2 ring-white" />
           </button>
 
           <div className="relative">
             <button
               type="button"
               onClick={() => setProfileOpen((current) => !current)}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-1.5 pr-2 transition hover:bg-slate-50"
+              className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-1.5 pr-2 transition hover:bg-neutral-50"
             >
-              <div className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
+              <div className="grid h-9 w-9 place-items-center rounded-lg bg-brand-100 text-brand-700">
                 <User size={18} />
               </div>
 
               <div className="hidden text-left md:block">
-                <p className="max-w-36 truncate text-xs font-bold text-slate-900">
+                <p className="max-w-36 truncate text-xs font-bold text-neutral-900">
                   Customer
                 </p>
 
-                <p className="max-w-36 truncate text-[11px] text-slate-500">
+                <p className="max-w-36 truncate text-[11px] text-neutral-500">
                   {maskedMobile}
                 </p>
               </div>
 
               <ChevronDown
                 size={16}
-                className={`hidden text-slate-400 transition-transform sm:block ${
+                className={`hidden text-neutral-400 transition-transform sm:block ${
                   profileOpen ? 'rotate-180' : ''
                 }`}
               />
@@ -138,13 +138,13 @@ export default function CustomerHeader({
                   className="fixed inset-0 z-40 cursor-default"
                 />
 
-                <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <div className="border-b border-slate-100 px-3 py-3">
-                    <p className="text-sm font-bold text-slate-900">
+                <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl">
+                  <div className="border-b border-neutral-100 px-3 py-3">
+                    <p className="text-sm font-bold text-neutral-900">
                       Customer Account
                     </p>
 
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-neutral-500">
                       {maskedMobile}
                     </p>
                   </div>
@@ -155,7 +155,7 @@ export default function CustomerHeader({
                       setProfileOpen(false);
                       navigate('/customer/profile');
                     }}
-                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-neutral-700 hover:bg-neutral-50"
                   >
                     <User size={17} />
                     View Profile
@@ -164,7 +164,7 @@ export default function CustomerHeader({
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-danger-600 hover:bg-danger-50"
                   >
                     Logout
                   </button>

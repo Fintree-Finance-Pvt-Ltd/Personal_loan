@@ -11,6 +11,8 @@ describe('LoanService customer ownership', () => {
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
+    {} as any,
   );
 
   it('never falls back to an unscoped LAN lookup', async () => {
@@ -24,10 +26,12 @@ describe('LoanService customer ownership', () => {
     }));
   });
 
+  // eSign case removed: initiateEsign (VAPT C4 — a fake shortcut that marked agreements
+  // signed with no real signing) was deleted entirely rather than fixed in place. The
+  // real e-sign flow lives in electronic-sign.service.ts.
   it.each([
     ['bank verification', (service: LoanService) => service.verifyBankAccount('LAN-OTHER', 7n, {})],
     ['mandate', (service: LoanService) => service.initiateMandate('LAN-OTHER', 7n)],
-    ['eSign', (service: LoanService) => service.initiateEsign('LAN-OTHER', 7n)],
   ])('blocks another customer from %s before any provider action', async (_name, operation) => {
     const prisma = { plLoan: { findFirst: jest.fn().mockResolvedValue(null) } };
     const service = createService(prisma);

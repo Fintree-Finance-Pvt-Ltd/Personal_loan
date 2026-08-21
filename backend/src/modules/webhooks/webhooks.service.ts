@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LoanService } from '../loan/loan.service';
+import { PlPaymentsService } from '../external-api/pl-payments.service';
 import { normalizeDigitapStatus } from '../loan/digilocker-normalizer';
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
 
-  constructor(private readonly loanService: LoanService) {}
+  constructor(
+    private readonly loanService: LoanService,
+    private readonly plPaymentsService: PlPaymentsService,
+  ) {}
 
   async processDigitapDigilockerWebhook(payload: any, ipAddress: string, userAgent: string) {
     const transactionId =
@@ -56,35 +60,25 @@ export class WebhooksService {
     return this.loanService.processDisbursalWebhook(lenderCode, payload, ipAddress, userAgent);
   }
 
+  // NOTE: this route does NOT credit a repayment directly (VAPT C2 — it used to trust
+  // lan/installmentNumber/amount straight from an unauthenticated request body with no
+  // signature of any kind). It only reaches this far after the controller's mandatory
+  // secret-header check has already passed.
   async processRepaymentWebhook(payload: any) {
     const lan = payload.lan || payload.LAN || payload.loanAccountNo;
-    return this.loanService.processRepayment(lan, payload);
+    this.logger.warn(`/webhooks/repayment invoked for LAN ${lan} — this route no longer credits repayments directly; verified crediting happens via the Easebuzz webhook only.`);
+    return {
+      success: false,
+      status: 'IGNORED',
+      message: 'This endpoint no longer processes repayments directly. Repayments are credited only via the signature-verified Easebuzz webhook.',
+    };
   }
 
-  async processEasebuzzPaymentWebhook(payload: any) {
-    const udf3 = String(payload?.udf3 || payload?.purpose || '').trim().toUpperCase();
-    const status = String(payload?.status || payload?.payment_status || '').toLowerCase();
-    const isSuccess = ['success', 'successful', 'paid', 'captured', 'completed'].includes(status);
-
-    if (!isSuccess) {
-      return { success: false, status: 'IGNORED', message: 'Payment status is not successful' };
-    }
-
-    if (udf3 === 'EMI_REPAYMENT' || udf3 === 'REPAYMENT') {
-      const lan = payload?.udf4 || payload?.lan || payload?.loanAccountNo;
-      const instNum = Number(payload?.udf5 || payload?.installmentNumber || 1);
-      const amount = Number(payload?.amount);
-      const paymentId = payload?.txnid || payload?.easepayid;
-
-      return this.loanService.processRepayment(lan, {
-        installmentNumber: instNum,
-        amount,
-        paymentId,
-        paymentMode: 'EASEBUZZ',
-        referenceNumber: payload?.easepayid || payload?.txnid,
-      });
-    }
-
-    return { success: true, message: 'Easebuzz payment webhook acknowledged' };
+  // Delegates to PlPaymentsService.handleEasebuzzWebhook — the single, properly
+  // hash-verified + idempotent + amount-checked Easebuzz webhook handler already used
+  // for the assessment fee. This route used to do its own thing with zero signature
+  // verification (VAPT C2); it's now just an alternate URL for the same secure handler.
+  async processEasebuzzPaymentWebhook(payload: any, headers: any) {
+    return this.plPaymentsService.handleEasebuzzWebhook(payload, headers);
   }
 }

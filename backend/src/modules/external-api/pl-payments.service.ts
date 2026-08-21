@@ -1,11 +1,14 @@
 import {
   BadGatewayException,
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { LoanService } from '../loan/loan.service';
 import {
   createPlEasyCollectLink,
   extractPlEasebuzzId,
@@ -45,6 +48,8 @@ export class PlPaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
+    @Inject(forwardRef(() => LoanService))
+    private readonly loanService: LoanService,
   ) { }
 
   /**
@@ -1098,16 +1103,58 @@ export class PlPaymentsService {
             await this.lenderIntegrationOutbox.enqueueCreateAfterVerifiedPayment(tx, BigInt(application.id));
          }
 
-         return { 
-           success: true, 
+         // EMI repayment: only credited once (payment.status !== 'SUCCESS' already means
+         // this exact webhook delivery wasn't a replay — the plWebhookInbox insert above
+         // is the primary replay guard). lan/installmentNumber/amount are all read back
+         // from THIS server-created row, never from the webhook payload — that's what
+         // makes this safe against a forged/replayed webhook body (VAPT C1/C2).
+         let repaymentMeta: { lan: string; installmentNumber: number; amount: number } | null = null;
+         if (nextStatus === 'SUCCESS' && payment.purpose === 'OTHER' && payment.status !== 'SUCCESS') {
+           try {
+             const metadata = payment.raw_request ? JSON.parse(payment.raw_request) : null;
+             if (metadata?.kind === 'EMI_REPAYMENT' && metadata?.lan && metadata?.installmentNumber) {
+               repaymentMeta = {
+                 lan: String(metadata.lan),
+                 installmentNumber: Number(metadata.installmentNumber),
+                 amount: Number(payment.amount),
+               };
+             }
+           } catch {
+             // Not EMI-repayment metadata (or malformed) — leave repaymentMeta null.
+           }
+         }
+
+         return {
+           success: true,
            message: 'Easebuzz webhook processed successfully.',
            data: {
              ...this.serializePayment(updatedPayment, application?.application_number),
              providerStatus,
              errorMessage: data?.error_Message || data?.error_message || data?.message || null,
+             repaymentMeta,
            }
          };
       });
+
+      // Deliberately outside the transaction above (same pattern as
+      // enqueueCreateAfterVerifiedPayment for assessment fees): the payment link is
+      // already durably marked SUCCESS at this point, and LoanService.processRepayment
+      // is itself idempotent (dedupes by referenceNumber/paymentId), so a retry here on
+      // failure — via Easebuzz's own webhook retry or a reconciliation job — is safe.
+      if (result?.data?.repaymentMeta) {
+        const meta = result.data.repaymentMeta;
+        try {
+          await this.loanService.processRepayment(meta.lan, {
+            installmentNumber: meta.installmentNumber,
+            amount: meta.amount,
+            paymentId: String(merchantTxn),
+            paymentMode: 'EASEBUZZ',
+            referenceNumber: easebuzzId ? String(easebuzzId) : String(merchantTxn),
+          });
+        } catch (err: any) {
+          this.logger.error(`Failed to credit verified EMI repayment for txn ${merchantTxn}: ${err?.message || err}`);
+        }
+      }
 
       return result;
     } catch (error: any) {

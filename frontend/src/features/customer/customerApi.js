@@ -287,6 +287,27 @@ export async function getCustomerById(customerId) {
   return customer;
 }
 
+// Uses the customer-authenticated client (Authorization: Bearer <access token>, via
+// customerAxios's interceptor) rather than authApi's plain fetch client — the backend
+// now derives customerId from the verified session token, not from the request body
+// (VAPT C3: this endpoint used to trust a client-supplied customerId with no session
+// check at all, letting anyone hijack any account's email by guessing a numeric ID).
+export async function sendEmailOtp(email) {
+  const result = await apiRequest('/otp/email/send', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+  return result;
+}
+
+export async function verifyEmailOtp(email, otp) {
+  const result = await apiRequest('/otp/email/verify', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+  return result;
+}
+
 export async function updateCustomerProfile(customerId, profileData) {
   if (!customerId) throw new Error('Customer ID is required.');
 

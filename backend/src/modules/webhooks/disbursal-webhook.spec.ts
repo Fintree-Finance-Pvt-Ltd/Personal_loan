@@ -32,15 +32,8 @@ describe('Disbursal Webhook Integration', () => {
   });
 
   describe('Webhook Controller Authentication & Delegation', () => {
-    it('should process valid disbursal webhook without secret when DISBURSAL_WEBHOOK_SECRET is unconfigured', async () => {
+    it('should reject disbursal webhook when DISBURSAL_WEBHOOK_SECRET is unconfigured (fail closed, not open)', async () => {
       mockConfigService.get.mockReturnValue(undefined);
-      mockWebhooksService.processDisbursalWebhook.mockResolvedValue({
-        success: true,
-        status: 'DISBURSED',
-        message: 'Disbursal processed and repayment schedule generated successfully',
-        lan: 'LAN1785737725628',
-        disbursalUtr: 'UTR123456789',
-      });
 
       const payload = {
         lan: 'LAN1785737725628',
@@ -53,10 +46,10 @@ describe('Disbursal Webhook Integration', () => {
 
       const req = { ip: '127.0.0.1', headers: {} } as any;
 
-      const response = await controller.handleLenderDisbursalWebhook('FINTREE', payload, req);
-      expect(response.success).toBe(true);
-      expect(response.status).toBe('DISBURSED');
-      expect(mockWebhooksService.processDisbursalWebhook).toHaveBeenCalledWith('FINTREE', payload, '127.0.0.1', '');
+      await expect(controller.handleLenderDisbursalWebhook('FINTREE', payload, req)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockWebhooksService.processDisbursalWebhook).not.toHaveBeenCalled();
     });
 
     it('should reject webhook request when configured secret does not match header', async () => {
@@ -80,19 +73,30 @@ describe('Disbursal Webhook Integration', () => {
       expect(response.success).toBe(true);
     });
 
-    it('should delegate repayment webhook to processRepaymentWebhook', async () => {
+    it('should reject repayment webhook when no secret is configured (fail closed, not open)', async () => {
       mockConfigService.get.mockReturnValue(undefined);
-      (mockWebhooksService as any).processRepaymentWebhook = jest.fn().mockResolvedValue({
-        success: true,
-        message: 'Repayment of ₹50739.73 recorded successfully',
-        paymentId: 'PAY123456',
-      });
+      (mockWebhooksService as any).processRepaymentWebhook = jest.fn();
 
       const payload = { lan: 'LAN1785737725628', installmentNumber: 1, amount: 50739.73 };
       const req = { ip: '127.0.0.1', headers: {} } as any;
 
+      await expect(controller.handleRepaymentWebhook(payload, req)).rejects.toThrow(UnauthorizedException);
+      expect((mockWebhooksService as any).processRepaymentWebhook).not.toHaveBeenCalled();
+    });
+
+    it('should delegate repayment webhook to processRepaymentWebhook when the secret matches', async () => {
+      mockConfigService.get.mockReturnValue('SECRET123');
+      (mockWebhooksService as any).processRepaymentWebhook = jest.fn().mockResolvedValue({
+        success: false,
+        status: 'IGNORED',
+        message: 'This endpoint no longer processes repayments directly. Repayments are credited only via the signature-verified Easebuzz webhook.',
+      });
+
+      const payload = { lan: 'LAN1785737725628', installmentNumber: 1, amount: 50739.73 };
+      const req = { ip: '127.0.0.1', headers: { 'x-webhook-secret': 'SECRET123' } } as any;
+
       const response = await controller.handleRepaymentWebhook(payload, req);
-      expect(response.success).toBe(true);
+      expect(response.success).toBe(false);
       expect((mockWebhooksService as any).processRepaymentWebhook).toHaveBeenCalledWith(payload);
     });
   });

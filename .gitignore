@@ -11,4 +11,13 @@ frontend/dist/
 !backend/.env.example
 frontend/.env.local
 frontend/.env
-!frontend/.env.example 
+!frontend/.env.example
+.mcp.json
+SECURITY_AUDIT_REPORT.md
+
+# Customer-uploaded documents (PAN cards, live photos, Aadhaar/DigiLocker files,
+# signed agreements) must never be committed — this is real customer PII. 59 such
+# files were already committed and pushed to origin/uat before this was added; see
+# the flagged finding for remediation (git history contains them regardless of this
+# ignore rule going forward).
+backend/uploads/

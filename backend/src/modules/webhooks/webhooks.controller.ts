@@ -20,6 +20,20 @@ import { WebhooksService } from './webhooks.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { verifyEasebuzzWebhookHash } from '../../integrations/easebuzz-iframe.integration';
+import { timingSafeEqual } from 'crypto';
+
+function secretsMatch(provided: unknown, expected: string): boolean {
+  const providedStr = typeof provided === 'string' ? provided : '';
+  const providedBuf = Buffer.from(providedStr);
+  const expectedBuf = Buffer.from(expected);
+  // timingSafeEqual throws on length mismatch rather than returning false, and length
+  // itself is a side channel worth avoiding — pad the shorter buffer before comparing.
+  if (providedBuf.length !== expectedBuf.length) {
+    return false;
+  }
+  return timingSafeEqual(providedBuf, expectedBuf);
+}
 
 @Controller('webhooks')
 export class WebhooksController {
@@ -105,6 +119,17 @@ export class WebhooksController {
 
     this.logger.log(`Received Easebuzz EasyCollect mandate webhook [IP: ${clientIp}]`);
 
+    // Easebuzz signs standard payment/mandate callbacks with the same reverse-hash
+    // scheme (see verifyEasebuzzWebhookHash) — verify it whenever a hash is present.
+    // NOT made unconditionally mandatory here: unlike the payment webhook, this
+    // EasyCollect-mandate payload shape hasn't been confirmed against Easebuzz's docs,
+    // so hard-rejecting a hash-less real callback risks silently breaking live mandate
+    // registration. Flagged in the security report as needing vendor confirmation.
+    if (payload?.hash && !verifyEasebuzzWebhookHash(payload)) {
+      this.logger.warn(`Easebuzz EasyCollect mandate webhook failed hash verification from IP ${clientIp}`);
+      throw new UnauthorizedException('Invalid webhook signature');
+    }
+
     try {
       return await this.webhooksService.processEasebuzzEasycollectMandateWebhook(payload, clientIp, userAgent);
     } catch (error: any) {
@@ -138,16 +163,18 @@ export class WebhooksController {
 
     this.logger.log(`Received Easebuzz mandate webhook [IP: ${clientIp}]`);
 
-    const configuredSecret = this.config.get<string>('EASEBUZZ_WEBHOOK_SECRET');
-    if (configuredSecret) {
-      const incomingHash = payload?.hash;
-      if (!incomingHash) {
-        this.logger.warn(`Easebuzz webhook missing hash from IP ${clientIp}`);
-        throw new UnauthorizedException('Missing webhook signature');
-      }
-      // Usually would compute hash locally and compare, here we do a basic check
-      // against a static secret or just log it based on implementation requirements.
-      // If we don't have the full payload string, exact validation might require raw body.
+    // Was previously just checking a hash field was PRESENT, never actually
+    // recomputing/comparing it — meaning any payload with any hash value passed. Now
+    // uses the same reverse-hash formula (same Easebuzz key/salt) already verified for
+    // the payment webhook, and is mandatory since this payload shape is confirmed to
+    // always include a hash.
+    if (!payload?.hash) {
+      this.logger.warn(`Easebuzz mandate webhook missing hash from IP ${clientIp}`);
+      throw new UnauthorizedException('Missing webhook signature');
+    }
+    if (!verifyEasebuzzWebhookHash(payload)) {
+      this.logger.warn(`Easebuzz mandate webhook failed hash verification from IP ${clientIp}`);
+      throw new UnauthorizedException('Invalid webhook signature');
     }
 
     try {
@@ -198,19 +225,22 @@ export class WebhooksController {
 
     this.logger.log(`Received Disbursal Webhook [Lender: ${lenderCode}, IP: ${clientIp}]`);
 
+    // Mandatory (not "if configured") — a missing secret must fail closed, not open.
     const configuredSecret =
       this.config.get<string>('PL_WEBHOOK_SECRET') ||
       this.config.get<string>('DISBURSAL_WEBHOOK_SECRET');
-    if (configuredSecret) {
-      const incomingSecret =
-        req.headers['x-pl-webhook-secret'] ||
-        req.headers['x-lender-webhook-secret'] ||
-        req.headers['x-disbursal-webhook-secret'] ||
-        req.headers['x-webhook-secret'];
-      if (incomingSecret !== configuredSecret) {
-        this.logger.warn(`Unauthorized disbursal webhook request from IP ${clientIp}`);
-        throw new UnauthorizedException('Invalid disbursal webhook signature/secret');
-      }
+    if (!configuredSecret) {
+      this.logger.error('Disbursal webhook rejected: no PL_WEBHOOK_SECRET/DISBURSAL_WEBHOOK_SECRET configured.');
+      throw new UnauthorizedException('Webhook is not configured for verification.');
+    }
+    const incomingSecret =
+      req.headers['x-pl-webhook-secret'] ||
+      req.headers['x-lender-webhook-secret'] ||
+      req.headers['x-disbursal-webhook-secret'] ||
+      req.headers['x-webhook-secret'];
+    if (!secretsMatch(incomingSecret, configuredSecret)) {
+      this.logger.warn(`Unauthorized disbursal webhook request from IP ${clientIp}`);
+      throw new UnauthorizedException('Invalid disbursal webhook signature/secret');
     }
 
     try {
@@ -254,18 +284,24 @@ export class WebhooksController {
   @Post('repayment')
   @HttpCode(HttpStatus.OK)
   async handleRepaymentWebhook(@Body() payload: any, @Req() req: Request) {
+    // Mandatory (not "if configured") — see handleLenderDisbursalWebhook above. This
+    // route no longer credits repayments regardless (see WebhooksService.
+    // processRepaymentWebhook) — VAPT C1/C2 found it forging arbitrary "loan repaid"
+    // events with a fabricated body. The secret check stays so unauthenticated callers
+    // are rejected outright rather than reaching the (now inert) service method.
     const configuredSecret =
       this.config.get<string>('PL_WEBHOOK_SECRET') ||
       this.config.get<string>('DISBURSAL_WEBHOOK_SECRET');
-    if (configuredSecret) {
-      const incomingSecret =
-        req.headers['x-pl-webhook-secret'] ||
-        req.headers['x-lender-webhook-secret'] ||
-        req.headers['x-disbursal-webhook-secret'] ||
-        req.headers['x-webhook-secret'];
-      if (incomingSecret !== configuredSecret) {
-        throw new UnauthorizedException('Invalid repayment webhook signature/secret');
-      }
+    if (!configuredSecret) {
+      throw new UnauthorizedException('Webhook is not configured for verification.');
+    }
+    const incomingSecret =
+      req.headers['x-pl-webhook-secret'] ||
+      req.headers['x-lender-webhook-secret'] ||
+      req.headers['x-disbursal-webhook-secret'] ||
+      req.headers['x-webhook-secret'];
+    if (!secretsMatch(incomingSecret, configuredSecret)) {
+      throw new UnauthorizedException('Invalid repayment webhook signature/secret');
     }
 
     return this.webhooksService.processRepaymentWebhook(payload);
@@ -277,6 +313,8 @@ export class WebhooksController {
   async handleEasebuzzPaymentWebhook(@Body() payload: any, @Req() req: Request) {
     const clientIp = req.ip || (req.headers['x-forwarded-for'] as string) || 'UNKNOWN_IP';
     this.logger.log(`Received Easebuzz payment webhook [IP: ${clientIp}, udf3: ${payload?.udf3 || 'NONE'}]`);
-    return this.webhooksService.processEasebuzzPaymentWebhook(payload);
+    // Delegates to the properly hash-verified + idempotent handler — see
+    // WebhooksService.processEasebuzzPaymentWebhook.
+    return this.webhooksService.processEasebuzzPaymentWebhook(payload, req.headers);
   }
 }

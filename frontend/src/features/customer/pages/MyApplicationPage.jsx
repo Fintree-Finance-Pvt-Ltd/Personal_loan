@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePincodeLookup } from '../hooks/usePincodeLookup';
+import { OtpInput } from '../../../components/ui/OtpInput';
 import {
   customerApi,
   getCustomerMe,
@@ -52,9 +53,10 @@ import {
   refreshCustomerAadhaarKycStatus,
   runEligibility,
   updatePincode,
+  sendEmailOtp,
+  verifyEmailOtp,
 } from '../customerApi';
 import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi';
-import { authApi } from '../../auth/authApi';
 import { resolveFileUrl } from '../../../lib/files';
 import { AccountAggregatorStep } from '../components/AccountAggregatorStep';
 
@@ -951,10 +953,7 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const result = await authApi.sendEmailOtp({
-        customerId: storedSession.customerId,
-        email: form.email.trim(),
-      });
+      const result = await sendEmailOtp(form.email.trim());
 
       const alreadyVerified = result?.data?.alreadyVerified === true;
 
@@ -1016,11 +1015,7 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      await authApi.verifyEmailOtp({
-        customerId: storedSession.customerId,
-        email: form.email.trim(),
-        otp: otpValue,
-      });
+      await verifyEmailOtp(form.email.trim(), otpValue);
 
       setEmailVerified(true);
       setIsEmailOtpSent(false);
@@ -1762,9 +1757,9 @@ export default function MyApplicationPage() {
   if (isCustomerLoading) {
     return (
       <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-          <LoaderCircle className="h-10 w-10 animate-spin text-emerald-600" />
-          <p className="mt-4 text-sm font-medium text-slate-600">
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-neutral-200 bg-white p-12 text-center shadow-sm">
+          <LoaderCircle className="h-10 w-10 animate-spin text-brand-600" />
+          <p className="mt-4 text-sm font-medium text-neutral-600">
             Loading your application details...
           </p>
         </div>
@@ -1775,23 +1770,23 @@ export default function MyApplicationPage() {
   if (customerLoadError) {
     return (
       <div className="mx-auto max-w-7xl">
-        <div className="mx-auto max-w-xl rounded-3xl border border-red-200 bg-white p-8 text-center shadow-lg">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-red-100 text-red-600">
+        <div className="mx-auto max-w-xl rounded-3xl border border-danger-200 bg-white p-8 text-center shadow-lg">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-danger-100 text-danger-600">
             <AlertCircle size={28} />
           </div>
 
-          <h3 className="mt-4 text-lg font-bold text-slate-900">
+          <h3 className="mt-4 text-lg font-bold text-neutral-900">
             Unable to load application
           </h3>
 
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-neutral-600">
             {customerLoadError}
           </p>
 
           <button
             type="button"
             onClick={fetchCustomer}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-emerald-700"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-brand-700"
           >
             <RotateCcw size={16} />
             Retry
@@ -1817,6 +1812,10 @@ export default function MyApplicationPage() {
         />
       )}
 
+      {/* key={currentStep} forces React to remount this wrapper whenever the active step
+          changes, which re-triggers the CSS animation below — a lightweight "attractive
+          transition to the next step" without touching any of the step logic itself. */}
+      <div key={currentStep} className="animate-step-enter">
       {currentStep ===
         'basic_details' && (
           <BasicDetailsStep
@@ -1889,14 +1888,14 @@ export default function MyApplicationPage() {
       {currentStep === 'rejection_screen' && (
         <StepCard>
           <div className="flex flex-col items-center justify-center p-8 text-center">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-red-100 text-red-600 mb-6">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-danger-100 text-danger-600 mb-6">
               <AlertCircle size={32} />
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-3">Application Unsuccessful</h2>
-            <p className="text-slate-600 max-w-md mx-auto mb-8">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-3">Application Unsuccessful</h2>
+            <p className="text-neutral-600 max-w-md mx-auto mb-8">
               Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
               {customer?.eligibilityReason && customer.eligibilityReason !== 'Platform policy rejection' && (
-                <span className="block mt-4 p-3 bg-red-50 text-sm text-red-700 rounded border border-red-100 font-medium text-left">
+                <span className="block mt-4 p-3 bg-danger-50 text-sm text-danger-700 rounded border border-danger-100 font-medium text-left">
                   {customer.eligibilityReason}
                 </span>
               )}
@@ -1904,7 +1903,7 @@ export default function MyApplicationPage() {
             <button
               type="button"
               onClick={() => navigate('/')}
-              className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition"
+              className="rounded-xl bg-info-600 px-6 py-3 text-sm font-semibold text-white hover:bg-info-700 transition"
             >
               Return to Home
             </button>
@@ -1974,21 +1973,21 @@ export default function MyApplicationPage() {
       {currentStep === 'integration_processing' && (
         <StepCard>
           <div className="p-8 text-center">
-            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-emerald-600" />
-            <h2 className="mt-4 text-xl font-bold text-slate-900">Your lender application is processing</h2>
-            <p className="mt-2 text-sm text-slate-600">We are securely completing the current lender integration stage. This page will resume from the backend-confirmed state.</p>
+            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-brand-600" />
+            <h2 className="mt-4 text-xl font-bold text-neutral-900">Your lender application is processing</h2>
+            <p className="mt-2 text-sm text-neutral-600">We are securely completing the current lender integration stage. This page will resume from the backend-confirmed state.</p>
           </div>
         </StepCard>
       )}
       {currentStep === 'integration_support' && (
         <StepCard>
           <div className="p-8 text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-amber-600" />
-            <h2 className="mt-4 text-xl font-bold text-slate-900">We need to retry this application securely</h2>
-            <p className="mt-2 text-sm text-slate-600">Your data and payment remain recorded. Please contact support and quote error code {customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW'}.</p>
+            <AlertCircle className="mx-auto h-10 w-10 text-caution-600" />
+            <h2 className="mt-4 text-xl font-bold text-neutral-900">We need to retry this application securely</h2>
+            <p className="mt-2 text-sm text-neutral-600">Your data and payment remain recorded. Please contact support and quote error code {customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW'}.</p>
 
             {retryLenderSubmissionError && (
-              <p className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">
+              <p className="mt-4 rounded-lg border border-danger-100 bg-danger-50 p-3 text-sm font-medium text-danger-700">
                 {retryLenderSubmissionError}
               </p>
             )}
@@ -1997,7 +1996,7 @@ export default function MyApplicationPage() {
               type="button"
               onClick={handleRetryLenderSubmission}
               disabled={isRetryingLenderSubmission}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-info-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-info-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isRetryingLenderSubmission ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -2009,6 +2008,7 @@ export default function MyApplicationPage() {
           </div>
         </StepCard>
       )}
+      </div>
     </div>
   );
 }
@@ -2040,6 +2040,22 @@ function AadhaarKycStep({
   });
   const [addressErrors, setAddressErrors] = useState({});
   const [isSavingAddress, setIsSavingAddress] = useState(false);
+
+  // Aadhaar's parsed address doesn't always have every field populated (many real
+  // Aadhaar records have an empty "house"/street line) — rather than silently guessing
+  // or blocking the customer, prefill whatever DigiLocker gave us and let them complete
+  // or correct it themselves before it's saved as their permanent address on record.
+  const [permanentAddressForm, setPermanentAddressForm] = useState({
+    addressLine1: '',
+    addressLine2: '',
+    locality: '',
+    landmark: '',
+    pincode: '',
+    city: '',
+    state: '',
+  });
+  const [permanentAddressErrors, setPermanentAddressErrors] = useState({});
+  const hasPrefilledPermanentAddress = useRef(false);
 
   const fetchStatus = async () => {
     try {
@@ -2129,6 +2145,32 @@ function AadhaarKycStep({
     customer?.digilockerStatus === 'VERIFIED'
   );
 
+  useEffect(() => {
+    if (hasPrefilledPermanentAddress.current) return;
+    const aadhaarAddress = kycStatus?.permanentAddress;
+    if (!aadhaarAddress) return;
+    hasPrefilledPermanentAddress.current = true;
+    setPermanentAddressForm({
+      addressLine1: aadhaarAddress.addressLine1 || '',
+      addressLine2: aadhaarAddress.addressLine2 || '',
+      locality: aadhaarAddress.locality || '',
+      landmark: aadhaarAddress.landmark || '',
+      pincode: aadhaarAddress.pincode || '',
+      city: aadhaarAddress.city || '',
+      state: aadhaarAddress.state || '',
+    });
+  }, [kycStatus]);
+
+  const validatePermanentAddress = () => {
+    const errors = {};
+    if (!permanentAddressForm.addressLine1?.trim()) errors.addressLine1 = 'Address Line 1 is required';
+    if (!permanentAddressForm.city?.trim()) errors.city = 'City is required';
+    if (!permanentAddressForm.state?.trim()) errors.state = 'State is required';
+    if (!/^[1-9][0-9]{5}$/.test(permanentAddressForm.pincode)) errors.pincode = 'Valid 6-digit Pincode is required';
+    setPermanentAddressErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const validateAddress = () => {
     const errors = {};
     if (!sameAsPermanent) {
@@ -2142,10 +2184,16 @@ function AadhaarKycStep({
   };
 
   const handleSaveAddress = async () => {
+    if (!validatePermanentAddress()) return;
     if (!validateAddress()) return;
     setIsSavingAddress(true);
     setError('');
     try {
+      // Always saved explicitly by the customer now, never assumed from the DigiLocker
+      // webhook alone — see the earlier bug where an incomplete Aadhaar address left
+      // this application with no PERMANENT row and no way for the customer to fix it.
+      await saveApplicationAddress({ addressType: 'PERMANENT', ...permanentAddressForm });
+
       if (sameAsPermanent) {
         await saveApplicationAddress({ addressType: 'CURRENT', sameAsPermanent: true });
       } else {
@@ -2173,53 +2221,125 @@ function AadhaarKycStep({
       />
 
       <div className="mt-6 space-y-6">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-3">
+        <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-5 space-y-3">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</p>
-              <p className="mt-0.5 text-sm font-bold text-slate-800">{customer?.fullName || 'N/A'}</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Applicant Name</p>
+              <p className="mt-0.5 text-sm font-bold text-neutral-800">{customer?.fullName || 'N/A'}</p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Registered Mobile</p>
-              <p className="mt-0.5 text-sm font-bold text-slate-800">
+              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Registered Mobile</p>
+              <p className="mt-0.5 text-sm font-bold text-neutral-800">
                 {customer?.mobileNumber ? `+91 ${customer.mobileNumber.slice(0, 2)}****${customer.mobileNumber.slice(-4)}` : 'N/A'}
               </p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Customer Reference</p>
-              <p className="mt-0.5 font-mono text-sm font-bold text-emerald-700">{customerCode || customer?.customerCode || 'N/A'}</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Customer Reference</p>
+              <p className="mt-0.5 font-mono text-sm font-bold text-brand-700">{customerCode || customer?.customerCode || 'N/A'}</p>
             </div>
           </div>
         </div>
 
         {isVerified ? (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center">
-              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-500 text-white">
+            <div className="rounded-2xl border border-brand-200 bg-brand-50/70 p-6 text-center">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-brand-500 text-white">
                 <CheckCircle2 size={24} />
               </div>
-              <h3 className="mt-3 text-lg font-bold text-emerald-900">Aadhaar KYC Verified</h3>
-              <p className="mt-1 text-sm text-emerald-700">
+              <h3 className="mt-3 text-lg font-bold text-brand-900">Aadhaar KYC Verified</h3>
+              <p className="mt-1 text-sm text-brand-700">
                 Your identity has been verified via DigiLocker.
                 {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
               </p>
               {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
-                <p className="mt-2 text-sm font-semibold text-emerald-900">
+                <p className="mt-2 text-sm font-semibold text-brand-900">
                   Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
                 </p>
               )}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-6">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-6">
               <div>
-                <h4 className="text-sm font-bold text-slate-900">Aadhaar Permanent Address</h4>
-                <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  {kycStatus?.permanentAddress?.formattedAddress || customer?.permanentAddress || 'Address details missing from Aadhaar profile.'}
+                <h4 className="text-sm font-bold text-neutral-900">Permanent Address</h4>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Pre-filled from your Aadhaar via DigiLocker. Please check it and fill in anything missing — Aadhaar records don't always include a complete address.
                 </p>
+                <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 1 <span className="text-danger-500">*</span></label>
+                    <input
+                      type="text"
+                      value={permanentAddressForm.addressLine1}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, addressLine1: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.addressLine1 ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
+                      placeholder="Flat, House no., Building, Company, Apartment"
+                    />
+                    {permanentAddressErrors.addressLine1 && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.addressLine1}</p>}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 2 (Optional)</label>
+                    <input
+                      type="text"
+                      value={permanentAddressForm.addressLine2}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, addressLine2: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                      placeholder="Area, Street, Sector, Village"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Locality (Optional)</label>
+                    <input
+                      type="text"
+                      value={permanentAddressForm.locality}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, locality: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Landmark (Optional)</label>
+                    <input
+                      type="text"
+                      value={permanentAddressForm.landmark}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, landmark: e.target.value })}
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Pincode <span className="text-danger-500">*</span></label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={permanentAddressForm.pincode}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, pincode: e.target.value.replace(/\D/g, '') })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.pincode ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
+                    />
+                    {permanentAddressErrors.pincode && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.pincode}</p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">City <span className="text-danger-500">*</span></label>
+                    <input
+                      type="text"
+                      value={permanentAddressForm.city}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, city: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.city ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
+                    />
+                    {permanentAddressErrors.city && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.city}</p>}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">State <span className="text-danger-500">*</span></label>
+                    <input
+                      type="text"
+                      value={permanentAddressForm.state}
+                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, state: e.target.value })}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.state ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
+                    />
+                    {permanentAddressErrors.state && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.state}</p>}
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100">
-                <h4 className="text-sm font-bold text-slate-900 mb-3">Is your current address the same as your permanent address?</h4>
+              <div className="pt-4 border-t border-neutral-100">
+                <h4 className="text-sm font-bold text-neutral-900 mb-3">Is your current address the same as your permanent address?</h4>
                 <div className="flex items-center gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -2227,9 +2347,9 @@ function AadhaarKycStep({
                       name="sameAsPermanent"
                       checked={sameAsPermanent}
                       onChange={() => setSameAsPermanent(true)}
-                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      className="h-4 w-4 border-neutral-300 text-brand-600 focus:ring-brand-500"
                     />
-                    <span className="text-sm text-slate-700">Yes, it is the same</span>
+                    <span className="text-sm text-neutral-700">Yes, it is the same</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -2237,91 +2357,91 @@ function AadhaarKycStep({
                       name="sameAsPermanent"
                       checked={!sameAsPermanent}
                       onChange={() => setSameAsPermanent(false)}
-                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      className="h-4 w-4 border-neutral-300 text-brand-600 focus:ring-brand-500"
                     />
-                    <span className="text-sm text-slate-700">No, it is different</span>
+                    <span className="text-sm text-neutral-700">No, it is different</span>
                   </label>
                 </div>
               </div>
 
               {!sameAsPermanent && (
-                <div className="pt-4 border-t border-slate-100 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="pt-4 border-t border-neutral-100 grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address Line 1 <span className="text-red-500">*</span></label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 1 <span className="text-danger-500">*</span></label>
                     <input
                       type="text"
                       value={addressForm.addressLine1}
                       onChange={(e) => setAddressForm({ ...addressForm, addressLine1: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.addressLine1 ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.addressLine1 ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
                       placeholder="Flat, House no., Building, Company, Apartment"
                     />
-                    {addressErrors.addressLine1 && <p className="mt-1 text-xs text-red-500">{addressErrors.addressLine1}</p>}
+                    {addressErrors.addressLine1 && <p className="mt-1 text-xs text-danger-500">{addressErrors.addressLine1}</p>}
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address Line 2 (Optional)</label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 2 (Optional)</label>
                     <input
                       type="text"
                       value={addressForm.addressLine2}
                       onChange={(e) => setAddressForm({ ...addressForm, addressLine2: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                       placeholder="Area, Street, Sector, Village"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Locality (Optional)</label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Locality (Optional)</label>
                     <input
                       type="text"
                       value={addressForm.locality}
                       onChange={(e) => setAddressForm({ ...addressForm, locality: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Landmark (Optional)</label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Landmark (Optional)</label>
                     <input
                       type="text"
                       value={addressForm.landmark}
                       onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pincode <span className="text-red-500">*</span></label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Pincode <span className="text-danger-500">*</span></label>
                     <input
                       type="text"
                       maxLength={6}
                       value={addressForm.pincode}
                       onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, '') })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.pincode ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.pincode ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
                     />
-                    {addressErrors.pincode && <p className="mt-1 text-xs text-red-500">{addressErrors.pincode}</p>}
+                    {addressErrors.pincode && <p className="mt-1 text-xs text-danger-500">{addressErrors.pincode}</p>}
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">City <span className="text-red-500">*</span></label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">City <span className="text-danger-500">*</span></label>
                     <input
                       type="text"
                       value={addressForm.city}
                       onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.city ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.city ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
                     />
-                    {addressErrors.city && <p className="mt-1 text-xs text-red-500">{addressErrors.city}</p>}
+                    {addressErrors.city && <p className="mt-1 text-xs text-danger-500">{addressErrors.city}</p>}
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">State <span className="text-red-500">*</span></label>
+                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">State <span className="text-danger-500">*</span></label>
                     <input
                       type="text"
                       value={addressForm.state}
                       onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-emerald-500/20 ${addressErrors.state ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.state ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
                     />
-                    {addressErrors.state && <p className="mt-1 text-xs text-red-500">{addressErrors.state}</p>}
+                    {addressErrors.state && <p className="mt-1 text-xs text-danger-500">{addressErrors.state}</p>}
                   </div>
                 </div>
               )}
             </div>
             
             {error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 flex items-center gap-2">
+              <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-xs font-medium text-danger-700 flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
                 <span>{error}</span>
               </div>
@@ -2329,63 +2449,96 @@ function AadhaarKycStep({
           </div>
         ) : (
           <>
-            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
+            {/* Plain-language walkthrough before the legal consent text — a first-time
+                applicant has likely never heard of DigiLocker and needs to know exactly
+                what's about to happen before a new window pops up asking for Aadhaar. */}
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-5">
+              <h4 className="flex items-center gap-2 text-sm font-bold text-neutral-900">
+                <ShieldCheck size={17} className="text-brand-600" />
+                What happens next
+              </h4>
+              <ol className="mt-3 space-y-2.5 text-xs leading-5 text-neutral-600">
+                <li className="flex gap-2.5">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">1</span>
+                  A new window opens to <strong>DigiLocker</strong> — a Government of India service that instantly confirms your identity.
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">2</span>
+                  Enter your Aadhaar number and verify with the OTP sent to your Aadhaar-linked mobile.
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">3</span>
+                  Come back to this tab — we'll pick up automatically once you're verified. Takes about a minute.
+                </li>
+              </ol>
+            </div>
+
+            <div className="rounded-2xl border border-info-200 bg-info-50/60 p-5">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={consentGiven}
                   onChange={(e) => setConsentGiven(e.target.checked)}
-                  className="mt-1 h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  className="mt-1 h-5 w-5 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
                 />
-                <span className="text-xs text-slate-700 leading-relaxed">
+                <span className="text-xs text-neutral-700 leading-relaxed">
                   I consent to Fintree Finance Private Limited securely initiating DigiLocker-based Aadhaar KYC using my verified account information. I authorize the retrieval and processing of permitted identity information for loan onboarding, verification and lender submission.
                 </span>
               </label>
             </div>
 
             {error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 flex items-center gap-2">
+              <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-xs font-medium text-danger-700 flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-4">
-              <button
-                type="button"
-                onClick={handleStartDigilocker}
-                disabled={!consentGiven || loading}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
-              >
-                {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                Start DigiLocker Verification
-              </button>
+            <div>
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  onClick={handleStartDigilocker}
+                  disabled={!consentGiven || loading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-50 disabled:shadow-none cursor-pointer"
+                >
+                  {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                  Start DigiLocker Verification
+                </button>
 
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
-              >
-                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-                Check Status
-              </button>
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-5 py-3 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50 cursor-pointer"
+                  title="Already completed verification in the popup? Click here to refresh your status."
+                >
+                  <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+                  Check Status
+                </button>
+              </div>
+              {!consentGiven && !loading && (
+                <p className="animate-fade-in mt-2.5 flex items-center gap-1.5 text-xs font-medium text-neutral-400">
+                  <Info size={13} className="shrink-0" />
+                  Check the consent box above to continue
+                </p>
+              )}
             </div>
 
             {polling && (
-              <div className="flex items-center gap-3 text-xs font-medium text-blue-700 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                <LoaderCircle size={14} className="animate-spin text-blue-600" />
+              <div className="flex items-center gap-3 text-xs font-medium text-info-700 bg-info-50/50 p-3 rounded-xl border border-info-100">
+                <LoaderCircle size={14} className="animate-spin text-info-600" />
                 <span>DigiLocker verification in progress... Please complete the window and return.</span>
               </div>
             )}
           </>
         )}
 
-        <div className="flex items-center justify-between border-t border-slate-100 pt-6">
+        <div className="flex items-center justify-between border-t border-neutral-100 pt-6">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-5 py-2.5 text-sm font-bold text-neutral-700 shadow-sm hover:bg-neutral-50 cursor-pointer"
           >
             <ArrowLeft size={16} /> Back
           </button>
@@ -2395,7 +2548,7 @@ function AadhaarKycStep({
               type="button"
               onClick={handleSaveAddress}
               disabled={isSavingAddress}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-brand-700 cursor-pointer disabled:opacity-50"
             >
               {isSavingAddress ? <LoaderCircle size={16} className="animate-spin" /> : 'Save & Continue'} <ArrowRight size={16} />
             </button>
@@ -2420,11 +2573,11 @@ function ApplicationProgress({ currentStep, workflow }) {
     ((currentStepIndex + 1) / FLOW_STEPS.length) * 100;
 
   return (
-    <section className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="bg-gradient-to-r from-emerald-700 to-emerald-500 px-6 py-6 text-white sm:px-8">
+    <section className="mb-6 overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
+      <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-6 py-6 text-white sm:px-8">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
           <div>
-            <p className="text-sm font-medium text-emerald-100">
+            <p className="text-sm font-medium text-brand-100">
               Personal Loan Application
             </p>
 
@@ -2432,14 +2585,14 @@ function ApplicationProgress({ currentStep, workflow }) {
               My Application
             </h1>
 
-            <p className="mt-2 text-sm text-emerald-50">
+            <p className="mt-2 text-sm text-brand-50">
               Complete all steps and submit your application to the assigned lender.
             </p>
           </div>
 
           <div className="w-full max-w-sm rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
             <div className="flex justify-between text-sm">
-              <span className="text-emerald-100">Progress</span>
+              <span className="text-brand-100">Progress</span>
               <strong>{Math.round(progressPercentage)}%</strong>
             </div>
 
@@ -2454,50 +2607,67 @@ function ApplicationProgress({ currentStep, workflow }) {
 
         {/* Basic Details Status Badges Summary */}
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-white/20 pt-4">
-          <span className="text-xs font-semibold text-emerald-100">
+          <span className="text-xs font-semibold text-brand-100">
             Basic Details Status:
           </span>
 
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.mobileVerified
-                ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
-                : 'bg-white/10 text-emerald-100'
+                ? 'bg-brand-800/80 text-white border border-brand-400/50'
+                : 'bg-white/10 text-brand-100'
               }`}
           >
             {workflow?.mobileVerified ? (
-              <CheckCircle2 size={14} className="text-emerald-300" />
+              <CheckCircle2 size={14} className="text-brand-300" />
             ) : null}
             Mobile {workflow?.mobileVerified ? 'Verified' : 'Pending'}
           </span>
 
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.panVerified
-                ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
-                : 'bg-white/10 text-emerald-100'
+                ? 'bg-brand-800/80 text-white border border-brand-400/50'
+                : 'bg-white/10 text-brand-100'
               }`}
           >
             {workflow?.panVerified ? (
-              <CheckCircle2 size={14} className="text-emerald-300" />
+              <CheckCircle2 size={14} className="text-brand-300" />
             ) : null}
             PAN {workflow?.panVerified ? 'Verified' : 'Pending'}
           </span>
 
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.emailVerified
-                ? 'bg-emerald-800/80 text-white border border-emerald-400/50'
-                : 'bg-white/10 text-emerald-100'
+                ? 'bg-brand-800/80 text-white border border-brand-400/50'
+                : 'bg-white/10 text-brand-100'
               }`}
           >
             {workflow?.emailVerified ? (
-              <CheckCircle2 size={14} className="text-emerald-300" />
+              <CheckCircle2 size={14} className="text-brand-300" />
             ) : null}
             Email {workflow?.emailVerified ? 'Verified' : 'Pending'}
           </span>
         </div>
       </div>
 
-      <div className="overflow-x-auto px-4 py-4 sm:px-6">
-        <div className="flex min-w-[680px] items-center">
+      {/* Mobile: compact "Step X of N" — avoids forcing a horizontal-scroll stepper on
+          small screens, which reads as a desktop layout squeezed onto a phone. */}
+      <div className="flex items-center gap-3 px-4 py-4 sm:hidden">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-bold text-white">
+          {currentStepIndex + 1}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-neutral-900">
+            {FLOW_STEPS[currentStepIndex]?.label}
+          </p>
+          <p className="text-xs text-neutral-500">
+            Step {currentStepIndex + 1} of {FLOW_STEPS.length}
+          </p>
+        </div>
+      </div>
+
+      {/* Desktop / tablet: full dot-and-connector stepper */}
+      <div className="hidden px-4 py-4 sm:block sm:px-6">
+        <div className="flex items-center">
           {FLOW_STEPS.map((step, index) => {
             let isCompleted = false;
             if (step.id === 'basic_details') {
@@ -2520,11 +2690,11 @@ function ApplicationProgress({ currentStep, workflow }) {
               <div key={step.id} className="flex flex-1 items-center">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${isCompleted
-                        ? 'bg-emerald-600 text-white'
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold transition-all duration-300 ${isCompleted
+                        ? 'bg-brand-600 text-white'
                         : isActive
-                          ? 'bg-blue-600 text-white ring-4 ring-blue-100'
-                          : 'bg-slate-100 text-slate-400'
+                          ? 'bg-info-600 text-white ring-4 ring-info-100 animate-pulse'
+                          : 'bg-neutral-100 text-neutral-400'
                       }`}
                   >
                     {isCompleted ? <Check size={17} /> : index + 1}
@@ -2532,10 +2702,10 @@ function ApplicationProgress({ currentStep, workflow }) {
 
                   <span
                     className={`whitespace-nowrap text-xs font-semibold ${isActive
-                        ? 'text-blue-700'
+                        ? 'text-info-700'
                         : isCompleted
-                          ? 'text-emerald-700'
-                          : 'text-slate-400'
+                          ? 'text-brand-700'
+                          : 'text-neutral-400'
                       }`}
                   >
                     {step.label}
@@ -2544,7 +2714,7 @@ function ApplicationProgress({ currentStep, workflow }) {
 
                 {index < FLOW_STEPS.length - 1 && (
                   <div
-                    className={`mx-3 h-0.5 flex-1 ${isCompleted ? 'bg-emerald-500' : 'bg-slate-200'
+                    className={`mx-3 h-0.5 flex-1 transition-colors duration-500 ${isCompleted ? 'bg-brand-500' : 'bg-neutral-200'
                       }`}
                   />
                 )}
@@ -2564,8 +2734,8 @@ function MessageBanner({
   return (
     <div
       className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${type === 'error'
-          ? 'border-red-200 bg-red-50 text-red-700'
-          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          ? 'border-danger-200 bg-danger-50 text-danger-700'
+          : 'border-brand-200 bg-brand-50 text-brand-700'
         }`}
     >
       {message}
@@ -2764,18 +2934,18 @@ function BasicDetailsStep({
       />
 
       {!panVerified && (
-        <div className="mb-6 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 via-slate-50 to-indigo-50/50 p-5 shadow-xs">
+        <div className="mb-6 rounded-2xl border border-info-100 bg-gradient-to-r from-info-50/80 via-neutral-50 to-accent-50/50 p-5 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-200">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-600 text-white shadow-md shadow-info-200">
                 <ScanLine size={20} />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <h4 className="text-sm font-bold text-neutral-900 flex items-center gap-1.5">
                   Auto-fill details via PAN Card OCR
-                  <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold text-blue-700 uppercase tracking-wider">AI Scan</span>
+                  <span className="rounded-md bg-info-100 px-2 py-0.5 text-[10px] font-extrabold text-info-700 uppercase tracking-wider">AI Scan</span>
                 </h4>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-neutral-500">
                   Upload or capture your PAN card image to auto-fill your Name as per PAN and PAN Number
                 </p>
               </div>
@@ -2795,9 +2965,9 @@ function BasicDetailsStep({
               type="button"
               onClick={() => panFileInputRef.current?.click()}
               disabled={isOcrScanning}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:border-slate-400 transition cursor-pointer disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-xs font-semibold text-neutral-700 shadow-xs hover:bg-neutral-50 hover:border-neutral-400 transition cursor-pointer disabled:opacity-60"
             >
-              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin text-blue-600" /> : <Upload size={15} className="text-blue-600" />}
+              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin text-info-600" /> : <Upload size={15} className="text-info-600" />}
               <span>Upload PAN Photo</span>
             </button>
 
@@ -2814,7 +2984,7 @@ function BasicDetailsStep({
               type="button"
               onClick={handleOpenPanCamera}
               disabled={isOcrScanning}
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl bg-info-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-info-700 transition cursor-pointer disabled:opacity-60"
             >
               {isOcrScanning ? <LoaderCircle size={15} className="animate-spin" /> : <Camera size={15} />}
               <span>Take Photo (Camera)</span>
@@ -2822,24 +2992,24 @@ function BasicDetailsStep({
           </div>
 
           {isOcrScanning && (
-            <div className="mt-3.5 flex items-center gap-2.5 rounded-xl bg-blue-100/80 p-3 text-xs font-semibold text-blue-900 border border-blue-200">
-              <LoaderCircle size={16} className="animate-spin text-blue-600 shrink-0" />
+            <div className="mt-3.5 flex items-center gap-2.5 rounded-xl bg-info-100/80 p-3 text-xs font-semibold text-info-900 border border-info-200">
+              <LoaderCircle size={16} className="animate-spin text-info-600 shrink-0" />
               <span>Scanning PAN Card with AI OCR... Extracting Full Name and PAN Number...</span>
             </div>
           )}
 
           {ocrSuccessMsg && !isOcrScanning && (
-            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-emerald-50 p-3.5 text-xs font-medium text-emerald-900 border border-emerald-200">
-              <Sparkles size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-brand-50 p-3.5 text-xs font-medium text-brand-900 border border-brand-200">
+              <Sparkles size={16} className="text-brand-600 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-emerald-800">PAN OCR Success!</span> {ocrSuccessMsg}
+                <span className="font-bold text-brand-800">PAN OCR Success!</span> {ocrSuccessMsg}
               </div>
             </div>
           )}
 
           {ocrError && !isOcrScanning && (
-            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-red-50 p-3 text-xs font-medium text-red-800 border border-red-200">
-              <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-danger-50 p-3 text-xs font-medium text-danger-800 border border-danger-200">
+              <AlertCircle size={16} className="text-danger-600 shrink-0 mt-0.5" />
               <div>{ocrError}</div>
             </div>
           )}
@@ -2848,17 +3018,17 @@ function BasicDetailsStep({
 
       {/* Camera Capture Modal */}
       {isPanCameraOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/80 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-neutral-200">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Camera className="h-5 w-5 text-blue-600" />
-                <h3 className="text-base font-bold text-slate-900">Capture PAN Card Photo</h3>
+                <Camera className="h-5 w-5 text-info-600" />
+                <h3 className="text-base font-bold text-neutral-900">Capture PAN Card Photo</h3>
               </div>
               <button
                 type="button"
                 onClick={handleClosePanCamera}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                className="rounded-full p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -2873,7 +3043,7 @@ function BasicDetailsStep({
                 className="h-64 w-full object-cover"
               />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-                <div className="h-44 w-full rounded-2xl border-2 border-dashed border-white/80 bg-blue-500/10 shadow-2xl flex flex-col items-center justify-center text-white/90 text-xs font-semibold">
+                <div className="h-44 w-full rounded-2xl border-2 border-dashed border-white/80 bg-info-500/10 shadow-2xl flex flex-col items-center justify-center text-white/90 text-xs font-semibold">
                   <span>Align PAN Card inside frame</span>
                 </div>
               </div>
@@ -2883,14 +3053,14 @@ function BasicDetailsStep({
               <button
                 type="button"
                 onClick={handleClosePanCamera}
-                className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                className="rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-200 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleCapturePanPhoto}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl bg-info-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-info-700 transition cursor-pointer"
               >
                 <Camera size={16} />
                 <span>Capture & Scan PAN</span>
@@ -2918,19 +3088,19 @@ function BasicDetailsStep({
         />
 
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">
+          <label className="mb-2 block text-sm font-semibold text-neutral-700">
             PAN number
-            <span className="ml-1 text-red-500">
+            <span className="ml-1 text-danger-500">
               *
             </span>
           </label>
 
           <div
             className={`flex overflow-hidden rounded-xl border bg-white ${errors.panNumber
-                ? 'border-red-400 ring-4 ring-red-50'
+                ? 'border-danger-400 ring-4 ring-danger-50'
                 : panVerified
-                  ? 'border-emerald-400 ring-4 ring-emerald-50'
-                  : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
+                  ? 'border-brand-400 ring-4 ring-brand-50'
+                  : 'border-neutral-300 focus-within:border-info-600 focus-within:ring-4 focus-within:ring-info-50'
               }`}
           >
             <input
@@ -2946,7 +3116,7 @@ function BasicDetailsStep({
               placeholder="ABCDE1234F"
               maxLength={10}
               autoComplete="off"
-              className="min-w-0 flex-1 px-4 py-3 text-sm font-medium uppercase outline-none read-only:bg-slate-50 read-only:text-slate-600"
+              className="min-w-0 flex-1 px-4 py-3 text-sm font-medium uppercase outline-none read-only:bg-neutral-50 read-only:text-neutral-600"
             />
 
             <button
@@ -2962,8 +3132,8 @@ function BasicDetailsStep({
                   .length !== 10
               }
               className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${panVerified
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 text-blue-700 hover:bg-blue-50'
+                  ? 'border-brand-200 bg-brand-50 text-brand-700'
+                  : 'border-neutral-200 text-info-700 hover:bg-info-50'
                 } disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {isPanVerifying ? (
@@ -2988,13 +3158,13 @@ function BasicDetailsStep({
           </div>
 
           {errors.panNumber ? (
-            <p className="mt-1.5 text-xs text-red-600">
+            <p className="mt-1.5 text-xs text-danger-600">
               {
                 errors.panNumber
               }
             </p>
           ) : (
-            <p className="mt-1.5 text-xs text-slate-500">
+            <p className="mt-1.5 text-xs text-neutral-500">
               Format:
               ABCDE1234F
             </p>
@@ -3014,13 +3184,13 @@ function BasicDetailsStep({
       </div>
 
       {!panVerified && (
-        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-info-100 bg-info-50 p-4">
           <Info
             size={19}
-            className="mt-0.5 shrink-0 text-blue-700"
+            className="mt-0.5 shrink-0 text-info-700"
           />
 
-          <p className="text-sm leading-6 text-blue-800">
+          <p className="text-sm leading-6 text-info-800">
             Your verified name,
             date of birth and gender
             will appear automatically
@@ -3031,20 +3201,20 @@ function BasicDetailsStep({
 
       {panVerified && (
         <>
-          <div className="mt-7 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+          <div className="mt-7 rounded-2xl border border-brand-200 bg-brand-50 p-5">
             <div className="flex items-start gap-3">
               <CheckCircle2
                 size={22}
-                className="mt-0.5 shrink-0 text-emerald-700"
+                className="mt-0.5 shrink-0 text-brand-700"
               />
 
               <div>
-                <p className="text-sm font-bold text-emerald-900">
+                <p className="text-sm font-bold text-brand-900">
                   PAN verified
                   successfully
                 </p>
 
-                <p className="mt-1 text-xs text-emerald-700">
+                <p className="mt-1 text-xs text-brand-700">
                   Your PAN details
                   have been fetched
                   and populated.
@@ -3138,16 +3308,16 @@ function BasicDetailsStep({
               />
 
               {pincodeCity && pincodeState && (
-                <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <div className="flex items-start gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3">
                   <MapPin
                     size={18}
-                    className="mt-0.5 shrink-0 text-emerald-700"
+                    className="mt-0.5 shrink-0 text-brand-700"
                   />
                   <div>
-                    <p className="text-sm font-semibold text-emerald-900">
+                    <p className="text-sm font-semibold text-brand-900">
                       {pincodeCity}, {pincodeState}
                     </p>
-                    <p className="mt-0.5 text-xs text-emerald-600">
+                    <p className="mt-0.5 text-xs text-brand-600">
                       Location verified from PIN code
                     </p>
                   </div>
@@ -3155,26 +3325,26 @@ function BasicDetailsStep({
               )}
 
               {isPincodeLoading && (
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                   <LoaderCircle
                     size={16}
-                    className="animate-spin text-slate-500"
+                    className="animate-spin text-neutral-500"
                   />
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-neutral-500">
                     Looking up location...
                   </span>
                 </div>
               )}
 
               {pincodeError && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+                <div className="rounded-xl border border-caution-200 bg-caution-50 px-3 py-2.5 text-xs text-caution-700">
                   {pincodeError}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="my-8 border-t border-slate-200" />
+          <div className="my-8 border-t border-neutral-200" />
 
           <SectionHeading
             title="Communication"
@@ -3192,19 +3362,19 @@ function BasicDetailsStep({
             />
 
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-sm font-semibold text-neutral-700">
                 Email address
-                <span className="ml-1 text-red-500">
+                <span className="ml-1 text-danger-500">
                   *
                 </span>
               </label>
 
               <div
                 className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
-                    ? 'border-red-400 ring-4 ring-red-50'
+                    ? 'border-danger-400 ring-4 ring-danger-50'
                     : emailVerified
-                      ? 'border-emerald-400 ring-4 ring-emerald-50'
-                      : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
+                      ? 'border-brand-400 ring-4 ring-brand-50'
+                      : 'border-neutral-300 focus-within:border-info-600 focus-within:ring-4 focus-within:ring-info-50'
                   }`}
               >
                 <input
@@ -3230,7 +3400,7 @@ function BasicDetailsStep({
                       isEmailVerifying ||
                       !form.email.trim()
                     }
-                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-slate-200 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60`}
+                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-neutral-200 text-info-700 hover:bg-info-50 disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     {isEmailVerifying ? (
                       <>
@@ -3248,7 +3418,7 @@ function BasicDetailsStep({
 
                 {emailVerified && (
                   <span
-                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-emerald-200 bg-emerald-50 text-emerald-700`}
+                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-brand-200 bg-brand-50 text-brand-700`}
                   >
                     <MailCheck size={15} />
                     Verified
@@ -3257,31 +3427,21 @@ function BasicDetailsStep({
               </div>
 
               {isEmailOtpSent && !emailVerified && (
-                <div className="mt-3">
-                  <div
-                    className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
-                        ? 'border-red-400 ring-4 ring-red-50'
-                        : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
-                      }`}
-                  >
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
+                <div className="animate-fade-in mt-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <OtpInput
+                      length={6}
                       value={emailOtp}
-                      onChange={(event) =>
-                        onEmailOtpChange(
-                          event.target.value.replace(/\D/g, '').slice(0, 6)
-                        )
-                      }
-                      placeholder="Enter 6-digit OTP"
-                      className="min-w-0 flex-1 px-4 py-3 text-sm font-medium outline-none"
+                      onChange={onEmailOtpChange}
+                      error={Boolean(errors.email)}
+                      disabled={isEmailVerifying}
+                      autoFocus
                     />
                     <button
                       type="button"
                       onClick={onVerifyEmailOtp}
                       disabled={isEmailVerifying || emailOtp.length !== 6}
-                      className="flex shrink-0 items-center gap-1.5 border-l border-slate-200 px-4 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-neutral-200 px-4 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isEmailVerifying ? (
                         <>
@@ -3294,7 +3454,7 @@ function BasicDetailsStep({
                     </button>
                   </div>
                   {developmentEmailOtp && (
-                    <p className="mt-1.5 text-xs text-amber-600">
+                    <p className="mt-1.5 text-xs text-caution-600">
                       Dev OTP: {developmentEmailOtp}
                     </p>
                   )}
@@ -3302,7 +3462,7 @@ function BasicDetailsStep({
               )}
 
               {errors.email && (
-                <p className="mt-1.5 text-xs text-red-600">
+                <p className="mt-1.5 text-xs text-danger-600">
                   {errors.email}
                 </p>
               )}
@@ -3322,6 +3482,13 @@ function BasicDetailsStep({
               isBreRunning ||
               !panVerified ||
               !emailVerified
+            }
+            nextDisabledReason={
+              !panVerified
+                ? 'Verify your PAN above to continue'
+                : !emailVerified
+                  ? 'Verify your email above to continue'
+                  : undefined
             }
             isNextLoading={
               isBreRunning
@@ -3361,38 +3528,38 @@ function AssessmentFeeStep({
       />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        <section className="rounded-3xl border border-slate-200 p-6">
-          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-700">
+        <section className="rounded-3xl border border-neutral-200 p-6">
+          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-info-700">
             <BadgeCheck size={17} />
             Allocated lending partner
           </p>
 
-          <div className="mt-5 flex flex-col justify-between gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-center">
+          <div className="mt-5 flex flex-col justify-between gap-4 border-b border-neutral-100 pb-6 sm:flex-row sm:items-center">
             <div className="flex items-center gap-4">
-              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-600 font-bold text-white">
+              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-info-600 font-bold text-white">
                 {lenderName.substring(0, 2).toUpperCase()}
               </div>
 
               <div>
-                <h3 className="font-bold text-slate-900">
+                <h3 className="font-bold text-neutral-900">
                   {lenderName}
                 </h3>
 
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-neutral-500">
                   Personal Loan · New customer
                 </p>
               </div>
             </div>
 
-            <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+            <span className="w-fit rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">
               Assigned
             </span>
           </div>
 
-          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-info-100 bg-info-50 p-4 text-sm text-info-900">
             <Info
               size={19}
-              className="mt-0.5 shrink-0 text-blue-700"
+              className="mt-0.5 shrink-0 text-info-700"
             />
 
             <p>
@@ -3402,7 +3569,7 @@ function AssessmentFeeStep({
             </p>
           </div>
 
-          <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4">
+          <label className={`mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-4 transition-all duration-150 ${lenderConsent ? 'border-brand-400 bg-brand-50/50' : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50'}`}>
             <input
               type="checkbox"
               checked={lenderConsent}
@@ -3410,23 +3577,23 @@ function AssessmentFeeStep({
               onChange={(event) =>
                 onConsentChange(event.target.checked)
               }
-              className="mt-0.5 h-4 w-4 accent-blue-600"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600"
             />
 
-            <span className="text-xs leading-5 text-slate-700">
-              I consent to share my application data with{' '}
-              <strong>{lenderName}</strong> for eligibility assessment and final decision.
+            <span className="text-sm font-semibold leading-6 text-neutral-900">
+              I consent to share my application data with <strong>{lenderName}</strong> for eligibility assessment and final decision, and understand this assessment fee is <strong className="text-danger-700">non-refundable</strong>, including if my application is not approved.
             </span>
           </label>
 
-          <p className="mt-4 text-xs leading-5 text-slate-400">
-            Payment does not guarantee loan approval. The lender performs an independent eligibility check after submission.
+          <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-neutral-500">
+            <Info size={14} className="mt-0.5 shrink-0 text-neutral-400" />
+            Paying the assessment fee does not guarantee loan approval — the lender runs its own independent eligibility check after submission, and the fee is not refunded regardless of the outcome.
           </p>
         </section>
 
-        <aside className="flex flex-col justify-between rounded-3xl bg-slate-950 p-6 text-white shadow-xl">
+        <aside className="flex flex-col justify-between rounded-3xl bg-neutral-950 p-6 text-white shadow-xl">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">
               Assessment fee
             </p>
 
@@ -3441,8 +3608,8 @@ function AssessmentFeeStep({
                 amount={`₹${gstFee.toFixed(2)}`}
               />
 
-              <div className="flex items-center justify-between border-t border-slate-800 pt-5">
-                <span className="text-sm text-slate-300">
+              <div className="flex items-center justify-between border-t border-neutral-800 pt-5">
+                <span className="text-sm text-neutral-300">
                   Total payable
                 </span>
 
@@ -3455,60 +3622,68 @@ function AssessmentFeeStep({
 
           <div className="mt-8">
             {feePaid ? (
-              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+              <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 p-4">
                 <div className="flex items-start gap-3">
-                  <CheckCircle2 className="shrink-0 text-emerald-400" />
+                  <CheckCircle2 className="shrink-0 text-brand-400" />
 
                   <div>
                     <p className="text-sm font-bold text-white">
                       Payment successful
                     </p>
 
-                    <p className="mt-1 text-xs text-emerald-200">
+                    <p className="mt-1 text-xs text-brand-200">
                       {transactionId ? `Txn Ref: ${transactionId}` : 'Fee Verified'}
                     </p>
                   </div>
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
-                disabled={
-                  !lenderConsent ||
-                  isFeeProcessing ||
-                  isCheckingPayment
-                }
-                onClick={onPay}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {isCheckingPayment ? (
-                  <>
-                    <LoaderCircle
-                      size={18}
-                      className="animate-spin"
-                    />
-                    Confirming payment...
-                  </>
-                ) : isFeeProcessing ? (
-                  <>
-                    <LoaderCircle
-                      size={18}
-                      className="animate-spin"
-                    />
-                    Initializing secure payment...
-                  </>
-                ) : (
-                  <>
-                    Pay ₹{totalFee.toFixed(2)}
-                    <ArrowRight
-                      size={17}
-                    />
-                  </>
+              <>
+                <button
+                  type="button"
+                  disabled={
+                    !lenderConsent ||
+                    isFeeProcessing ||
+                    isCheckingPayment
+                  }
+                  onClick={onPay}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-40 disabled:shadow-none"
+                >
+                  {isCheckingPayment ? (
+                    <>
+                      <LoaderCircle
+                        size={18}
+                        className="animate-spin"
+                      />
+                      Confirming payment...
+                    </>
+                  ) : isFeeProcessing ? (
+                    <>
+                      <LoaderCircle
+                        size={18}
+                        className="animate-spin"
+                      />
+                      Initializing secure payment...
+                    </>
+                  ) : (
+                    <>
+                      Pay ₹{totalFee.toFixed(2)}
+                      <ArrowRight
+                        size={17}
+                      />
+                    </>
+                  )}
+                </button>
+                {!lenderConsent && !isFeeProcessing && !isCheckingPayment && (
+                  <p className="animate-fade-in mt-2.5 flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                    <Info size={13} className="shrink-0" />
+                    Check the consent box above to enable payment
+                  </p>
                 )}
-              </button>
+              </>
             )}
 
-            <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-neutral-400">
               <Lock size={13} />
               256bit Secure Easebuzz Payment
             </p>
@@ -3532,8 +3707,8 @@ function FeeRow({
   amount,
 }) {
   return (
-    <div className="flex justify-between border-b border-slate-800 pb-4 text-sm">
-      <span className="text-slate-400">
+    <div className="flex justify-between border-b border-neutral-800 pb-4 text-sm">
+      <span className="text-neutral-400">
         {label}
       </span>
 
@@ -3882,30 +4057,30 @@ function LivePhotographSection({
   };
 
   return (
-    <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
       <canvas ref={canvasRef} className="hidden" />
 
-      <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
             <Camera size={20} />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900">
+            <h3 className="text-base font-bold text-neutral-900">
               Live photograph and location verification
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-neutral-500">
               Capture a live photograph at your current location. The date, time, coordinates and address will be printed on the image.
             </p>
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
+        <span className="inline-flex shrink-0 items-center rounded-full bg-danger-50 px-2.5 py-1 text-xs font-semibold text-danger-700">
           Required
         </span>
       </div>
 
       {!savedPhotoDocument && !capturedPhotoUrl && (
-        <div className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
           <input
             type="checkbox"
             id="photoConsent"
@@ -3914,25 +4089,25 @@ function LivePhotographSection({
               setConsentChecked(e.target.checked);
               setPhotoError('');
             }}
-            className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            className="mt-1 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
           />
-          <label htmlFor="photoConsent" className="text-xs leading-relaxed text-slate-700">
+          <label htmlFor="photoConsent" className="text-xs leading-relaxed text-neutral-700">
             I consent to the capture and processing of my live photograph and current location for identity verification, fraud prevention and loan application processing.
           </label>
         </div>
       )}
 
       {photoError && (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
-          <AlertCircle size={16} className="shrink-0 text-rose-600" />
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-danger-200 bg-danger-50 p-3 text-xs font-medium text-danger-700">
+          <AlertCircle size={16} className="shrink-0 text-danger-600" />
           <span>{photoError}</span>
         </div>
       )}
 
       {savedPhotoDocument ? (
-        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+        <div className="mt-5 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-lg border border-emerald-300 bg-slate-100">
+            <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-lg border border-brand-300 bg-neutral-100">
               <img
                 src={resolveFileUrl(savedPhotoDocument.fileUrl)}
                 alt="Saved customer photo"
@@ -3941,26 +4116,26 @@ function LivePhotographSection({
             </div>
             <div className="flex-1 space-y-2 text-xs">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 font-semibold text-emerald-800">
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 font-semibold text-brand-800">
                   <UserCheck size={13} /> Face Verified
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 font-semibold text-blue-800">
+                <span className="inline-flex items-center gap-1 rounded-full bg-info-100 px-2.5 py-0.5 font-semibold text-info-800">
                   <MapPin size={13} /> Location Captured
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">
+                <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-0.5 font-semibold text-neutral-700">
                   <CheckCircle2 size={13} /> Uploaded & Saved
                 </span>
               </div>
-              <p className="font-semibold text-slate-900">
+              <p className="font-semibold text-neutral-900">
                 {savedPhotoDocument.formattedAddress || 'Address recorded'}
               </p>
               {savedPhotoDocument.latitude && savedPhotoDocument.longitude && (
-                <p className="text-slate-600">
+                <p className="text-neutral-600">
                   Lat: {Number(savedPhotoDocument.latitude).toFixed(6)}, Lon: {Number(savedPhotoDocument.longitude).toFixed(6)}
                 </p>
               )}
               {savedPhotoDocument.capturedAt && (
-                <p className="text-slate-500">
+                <p className="text-neutral-500">
                   Captured: {new Date(savedPhotoDocument.capturedAt).toLocaleString('en-IN')}
                 </p>
               )}
@@ -3968,7 +4143,7 @@ function LivePhotographSection({
             <button
               type="button"
               onClick={handleRetake}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
             >
               <RefreshCw size={14} /> Retake Photo
             </button>
@@ -3981,7 +4156,7 @@ function LivePhotographSection({
               type="button"
               disabled={!consentChecked}
               onClick={handleOpenCamera}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Camera size={18} /> Open Camera & Verify Location
             </button>
@@ -3989,7 +4164,7 @@ function LivePhotographSection({
 
           {isCameraOpen && (
             <div className="flex flex-col items-center gap-4">
-              <div className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-emerald-500 bg-slate-900 shadow-lg">
+              <div className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-brand-500 bg-neutral-900 shadow-lg">
                 <video
                   ref={videoRef}
                   autoPlay
@@ -3997,7 +4172,7 @@ function LivePhotographSection({
                   muted
                   className="h-72 w-full object-cover"
                 />
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-emerald-400 backdrop-blur-sm">
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-neutral-900/80 px-3 py-1 text-xs font-medium text-brand-400 backdrop-blur-sm">
                   {isLoadingLocation ? (
                     <>
                       <LoaderCircle size={12} className="animate-spin" /> Fetching GPS coordinates...
@@ -4015,7 +4190,7 @@ function LivePhotographSection({
                   type="button"
                   onClick={handleCapturePhoto}
                   disabled={isLoadingLocation || isWatermarking}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-50"
                 >
                   {isWatermarking ? (
                     <>
@@ -4030,7 +4205,7 @@ function LivePhotographSection({
                 <button
                   type="button"
                   onClick={stopCameraStream}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
                 >
                   <X size={18} /> Cancel
                 </button>
@@ -4040,7 +4215,7 @@ function LivePhotographSection({
 
           {capturedPhotoUrl && !isCameraOpen && (
             <div className="flex flex-col items-center gap-4">
-              <div className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-emerald-500 bg-slate-950 shadow-lg">
+              <div className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-brand-500 bg-neutral-950 shadow-lg">
                 <img
                   src={capturedPhotoUrl}
                   alt="Captured Geo-tagged"
@@ -4053,7 +4228,7 @@ function LivePhotographSection({
                   type="button"
                   onClick={handleVerifyAndSave}
                   disabled={isRunningLiveness || isUploading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-50"
                 >
                   {isRunningLiveness ? (
                     <>
@@ -4073,7 +4248,7 @@ function LivePhotographSection({
                   type="button"
                   onClick={handleRetake}
                   disabled={isRunningLiveness || isUploading}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
                 >
                   <RotateCcw size={18} /> Retake
                 </button>
@@ -4156,7 +4331,7 @@ function ProfileDetailsStep({
           ]}
         />
 
-        <FormSelect
+        <SelectableCardGroup
           label="Employment type"
           name="employmentType"
           value={
@@ -4171,10 +4346,12 @@ function ProfileDetailsStep({
             [
               'SALARIED',
               'Salaried',
+              'I work for a company',
             ],
             [
               'SELF_EMPLOYED',
               'Self-employed',
+              'I run my own business',
             ],
           ]}
         />
@@ -4505,7 +4682,7 @@ function ProfileDetailsStep({
         onPhotoSaved={onPhotoSaved}
       />
 
-      <div className="mt-7 flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+      <div className="mt-7 flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-800">
         <ShieldCheck
           size={20}
           className="mt-0.5 shrink-0"
@@ -4551,19 +4728,19 @@ function SubmitApplicationStep({
   if (isSubmittedState) {
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className={`rounded-3xl p-6 text-white shadow-xl ${isApproved ? 'bg-gradient-to-r from-emerald-900 via-slate-900 to-slate-950 border border-emerald-500/30' : isRejected ? 'bg-gradient-to-r from-red-900 via-slate-900 to-slate-950 border border-red-500/30' : 'bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-950 border border-amber-500/30'}`}>
+        <div className={`rounded-3xl p-6 text-white shadow-xl ${isApproved ? 'bg-gradient-to-r from-brand-900 via-neutral-900 to-neutral-950 border border-brand-500/30' : isRejected ? 'bg-gradient-to-r from-danger-900 via-neutral-900 to-neutral-950 border border-danger-500/30' : 'bg-gradient-to-r from-neutral-900 via-caution-950/40 to-neutral-950 border border-caution-500/30'}`}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${isApproved ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : isRejected ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}`}>
-                  <span className={`h-2 w-2 rounded-full ${isApproved ? 'bg-emerald-400' : isRejected ? 'bg-red-400' : 'bg-amber-400 animate-ping'}`}></span>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${isApproved ? 'bg-brand-500/20 text-brand-300 border border-brand-500/40' : isRejected ? 'bg-danger-500/20 text-danger-300 border border-danger-500/40' : 'bg-caution-500/20 text-caution-300 border border-caution-500/40'}`}>
+                  <span className={`h-2 w-2 rounded-full ${isApproved ? 'bg-brand-400' : isRejected ? 'bg-danger-400' : 'bg-caution-400 animate-ping'}`}></span>
                   {isApproved ? 'FINAL APPROVAL GRANTED' : isRejected ? 'APPLICATION REJECTED' : 'UNDER FINAL APPROVAL'}
                 </span>
               </div>
               <h2 className="mt-3 text-2xl font-black text-white tracking-tight">
                 {isApproved ? 'Congratulations! Loan Final Approval Received' : isRejected ? 'Application Declined' : 'Application Submitted for Final Review'}
               </h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+              <p className="mt-1 text-xs sm:text-sm text-neutral-300 max-w-2xl leading-relaxed">
                 {isApproved
                   ? 'Fintree Finance has approved your loan application. You can now continue your post-approval journey.'
                   : isRejected
@@ -4582,11 +4759,11 @@ function SubmitApplicationStep({
             customer?.latestLoanStatus === 'DISBURSED';
 
           return (
-            <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
-              <h3 className="text-xl font-bold text-slate-900 mb-2">
+            <div className="rounded-3xl border border-brand-200 bg-brand-50 p-6 text-center shadow-sm">
+              <h3 className="text-xl font-bold text-neutral-900 mb-2">
                 {isDisbursalRequestedOrDisbursed ? 'Loan Account & Disbursal Status' : 'Continue to Disbursal'}
               </h3>
-              <p className="text-sm text-slate-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
+              <p className="text-sm text-neutral-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
               <button
                 onClick={() =>
                   navigate(
@@ -4595,7 +4772,7 @@ function SubmitApplicationStep({
                       : `/customer/loan/${customer.latestLan}/post-approval`
                   )
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-bold text-white shadow hover:bg-emerald-700 cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 font-bold text-white shadow hover:bg-brand-700 cursor-pointer"
               >
                 {isDisbursalRequestedOrDisbursed ? 'View Loan Details' : 'Continue Approved Loan Journey'}
                 <ArrowRight size={18} />
@@ -4605,10 +4782,10 @@ function SubmitApplicationStep({
         })()}
 
         {isApproved && !hasLan && (
-          <div className="rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-sm">
-            <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-emerald-600 mb-4" />
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Generating Loan Account...</h3>
-            <p className="text-sm text-slate-600">Please wait while we set up your loan account.</p>
+          <div className="rounded-3xl border border-brand-200 bg-white p-6 text-center shadow-sm">
+            <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-brand-600 mb-4" />
+            <h3 className="text-lg font-bold text-neutral-900 mb-2">Generating Loan Account...</h3>
+            <p className="text-sm text-neutral-600">Please wait while we set up your loan account.</p>
           </div>
         )}
       </div>
@@ -4728,8 +4905,8 @@ function SubmitApplicationStep({
           </ReviewSection>
         </div>
 
-        <aside className="h-fit rounded-3xl border border-slate-200 bg-slate-50 p-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+        <aside className="h-fit rounded-3xl border border-neutral-200 bg-neutral-50 p-6">
+          <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">
             Submission Summary
           </p>
 
@@ -4770,14 +4947,14 @@ function SubmitApplicationStep({
             />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="mt-6 rounded-2xl border border-caution-200 bg-caution-50 p-4">
             <div className="flex items-start gap-3">
               <Info
                 size={18}
-                className="mt-0.5 shrink-0 text-amber-700"
+                className="mt-0.5 shrink-0 text-caution-700"
               />
 
-              <p className="text-xs leading-5 text-amber-800">
+              <p className="text-xs leading-5 text-caution-800">
                 Submission does not
                 guarantee loan
                 approval. The lender
@@ -4787,29 +4964,31 @@ function SubmitApplicationStep({
             </div>
           </div>
 
-          <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-            <label className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+          <div className="mt-5 space-y-3">
+            <label className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3.5 text-xs leading-5 text-neutral-600 transition hover:bg-neutral-50">
               <input
                 type="checkbox"
                 checked={sameAsPermanent}
                 onChange={(event) => setSameAsPermanent(event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
               />
               My current address is the same as my DigiLocker permanent address.
             </label>
             {!sameAsPermanent && (
-              <p className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600">
+              <p className="rounded-lg bg-neutral-50 p-2 text-[11px] text-neutral-600">
                 Current address from verified photo location: {savedPhotoDocument?.formattedAddress || 'Location address unavailable'}
               </p>
             )}
-            <label className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+            <label className={`flex items-start gap-3 rounded-2xl border-2 p-4 transition-all duration-150 ${decisionConsentAccepted ? 'border-brand-400 bg-brand-50/50' : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50'}`}>
               <input
                 type="checkbox"
                 checked={decisionConsentAccepted}
                 onChange={(event) => setDecisionConsentAccepted(event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600"
               />
-              I authorize the bureau enquiry, lender credit assessment, and submission of this completed application to the allocated lender for a decision.
+              <span className="text-sm font-semibold leading-6 text-neutral-900">
+                I authorize the bureau enquiry, lender credit assessment, and submission of this completed application to the allocated lender for a decision.
+              </span>
             </label>
           </div>
 
@@ -4819,7 +4998,7 @@ function SubmitApplicationStep({
             disabled={
               isSubmitting || !decisionConsentAccepted
             }
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? (
               <>
@@ -4840,7 +5019,7 @@ function SubmitApplicationStep({
             )}
           </button>
 
-          <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-slate-500">
+          <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-neutral-500">
             <Lock size={12} />
             Secure application
             submission
@@ -4848,14 +5027,14 @@ function SubmitApplicationStep({
         </aside>
       </div>
 
-      <div className="mt-8 border-t border-slate-200 pt-6">
+      <div className="mt-8 border-t border-neutral-200 pt-6">
         <button
           type="button"
           onClick={onBack}
           disabled={
             isSubmitting
           }
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
         >
           <ArrowLeft size={17} />
           Back to Profile
@@ -4873,13 +5052,13 @@ function ReviewSection({
   children,
 }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6">
-      <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+    <section className="rounded-3xl border border-neutral-200 bg-white p-6">
+      <div className="flex items-center gap-3 border-b border-neutral-100 pb-4">
+        <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-700">
           <Icon size={20} />
         </div>
 
-        <h3 className="font-bold text-slate-900">
+        <h3 className="font-bold text-neutral-900">
           {title}
         </h3>
       </div>
@@ -4897,11 +5076,11 @@ function ReviewItem({
 }) {
   return (
     <div>
-      <p className="text-xs font-medium text-slate-500">
+      <p className="text-xs font-medium text-neutral-500">
         {label}
       </p>
 
-      <p className="mt-1 break-words text-sm font-semibold text-slate-900">
+      <p className="mt-1 break-words text-sm font-semibold text-neutral-900">
         {value ||
           'Not provided'}
       </p>
@@ -4914,12 +5093,12 @@ function SummaryStatus({
   value,
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4 last:border-0 last:pb-0">
-      <span className="text-xs text-slate-500">
+    <div className="flex items-start justify-between gap-3 border-b border-neutral-200 pb-4 last:border-0 last:pb-0">
+      <span className="text-xs text-neutral-500">
         {label}
       </span>
 
-      <span className="flex items-center gap-1 text-right text-xs font-bold text-emerald-700">
+      <span className="flex items-center gap-1 text-right text-xs font-bold text-brand-700">
         <CheckCircle2
           size={14}
         />
@@ -4931,7 +5110,7 @@ function SummaryStatus({
 
 function StepCard({ children }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-8">
       {children}
     </section>
   );
@@ -4975,54 +5154,89 @@ function PreApprovalOfferStep({ lan, onSelected }) {
   return (
     <StepCard>
       <div className="p-2 sm:p-4">
-        <h2 className="text-xl font-bold text-slate-900">You're Pre-Approved!</h2>
-        <p className="mt-1 text-sm text-slate-600">Select a repayment tenure to proceed to final lender approval.</p>
-
         {loading ? (
-          <div className="mt-8 flex justify-center"><LoaderCircle className="h-8 w-8 animate-spin text-emerald-600" /></div>
+          <div className="animate-fade-in">
+            <div className="h-6 w-48 animate-pulse rounded-lg bg-neutral-100" />
+            <div className="mt-3 h-4 w-72 max-w-full animate-pulse rounded-lg bg-neutral-100" />
+            <div className="mt-6 h-32 animate-pulse rounded-2xl bg-neutral-100" />
+            <div className="mt-6 h-24 animate-pulse rounded-2xl bg-neutral-100" />
+          </div>
         ) : error ? (
-          <p className="mt-6 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>
+          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold">We couldn't load your offer</p>
+              <p className="mt-0.5 text-danger-600">{error}</p>
+            </div>
+          </div>
         ) : (
           <>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                <p className="text-xs font-semibold text-slate-500">Pre-Approved Amount</p>
-                <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(offer?.amount)}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                <p className="text-xs font-semibold text-slate-500">Lender Credit Limit</p>
-                <p className="mt-1 text-lg font-bold text-slate-900">{formatCurrency(offer?.lenderApprovedAmount)}</p>
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <h2 className="text-xl font-bold text-neutral-900">You're pre-approved!</h2>
+            </div>
+            <p className="mt-1 text-sm text-neutral-600">Choose how long you'd like to repay — you'll see the exact terms before anything is final.</p>
+
+            {/* Hero amount — the number that matters most, given the most visual weight */}
+            <div className="animate-pop-in mt-6 overflow-hidden rounded-3xl border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-brand-50/60 p-6 text-center sm:p-8">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Pre-approved amount</p>
+              <p className="mt-2 text-4xl font-extrabold tracking-tight text-neutral-900 sm:text-5xl">
+                {formatCurrency(offer?.amount)}
+              </p>
+              {offer?.lenderApprovedAmount ? (
+                <p className="mt-2 text-xs text-neutral-500">
+                  Within your lender's approved credit limit of {formatCurrency(offer.lenderApprovedAmount)}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-7">
+              <p className="text-sm font-bold text-neutral-900">Select your repayment tenure</p>
+              <p className="mt-0.5 text-xs text-neutral-500">This is how long you'll have to repay the loan in full.</p>
+
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {(offer?.allowedTenures || []).map((t) => {
+                  const isSelected = selectedTenure === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setSelectedTenure(t)}
+                      aria-pressed={isSelected}
+                      className={`relative rounded-2xl border-2 px-4 py-4 text-left transition-all duration-150 ${isSelected
+                        ? 'border-brand-500 bg-brand-50 shadow-sm'
+                        : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50 active:scale-[0.98]'
+                        }`}
+                    >
+                      {isSelected && (
+                        <span className="animate-pop-in absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-white">
+                          <Check size={12} strokeWidth={3} />
+                        </span>
+                      )}
+                      <p className={`text-lg font-extrabold ${isSelected ? 'text-brand-800' : 'text-neutral-900'}`}>{t}</p>
+                      <p className={`text-xs font-medium ${isSelected ? 'text-brand-600' : 'text-neutral-500'}`}>days tenure</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="mt-6">
-              <p className="mb-3 text-sm font-bold text-slate-900">Select Repayment Tenure</p>
-              <div className="flex flex-wrap gap-3">
-                {(offer?.allowedTenures || []).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setSelectedTenure(t)}
-                    className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
-                      : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'
-                      }`}
-                  >
-                    {t} Days
-                  </button>
-                ))}
-              </div>
+            <div className="mt-6 flex items-start gap-2.5 rounded-xl bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+              Confirming here sends your selection to the lender for final approval — you'll see the full interest, fees and EMI breakdown on the next screen before you're asked to accept anything.
             </div>
 
-            <div className="mt-8 flex justify-end">
+            <div className="mt-6 flex justify-end">
               <button
                 type="button"
                 onClick={handleSelect}
                 disabled={submitting || !selectedTenure}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-60 disabled:shadow-none"
               >
                 {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                {submitting ? 'Submitting…' : 'Confirm Offer & Continue'}
+                {submitting ? 'Submitting…' : 'Confirm offer & continue'}
               </button>
             </div>
           </>
@@ -5040,22 +5254,22 @@ function StepHeading({
   right,
 }) {
   return (
-    <header className="mb-8 flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-start">
+    <header className="mb-8 flex flex-col justify-between gap-4 border-b border-neutral-200 pb-6 sm:flex-row sm:items-start">
       <div className="flex items-start gap-4">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
           <Icon size={23} />
         </div>
 
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">
             {eyebrow}
           </p>
 
-          <h2 className="mt-2 text-2xl font-bold text-slate-900">
+          <h2 className="mt-2 text-2xl font-bold text-neutral-900">
             {title}
           </h2>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
             {description}
           </p>
         </div>
@@ -5072,11 +5286,11 @@ function SectionHeading({
 }) {
   return (
     <div className="mb-5">
-      <h3 className="text-lg font-bold text-slate-900">
+      <h3 className="text-lg font-bold text-neutral-900">
         {title}
       </h3>
 
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-neutral-500">
         {description}
       </p>
     </div>
@@ -5087,7 +5301,7 @@ function StatusBadge({
   children,
 }) {
   return (
-    <span className="flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+    <span className="flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
       {children}
     </span>
   );
@@ -5100,67 +5314,81 @@ function StepActions({
   isSaving,
   nextLabel,
   nextDisabled = false,
+  nextDisabledReason,
   hideSave = false,
   isNextLoading = false,
 }) {
   return (
-    <footer className="mt-8 flex flex-col-reverse justify-between gap-3 border-t border-slate-200 pt-6 sm:flex-row">
-      <div className="flex flex-col gap-3 sm:flex-row">
-        {onBack && (
+    <footer className="mt-8 border-t border-neutral-200 pt-6">
+      <div className="flex flex-col-reverse justify-between gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={
+                isNextLoading
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
+          )}
+
+          {!hideSave && onSave && (
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={
+                isSaving ||
+                isNextLoading
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+            >
+              <Save size={17} />
+
+              {isSaving
+                ? 'Saving...'
+                : 'Save Draft'}
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col items-end gap-2">
           <button
             type="button"
-            onClick={onBack}
+            onClick={onNext}
             disabled={
+              nextDisabled ||
               isNextLoading
             }
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-50 disabled:shadow-none"
           >
-            <ArrowLeft size={17} />
-            Back
-          </button>
-        )}
+            {isNextLoading && (
+              <LoaderCircle
+                size={17}
+                className="animate-spin"
+              />
+            )}
 
-        {!hideSave && onSave && (
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={
-              isSaving ||
-              isNextLoading
-            }
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            <Save size={17} />
+            {nextLabel}
 
-            {isSaving
-              ? 'Saving...'
-              : 'Save Draft'}
+            {!isNextLoading && (
+              <ArrowRight size={17} />
+            )}
           </button>
-        )}
+
+          {/* First-time users hitting a dead, grayed-out button with no explanation is a
+              classic silent abandonment point — always tell them exactly what's missing. */}
+          {nextDisabled && !isNextLoading && nextDisabledReason && (
+            <p className="animate-fade-in flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+              <Info size={13} className="shrink-0" />
+              {nextDisabledReason}
+            </p>
+          )}
+        </div>
       </div>
-
-      <button
-        type="button"
-        onClick={onNext}
-        disabled={
-          nextDisabled ||
-          isNextLoading
-        }
-        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isNextLoading && (
-          <LoaderCircle
-            size={17}
-            className="animate-spin"
-          />
-        )}
-
-        {nextLabel}
-
-        {!isNextLoading && (
-          <ArrowRight size={17} />
-        )}
-      </button>
     </footer>
   );
 }
@@ -5185,28 +5413,28 @@ function FormInput({
     <div>
       <label
         htmlFor={name}
-        className="mb-2 block text-sm font-semibold text-slate-700"
+        className="mb-2 block text-sm font-semibold text-neutral-700"
       >
         {label}
 
         {required && (
-          <span className="ml-1 text-red-500">
+          <span className="ml-1 text-danger-500">
             *
           </span>
         )}
       </label>
 
       <div
-        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition ${error
-            ? 'border-red-400 ring-4 ring-red-50'
-            : 'border-slate-300 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-50'
+        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition-all duration-150 ${error
+            ? 'border-danger-400 ring-4 ring-danger-50'
+            : 'border-neutral-300 focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-50'
           } ${disabled
-            ? 'bg-slate-100'
+            ? 'bg-neutral-100'
             : 'bg-white'
           }`}
       >
         {prefix && (
-          <span className="border-r border-slate-200 px-4 text-sm font-bold text-slate-600">
+          <span className="border-r border-neutral-200 px-4 text-sm font-bold text-neutral-600">
             {prefix}
           </span>
         )}
@@ -5222,19 +5450,70 @@ function FormInput({
           disabled={disabled}
           maxLength={maxLength}
           inputMode={inputMode}
-          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400 disabled:cursor-not-allowed disabled:text-slate-500"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${name}-error` : helperText ? `${name}-helper` : undefined}
+          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm font-medium text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-400 disabled:cursor-not-allowed disabled:text-neutral-500"
         />
       </div>
 
       {error ? (
-        <p className="mt-1.5 text-xs text-red-600">
+        <p id={`${name}-error`} className="animate-fade-in mt-1.5 flex items-center gap-1 text-xs font-medium text-danger-600">
           {error}
         </p>
       ) : helperText ? (
-        <p className="mt-1.5 text-xs text-slate-500">
+        <p id={`${name}-helper`} className="mt-1.5 text-xs text-neutral-500">
           {helperText}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function SelectableCardGroup({
+  label,
+  name,
+  value,
+  error,
+  onChange,
+  required = false,
+  options,
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-neutral-700">
+        {label}
+        {required && <span className="ml-1 text-danger-500">*</span>}
+      </label>
+      <div className="grid grid-cols-2 gap-3">
+        {options.map(([optValue, optLabel, optDescription]) => {
+          const isSelected = value === optValue;
+          return (
+            <button
+              key={optValue}
+              type="button"
+              onClick={() => onChange({ target: { name, value: optValue } })}
+              aria-pressed={isSelected}
+              className={`relative rounded-2xl border-2 p-4 text-left transition-all duration-150 ${isSelected
+                ? 'border-brand-500 bg-brand-50 shadow-sm'
+                : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50 active:scale-[0.98]'
+                }`}
+            >
+              {isSelected && (
+                <span className="animate-pop-in absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-white">
+                  <Check size={12} strokeWidth={3} />
+                </span>
+              )}
+              <p className={`text-sm font-bold ${isSelected ? 'text-brand-800' : 'text-neutral-900'}`}>{optLabel}</p>
+              {optDescription && (
+                <p className={`mt-0.5 text-xs ${isSelected ? 'text-brand-600' : 'text-neutral-500'}`}>{optDescription}</p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <p className="animate-fade-in mt-1.5 text-xs font-medium text-danger-600">{error}</p>
+      )}
     </div>
   );
 }
@@ -5253,12 +5532,12 @@ function FormSelect({
     <div>
       <label
         htmlFor={name}
-        className="mb-2 block text-sm font-semibold text-slate-700"
+        className="mb-2 block text-sm font-semibold text-neutral-700"
       >
         {label}
 
         {required && (
-          <span className="ml-1 text-red-500">
+          <span className="ml-1 text-danger-500">
             *
           </span>
         )}
@@ -5270,11 +5549,12 @@ function FormSelect({
         value={value || ''}
         onChange={onChange}
         disabled={disabled}
-        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition ${disabled
-            ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500'
+        aria-invalid={Boolean(error)}
+        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition-all duration-150 ${disabled
+            ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-500'
             : error
-              ? 'border-red-400 bg-white text-slate-900 ring-4 ring-red-50'
-              : 'border-slate-300 bg-white text-slate-900 focus:border-blue-600 focus:ring-4 focus:ring-blue-50'
+              ? 'border-danger-400 bg-white text-neutral-900 ring-4 ring-danger-50'
+              : 'border-neutral-300 bg-white text-neutral-900 focus:border-brand-500 focus:ring-4 focus:ring-brand-50'
           }`}
       >
         <option value="">
@@ -5297,7 +5577,7 @@ function FormSelect({
       </select>
 
       {error && (
-        <p className="mt-1.5 text-xs text-red-600">
+        <p className="animate-fade-in mt-1.5 text-xs font-medium text-danger-600">
           {error}
         </p>
       )}
