@@ -226,16 +226,26 @@ export default function CustomerDashboard() {
       backendCustomer?.latestApplicationId,
     );
 
+  // The real application reference, not a fabricated "PL-APP-{id}" string built from
+  // the raw numeric row ID — that display string never matched the actual
+  // applicationNumber shown anywhere else (admin panels, KFS documents, support
+  // records), which would have confused customers referencing it to support.
   const applicationNumber =
-    backendCustomer?.latestApplicationId
+    backendCustomer?.latestApplicationReference ||
+    (backendCustomer?.latestApplicationId
       ? `PL-APP-${backendCustomer.latestApplicationId}`
-      : '';
+      : '');
 
   const applicant =
     backendCustomer || {};
 
+  // The actual allocated lender, not a hardcoded literal — this platform allocates
+  // across multiple lenders (see the MLM allocation engine), so a customer allocated
+  // to a different lender would have seen the wrong name here.
   const lender =
-    'Fintree Finance Private Limited';
+    backendCustomer?.allocatedLenderName ||
+    backendCustomer?.allocatedLenderCode ||
+    'Lending Partner';
 
   const applicationStatus =
     backendCustomer?.eligibilityStatus ||
