@@ -484,6 +484,16 @@ export default function MyApplicationPage() {
   const [lenderConsent, setLenderConsent] = useState(false);
   const [feePaid, setFeePaid] = useState(false);
   const [isFeeProcessing, setIsFeeProcessing] = useState(false);
+  // Shown if the Easebuzz widget never calls back at all — e.g. it silently fails to
+  // open, the customer's connection drops, or they close a tab it opened in. Without
+  // this, isFeeProcessing (set the instant Pay is clicked, before the widget opens)
+  // has no recovery path other than the customer figuring out to refresh the page: the
+  // 3-minute polling timeout in startPaymentPolling only ever starts if Easebuzz's
+  // onResponse callback actually fires, so a widget that never opens bypasses it
+  // entirely. This is a customer-triggered fallback, not an automatic timer, so it
+  // can never interrupt a payment that's genuinely still in progress.
+  const [showPaymentRetryHint, setShowPaymentRetryHint] = useState(false);
+  const paymentRetryHintTimerRef = useRef(null);
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -1448,7 +1458,15 @@ export default function MyApplicationPage() {
     }
 
     setIsFeeProcessing(true);
+    setShowPaymentRetryHint(false);
     clearMessage();
+
+    if (paymentRetryHintTimerRef.current) {
+      clearTimeout(paymentRetryHintTimerRef.current);
+    }
+    paymentRetryHintTimerRef.current = setTimeout(() => {
+      setShowPaymentRetryHint(true);
+    }, 8000);
 
     try {
       const result = await initiateAssessmentPayment({
@@ -1496,6 +1514,14 @@ export default function MyApplicationPage() {
       const handleEasebuzzResponse = (paymentResponse) => {
         console.log('Easebuzz checkout callback response:', paymentResponse);
 
+        // The widget called back at all, so it did open — the retry-hint fallback
+        // (for when it never opens) is no longer relevant; the polling below (for
+        // success/ambiguous outcomes) or the immediate reset (for failure) takes over.
+        if (paymentRetryHintTimerRef.current) {
+          clearTimeout(paymentRetryHintTimerRef.current);
+        }
+        setShowPaymentRetryHint(false);
+
         const status = String(
           paymentResponse?.status || paymentResponse?.payment_status || '',
         ).toLowerCase();
@@ -1530,7 +1556,20 @@ export default function MyApplicationPage() {
         error instanceof Error ? error.message : 'Payment initiation failed.';
       showMessage(errorMessage, 'error');
       setIsFeeProcessing(false);
+      if (paymentRetryHintTimerRef.current) {
+        clearTimeout(paymentRetryHintTimerRef.current);
+      }
+      setShowPaymentRetryHint(false);
     }
+  };
+
+  const handleRetryPayment = () => {
+    if (paymentRetryHintTimerRef.current) {
+      clearTimeout(paymentRetryHintTimerRef.current);
+    }
+    setShowPaymentRetryHint(false);
+    setIsFeeProcessing(false);
+    showMessage('You can try the payment again.', 'info');
   };
 
   const startPaymentPolling = (txId, pId) => {
@@ -1604,6 +1643,9 @@ export default function MyApplicationPage() {
     return () => {
       if (pollingTimerRef.current) {
         clearInterval(pollingTimerRef.current);
+      }
+      if (paymentRetryHintTimerRef.current) {
+        clearTimeout(paymentRetryHintTimerRef.current);
       }
     };
   }, []);
@@ -1877,10 +1919,12 @@ export default function MyApplicationPage() {
           feePaid={feePaid}
           isFeeProcessing={isFeeProcessing}
           isCheckingPayment={isCheckingPayment}
+          showPaymentRetryHint={showPaymentRetryHint}
           transactionId={transactionId}
           onConsentChange={setLenderConsent}
           onBack={() => goToStep('basic_details')}
           onPay={handlePayClick}
+          onRetryPayment={handleRetryPayment}
           onContinue={handleProceedToProfile}
         />
       )}
@@ -3506,10 +3550,12 @@ function AssessmentFeeStep({
   feePaid,
   isFeeProcessing,
   isCheckingPayment,
+  showPaymentRetryHint,
   transactionId,
   onConsentChange,
   onBack,
   onPay,
+  onRetryPayment,
   onContinue,
 }) {
   const lenderName = customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner';
@@ -3679,6 +3725,24 @@ function AssessmentFeeStep({
                     <Info size={13} className="shrink-0" />
                     Check the consent box above to enable payment
                   </p>
+                )}
+                {/* isFeeProcessing but not yet isCheckingPayment means the payment
+                    window was asked to open but Easebuzz hasn't called back at all
+                    yet — could still be legitimately loading, or could mean it never
+                    opened. Never auto-resets; the customer decides when to give up. */}
+                {isFeeProcessing && !isCheckingPayment && showPaymentRetryHint && (
+                  <div className="animate-fade-in mt-3 rounded-xl border border-caution-200 bg-caution-50 p-3 text-center">
+                    <p className="text-xs font-medium text-caution-800">
+                      Payment window not showing anything?
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onRetryPayment}
+                      className="mt-1.5 text-xs font-bold text-caution-900 underline underline-offset-2 hover:text-caution-950 cursor-pointer"
+                    >
+                      Click here to try again
+                    </button>
+                  </div>
                 )}
               </>
             )}
