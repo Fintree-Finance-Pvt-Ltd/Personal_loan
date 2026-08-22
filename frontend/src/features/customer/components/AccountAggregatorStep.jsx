@@ -19,7 +19,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [status, setStatus] = useState('NOT_STARTED');
   const [consentStatus, setConsentStatus] = useState(null);
-  const [, setDataStatus] = useState(null);
+  const [dataStatus, setDataStatus] = useState(null);
   const [failureReason, setFailureReason] = useState(null);
   const [bankSummary, setBankSummary] = useState(null);
   const [, setIsPolling] = useState(false);
@@ -384,8 +384,8 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
           </div>
         )}
 
-        {/* FAILED / CANCELLED / EXPIRED / REJECTED */}
-        {(['FAILED', 'CANCELLED', 'EXPIRED'].includes(status) || consentStatus === 'REJECTED') && (
+        {/* FAILED / CANCELLED / EXPIRED / REJECTED / DENIED */}
+        {(['FAILED', 'CANCELLED', 'EXPIRED'].includes(status) || consentStatus === 'REJECTED' || dataStatus === 'DENIED' || dataStatus === 'FAILED') && (
           <div className="mt-6 rounded-xl border border-danger-200 bg-danger-50 p-5">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 shrink-0 text-danger-600" />
@@ -393,6 +393,8 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                 <h4 className="text-sm font-semibold text-danger-950">
                   {consentStatus === 'REJECTED'
                     ? 'Consent Rejected — Please Select Another Bank'
+                    : dataStatus === 'DENIED' || status === 'FAILED'
+                    ? 'Bank Fetch Denied / Timed Out'
                     : status === 'EXPIRED'
                     ? 'Session Expired'
                     : status === 'CANCELLED'
@@ -400,14 +402,16 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                     : 'Bank Connection Failed'}
                 </h4>
                 <p className="mt-1 text-xs text-danger-800 leading-relaxed">
-                  {consentStatus === 'REJECTED'
-                    ? 'You have rejected consent for this bank account. Please select another bank account to continue your loan verification.'
-                    : failureReason ||
-                      (status === 'EXPIRED'
-                        ? 'The bank consent session expired before completion. Please start again.'
-                        : status === 'CANCELLED'
-                        ? 'Bank account connection was cancelled.'
-                        : 'Unable to fetch bank information. Please try connecting again.')}
+                  {failureReason ||
+                    (consentStatus === 'REJECTED'
+                      ? 'You have rejected consent for this bank account. Please select another bank account to continue your loan verification.'
+                      : dataStatus === 'DENIED'
+                      ? 'The bank server timed out or denied sharing the statement. Please retry bank connection or choose another bank.'
+                      : status === 'EXPIRED'
+                      ? 'The bank consent session expired before completion. Please start again.'
+                      : status === 'CANCELLED'
+                      ? 'Bank account connection was cancelled.'
+                      : 'Unable to fetch bank information. Please try connecting again.')}
                 </p>
 
                 <div className="mt-4 flex items-center gap-3">
@@ -417,7 +421,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                     className="inline-flex items-center gap-2 rounded-lg bg-danger-600 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-danger-700 disabled:opacity-50 cursor-pointer"
                   >
                     <Building2 className="h-4 w-4" />
-                    {consentStatus === 'REJECTED' ? 'Select Another Bank' : status === 'EXPIRED' ? 'Start Again' : 'Retry Bank Connection'}
+                    {consentStatus === 'REJECTED' || dataStatus === 'DENIED' ? 'Retry / Select Another Bank' : status === 'EXPIRED' ? 'Start Again' : 'Retry Bank Connection'}
                   </button>
                 </div>
               </div>

@@ -673,6 +673,67 @@ export class UnaportService {
     const encryptedResponse = encryptPayload(payload);
     const now = new Date();
 
+    // Inspect accounts in FIStatusResponse to detect FIP denial/timeout
+    let accountsList: any[] = [];
+    const fiResponse = notif?.FIStatusResponse || rawPayload?.FIStatusResponse;
+    if (Array.isArray(fiResponse)) {
+      for (const fip of fiResponse) {
+        if (Array.isArray(fip?.Accounts)) accountsList.push(...fip.Accounts);
+        else if (fip?.Accounts) accountsList.push(fip.Accounts);
+        else if (fip?.FIStatus) accountsList.push(fip);
+      }
+    } else if (fiResponse && typeof fiResponse === 'object') {
+      if (Array.isArray(fiResponse.Accounts)) accountsList.push(...fiResponse.Accounts);
+      else if (fiResponse.Accounts) accountsList.push(fiResponse.Accounts);
+      else if (fiResponse.FIStatus) accountsList.push(fiResponse);
+    }
+
+    const hasDeniedOrFailed = accountsList.some((acc) =>
+      ['DENIED', 'FAILED', 'TIMEOUT', 'REJECTED'].includes(String(acc?.FIStatus || '').toUpperCase())
+    );
+    const hasSuccessful = accountsList.some((acc) =>
+      ['READY', 'COMPLETED', 'SUCCESS', 'DELIVERED'].includes(String(acc?.FIStatus || '').toUpperCase())
+    );
+
+    const isAllDenied = (accountsList.length > 0 && hasDeniedOrFailed && !hasSuccessful) || sessionStatus === 'FAILED' || sessionStatus === 'DENIED';
+
+    if (isAllDenied) {
+      const matchedDesc = accountsList.find((acc) => acc?.description || acc?.desc);
+      const failureReasonText = matchedDesc?.description || matchedDesc?.desc || 'Bank server timed out or denied account statement request. Please retry bank verification or select another bank.';
+
+      await this.prisma.customerAccountAggregatorRequest.update({
+        where: { id: request.id },
+        data: {
+          sessionId: sessionId || request.sessionId,
+          dataStatus: 'DENIED',
+          status: 'FAILED',
+          failureCode: 'AA_FI_DENIED',
+          failureReason: failureReasonText,
+          failedAt: now,
+          providerResponseEncrypted: encryptedResponse,
+        },
+      });
+
+      this.logger.warn({
+        event: 'unaport_data_notification_denied_or_failed',
+        requestId: request.id.toString(),
+        customerId: request.customerId.toString(),
+        lan: request.lan,
+        trackingId: request.trackingId,
+        provider: 'UNAPORT',
+        failureReason: failureReasonText,
+        durationMs: Date.now() - startTime,
+      });
+
+      const failureResponse = {
+        success: true,
+        message: 'Data notification processed: Bank statement fetch denied/timed out.',
+        failureReason: failureReasonText,
+      };
+      console.log(`[AA SERVICE] [RESPONSE] handleDataNotification (DENIED) - result:`, JSON.stringify(failureResponse, null, 2));
+      return failureResponse;
+    }
+
     const isReady =
       sessionStatus === 'COMPLETED' ||
       sessionStatus === 'READY' ||
