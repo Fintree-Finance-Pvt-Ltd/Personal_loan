@@ -255,7 +255,18 @@ export default function CustomerDashboard() {
     backendCustomer?.updatedAt ||
     '';
 
-  const feeDetails = null;
+  // Was hardcoded to null, so the render below always fell through to hardcoded
+  // fallback figures ("₹199.00" etc.) for every customer regardless of their actual
+  // assessment fee — getMe() already returns the real per-application amounts here.
+  const feeDetails =
+    backendCustomer?.assessmentFee
+      ? {
+        baseFee: backendCustomer.assessmentFee.baseAmount,
+        gst: backendCustomer.assessmentFee.gstAmount,
+        total: backendCustomer.assessmentFee.totalAmount,
+      }
+      : null;
+  const assessmentFeePaid = Boolean(backendCustomer?.assessmentFeePaid);
 
   const hasLan =
     Boolean(
@@ -844,7 +855,7 @@ export default function CustomerDashboard() {
                       feeDetails.baseFee,
                       true,
                     )
-                    : '₹199.00'
+                    : '—'
                 }
               />
 
@@ -856,34 +867,54 @@ export default function CustomerDashboard() {
                       feeDetails.gst,
                       true,
                     )
-                    : '₹35.82'
+                    : '—'
                 }
               />
 
               <div className="border-t border-dashed border-neutral-200 pt-4">
                 <DetailRow
-                  label="Total Paid"
+                  label={
+                    assessmentFeePaid
+                      ? 'Total Paid'
+                      : 'Total Payable'
+                  }
                   value={
                     feeDetails
                       ? formatCurrency(
                         feeDetails.total,
                         true,
                       )
-                      : '₹234.82'
+                      : '—'
                   }
                   prominent
                 />
               </div>
 
-              <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3.5">
-                <div className="flex items-center gap-2 text-xs font-bold text-brand-700">
-                  <CheckCircle2
-                    size={16}
-                  />
+              {/* This used to unconditionally claim "Payment completed successfully"
+                  for every customer with a submitted application, whether or not they'd
+                  actually paid — genuinely misleading, since it could make a customer
+                  think a required payment step was already done. */}
+              {assessmentFeePaid ? (
+                <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-brand-700">
+                    <CheckCircle2
+                      size={16}
+                    />
 
-                  Payment completed successfully
+                    Payment completed successfully
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-2xl border border-caution-100 bg-caution-50 px-4 py-3.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-caution-700">
+                    <LoaderCircle
+                      size={16}
+                    />
+
+                    Payment pending
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
