@@ -864,25 +864,58 @@ export class IvrService {
     const duration = payload.duration != null ? Number(payload.duration) : null;
 
     try {
-      // Find matching call log by callId, contactId, connectionId, or customer mobile
-      const searchCallId = callId ? String(callId) : '';
-      const searchContactId = contactId ? String(contactId) : '';
-      const searchConnectionId = connectionId ? String(connectionId) : '';
+      // Find matching call log safely without SQL collation conflicts
+      const searchCallId = callId ? String(callId).trim() : '';
+      const searchContactId = contactId ? String(contactId).trim() : '';
+      const searchConnectionId = connectionId ? String(connectionId).trim() : '';
       const searchUserNumber = userNumber ? String(userNumber).trim() : '';
 
-      const matchedRows = await this.prisma.$queryRaw<Array<{ id: bigint; provider_call_id: string }>>`
-        SELECT id, provider_call_id
-        FROM ivr_call_logs
-        WHERE ( ${searchCallId} != '' AND provider_call_id = ${searchCallId} )
-           OR ( ${searchConnectionId} != '' AND provider_call_id = ${searchConnectionId} )
-           OR ( ${searchContactId} != '' AND (provider_call_id = ${searchContactId} OR provider_call_id LIKE CONCAT(SUBSTRING(${searchContactId}, 1, 20), '%')) )
-           OR ( ${searchUserNumber} != '' AND (customer_mobile = ${searchUserNumber} OR customer_mobile = ${searchUserNumber.replace(/^\+91/, '')} OR customer_mobile = CONCAT('+91', ${searchUserNumber.replace(/^\+91/, '')})) AND created_at >= NOW() - INTERVAL 2 HOUR )
-        ORDER BY id DESC
-        LIMIT 1
-      `;
+      let rowId: bigint | null = null;
 
-      if (matchedRows && matchedRows.length > 0) {
-        const rowId = matchedRows[0].id;
+      // 1. Direct match on callId
+      if (searchCallId) {
+        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM ivr_call_logs WHERE provider_call_id = ${searchCallId} ORDER BY id DESC LIMIT 1
+        `;
+        if (rows && rows.length > 0) rowId = rows[0].id;
+      }
+
+      // 2. Direct match on connectionId
+      if (!rowId && searchConnectionId) {
+        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM ivr_call_logs WHERE provider_call_id = ${searchConnectionId} ORDER BY id DESC LIMIT 1
+        `;
+        if (rows && rows.length > 0) rowId = rows[0].id;
+      }
+
+      // 3. Match on contactId / task ID prefix
+      if (!rowId && searchContactId) {
+        const prefix = searchContactId.slice(0, 20);
+        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM ivr_call_logs 
+          WHERE provider_call_id = ${searchContactId} 
+             OR provider_call_id LIKE CONCAT(${prefix}, '%') 
+          ORDER BY id DESC 
+          LIMIT 1
+        `;
+        if (rows && rows.length > 0) rowId = rows[0].id;
+      }
+
+      // 4. Fallback match on customer mobile number within last 2 hours
+      if (!rowId && searchUserNumber) {
+        const cleanNumber = searchUserNumber.replace(/^\+91/, '');
+        const withPrefix = `+91${cleanNumber}`;
+        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
+          SELECT id FROM ivr_call_logs 
+          WHERE (customer_mobile = ${searchUserNumber} OR customer_mobile = ${cleanNumber} OR customer_mobile = ${withPrefix})
+            AND created_at >= NOW() - INTERVAL 2 HOUR 
+          ORDER BY id DESC 
+          LIMIT 1
+        `;
+        if (rows && rows.length > 0) rowId = rows[0].id;
+      }
+
+      if (rowId) {
 
         if (rawStatus === 'started') {
           await this.prisma.$executeRaw`
