@@ -699,6 +699,7 @@ model Customer {
   sessions                  CustomerSession[]
   lenderDataSharingConsents LenderDataSharingConsent[]
   partnerApplications       PartnerApplication[]
+  ivrCallLogs               IvrCallLog[]
 
   @@index([email], map: "idx_customers_email")
   @@index([accountStatus], map: "idx_customers_account_status")
@@ -1302,6 +1303,7 @@ model PlApplication {
   documents                 PlCustomerDocument[]
   paymentLinks              PlPaymentLink[]
   partnerApplications       PartnerApplication[]
+  ivrCallLogs               IvrCallLog[]
 
   @@index([customerId], map: "idx_pl_applications_customer_id")
   @@index([status], map: "idx_pl_applications_status")
@@ -2940,4 +2942,69 @@ model CustomerBankTransaction {
   @@index([txnDate], map: "idx_pl_bank_txn_date")
   @@map("customer_bank_transactions")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI IVR Outbound Calling Models (Pipecat API)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum IvrCallType {
+  GENERIC
+  APPLICATION_FOLLOW_UP
+  DOCUMENT_PENDING
+  KYC_PENDING
+  LOAN_APPROVAL
+  DISBURSEMENT_CONFIRMATION
+  EMI_REMINDER
+  PAYMENT_FOLLOW_UP
+  CUSTOMER_SUPPORT
+}
+
+enum IvrTriggerSource {
+  ADMIN
+  RM
+  SYSTEM
+  CREDIT
+  OPERATIONS
+}
+
+model IvrCallLog {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId     BigInt?  @map("customer_id") @db.UnsignedBigInt
+  applicationId  BigInt?  @map("application_id") @db.UnsignedBigInt
+  lan            String?  @db.VarChar(50)
+  customerMobile String   @map("customer_mobile") @db.VarChar(20)
+
+  providerCallId String   @map("provider_call_id") @db.VarChar(120)
+  agentId        String?  @map("agent_id") @db.VarChar(120)
+  callType       IvrCallType @default(APPLICATION_FOLLOW_UP) @map("call_type")
+  triggerSource  IvrTriggerSource @default(ADMIN) @map("trigger_source")
+  triggeredById  String?  @map("triggered_by_id") @db.VarChar(120)
+
+  status         String   @default("INITIATED") @db.VarChar(50)
+  duration       Int?     @db.UnsignedInt
+  startTime      DateTime? @map("start_time") @db.DateTime(0)
+  endTime        DateTime? @map("end_time") @db.DateTime(0)
+
+  callSummary    String?  @map("call_summary") @db.Text
+  transcript     String?  @db.LongText
+  recordingLink  String?  @map("recording_link") @db.VarChar(1000)
+
+  customData       Json?  @map("custom_data")
+  providerResponse Json?  @map("provider_response")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  customer    Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  application PlApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([customerId], map: "idx_ivr_calls_customer")
+  @@index([applicationId], map: "idx_ivr_calls_app")
+  @@index([lan], map: "idx_ivr_calls_lan")
+  @@index([providerCallId], map: "idx_ivr_calls_provider_id")
+  @@index([status], map: "idx_ivr_calls_status")
+  @@map("ivr_call_logs")
+}
+
 
