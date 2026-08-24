@@ -830,13 +830,9 @@ export class IvrService {
     }
 
     const callId = payload.call_id || payload.callId || payload.id;
-    if (!callId) {
-      this.logger.warn({
-        event: 'ivr_webhook_missing_call_id',
-        payload,
-      });
-      return { success: true, message: 'call_id missing from webhook payload' };
-    }
+    const contactId = payload.contact_id || payload.contactId;
+    const connectionId = payload.connection_id || payload.connectionId;
+    const userNumber = payload.user_number || payload.userNumber;
 
     const rawStatus = String(payload.status || '').trim().toLowerCase();
     let normalizedStatus = rawStatus.toUpperCase();
@@ -852,62 +848,101 @@ export class IvrService {
 
     const transcript = payload.transcript || null;
     const recordingLink = payload.recording_link || payload.recordingLink || null;
-    const callSummary = payload.call_summary
-      ? (typeof payload.call_summary === 'string' ? payload.call_summary : JSON.stringify(payload.call_summary))
-      : null;
+    
+    let callSummary = null;
+    if (payload.call_summary) {
+      if (typeof payload.call_summary === 'object') {
+        const text = payload.call_summary.call_summary || '';
+        const sentiment = payload.call_summary.sentiment ? ` (Sentiment: ${payload.call_summary.sentiment})` : '';
+        const intents = payload.call_summary.customer_intents?.length ? ` [Intents: ${payload.call_summary.customer_intents.join(', ')}]` : '';
+        callSummary = `${text}${sentiment}${intents}`.trim() || JSON.stringify(payload.call_summary);
+      } else {
+        callSummary = String(payload.call_summary);
+      }
+    }
 
     const duration = payload.duration != null ? Number(payload.duration) : null;
 
     try {
-      if (rawStatus === 'started') {
-        await this.prisma.$executeRaw`
-          UPDATE ivr_call_logs
-          SET
-            status = 'STARTED',
-            start_time = COALESCE(start_time, NOW()),
-            provider_response = ${JSON.stringify(payload)},
-            updated_at = NOW()
-          WHERE provider_call_id = ${String(callId)}
-        `;
-      } else if (rawStatus === 'completed') {
-        await this.prisma.$executeRaw`
-          UPDATE ivr_call_logs
-          SET
-            status = 'COMPLETED',
-            transcript = COALESCE(${transcript}, transcript),
-            recording_link = COALESCE(${recordingLink}, recording_link),
-            end_time = COALESCE(end_time, NOW()),
-            provider_response = ${JSON.stringify(payload)},
-            updated_at = NOW()
-          WHERE provider_call_id = ${String(callId)}
-        `;
-      } else if (rawStatus === 'analytics_completed') {
-        await this.prisma.$executeRaw`
-          UPDATE ivr_call_logs
-          SET
-            status = 'COMPLETED',
-            call_summary = COALESCE(${callSummary}, call_summary),
-            provider_response = ${JSON.stringify(payload)},
-            updated_at = NOW()
-          WHERE provider_call_id = ${String(callId)}
-        `;
-      } else {
-        await this.prisma.$executeRaw`
-          UPDATE ivr_call_logs
-          SET
-            status = ${normalizedStatus},
-            duration = COALESCE(${duration}, duration),
-            provider_response = ${JSON.stringify(payload)},
-            updated_at = NOW()
-          WHERE provider_call_id = ${String(callId)}
-        `;
-      }
+      // Find matching call log by callId, contactId, connectionId, or customer mobile
+      const searchCallId = callId ? String(callId) : '';
+      const searchContactId = contactId ? String(contactId) : '';
+      const searchConnectionId = connectionId ? String(connectionId) : '';
+      const searchUserNumber = userNumber ? String(userNumber).trim() : '';
 
-      this.logger.log({
-        event: 'ivr_webhook_processed_successfully',
-        callId,
-        status: normalizedStatus,
-      });
+      const matchedRows = await this.prisma.$queryRaw<Array<{ id: bigint; provider_call_id: string }>>`
+        SELECT id, provider_call_id
+        FROM ivr_call_logs
+        WHERE ( ${searchCallId} != '' AND provider_call_id = ${searchCallId} )
+           OR ( ${searchConnectionId} != '' AND provider_call_id = ${searchConnectionId} )
+           OR ( ${searchContactId} != '' AND (provider_call_id = ${searchContactId} OR provider_call_id LIKE CONCAT(SUBSTRING(${searchContactId}, 1, 20), '%')) )
+           OR ( ${searchUserNumber} != '' AND (customer_mobile = ${searchUserNumber} OR customer_mobile = ${searchUserNumber.replace(/^\+91/, '')} OR customer_mobile = CONCAT('+91', ${searchUserNumber.replace(/^\+91/, '')})) AND created_at >= NOW() - INTERVAL 2 HOUR )
+        ORDER BY id DESC
+        LIMIT 1
+      `;
+
+      if (matchedRows && matchedRows.length > 0) {
+        const rowId = matchedRows[0].id;
+
+        if (rawStatus === 'started') {
+          await this.prisma.$executeRaw`
+            UPDATE ivr_call_logs
+            SET
+              status = 'STARTED',
+              start_time = COALESCE(start_time, NOW()),
+              provider_response = ${JSON.stringify(payload)},
+              updated_at = NOW()
+            WHERE id = ${rowId}
+          `;
+        } else if (rawStatus === 'completed') {
+          await this.prisma.$executeRaw`
+            UPDATE ivr_call_logs
+            SET
+              status = 'COMPLETED',
+              transcript = COALESCE(${transcript}, transcript),
+              recording_link = COALESCE(${recordingLink}, recording_link),
+              duration = COALESCE(${duration}, duration),
+              end_time = COALESCE(end_time, NOW()),
+              provider_response = ${JSON.stringify(payload)},
+              updated_at = NOW()
+            WHERE id = ${rowId}
+          `;
+        } else if (rawStatus === 'analytics_completed') {
+          await this.prisma.$executeRaw`
+            UPDATE ivr_call_logs
+            SET
+              status = 'COMPLETED',
+              call_summary = COALESCE(${callSummary}, call_summary),
+              provider_response = ${JSON.stringify(payload)},
+              updated_at = NOW()
+            WHERE id = ${rowId}
+          `;
+        } else {
+          await this.prisma.$executeRaw`
+            UPDATE ivr_call_logs
+            SET
+              status = ${normalizedStatus},
+              duration = COALESCE(${duration}, duration),
+              provider_response = ${JSON.stringify(payload)},
+              updated_at = NOW()
+            WHERE id = ${rowId}
+          `;
+        }
+
+        this.logger.log({
+          event: 'ivr_webhook_processed_successfully',
+          matchedRowId: rowId.toString(),
+          callId,
+          status: normalizedStatus,
+        });
+      } else {
+        this.logger.warn({
+          event: 'ivr_webhook_no_matching_record',
+          callId,
+          contactId,
+          userNumber,
+        });
+      }
     } catch (err: any) {
       this.logger.error({
         event: 'ivr_webhook_db_update_error',
