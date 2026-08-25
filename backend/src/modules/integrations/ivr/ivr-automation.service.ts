@@ -51,45 +51,45 @@ export class IvrAutomationService {
 
     try {
       if (applicationId && callType) {
-        const count = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-          SELECT COUNT(*) as count
-          FROM ivr_call_logs
-          WHERE application_id = ${applicationId}
-            AND call_type = ${callType}
-            AND created_at >= ${since}
-        `;
-        return Number(count[0]?.count || 0) > 0;
+        const count = await this.prisma.ivrCallLog.count({
+          where: {
+            applicationId,
+            callType: callType as any,
+            createdAt: { gte: since },
+          },
+        });
+        return count > 0;
       }
 
       if (applicationId) {
-        const count = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-          SELECT COUNT(*) as count
-          FROM ivr_call_logs
-          WHERE application_id = ${applicationId}
-            AND created_at >= ${since}
-        `;
-        return Number(count[0]?.count || 0) > 0;
+        const count = await this.prisma.ivrCallLog.count({
+          where: {
+            applicationId,
+            createdAt: { gte: since },
+          },
+        });
+        return count > 0;
       }
 
       if (lan && callType) {
-        const count = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-          SELECT COUNT(*) as count
-          FROM ivr_call_logs
-          WHERE lan = ${lan}
-            AND call_type = ${callType}
-            AND created_at >= ${since}
-        `;
-        return Number(count[0]?.count || 0) > 0;
+        const count = await this.prisma.ivrCallLog.count({
+          where: {
+            lan,
+            callType: callType as any,
+            createdAt: { gte: since },
+          },
+        });
+        return count > 0;
       }
 
       if (lan) {
-        const count = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-          SELECT COUNT(*) as count
-          FROM ivr_call_logs
-          WHERE lan = ${lan}
-            AND created_at >= ${since}
-        `;
-        return Number(count[0]?.count || 0) > 0;
+        const count = await this.prisma.ivrCallLog.count({
+          where: {
+            lan,
+            createdAt: { gte: since },
+          },
+        });
+        return count > 0;
       }
     } catch (err: any) {
       this.logger.warn(`Failed to check IVR call cooldown: ${err?.message}`);

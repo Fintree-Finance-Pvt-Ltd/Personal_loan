@@ -190,6 +190,9 @@ export class IvrService {
 
     const repeatLoanLink = `${frontendBaseUrl}/apply?repeat=true`;
 
+    const totalBulletRepayment = totalRepayment || (emiAmount ? emiAmount : null);
+    const bulletEmiAmount = emiAmount || totalRepayment || null;
+
     // Master context
     const fullContext: IvrCustomerContext = {
       EVENT_ID: eventId,
@@ -211,8 +214,8 @@ export class IvrService {
       DISBURSAL_AMOUNT: disbursalAmount,
       DISBURSED_AMOUNT: disbursedAmount,
       DISBURSAL_UTR: disbursalUtr,
-      TOTAL_BULLET_REPAYMENT: null,
-      BULLET_EMI_AMOUNT: null,
+      TOTAL_BULLET_REPAYMENT: totalBulletRepayment,
+      BULLET_EMI_AMOUNT: bulletEmiAmount,
       APPLICATION_LINK: applicationLink,
       MANDATE_LINK: mandateLink,
       E_SIGN_LINK: eSignLink,
@@ -223,14 +226,19 @@ export class IvrService {
       REPEAT_LOAN_LINK: repeatLoanLink,
     };
 
-    // Call-Type Specific Data Tailoring
+    // Call-Type Specific Data Tailoring with strict QUEUE routing
     let tailoredContext: Record<string, any> = {};
 
     switch (callType) {
       case IvrCallType.APPLICATION_FOLLOW_UP:
+      case IvrCallType.KYC_PENDING:
+      case IvrCallType.DOCUMENT_PENDING:
+      case IvrCallType.LOAN_APPROVAL:
+        // TP-01: Loan Offer Acceptance
         tailoredContext = {
+          QUEUE: ['TP-01'],
           EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
+          TOUCH_POINT_CODE: 'TP-01',
           CUSTOMER_ID: fullContext.CUSTOMER_ID,
           APP_ID: fullContext.APP_ID,
           TRIGGERED_AT: fullContext.TRIGGERED_AT,
@@ -241,30 +249,15 @@ export class IvrService {
           APPLICATION_LINK: fullContext.APPLICATION_LINK,
           APPROVED_AMOUNT: fullContext.APPROVED_AMOUNT,
           MAX_TENURE_DAYS: fullContext.MAX_TENURE_DAYS,
-        };
-        break;
-
-      case IvrCallType.KYC_PENDING:
-      case IvrCallType.DOCUMENT_PENDING:
-        tailoredContext = {
-          EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
-          CUSTOMER_ID: fullContext.CUSTOMER_ID,
-          APP_ID: fullContext.APP_ID,
-          TRIGGERED_AT: fullContext.TRIGGERED_AT,
-          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
-          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
-          TO: fullContext.TO,
-          LANGUAGE: fullContext.LANGUAGE,
-          LAN: fullContext.LAN,
-          APPLICATION_LINK: fullContext.APPLICATION_LINK,
         };
         break;
 
       case IvrCallType.MANDATE_PENDING:
+        // TP-02: E-Mandate Setup Nudge
         tailoredContext = {
+          QUEUE: ['TP-02'],
           EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
+          TOUCH_POINT_CODE: 'TP-02',
           CUSTOMER_ID: fullContext.CUSTOMER_ID,
           APP_ID: fullContext.APP_ID,
           TRIGGERED_AT: fullContext.TRIGGERED_AT,
@@ -273,54 +266,19 @@ export class IvrService {
           TO: fullContext.TO,
           LANGUAGE: fullContext.LANGUAGE,
           LAN: fullContext.LAN,
-          APPROVED_AMOUNT: fullContext.APPROVED_AMOUNT,
-          MANDATE_LINK: fullContext.MANDATE_LINK,
           BANK_NAME: fullContext.BANK_NAME,
           ACCOUNT_MASKED: fullContext.ACCOUNT_MASKED,
+          TOTAL_REPAYMENT: fullContext.TOTAL_REPAYMENT,
+          MANDATE_LINK: fullContext.MANDATE_LINK,
         };
         break;
 
       case IvrCallType.ESIGN_PENDING:
+        // TP-03: E-Sign Agreement Reminder
         tailoredContext = {
+          QUEUE: ['TP-03'],
           EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
-          CUSTOMER_ID: fullContext.CUSTOMER_ID,
-          APP_ID: fullContext.APP_ID,
-          TRIGGERED_AT: fullContext.TRIGGERED_AT,
-          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
-          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
-          TO: fullContext.TO,
-          LANGUAGE: fullContext.LANGUAGE,
-          LAN: fullContext.LAN,
-          APPROVED_AMOUNT: fullContext.APPROVED_AMOUNT,
-          E_SIGN_LINK: fullContext.E_SIGN_LINK,
-        };
-        break;
-
-      case IvrCallType.LOAN_APPROVAL:
-        tailoredContext = {
-          EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
-          CUSTOMER_ID: fullContext.CUSTOMER_ID,
-          APP_ID: fullContext.APP_ID,
-          TRIGGERED_AT: fullContext.TRIGGERED_AT,
-          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
-          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
-          TO: fullContext.TO,
-          LANGUAGE: fullContext.LANGUAGE,
-          LAN: fullContext.LAN,
-          APPROVED_AMOUNT: fullContext.APPROVED_AMOUNT,
-          MAX_TENURE_DAYS: fullContext.MAX_TENURE_DAYS,
-          TOTAL_REPAYMENT: fullContext.TOTAL_REPAYMENT,
-          APPLICATION_LINK: fullContext.APPLICATION_LINK,
-        };
-        break;
-
-      case IvrCallType.DISBURSEMENT:
-      case IvrCallType.DISBURSEMENT_CONFIRMATION:
-        tailoredContext = {
-          EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
+          TOUCH_POINT_CODE: 'TP-03',
           CUSTOMER_ID: fullContext.CUSTOMER_ID,
           APP_ID: fullContext.APP_ID,
           TRIGGERED_AT: fullContext.TRIGGERED_AT,
@@ -330,20 +288,17 @@ export class IvrService {
           LANGUAGE: fullContext.LANGUAGE,
           LAN: fullContext.LAN,
           DISBURSAL_AMOUNT: fullContext.DISBURSAL_AMOUNT,
-          DISBURSED_AMOUNT: fullContext.DISBURSED_AMOUNT,
-          DISBURSAL_UTR: fullContext.DISBURSAL_UTR,
-          BANK_NAME: fullContext.BANK_NAME,
-          ACCOUNT_MASKED: fullContext.ACCOUNT_MASKED,
+          E_SIGN_LINK: fullContext.E_SIGN_LINK,
         };
         break;
 
-      case IvrCallType.EMI_REMINDER:
-      case IvrCallType.PAYMENT_OVERDUE:
-      case IvrCallType.PAYMENT_FOLLOW_UP:
-      case IvrCallType.PAYMENT_CONFIRMATION:
+      case IvrCallType.DISBURSEMENT:
+      case IvrCallType.DISBURSEMENT_CONFIRMATION:
+        // TP-04: Disbursal Welcome & Due-Date Confirmation
         tailoredContext = {
+          QUEUE: ['TP-04'],
           EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: fullContext.TOUCH_POINT_CODE,
+          TOUCH_POINT_CODE: 'TP-04',
           CUSTOMER_ID: fullContext.CUSTOMER_ID,
           APP_ID: fullContext.APP_ID,
           TRIGGERED_AT: fullContext.TRIGGERED_AT,
@@ -352,17 +307,44 @@ export class IvrService {
           TO: fullContext.TO,
           LANGUAGE: fullContext.LANGUAGE,
           LAN: fullContext.LAN,
+          DISBURSED_AMOUNT: fullContext.DISBURSED_AMOUNT,
+          BANK_NAME: fullContext.BANK_NAME,
+          ACCOUNT_MASKED: fullContext.ACCOUNT_MASKED,
+          DISBURSAL_UTR: fullContext.DISBURSAL_UTR,
+          TOTAL_BULLET_REPAYMENT: fullContext.TOTAL_BULLET_REPAYMENT,
           DUE_DATE: fullContext.DUE_DATE,
-          APPROVED_AMOUNT: fullContext.APPROVED_AMOUNT,
-          TOTAL_REPAYMENT: fullContext.TOTAL_REPAYMENT,
+        };
+        break;
+
+      case IvrCallType.EMI_REMINDER:
+      case IvrCallType.PAYMENT_OVERDUE:
+      case IvrCallType.PAYMENT_FOLLOW_UP:
+      case IvrCallType.PAYMENT_CONFIRMATION:
+        // TP-05: Pre-Due Payment Reminder
+        tailoredContext = {
+          QUEUE: ['TP-05'],
+          EVENT_ID: fullContext.EVENT_ID,
+          TOUCH_POINT_CODE: 'TP-05',
+          CUSTOMER_ID: fullContext.CUSTOMER_ID,
+          APP_ID: fullContext.APP_ID,
+          TRIGGERED_AT: fullContext.TRIGGERED_AT,
+          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
+          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
+          TO: fullContext.TO,
+          LANGUAGE: fullContext.LANGUAGE,
+          LAN: fullContext.LAN,
+          BULLET_EMI_AMOUNT: fullContext.BULLET_EMI_AMOUNT,
+          DUE_DATE: fullContext.DUE_DATE,
           PAYMENT_LINK: fullContext.PAYMENT_LINK,
         };
         break;
 
       case IvrCallType.REPEAT_LOAN_OFFER:
+        // TP-06: Fully Paid Customer Repeat Loan Offer
         tailoredContext = {
+          QUEUE: ['TP-06'],
           EVENT_ID: fullContext.EVENT_ID,
-          TOUCH_POINT_CODE: 'REPEAT_LOAN_OFFER',
+          TOUCH_POINT_CODE: 'TP-06',
           CUSTOMER_ID: fullContext.CUSTOMER_ID,
           APP_ID: fullContext.APP_ID,
           TRIGGERED_AT: fullContext.TRIGGERED_AT,
@@ -622,17 +604,24 @@ export class IvrService {
       const targetCustId = customer?.id ? BigInt(customer.id) : null;
       const targetAppId = application?.id ? BigInt(application.id) : null;
 
-      await this.prisma.$executeRaw`
-        INSERT INTO ivr_call_logs (
-          customer_id, application_id, lan, customer_mobile, provider_call_id,
-          agent_id, call_type, trigger_source, triggered_by_id, status,
-          custom_data, provider_response, created_at, updated_at
-        ) VALUES (
-          ${targetCustId}, ${targetAppId}, ${targetLan}, ${normalizedMobile}, ${providerCallId},
-          ${agentId}, ${callType}, ${triggerSource}, ${triggeredById || null}, 'INITIATED',
-          ${JSON.stringify(customData)}, ${JSON.stringify(providerRawResponse)}, ${now}, ${now}
-        )
-      `;
+      await this.prisma.ivrCallLog.create({
+        data: {
+          customerId: targetCustId,
+          applicationId: targetAppId,
+          lan: targetLan,
+          customerMobile: normalizedMobile,
+          providerCallId,
+          agentId: agentId || null,
+          callType: callType as any,
+          triggerSource: triggerSource as any,
+          triggeredById: triggeredById ? String(triggeredById) : null,
+          status: 'INITIATED',
+          customData: customData as any,
+          providerResponse: providerRawResponse as any,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
 
       this.logger.log({
         event: 'ivr_call_logged_successfully',
@@ -713,20 +702,20 @@ export class IvrService {
 
     // Update database log
     try {
-      await this.prisma.$executeRaw`
-        UPDATE ivr_call_logs
-        SET
-          status = ${currentStatus},
-          duration = ${duration},
-          call_summary = ${callSummary},
-          transcript = ${transcript},
-          recording_link = ${recordingLink},
-          start_time = ${startTimeDate},
-          end_time = ${endTimeDate},
-          provider_response = ${JSON.stringify(providerData)},
-          updated_at = NOW()
-        WHERE provider_call_id = ${cleanCallId}
-      `;
+      await this.prisma.ivrCallLog.updateMany({
+        where: { providerCallId: cleanCallId },
+        data: {
+          status: currentStatus,
+          duration: duration != null ? duration : undefined,
+          callSummary: callSummary || undefined,
+          transcript: transcript || undefined,
+          recordingLink: recordingLink || undefined,
+          startTime: startTimeDate || undefined,
+          endTime: endTimeDate || undefined,
+          providerResponse: providerData as any,
+          updatedAt: new Date(),
+        },
+      });
     } catch (dbErr: any) {
       this.logger.warn({
         event: 'ivr_call_status_db_update_warning',
@@ -762,45 +751,23 @@ export class IvrService {
     let rows: any[] = [];
     try {
       if (applicationId) {
-        rows = await this.prisma.$queryRaw`
-          SELECT
-            id, customer_id as customerId, application_id as applicationId, lan,
-            customer_mobile as customerMobile, provider_call_id as providerCallId,
-            agent_id as agentId, call_type as callType, trigger_source as triggerSource,
-            triggered_by_id as triggeredById, status, duration, start_time as startTime,
-            end_time as endTime, call_summary as callSummary, transcript, recording_link as recordingLink,
-            created_at as createdAt, updated_at as updatedAt
-          FROM ivr_call_logs
-          WHERE application_id = ${BigInt(applicationId)}
-          ORDER BY id DESC
-          LIMIT 50
-        `;
+        rows = await this.prisma.ivrCallLog.findMany({
+          where: { applicationId: BigInt(applicationId) },
+          orderBy: { id: 'desc' },
+          take: 50,
+        });
       } else if (lan) {
-        rows = await this.prisma.$queryRaw`
-          SELECT
-            id, customer_id as customerId, application_id as applicationId, lan,
-            customer_mobile as customerMobile, provider_call_id as providerCallId,
-            agent_id as agentId, call_type as callType, trigger_source as triggerSource,
-            triggered_by_id as triggeredById, status, duration, start_time as startTime,
-            end_time as endTime, call_summary as callSummary, transcript, recording_link as recordingLink,
-            created_at as createdAt, updated_at as updatedAt
-          FROM ivr_call_logs
-          WHERE lan = ${String(lan).trim()}
-          ORDER BY id DESC
-          LIMIT 50
-        `;
+        rows = await this.prisma.ivrCallLog.findMany({
+          where: { lan: String(lan).trim() },
+          orderBy: { id: 'desc' },
+          take: 50,
+        });
       } else if (customerId) {
-        rows = await this.prisma.$queryRaw`
-          SELECT
-            id, customer_id as customerId, application_id as applicationId, lan,
-            customer_mobile as customerMobile, provider_call_id as providerCallId,
-            agent_id as agentId, call_type as callType, trigger_source as triggerSource,
-            triggered_by_id as triggeredById, status, duration, start_time as startTime,
-            end_time as endTime, call_summary as callSummary, transcript, recording_link as recordingLink,
-          WHERE customer_id = ${BigInt(customerId)}
-          ORDER BY id DESC
-          LIMIT 50
-        `;
+        rows = await this.prisma.ivrCallLog.findMany({
+          where: { customerId: BigInt(customerId) },
+          orderBy: { id: 'desc' },
+          take: 50,
+        });
       }
     } catch (err: any) {
       this.logger.error('Failed to query ivr_call_logs', err?.stack);
@@ -864,7 +831,7 @@ export class IvrService {
     const duration = payload.duration != null ? Number(payload.duration) : null;
 
     try {
-      // Find matching call log safely without SQL collation conflicts
+      // Find matching call log safely using Prisma Client (no SQL collation conflicts)
       const searchCallId = callId ? String(callId).trim() : '';
       const searchContactId = contactId ? String(contactId).trim() : '';
       const searchConnectionId = connectionId ? String(connectionId).trim() : '';
@@ -874,92 +841,100 @@ export class IvrService {
 
       // 1. Direct match on callId
       if (searchCallId) {
-        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
-          SELECT id FROM ivr_call_logs WHERE provider_call_id = ${searchCallId} ORDER BY id DESC LIMIT 1
-        `;
-        if (rows && rows.length > 0) rowId = rows[0].id;
+        const found = await this.prisma.ivrCallLog.findFirst({
+          where: { providerCallId: searchCallId },
+          orderBy: { id: 'desc' },
+          select: { id: true },
+        });
+        if (found) rowId = found.id;
       }
 
       // 2. Direct match on connectionId
       if (!rowId && searchConnectionId) {
-        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
-          SELECT id FROM ivr_call_logs WHERE provider_call_id = ${searchConnectionId} ORDER BY id DESC LIMIT 1
-        `;
-        if (rows && rows.length > 0) rowId = rows[0].id;
+        const found = await this.prisma.ivrCallLog.findFirst({
+          where: { providerCallId: searchConnectionId },
+          orderBy: { id: 'desc' },
+          select: { id: true },
+        });
+        if (found) rowId = found.id;
       }
 
       // 3. Match on contactId / task ID prefix
       if (!rowId && searchContactId) {
         const prefix = searchContactId.slice(0, 20);
-        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
-          SELECT id FROM ivr_call_logs 
-          WHERE provider_call_id = ${searchContactId} 
-             OR provider_call_id LIKE CONCAT(${prefix}, '%') 
-          ORDER BY id DESC 
-          LIMIT 1
-        `;
-        if (rows && rows.length > 0) rowId = rows[0].id;
+        const found = await this.prisma.ivrCallLog.findFirst({
+          where: {
+            OR: [
+              { providerCallId: searchContactId },
+              { providerCallId: { startsWith: prefix } },
+            ],
+          },
+          orderBy: { id: 'desc' },
+          select: { id: true },
+        });
+        if (found) rowId = found.id;
       }
 
       // 4. Fallback match on customer mobile number within last 2 hours
       if (!rowId && searchUserNumber) {
         const cleanNumber = searchUserNumber.replace(/^\+91/, '');
         const withPrefix = `+91${cleanNumber}`;
-        const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
-          SELECT id FROM ivr_call_logs 
-          WHERE (customer_mobile = ${searchUserNumber} OR customer_mobile = ${cleanNumber} OR customer_mobile = ${withPrefix})
-            AND created_at >= NOW() - INTERVAL 2 HOUR 
-          ORDER BY id DESC 
-          LIMIT 1
-        `;
-        if (rows && rows.length > 0) rowId = rows[0].id;
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const found = await this.prisma.ivrCallLog.findFirst({
+          where: {
+            customerMobile: { in: [searchUserNumber, cleanNumber, withPrefix] },
+            createdAt: { gte: twoHoursAgo },
+          },
+          orderBy: { id: 'desc' },
+          select: { id: true },
+        });
+        if (found) rowId = found.id;
       }
 
       if (rowId) {
-
         if (rawStatus === 'started') {
-          await this.prisma.$executeRaw`
-            UPDATE ivr_call_logs
-            SET
-              status = 'STARTED',
-              start_time = COALESCE(start_time, NOW()),
-              provider_response = ${JSON.stringify(payload)},
-              updated_at = NOW()
-            WHERE id = ${rowId}
-          `;
+          await this.prisma.ivrCallLog.update({
+            where: { id: rowId },
+            data: {
+              status: 'STARTED',
+              startTime: new Date(),
+              providerResponse: payload as any,
+              updatedAt: new Date(),
+            },
+          });
         } else if (rawStatus === 'completed') {
-          await this.prisma.$executeRaw`
-            UPDATE ivr_call_logs
-            SET
-              status = 'COMPLETED',
-              transcript = COALESCE(${transcript}, transcript),
-              recording_link = COALESCE(${recordingLink}, recording_link),
-              duration = COALESCE(${duration}, duration),
-              end_time = COALESCE(end_time, NOW()),
-              provider_response = ${JSON.stringify(payload)},
-              updated_at = NOW()
-            WHERE id = ${rowId}
-          `;
+          await this.prisma.ivrCallLog.update({
+            where: { id: rowId },
+            data: {
+              status: 'COMPLETED',
+              transcript: transcript || undefined,
+              recordingLink: recordingLink || undefined,
+              duration: duration != null ? duration : undefined,
+              endTime: new Date(),
+              providerResponse: payload as any,
+              updatedAt: new Date(),
+            },
+          });
         } else if (rawStatus === 'analytics_completed') {
-          await this.prisma.$executeRaw`
-            UPDATE ivr_call_logs
-            SET
-              status = 'COMPLETED',
-              call_summary = COALESCE(${callSummary}, call_summary),
-              provider_response = ${JSON.stringify(payload)},
-              updated_at = NOW()
-            WHERE id = ${rowId}
-          `;
+          await this.prisma.ivrCallLog.update({
+            where: { id: rowId },
+            data: {
+              status: 'COMPLETED',
+              callSummary: callSummary || undefined,
+              providerResponse: payload as any,
+              updatedAt: new Date(),
+            },
+          });
         } else {
-          await this.prisma.$executeRaw`
-            UPDATE ivr_call_logs
-            SET
-              status = ${normalizedStatus},
-              duration = COALESCE(${duration}, duration),
-              provider_response = ${JSON.stringify(payload)},
-              updated_at = NOW()
-            WHERE id = ${rowId}
-          `;
+          await this.prisma.ivrCallLog.update({
+            where: { id: rowId },
+            data: {
+              status: normalizedStatus,
+              duration: duration != null ? duration : undefined,
+              providerResponse: payload as any,
+              updatedAt: new Date(),
+            },
+          });
         }
 
         this.logger.log({
