@@ -107,6 +107,185 @@ export class IvrService {
   }
 
   /**
+   * Helper to derive the exact step the customer is currently pending/stuck on.
+   */
+  deriveCustomerPendingStep(
+    customer: any,
+    application?: any,
+    loan?: any,
+  ): {
+    stepCode: string;
+    stepName: string;
+    stepNumber: number;
+    stepDescription: string;
+    suggestedCallType: IvrCallType;
+  } {
+    // 1. Post-approval loan steps (if a loan record exists)
+    if (loan) {
+      if (loan.status === 'DISBURSED' || loan.disbursalCompletedAt) {
+        return {
+          stepCode: 'DISBURSED',
+          stepName: 'Loan Disbursed',
+          stepNumber: 6,
+          stepDescription: 'Loan has been disbursed successfully',
+          suggestedCallType: IvrCallType.DISBURSEMENT_CONFIRMATION,
+        };
+      }
+      switch (loan.currentStep) {
+        case 'APPROVAL_SUMMARY':
+          return {
+            stepCode: 'LOAN_APPROVAL',
+            stepName: 'Loan Offer Acceptance',
+            stepNumber: 1,
+            stepDescription: 'Accept loan terms and approved offer',
+            suggestedCallType: IvrCallType.LOAN_APPROVAL,
+          };
+        case 'DIGILOCKER_KYC':
+          return {
+            stepCode: 'DIGILOCKER_KYC',
+            stepName: 'DigiLocker KYC',
+            stepNumber: 2,
+            stepDescription: 'Complete Aadhaar DigiLocker KYC verification',
+            suggestedCallType: IvrCallType.KYC_PENDING,
+          };
+        case 'CURRENT_ADDRESS':
+        case 'BANK_DETAILS':
+        case 'KFS':
+          return {
+            stepCode: 'DOCUMENT_VERIFICATION',
+            stepName: 'Bank & Address Verification',
+            stepNumber: 3,
+            stepDescription: 'Confirm bank account and address details',
+            suggestedCallType: IvrCallType.DOCUMENT_PENDING,
+          };
+        case 'MANDATE':
+          return {
+            stepCode: 'MANDATE',
+            stepName: 'E-Mandate Setup',
+            stepNumber: 4,
+            stepDescription: 'Set up auto-debit e-mandate for loan repayment',
+            suggestedCallType: IvrCallType.MANDATE_PENDING,
+          };
+        case 'ESIGN':
+          return {
+            stepCode: 'ESIGN',
+            stepName: 'E-Sign Agreement',
+            stepNumber: 5,
+            stepDescription: 'Digitally sign loan agreement',
+            suggestedCallType: IvrCallType.ESIGN_PENDING,
+          };
+        default:
+          return {
+            stepCode: 'LOAN_IN_PROGRESS',
+            stepName: 'Loan Processing',
+            stepNumber: 1,
+            stepDescription: 'Complete pending post-approval steps',
+            suggestedCallType: IvrCallType.APPLICATION_FOLLOW_UP,
+          };
+      }
+    }
+
+    // 2. Pre-approval Application Steps
+    // Step 1: Basic Details
+    const isMobileVerified = Boolean(customer?.mobileVerified);
+    const isPanVerified = Boolean(customer?.panVerified && customer?.panNumber);
+    const isEmailVerified = Boolean(customer?.emailVerified);
+    const basicDetailsDone = isMobileVerified && isPanVerified && isEmailVerified && Boolean(customer?.fullName);
+
+    if (!basicDetailsDone) {
+      return {
+        stepCode: 'BASIC_DETAILS',
+        stepName: 'Basic Details',
+        stepNumber: 1,
+        stepDescription: 'Personal basic details and PAN verification',
+        suggestedCallType: IvrCallType.APPLICATION_FOLLOW_UP,
+      };
+    }
+
+    // Step 2: Lender & Assessment Fee
+    const hasPaidFee = application?.status === 'ASSESSMENT_FEE_PAID'
+      || (application?.assessmentFeeTotalAmount != null && application?.status !== 'DRAFT' && application?.status !== 'SUBMITTED' && application?.status !== 'ALLOCATION_PENDING' && application?.status !== 'LENDER_ALLOCATED' && application?.status !== 'PLATFORM_REJECTED')
+      || Boolean(customer?.assessmentFeePaid);
+
+    const isBrePassed = application?.platformDecisionOutcome === 'PASS'
+      || customer?.eligibilityStatus === 'ELIGIBLE'
+      || customer?.onboardingStatus === 'PLATFORM_ELIGIBLE';
+
+    if (!hasPaidFee && isBrePassed) {
+      return {
+        stepCode: 'ASSESSMENT_FEE',
+        stepName: 'Lender & Assessment Fee',
+        stepNumber: 2,
+        stepDescription: 'Pay assessment fee to proceed with lender allocation',
+        suggestedCallType: IvrCallType.APPLICATION_FOLLOW_UP,
+      };
+    }
+
+    // Step 3: Profile Details (Residence & Employment)
+    const empType = customer?.employmentType;
+    const isSalaried = empType === 'SALARIED';
+    const isSelfEmployed = empType === 'SELF_EMPLOYED';
+    const hasResidence = Boolean(customer?.residenceStatus);
+    const hasIncome = customer?.monthlyIncome != null && Number(customer.monthlyIncome) > 0;
+    const hasWorkPincode = Boolean(customer?.workPincode);
+
+    let profileDone = false;
+    if (isSalaried) {
+      profileDone = Boolean(hasResidence && customer?.companyName && customer?.designation && hasIncome && hasWorkPincode);
+    } else if (isSelfEmployed) {
+      profileDone = Boolean(hasResidence && customer?.businessName && customer?.businessConstitution && hasIncome && hasWorkPincode);
+    }
+
+    if (!profileDone) {
+      return {
+        stepCode: 'PROFILE_DETAILS',
+        stepName: 'Profile Details',
+        stepNumber: 3,
+        stepDescription: 'Residence and employment details',
+        suggestedCallType: IvrCallType.APPLICATION_FOLLOW_UP,
+      };
+    }
+
+    // Step 4: Aadhaar DigiLocker KYC
+    const aadhaarKycStatus = String(customer?.aadhaarKycStatus || customer?.digilockerStatus || '').toUpperCase();
+    const aadhaarDone = Boolean(
+      customer?.aadhaarVerified === true ||
+      customer?.digilockerVerified === true ||
+      ['VERIFIED', 'COMPLETED', 'SUCCESS'].includes(aadhaarKycStatus),
+    );
+
+    if (!aadhaarDone) {
+      return {
+        stepCode: 'AADHAAR_KYC',
+        stepName: 'Aadhaar KYC',
+        stepNumber: 4,
+        stepDescription: 'DigiLocker Aadhaar KYC verification',
+        suggestedCallType: IvrCallType.KYC_PENDING,
+      };
+    }
+
+    // Check if approved by lender
+    if (application?.status === 'LENDER_APPROVED' || application?.status === 'LENDER_PRE_APPROVED') {
+      return {
+        stepCode: 'LOAN_APPROVAL',
+        stepName: 'Loan Approval',
+        stepNumber: 6,
+        stepDescription: 'Loan has been approved by the lender',
+        suggestedCallType: IvrCallType.LOAN_APPROVAL,
+      };
+    }
+
+    // Step 5/6: Bank Account or Submit Application
+    return {
+      stepCode: 'SUBMIT_APPLICATION',
+      stepName: 'Submit Application',
+      stepNumber: 6,
+      stepDescription: 'Submit application for lender review',
+      suggestedCallType: IvrCallType.APPLICATION_FOLLOW_UP,
+    };
+  }
+
+  /**
    * Dynamic IVR Context Builder
    * Gathers all available customer, application, loan, repayment, and link data dynamically from DB.
    * Tailors payload according to the call touchpoint.
@@ -120,7 +299,8 @@ export class IvrService {
     const frontendBaseUrl = (this.configService.get<string>('FRONTEND_URL') || 'https://finle-prod.fintreelms.com').replace(/\/+$/, '');
     const normalizedMobile = this.normalizePhoneNumber(customer?.mobileNumber);
 
-    // 1. Identification
+    // 1. Identification & Step Derivation
+    const pendingStep = this.deriveCustomerPendingStep(customer, application, loan);
     const eventId = `EVT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const touchPointCode = String(callType);
     const customerId = customer?.customerCode || (customer?.id ? `CUST-${customer.id}` : null);
@@ -197,6 +377,7 @@ export class IvrService {
     const fullContext: IvrCustomerContext = {
       EVENT_ID: eventId,
       TOUCH_POINT_CODE: touchPointCode,
+      CALL_PURPOSE: String(callType),
       CUSTOMER_ID: customerId,
       APP_ID: appId,
       TRIGGERED_AT: new Date().toISOString(),
@@ -224,6 +405,11 @@ export class IvrService {
       PREVIOUS_LOAN_AMOUNT: previousLoanAmount,
       REPEAT_LOAN_ELIGIBLE_AMOUNT: repeatLoanEligibleAmount,
       REPEAT_LOAN_LINK: repeatLoanLink,
+      CURRENT_STEP: pendingStep.stepName,
+      PENDING_STEP: pendingStep.stepDescription,
+      STEP_NUMBER: pendingStep.stepNumber,
+      TOTAL_STEPS: 6,
+      APPLICATION_STATUS: `In Progress (${pendingStep.stepName} Pending)`,
     };
 
     // Call-Type Specific Data Tailoring with strict QUEUE routing
@@ -231,14 +417,88 @@ export class IvrService {
 
     switch (callType) {
       case IvrCallType.APPLICATION_FOLLOW_UP:
+        // Application Follow-up (Customer is completing initial application steps)
+        tailoredContext = {
+          QUEUE: ['APPLICATION_FOLLOW_UP'],
+          EVENT_ID: fullContext.EVENT_ID,
+          TOUCH_POINT_CODE: 'APPLICATION_FOLLOW_UP',
+          CALL_PURPOSE: 'APPLICATION_FOLLOW_UP',
+          CUSTOMER_ID: fullContext.CUSTOMER_ID,
+          APP_ID: fullContext.APP_ID,
+          TRIGGERED_AT: fullContext.TRIGGERED_AT,
+          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
+          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
+          TO: fullContext.TO,
+          LANGUAGE: fullContext.LANGUAGE,
+          APPLICATION_LINK: fullContext.APPLICATION_LINK,
+          CURRENT_STEP: pendingStep.stepName,
+          PENDING_STEP: pendingStep.stepDescription,
+          STEP_NUMBER: pendingStep.stepNumber,
+          TOTAL_STEPS: 6,
+          APPLICATION_STATUS: `In Progress (${pendingStep.stepName} Pending)`,
+          LOAN_STATUS: 'Application In Progress (Not Approved Yet)',
+          CALL_REASON: `Customer is stuck on Step ${pendingStep.stepNumber} (${pendingStep.stepName}: ${pendingStep.stepDescription})`,
+          CALL_SUMMARY_INSTRUCTION: `Remind ${fullContext.CUSTOMER_NAME} that they started their personal loan application with Fintree Finance and need to complete step ${pendingStep.stepNumber} (${pendingStep.stepName}: ${pendingStep.stepDescription}) on the application link to proceed. Note: their loan is NOT yet approved as the application is still incomplete. Provide the application link to continue.`,
+        };
+        break;
+
       case IvrCallType.KYC_PENDING:
+        // KYC Pending Nudge
+        tailoredContext = {
+          QUEUE: ['KYC_PENDING'],
+          EVENT_ID: fullContext.EVENT_ID,
+          TOUCH_POINT_CODE: 'KYC_PENDING',
+          CALL_PURPOSE: 'KYC_PENDING',
+          CUSTOMER_ID: fullContext.CUSTOMER_ID,
+          APP_ID: fullContext.APP_ID,
+          TRIGGERED_AT: fullContext.TRIGGERED_AT,
+          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
+          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
+          TO: fullContext.TO,
+          LANGUAGE: fullContext.LANGUAGE,
+          APPLICATION_LINK: fullContext.APPLICATION_LINK,
+          CURRENT_STEP: 'Aadhaar KYC',
+          PENDING_STEP: 'DigiLocker Aadhaar KYC Verification',
+          STEP_NUMBER: 4,
+          TOTAL_STEPS: 6,
+          APPLICATION_STATUS: 'In Progress (Aadhaar KYC Pending)',
+          LOAN_STATUS: 'Application In Progress - KYC Pending',
+          CALL_SUMMARY_INSTRUCTION: `Remind ${fullContext.CUSTOMER_NAME} to complete their DigiLocker Aadhaar KYC verification on Fintree Finance to proceed with their loan application.`,
+        };
+        break;
+
       case IvrCallType.DOCUMENT_PENDING:
+        // Document / Bank Details Pending Nudge
+        tailoredContext = {
+          QUEUE: ['DOCUMENT_PENDING'],
+          EVENT_ID: fullContext.EVENT_ID,
+          TOUCH_POINT_CODE: 'DOCUMENT_PENDING',
+          CALL_PURPOSE: 'DOCUMENT_PENDING',
+          CUSTOMER_ID: fullContext.CUSTOMER_ID,
+          APP_ID: fullContext.APP_ID,
+          TRIGGERED_AT: fullContext.TRIGGERED_AT,
+          CUSTOMER_NAME: fullContext.CUSTOMER_NAME,
+          CUSTOMER_MOBILE: fullContext.CUSTOMER_MOBILE,
+          TO: fullContext.TO,
+          LANGUAGE: fullContext.LANGUAGE,
+          APPLICATION_LINK: fullContext.APPLICATION_LINK,
+          CURRENT_STEP: 'Bank Account & Statement Verification',
+          PENDING_STEP: 'Bank Account & Statement Verification',
+          STEP_NUMBER: 5,
+          TOTAL_STEPS: 6,
+          APPLICATION_STATUS: 'In Progress (Bank Verification Pending)',
+          LOAN_STATUS: 'Application In Progress - Bank Verification Pending',
+          CALL_SUMMARY_INSTRUCTION: `Remind ${fullContext.CUSTOMER_NAME} to complete their Bank Account verification on Fintree Finance to proceed with their loan application.`,
+        };
+        break;
+
       case IvrCallType.LOAN_APPROVAL:
-        // TP-01: Loan Offer Acceptance
+        // TP-01: Loan Offer Acceptance (Only when loan is actually approved)
         tailoredContext = {
           QUEUE: ['TP-01'],
           EVENT_ID: fullContext.EVENT_ID,
           TOUCH_POINT_CODE: 'TP-01',
+          CALL_PURPOSE: 'LOAN_APPROVAL',
           CUSTOMER_ID: fullContext.CUSTOMER_ID,
           APP_ID: fullContext.APP_ID,
           TRIGGERED_AT: fullContext.TRIGGERED_AT,
@@ -249,6 +509,7 @@ export class IvrService {
           APPLICATION_LINK: fullContext.APPLICATION_LINK,
           APPROVED_AMOUNT: fullContext.APPROVED_AMOUNT,
           MAX_TENURE_DAYS: fullContext.MAX_TENURE_DAYS,
+          LOAN_STATUS: 'Approved - Offer Acceptance Pending',
         };
         break;
 

@@ -329,46 +329,12 @@ export class IvrAutomationService {
         }
 
         // Determine specific touchpoint based on what step the customer is on
-        let callType = IvrCallType.APPLICATION_FOLLOW_UP;
-
-        if (loan) {
-          switch (loan.currentStep) {
-            case 'DIGILOCKER_KYC':
-              callType = IvrCallType.KYC_PENDING;
-              break;
-            case 'CURRENT_ADDRESS':
-            case 'BANK_DETAILS':
-            case 'KFS':
-              callType = IvrCallType.DOCUMENT_PENDING;
-              break;
-            case 'MANDATE':
-              callType = IvrCallType.MANDATE_PENDING;
-              break;
-            case 'ESIGN':
-              callType = IvrCallType.ESIGN_PENDING;
-              break;
-            case 'APPROVAL_SUMMARY':
-              callType = IvrCallType.LOAN_APPROVAL;
-              break;
-            default:
-              callType = IvrCallType.APPLICATION_FOLLOW_UP;
-              break;
-          }
-        } else {
-          switch (app.status) {
-            case 'LENDER_APPROVED':
-            case 'LENDER_PRE_APPROVED':
-              callType = IvrCallType.LOAN_APPROVAL;
-              break;
-            default:
-              callType = IvrCallType.APPLICATION_FOLLOW_UP;
-              break;
-          }
-        }
+        const pendingStep = this.ivrService.deriveCustomerPendingStep(app.customer, app, loan);
+        const callType = pendingStep.suggestedCallType;
 
         try {
           this.logger.log(
-            `[Auto-IVR] Triggering Stuck Follow-up call for app #${app.id} (${app.applicationNumber}) on step '${loan?.currentStep || app.status}' (Type: ${callType})...`,
+            `[Auto-IVR] Triggering Stuck Follow-up call for app #${app.id} (${app.applicationNumber}) on step #${pendingStep.stepNumber} '${pendingStep.stepName}' (Type: ${callType})...`,
           );
 
           await this.ivrService.makeCall({

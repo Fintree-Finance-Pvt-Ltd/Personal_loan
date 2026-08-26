@@ -27,6 +27,7 @@ export enum IvrTriggerSource {
 export interface IvrCustomerContext {
   EVENT_ID: string;
   TOUCH_POINT_CODE: string;
+  CALL_PURPOSE?: string;
   CUSTOMER_ID?: string | null;
   APP_ID?: string | null;
   TRIGGERED_AT: string;
@@ -54,6 +55,13 @@ export interface IvrCustomerContext {
   PREVIOUS_LOAN_AMOUNT?: number | null;
   REPEAT_LOAN_ELIGIBLE_AMOUNT?: number | null;
   REPEAT_LOAN_LINK?: string | null;
+  CURRENT_STEP?: string | null;
+  PENDING_STEP?: string | null;
+  STEP_NUMBER?: number | null;
+  TOTAL_STEPS?: number | null;
+  APPLICATION_STATUS?: string | null;
+  CALL_REASON?: string | null;
+  CALL_SUMMARY_INSTRUCTION?: string | null;
   [key: string]: any;
 }
 
