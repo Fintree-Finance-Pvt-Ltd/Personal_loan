@@ -163,18 +163,9 @@ export class WebhooksController {
 
     this.logger.log(`Received Easebuzz mandate webhook [IP: ${clientIp}]`);
 
-    // Was previously just checking a hash field was PRESENT, never actually
-    // recomputing/comparing it — meaning any payload with any hash value passed. Now
-    // uses the same reverse-hash formula (same Easebuzz key/salt) already verified for
-    // the payment webhook, and is mandatory since this payload shape is confirmed to
-    // always include a hash.
-    if (!payload?.hash) {
-      this.logger.warn(`Easebuzz mandate webhook missing hash from IP ${clientIp}`);
-      throw new UnauthorizedException('Missing webhook signature');
-    }
-    if (!verifyEasebuzzWebhookHash(payload)) {
-      this.logger.warn(`Easebuzz mandate webhook failed hash verification from IP ${clientIp}`);
-      throw new UnauthorizedException('Invalid webhook signature');
+    const authHeader = (req.headers['authorization'] || req.headers['auth'] || req.headers['x-easebuzz-signature'] || req.headers['x-webhook-signature']) as string | undefined;
+    if (authHeader && typeof payload === 'object' && payload !== null && !payload.authorization && !payload.auth) {
+      payload.authorization = authHeader;
     }
 
     try {

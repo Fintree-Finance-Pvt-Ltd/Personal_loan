@@ -2060,7 +2060,7 @@ export class LoanService {
     const webhookSecret = this.configService.get<string>('EASEBUZZ_WEBHOOK_SECRET');
 
     if (webhookSecret) {
-      if (!this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload)) {
+      if (!this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload, webhookSecret)) {
         this.logger.warn(`Easebuzz mandate webhook failed authorization hash verification [event=${event}]`);
         throw new UnauthorizedException('Invalid webhook signature.');
       }
