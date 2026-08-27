@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
-import { createHash, createCipheriv } from 'crypto';
+import { createHash, createCipheriv, createHmac, timingSafeEqual } from 'crypto';
 
 export interface EasebuzzGenerateAccessKeyInput {
   transactionId: string;
@@ -550,7 +550,7 @@ export class EasebuzzAutocollectService {
     throw new ServiceUnavailableException(`Unable to retrieve mandate status from provider: ${msg}`);
   }
 
-  public verifyEasebuzzMandateWebhookHash(payload: any): boolean {
+  public verifyEasebuzzMandateWebhookHash(payload: any, webhookSecret?: string): boolean {
     try {
       const data = payload?.data || {};
       const auth = String(
@@ -562,10 +562,32 @@ export class EasebuzzAutocollectService {
         payload?.hash ||
         ''
       ).trim();
-      if (!auth) return false;
+
+      // If a webhook secret is configured and matches directly
+      if (webhookSecret && auth) {
+        if (this.secretsMatch(auth, webhookSecret)) {
+          return true;
+        }
+
+        // Check HMAC SHA-256 / SHA-512 with webhookSecret
+        try {
+          const rawDataString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+          const hmac256 = createHmac('sha256', webhookSecret).update(rawDataString, 'utf8').digest('hex');
+          const hmac512 = createHmac('sha512', webhookSecret).update(rawDataString, 'utf8').digest('hex');
+          if (this.secretsMatch(auth, hmac256) || this.secretsMatch(auth, hmac512)) {
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!auth && !webhookSecret) {
+        return false;
+      }
 
       const key = this.merchantKey;
-      const salt = this.merchantSalt;
+      const salts = [this.merchantSalt, webhookSecret].filter(Boolean) as string[];
 
       const transactionId = String(
         data.transaction_id ||
@@ -621,25 +643,31 @@ export class EasebuzzAutocollectService {
         ''
       ).trim();
 
-      const candidates: string[] = [];
+      for (const salt of salts) {
+        const candidates: string[] = [];
 
-      if (transactionId && merchantRequestNumber && status) {
-        candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
-      }
-      if (transactionId && status) {
-        candidates.push(`${key}|${transactionId}|${status}|${salt}`);
-      }
-      if (transactionId && amount && accountNumber && ifsc) {
-        candidates.push(`${key}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${salt}`);
-      }
-      if (transactionId && merchantRequestNumber && status && !candidates.length) {
-        candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
-      }
+        if (transactionId && merchantRequestNumber && status) {
+          candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
+        }
+        if (transactionId && status) {
+          candidates.push(`${key}|${transactionId}|${status}|${salt}`);
+        }
+        if (transactionId && amount && accountNumber && ifsc) {
+          candidates.push(`${key}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${salt}`);
+        }
+        if (transactionId && merchantRequestNumber && status && !candidates.length) {
+          candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
+        }
+        // Standard Easebuzz reverse-hash format: salt|status|...|key
+        if (status && transactionId) {
+          candidates.push(`${salt}|${status}|||||||||||${key}`);
+        }
 
-      for (const sequence of candidates) {
-        const computedHash = createHash('sha512').update(sequence, 'utf8').digest('hex');
-        if (computedHash === auth) {
-          return true;
+        for (const sequence of candidates) {
+          const computedHash = createHash('sha512').update(sequence, 'utf8').digest('hex');
+          if (auth && (computedHash.toLowerCase() === auth.toLowerCase())) {
+            return true;
+          }
         }
       }
 
@@ -647,6 +675,14 @@ export class EasebuzzAutocollectService {
     } catch {
       return false;
     }
+  }
+
+  private secretsMatch(provided: string, expected: string): boolean {
+    if (!provided || !expected) return false;
+    const providedBuf = Buffer.from(provided);
+    const expectedBuf = Buffer.from(expected);
+    if (providedBuf.length !== expectedBuf.length) return false;
+    return timingSafeEqual(providedBuf, expectedBuf);
   }
 
   /**
