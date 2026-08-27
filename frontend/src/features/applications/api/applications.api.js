@@ -33,4 +33,17 @@ export const applicationsApi = {
     const res = await api.post(`/admin/loans/${lan}/welcome-letter/resend`);
     return res.data.data;
   },
+  initiateIvrCall: async (applicationId, callType = 'APPLICATION_FOLLOW_UP') => {
+    const res = await api.post(`/admin/applications/${applicationId}/ivr/call`, { callType });
+    return res.data.data;
+  },
+  getIvrCallStatus: async (callId) => {
+    const res = await api.get(`/admin/ivr/calls/${callId}`);
+    return res.data.data;
+  },
+  getIvrCallHistory: async (applicationId) => {
+    const res = await api.get(`/admin/applications/${applicationId}/ivr/history`);
+    return res.data.data;
+  },
 };
+

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, ConflictException, UnprocessableEntityException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, ConflictException, UnprocessableEntityException, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -17,6 +17,8 @@ import { ProductCalculationService } from '../products/product-calculation.servi
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 import { EmailService } from '../otp/email/email.service';
 import { SigningStorageService } from '../electronic-sign/services/signing-storage.service';
+import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
+import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 
 @Injectable()
 export class LoanService {
@@ -33,6 +35,8 @@ export class LoanService {
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
     private readonly emailService: EmailService,
     private readonly signingStorageService: SigningStorageService,
+    @Optional() private readonly ivrAutomationService?: IvrAutomationService,
+    @Optional() private readonly smsAutomationService?: SmsAutomationService,
   ) { }
 
 
@@ -175,6 +179,18 @@ export class LoanService {
       newValue: { lan: loan.lan, status: loan.status },
       requestId: randomBytes(16).toString('hex'),
     }).catch(() => { /* non-critical */ });
+
+    if (this.ivrAutomationService) {
+      this.ivrAutomationService.triggerLoanApprovedCall(applicationId, lan).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger IVR loan approval call for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    if (this.smsAutomationService) {
+      this.smsAutomationService.triggerLoanApprovedSms(applicationId, lan).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger SMS loan approval for app #${applicationId}: ${err?.message}`);
+      });
+    }
 
     return loan;
   }
@@ -2630,6 +2646,18 @@ export class LoanService {
       }).catch((err) => {
         this.logger.error(`Failed to send welcome letter for loan ${lan}: ${err?.message || err}`);
       });
+
+      if (this.ivrAutomationService) {
+        this.ivrAutomationService.triggerLoanDisbursedCall(lan).catch((err) => {
+          this.logger.warn(`Failed to auto-trigger IVR disbursement call for loan ${lan}: ${err?.message}`);
+        });
+      }
+
+      if (this.smsAutomationService) {
+        this.smsAutomationService.triggerLoanDisbursedSms(lan).catch((err) => {
+          this.logger.warn(`Failed to auto-trigger SMS disbursement notification for loan ${lan}: ${err?.message}`);
+        });
+      }
     }
 
     return result;
@@ -3196,6 +3224,12 @@ export class LoanService {
       // itself (it already succeeded in our own system by the time this fires).
       this.lenderIntegrationOutbox.enqueueRepaymentNotification(result.applicationId, result.repaymentId).catch((err) => {
         this.logger.warn(`Failed to enqueue repayment notification for loan ${lan}: ${err?.message || err}`);
+      });
+    }
+
+    if (result.loanFullyPaid && this.ivrAutomationService) {
+      this.ivrAutomationService.triggerLoanFullyPaidRepeatOfferCall(lan, result.applicationId).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger repeat loan offer IVR call for loan ${lan}: ${err?.message}`);
       });
     }
 

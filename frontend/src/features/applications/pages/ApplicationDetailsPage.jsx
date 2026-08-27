@@ -36,6 +36,25 @@ export default function ApplicationDetailsPage() {
   const [sendingWelcomeLetter, setSendingWelcomeLetter] = useState(false);
   const [welcomeLetterMessage, setWelcomeLetterMessage] = useState(null);
 
+  // IVR AI Calling State
+  const [ivrCalls, setIvrCalls] = useState([]);
+  const [loadingIvr, setLoadingIvr] = useState(false);
+  const [callingCustomer, setCallingCustomer] = useState(false);
+  const [callType, setCallType] = useState('APPLICATION_FOLLOW_UP');
+  const [callMessage, setCallMessage] = useState(null);
+  const [syncingCallId, setSyncingCallId] = useState(null);
+  const [expandedTranscriptId, setExpandedTranscriptId] = useState(null);
+
+  const loadIvrHistory = () => {
+    if (!applicationId) return;
+    setLoadingIvr(true);
+    applicationsApi
+      .getIvrCallHistory(applicationId)
+      .then((data) => setIvrCalls(Array.isArray(data) ? data : []))
+      .catch((err) => console.error('Failed to load IVR history:', err))
+      .finally(() => setLoadingIvr(false));
+  };
+
   const load = () => {
     setLoading(true);
     setError('');
@@ -44,12 +63,55 @@ export default function ApplicationDetailsPage() {
       .then(setDetails)
       .catch((err) => setError(apiError(err, 'Unable to load application details.')))
       .finally(() => setLoading(false));
+    loadIvrHistory();
   };
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId]);
+
+  const handleInitiateCall = async () => {
+    if (!customer?.mobileNumber) {
+      setCallMessage({ type: 'error', text: 'Customer has no valid mobile number.' });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Initiate AI Outbound Call to customer ${customer.fullName || ''} (${customer.mobileNumber}) for "${formatLabel(callType)}"?`
+    );
+    if (!confirmed) return;
+
+    setCallingCustomer(true);
+    setCallMessage(null);
+    try {
+      const res = await applicationsApi.initiateIvrCall(applicationId, callType);
+      setCallMessage({
+        type: 'success',
+        text: `AI Call initiated successfully! (Call ID: ${res?.callId || 'Dispatched'})`,
+      });
+      loadIvrHistory();
+    } catch (err) {
+      setCallMessage({
+        type: 'error',
+        text: apiError(err, 'Failed to trigger AI IVR call. Please check service configuration.'),
+      });
+    } finally {
+      setCallingCustomer(false);
+    }
+  };
+
+  const handleSyncCallStatus = async (providerCallId) => {
+    if (!providerCallId) return;
+    setSyncingCallId(providerCallId);
+    try {
+      await applicationsApi.getIvrCallStatus(providerCallId);
+      loadIvrHistory();
+    } catch (err) {
+      console.error('Failed to sync call status:', err);
+    } finally {
+      setSyncingCallId(null);
+    }
+  };
 
   const handleRetry = async (eventId) => {
     setRetryingEventId(eventId);
@@ -282,6 +344,180 @@ export default function ApplicationDetailsPage() {
         </table>
       </Card>
 
+      {/* AI IVR Outbound Calling Card */}
+      <Card className="mb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+          <div>
+            <div className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <span>📞</span> AI Outbound Calling (IVR)
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Initiate automated AI voice calls to the customer ({customer.fullName || 'Customer'} — {customer.mobileNumber || 'No mobile'}) with real-time context.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={callType}
+              onChange={(e) => setCallType(e.target.value)}
+              disabled={callingCustomer}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-xs focus:border-brand-500 focus:outline-hidden"
+            >
+              <option value="APPLICATION_FOLLOW_UP">Application Follow-up</option>
+              <option value="DOCUMENT_PENDING">Document Pending</option>
+              <option value="KYC_PENDING">KYC Pending</option>
+              <option value="MANDATE_PENDING">Mandate Pending</option>
+              <option value="ESIGN_PENDING">eSign Pending</option>
+              <option value="LOAN_APPROVAL">Loan Approval</option>
+              <option value="DISBURSEMENT_CONFIRMATION">Disbursement Confirmation</option>
+              <option value="EMI_REMINDER">EMI Reminder</option>
+              <option value="PAYMENT_FOLLOW_UP">Payment Follow-up</option>
+              <option value="REPEAT_LOAN_OFFER">Repeat Loan Offer (TP-06)</option>
+              <option value="CUSTOMER_SUPPORT">Customer Support</option>
+            </select>
+
+            <button
+              type="button"
+              disabled={callingCustomer || !customer?.mobileNumber}
+              onClick={handleInitiateCall}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {callingCustomer ? 'Initiating Call…' : '📞 Call Customer'}
+            </button>
+
+            <button
+              type="button"
+              disabled={loadingIvr}
+              onClick={loadIvrHistory}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              title="Refresh IVR Call History"
+            >
+              🔄 Refresh History
+            </button>
+          </div>
+        </div>
+
+        {callMessage && (
+          <div className="mt-4">
+            <Alert variant={callMessage.type === 'success' ? 'success' : 'error'}>
+              {callMessage.text}
+            </Alert>
+          </div>
+        )}
+
+        {/* IVR History Table */}
+        <div className="mt-4 overflow-x-auto">
+          <div className="text-xs font-semibold uppercase text-gray-500 mb-2">IVR Call Log History</div>
+          <table className="w-full text-left text-xs">
+            <thead className="bg-gray-50 text-gray-500 border-b">
+              <tr>
+                <th className="px-4 py-2.5">Date & Time</th>
+                <th className="px-4 py-2.5">Purpose / Type</th>
+                <th className="px-4 py-2.5">Mobile</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Duration</th>
+                <th className="px-4 py-2.5">Call Summary & Notes</th>
+                <th className="px-4 py-2.5">Recording</th>
+                <th className="px-4 py-2.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {ivrCalls.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="px-4 py-6 text-center text-gray-400">
+                    {loadingIvr ? 'Loading call history…' : 'No IVR calls recorded yet for this application.'}
+                  </td>
+                </tr>
+              ) : (
+                ivrCalls.map((call) => (
+                  <tr key={call.id || call.providerCallId} className="hover:bg-gray-50/80 align-top">
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600 font-medium">
+                      {formatDate(call.createdAt || call.startTime)}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-gray-800">
+                      {formatLabel(call.callType)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 font-mono">
+                      {call.customerMobile || '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          call.status === 'COMPLETED'
+                            ? 'bg-green-100 text-green-800'
+                            : call.status === 'FAILED' || call.status === 'ERROR'
+                            ? 'bg-red-100 text-red-800'
+                            : call.status === 'IN_PROGRESS' || call.status === 'INITIATED'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {call.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                      {call.duration != null ? `${call.duration}s` : '-'}
+                    </td>
+                    <td className="px-4 py-3 max-w-xs text-gray-700">
+                      {call.callSummary ? (
+                        <p className="line-clamp-2 text-[11px]">{call.callSummary}</p>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                      {call.transcript && (
+                        <div className="mt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedTranscriptId(
+                                expandedTranscriptId === call.providerCallId ? null : call.providerCallId
+                              )
+                            }
+                            className="text-[10px] text-brand-600 hover:underline font-semibold"
+                          >
+                            {expandedTranscriptId === call.providerCallId ? 'Hide Transcript' : 'View Transcript'}
+                          </button>
+                          {expandedTranscriptId === call.providerCallId && (
+                            <div className="mt-2 p-2 bg-gray-50 border rounded-sm text-[10px] whitespace-pre-wrap text-gray-800 max-h-40 overflow-y-auto">
+                              {call.transcript}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {call.recordingLink ? (
+                        <a
+                          href={call.recordingLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline"
+                        >
+                          ▶ Play Audio
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        disabled={syncingCallId === call.providerCallId}
+                        onClick={() => handleSyncCallStatus(call.providerCallId)}
+                        className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        title="Fetch latest status from provider"
+                      >
+                        {syncingCallId === call.providerCallId ? 'Syncing…' : 'Sync Status'}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       <Card className="!p-0 overflow-hidden">
         <div className="border-b bg-gray-50 px-6 py-4">
           <div className="font-bold text-gray-700">Stages — Lender API Call History</div>
@@ -352,3 +588,4 @@ export default function ApplicationDetailsPage() {
     </div>
   );
 }
+

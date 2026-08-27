@@ -81,6 +81,21 @@ const schema = z
     EASEBUZZ_RECONCILIATION_CRON_ENABLED: booleanString.default('true'),
     EASEBUZZ_TIMEZONE: z.string().default('Asia/Kolkata'),
     EASEBUZZ_MAX_DEBIT_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+    IVR_API_BASE_URL: z.string().url().optional().default('https://pipecat-api.kube.aguken.com'),
+    IVR_AGENT_ID: z.string().optional().default(''),
+    IVR_CLIENT_ID: z.string().optional().default(''),
+    IVR_REQUEST_TIMEOUT: z.coerce.number().int().min(1000).max(120000).optional().default(30000),
+    IVR_AUTO_CALLS_ENABLED: booleanString.default('true'),
+    IVR_STUCK_HOURS_THRESHOLD: z.coerce.number().int().min(1).max(72).default(3),
+    IVR_CALLING_START_HOUR: z.coerce.number().int().min(0).max(23).default(9),
+    IVR_CALLING_END_HOUR: z.coerce.number().int().min(0).max(23).default(20),
+    IVR_COOLDOWN_HOURS: z.coerce.number().int().min(1).max(72).default(12),
+    SMS_AUTO_ENABLED: booleanString.default('true'),
+    SMS_TEMPLATE_LOAN_APPROVED_ID: z.string().optional().default('1777178773875446122'),
+    SMS_TEMPLATE_LOAN_DISBURSED_ID: z.string().optional().default('1777178755693472309'),
+    SMS_TEMPLATE_REPAYMENT_REMINDER_ID: z.string().optional().default('1777178755725728690'),
+    SMS_TEMPLATE_PENDING_STEP_ID: z.string().optional().default('1777178773892460194'),
+    SMS_TEMPLATE_LOAN_FULLY_PAID_ID: z.string().optional().default('1777178774771045828'),
   })
   .superRefine((env, context) => {
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {

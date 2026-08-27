@@ -40,6 +40,8 @@ import { CreditReviewModule } from './modules/credit-review/credit-review.module
 import { UnaportModule } from './modules/integrations/unaport/unaport.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { PartnerApiModule } from './modules/partner-api/partner-api.module';
+import { IvrModule } from './modules/integrations/ivr/ivr.module';
+import { SmsModule } from './modules/integrations/sms/sms.module';
 
 @Module({
   imports: [
@@ -80,6 +82,8 @@ import { PartnerApiModule } from './modules/partner-api/partner-api.module';
     UnaportModule,
     ApplicationsModule,
     PartnerApiModule,
+    IvrModule,
+    SmsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

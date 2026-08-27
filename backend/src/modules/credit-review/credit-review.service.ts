@@ -1,9 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
+import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 
 @Injectable()
 export class CreditReviewService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CreditReviewService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly ivrAutomationService?: IvrAutomationService,
+    @Optional() private readonly smsAutomationService?: SmsAutomationService,
+  ) {}
 
   async listPending() {
     const applications = await this.prisma.plApplication.findMany({
@@ -32,7 +40,7 @@ export class CreditReviewService {
   // is the primary path (see LenderDecisionProcessor.process()) — this lets a credit
   // team member finalize the same outcome by hand while that result is still pending.
   async approve(applicationId: bigint, decidedByUserId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const application = await tx.plApplication.findUnique({ where: { id: applicationId } });
       if (!application) throw new NotFoundException('Application not found.');
       if (application.status !== 'PENDING_CREDIT_REVIEW') {
@@ -167,6 +175,20 @@ export class CreditReviewService {
 
       return { application: updatedApplication, loan, decidedByUserId };
     });
+
+    if (this.ivrAutomationService) {
+      this.ivrAutomationService.triggerLoanApprovedCall(applicationId, result.application.platformLan || undefined).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger IVR loan approval call for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    if (this.smsAutomationService) {
+      this.smsAutomationService.triggerLoanApprovedSms(applicationId, result.application.platformLan || undefined).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger SMS loan approval for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    return result;
   }
 
   async reject(applicationId: bigint, decidedByUserId: string, reason?: string) {

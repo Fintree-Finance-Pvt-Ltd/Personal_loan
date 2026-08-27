@@ -22,7 +22,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
   const [dataStatus, setDataStatus] = useState(null);
   const [failureReason, setFailureReason] = useState(null);
   const [bankSummary, setBankSummary] = useState(null);
-  const [, setIsPolling] = useState(false);
+  const [, setIsPolling] = useState(false);  
 
   const pollTimerRef = useRef(null);
   const startTimeRef = useRef(null);
