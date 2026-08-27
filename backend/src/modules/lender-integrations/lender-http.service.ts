@@ -17,6 +17,7 @@ import {
 import {
   LenderIntegrationError,
   normalizeLenderIntegrationError,
+  redactLenderIntegrationText,
 } from './lender-integration.errors';
 
 const DEFAULT_REQUEST_LIMIT =
@@ -268,6 +269,10 @@ export class LenderHttpService {
     const startedAt =
       Date.now();
 
+    this.logger.log(
+      `[Lender API Outbound] ${input.method} ${url.toString()} | CorrelationId: ${input.correlationId} | IdempotencyKey: ${input.idempotencyKey || 'N/A'} | Body: ${redactLenderIntegrationText(body || '{}')}`,
+    );
+
     try {
       const response =
         await firstValueFrom(
@@ -311,21 +316,35 @@ export class LenderHttpService {
         );
 
       this.logger.log(
-        [
-          `Lender endpoint=${input.endpointName}`,
-          `lenderId=${input.transport.lenderId}`,
-          `status=${response.status}`,
-          `durationMs=${Date.now() - startedAt}`,
-          `correlationId=${input.correlationId}`,
-        ].join(' '),
+        `[Lender API Inbound] Status: ${response.status} | CorrelationId: ${input.correlationId} | Response: ${redactLenderIntegrationText(JSON.stringify(response.data))}`,
       );
+
+      if (
+        response.status < 200 ||
+        response.status >= 300
+      ) {
+        throw new LenderIntegrationError(
+          response.status === 400
+            ? 'LENDER_PERMANENT_VALIDATION'
+            : response.status === 401 || response.status === 403
+              ? 'LENDER_AUTH_CONFIGURATION'
+              : response.status === 404
+                ? 'LENDER_PERMANENT_VALIDATION'
+                : 'LENDER_DOWNSTREAM_UNAVAILABLE',
+          `Request failed with status code ${response.status} | response=${JSON.stringify(response.data)}`,
+          response.status >= 500 || response.status === 429
+            ? 'TEMPORARY'
+            : 'PERMANENT_VALIDATION',
+          response.status >= 500 || response.status === 429,
+        );
+      }
 
       return {
         status:
           response.status,
 
         data:
-          response.data,
+          response.data as T,
       };
     } catch (error) {
       const normalized =
@@ -333,14 +352,8 @@ export class LenderHttpService {
           error,
         );
 
-      this.logger.warn(
-        [
-          `Lender endpoint=${input.endpointName}`,
-          `lenderId=${input.transport.lenderId}`,
-          `code=${normalized.code}`,
-          `durationMs=${Date.now() - startedAt}`,
-          `correlationId=${input.correlationId}`,
-        ].join(' '),
+      this.logger.error(
+        `[Lender API Failed] ${input.method} ${url.toString()} | Code: ${normalized.code} | CorrelationId: ${input.correlationId} | Error: ${normalized.message}`,
       );
 
       throw normalized;
