@@ -586,8 +586,8 @@ export class EasebuzzAutocollectService {
         return false;
       }
 
-      const key = this.merchantKey;
-      const salts = [this.merchantSalt, webhookSecret].filter(Boolean) as string[];
+      const keys = [this.merchantKey, this.configService.get<string>('EASEBUZZ_KEY'), this.configService.get<string>('PL_EASEBUZZ_KEY')].filter(Boolean) as string[];
+      const salts = [this.merchantSalt, webhookSecret, this.configService.get<string>('EASEBUZZ_SALT'), this.configService.get<string>('PL_EASEBUZZ_SALT')].filter(Boolean) as string[];
 
       const transactionId = String(
         data.transaction_id ||
@@ -602,12 +602,25 @@ export class EasebuzzAutocollectService {
         data.merchant_request_no ||
         data.merchant_transaction_id ||
         data?.mandate?.merchant_transaction_id ||
+        data?.merchant_txn ||
+        payload?.merchant_txn ||
+        payload?.merchant_transaction_id ||
+        ''
+      ).trim();
+      const mandateId = String(
+        data.mandate_id ||
+        data?.mandate?.mandate_id ||
+        data?.mandate?.id ||
+        data.id ||
+        payload?.mandate_id ||
         ''
       ).trim();
       const status = String(
         data.status ||
         data.status_at_bank ||
+        data.mandate_status ||
         data?.mandate?.status ||
+        data?.mandate?.mandate_status ||
         data?.transaction_status ||
         payload?.status ||
         ''
@@ -643,30 +656,55 @@ export class EasebuzzAutocollectService {
         ''
       ).trim();
 
-      for (const salt of salts) {
-        const candidates: string[] = [];
+      const email = String(data.email || data?.mandate?.email || payload.email || '').trim();
+      const firstname = String(data.firstname || data.name || data?.mandate?.name || payload.firstname || '').trim();
+      const productinfo = String(data.productinfo || payload.productinfo || '').trim();
+      const udf1 = String(data.udf1 || payload.udf1 || '').trim();
+      const udf2 = String(data.udf2 || payload.udf2 || '').trim();
+      const udf3 = String(data.udf3 || payload.udf3 || '').trim();
+      const udf4 = String(data.udf4 || payload.udf4 || '').trim();
+      const udf5 = String(data.udf5 || payload.udf5 || '').trim();
+      const udf6 = String(data.udf6 || payload.udf6 || '').trim();
+      const udf7 = String(data.udf7 || payload.udf7 || '').trim();
 
-        if (transactionId && merchantRequestNumber && status) {
-          candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
-        }
-        if (transactionId && status) {
-          candidates.push(`${key}|${transactionId}|${status}|${salt}`);
-        }
-        if (transactionId && amount && accountNumber && ifsc) {
-          candidates.push(`${key}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${salt}`);
-        }
-        if (transactionId && merchantRequestNumber && status && !candidates.length) {
-          candidates.push(`${key}|${transactionId}|${merchantRequestNumber}|${status}|${salt}`);
-        }
-        // Standard Easebuzz reverse-hash format: salt|status|...|key
-        if (status && transactionId) {
-          candidates.push(`${salt}|${status}|||||||||||${key}`);
-        }
+      for (const k of keys) {
+        for (const s of salts) {
+          const candidates: string[] = [];
 
-        for (const sequence of candidates) {
-          const computedHash = createHash('sha512').update(sequence, 'utf8').digest('hex');
-          if (auth && (computedHash.toLowerCase() === auth.toLowerCase())) {
-            return true;
+          if (transactionId && merchantRequestNumber && status) {
+            candidates.push(`${k}|${transactionId}|${merchantRequestNumber}|${status}|${s}`);
+            candidates.push(`${k}|${merchantRequestNumber}|${transactionId}|${status}|${s}`);
+            candidates.push(`${k}|${status}|${merchantRequestNumber}|${transactionId}|${s}`);
+          }
+          if (merchantRequestNumber && status) {
+            candidates.push(`${k}|${merchantRequestNumber}|${status}|${s}`);
+            candidates.push(`${k}|${status}|${merchantRequestNumber}|${s}`);
+          }
+          if (transactionId && status) {
+            candidates.push(`${k}|${transactionId}|${status}|${s}`);
+            candidates.push(`${k}|${status}|${transactionId}|${s}`);
+          }
+          if (mandateId && status) {
+            candidates.push(`${k}|${mandateId}|${status}|${s}`);
+            candidates.push(`${k}|${status}|${mandateId}|${s}`);
+          }
+          if (transactionId && amount && accountNumber && ifsc) {
+            candidates.push(`${k}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${s}`);
+          }
+          if (merchantRequestNumber && amount && accountNumber && ifsc) {
+            candidates.push(`${k}|${merchantRequestNumber}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${s}`);
+          }
+          // Standard Easebuzz reverse-hash format: s|status|udf10..udf1|email|firstname|productinfo|amount|txnid|k
+          candidates.push(`${s}|${status}|||||||${udf7}|${udf6}|${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${transactionId || merchantRequestNumber}|${k}`);
+          candidates.push(`${s}|${status}|||||||||||${k}`);
+          candidates.push(`${k}|${s}`);
+
+          for (const sequence of candidates) {
+            const computedHash512 = createHash('sha512').update(sequence, 'utf8').digest('hex');
+            const computedHash256 = createHash('sha256').update(sequence, 'utf8').digest('hex');
+            if (auth && (computedHash512.toLowerCase() === auth.toLowerCase() || computedHash256.toLowerCase() === auth.toLowerCase())) {
+              return true;
+            }
           }
         }
       }
