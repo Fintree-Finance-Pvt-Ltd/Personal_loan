@@ -18,6 +18,7 @@ import { SigningStorageService } from '../electronic-sign/services/signing-stora
 import { ApplicationTransitionService } from './services/application-transition.service';
 import { EasebuzzCollectionCronService } from './services/easebuzz-collection-cron.service';
 import { IvrModule } from '../integrations/ivr/ivr.module';
+import { SmsModule } from '../integrations/sms/sms.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { IvrModule } from '../integrations/ivr/ivr.module';
     LenderIntegrationModule,
     OtpModule,
     IvrModule,
+    SmsModule,
   ],
   controllers: [LoanController, AdminLoanServicingController],
   providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, SigningStorageService],

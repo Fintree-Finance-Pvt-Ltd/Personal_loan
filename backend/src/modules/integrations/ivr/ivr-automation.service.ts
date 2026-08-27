@@ -295,7 +295,6 @@ export class IvrAutomationService {
           },
         },
         include: {
-          customer: true,
           loans: {
             take: 1,
             orderBy: { id: 'desc' },
@@ -308,9 +307,20 @@ export class IvrAutomationService {
         return;
       }
 
+      const customerIds = Array.from(new Set(stuckApplications.map((a) => a.customerId)));
+      const customers = await this.prisma.customer.findMany({
+        where: { id: { in: customerIds } },
+      });
+      const customerMap = new Map(customers.map((c) => [c.id.toString(), c]));
+
       this.logger.log(`[Auto-IVR] Found ${stuckApplications.length} applications stuck for >= ${stuckHoursThreshold} hours.`);
 
       for (const app of stuckApplications) {
+        const customer = customerMap.get(app.customerId.toString());
+        if (!customer) {
+          continue;
+        }
+
         const loan = app.loans?.[0];
 
         // If the loan is already disbursed, skip
@@ -329,7 +339,7 @@ export class IvrAutomationService {
         }
 
         // Determine specific touchpoint based on what step the customer is on
-        const pendingStep = this.ivrService.deriveCustomerPendingStep(app.customer, app, loan);
+        const pendingStep = this.ivrService.deriveCustomerPendingStep(customer, app, loan);
         const callType = pendingStep.suggestedCallType;
 
         try {

@@ -18,6 +18,7 @@ import { LenderIntegrationOutboxService } from '../lender-integrations/lender-in
 import { EmailService } from '../otp/email/email.service';
 import { SigningStorageService } from '../electronic-sign/services/signing-storage.service';
 import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
+import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 
 @Injectable()
 export class LoanService {
@@ -35,6 +36,7 @@ export class LoanService {
     private readonly emailService: EmailService,
     private readonly signingStorageService: SigningStorageService,
     @Optional() private readonly ivrAutomationService?: IvrAutomationService,
+    @Optional() private readonly smsAutomationService?: SmsAutomationService,
   ) { }
 
 
@@ -181,6 +183,12 @@ export class LoanService {
     if (this.ivrAutomationService) {
       this.ivrAutomationService.triggerLoanApprovedCall(applicationId, lan).catch((err) => {
         this.logger.warn(`Failed to auto-trigger IVR loan approval call for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    if (this.smsAutomationService) {
+      this.smsAutomationService.triggerLoanApprovedSms(applicationId, lan).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger SMS loan approval for app #${applicationId}: ${err?.message}`);
       });
     }
 
@@ -2642,6 +2650,12 @@ export class LoanService {
       if (this.ivrAutomationService) {
         this.ivrAutomationService.triggerLoanDisbursedCall(lan).catch((err) => {
           this.logger.warn(`Failed to auto-trigger IVR disbursement call for loan ${lan}: ${err?.message}`);
+        });
+      }
+
+      if (this.smsAutomationService) {
+        this.smsAutomationService.triggerLoanDisbursedSms(lan).catch((err) => {
+          this.logger.warn(`Failed to auto-trigger SMS disbursement notification for loan ${lan}: ${err?.message}`);
         });
       }
     }

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
+import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 
 @Injectable()
 export class CreditReviewService {
@@ -9,6 +10,7 @@ export class CreditReviewService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly ivrAutomationService?: IvrAutomationService,
+    @Optional() private readonly smsAutomationService?: SmsAutomationService,
   ) {}
 
   async listPending() {
@@ -177,6 +179,12 @@ export class CreditReviewService {
     if (this.ivrAutomationService) {
       this.ivrAutomationService.triggerLoanApprovedCall(applicationId, result.application.platformLan || undefined).catch((err) => {
         this.logger.warn(`Failed to auto-trigger IVR loan approval call for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    if (this.smsAutomationService) {
+      this.smsAutomationService.triggerLoanApprovedSms(applicationId, result.application.platformLan || undefined).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger SMS loan approval for app #${applicationId}: ${err?.message}`);
       });
     }
 
