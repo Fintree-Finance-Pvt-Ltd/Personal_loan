@@ -61,7 +61,7 @@ describe('EasyCollect Mandate Webhook Forwarding', () => {
   describe('LoanService PLM prefix filtering logic', () => {
     it('should identify non-PLM transaction ID and route to forwardToEasycollectMandateWebhook', async () => {
       const realLoanService = new LoanService(
-        {} as any,
+        { plLoanMandate: { findFirst: jest.fn().mockResolvedValue(null) } } as any,
         {} as any,
         {} as any,
         {} as any,
