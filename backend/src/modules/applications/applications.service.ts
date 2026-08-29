@@ -102,15 +102,33 @@ export class ApplicationsService {
       },
     });
     if (!application) throw new NotFoundException('Application not found.');
+    const loan = application.loans[0] ?? null;
 
-    const [customer, documents] = await Promise.all([
+    const [customer, documents, mandates, schedules] = await Promise.all([
       this.prisma.customer.findUnique({ where: { id: application.customerId } }),
       this.prisma.plCustomerDocument.findMany({
         where: { customerId: application.customerId },
         orderBy: { uploadedAt: 'desc' },
       }),
+      loan
+        ? this.prisma.plLoanMandate.findMany({
+          where: { loanId: loan.id },
+          orderBy: { id: 'desc' },
+        })
+        : Promise.resolve([]),
+      loan
+        ? this.prisma.plRepaymentSchedule.findMany({
+          where: { loanId: loan.id },
+          include: {
+            debitRequests: {
+              orderBy: { id: 'desc' },
+              take: 1,
+            },
+          },
+          orderBy: { installmentNumber: 'asc' },
+        })
+        : Promise.resolve([]),
     ]);
-    const loan = application.loans[0] ?? null;
     const link = application.lenderApplicationLink;
     const charges = loan
       ? await this.prisma.plLoanCharge.findMany({
@@ -186,6 +204,42 @@ export class ApplicationsService {
           status: loan.status,
           disbursalStatus: loan.disbursalStatus,
           approvedAmount: loan.approvedAmount?.toNumber() ?? null,
+          mandates: mandates.map((m) => ({
+            id: m.id.toString(),
+            mandateType: m.mandateType,
+            status: m.status,
+            amount: m.amount?.toNumber() ?? null,
+            merchantTransactionId: m.merchantTransactionId,
+            providerMandateId: m.providerMandateId,
+            portalUrl: m.portalUrl,
+            frequency: m.frequency,
+            createdAt: m.createdAt,
+            updatedAt: m.updatedAt,
+          })),
+          repaymentSchedules: schedules.map((s) => ({
+            id: s.id.toString(),
+            installmentNumber: s.installmentNumber,
+            dueDate: s.dueDate,
+            emi: s.emi?.toNumber() ?? null,
+            principal: s.principal?.toNumber() ?? null,
+            interest: s.interest?.toNumber() ?? null,
+            remainingAmount: s.remainingAmount?.toNumber() ?? null,
+            paidAmount: s.paidAmount?.toNumber() ?? 0,
+            paymentStatus: s.paymentStatus,
+            paymentDate: s.paymentDate,
+            latestDebitRequest: s.debitRequests?.[0]
+              ? {
+                id: s.debitRequests[0].id.toString(),
+                merchantRequestNumber: s.debitRequests[0].merchantRequestNumber,
+                status: s.debitRequests[0].status,
+                amount: s.debitRequests[0].amount?.toNumber() ?? null,
+                attemptNumber: s.debitRequests[0].attemptNumber,
+                failureReason: s.debitRequests[0].failureReason,
+                initiatedAt: s.debitRequests[0].initiatedAt,
+                completedAt: s.debitRequests[0].completedAt,
+              }
+              : null,
+          })),
           charges: charges.map((charge) => ({
             chargeId: charge.id.toString(),
             chargeType: charge.chargeType,

@@ -4,10 +4,12 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
+import { WhatsAppAutomationService } from '../whatsapp/whatsapp-automation.service';
 import {
   IvrCallType,
   IvrCustomerContext,
@@ -25,6 +27,7 @@ export class IvrService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly whatsappAutomationService?: WhatsAppAutomationService,
   ) {
     const baseURL =
       this.configService.get<string>('IVR_API_BASE_URL') ||
@@ -1219,6 +1222,16 @@ export class IvrService {
           callId,
           status: normalizedStatus,
         });
+
+        // Trigger WhatsApp automation after completed IVR calls (TP-01 to TP-06)
+        if (rawStatus === 'completed' || rawStatus === 'analytics_completed') {
+          const matchedLog = await this.prisma.ivrCallLog.findUnique({ where: { id: rowId } });
+          if (matchedLog) {
+            this.handlePostIvrWhatsAppDispatch(matchedLog, payload).catch((err: any) => {
+              this.logger.error(`[Auto-IVR-WhatsApp] Failed to dispatch WhatsApp for Call #${matchedLog.id}: ${err?.message}`);
+            });
+          }
+        }
       } else {
         this.logger.warn({
           event: 'ivr_webhook_no_matching_record',
@@ -1236,6 +1249,106 @@ export class IvrService {
     }
 
     return { success: true, message: 'Webhook processed' };
+  }
+
+  /**
+   * Automatically triggers corresponding WhatsApp template messages for completed IVR calls (TP-01 to TP-06).
+   */
+  private async handlePostIvrWhatsAppDispatch(matchedLog: any, payload: any): Promise<void> {
+    if (!this.whatsappAutomationService) return;
+
+    const transcript = String(payload.transcript || '').toLowerCase();
+    const callSummary = payload.call_summary;
+    const summaryText = typeof callSummary === 'object' ? JSON.stringify(callSummary).toLowerCase() : String(callSummary || '').toLowerCase();
+
+    // Check explicit refusal phrases
+    const explicitRefusal = [
+      'नहीं चाहिए',
+      'mat bhejo',
+      'mat bhej',
+      'not interested',
+      'dont send',
+      "don't send",
+      'cancel kar',
+      'no thanks',
+      'nahi chahiye',
+    ].some((phrase) => transcript.includes(phrase) || summaryText.includes(phrase));
+
+    if (explicitRefusal) {
+      this.logger.log(`[Auto-IVR-WhatsApp] Customer explicitly declined WhatsApp message for Call Log #${matchedLog.id}. Skipping.`);
+      return;
+    }
+
+    const lan = matchedLog.lan;
+    const applicationId = matchedLog.applicationId;
+    const callType = matchedLog.callType;
+
+    this.logger.log(`[Auto-IVR-WhatsApp] Auto-dispatching WhatsApp template for Touch Point ${callType} (Call #${matchedLog.id}, LAN: ${lan || 'N/A'})...`);
+
+    try {
+      switch (callType) {
+        case IvrCallType.LOAN_APPROVAL:
+          // TP-01: Loan Offer Acceptance
+          if (applicationId) {
+            await this.whatsappAutomationService.triggerLoanApprovedWhatsApp(applicationId, lan || undefined);
+          }
+          break;
+
+        case IvrCallType.MANDATE_PENDING:
+        case IvrCallType.ESIGN_PENDING:
+        case IvrCallType.APPLICATION_FOLLOW_UP:
+        case IvrCallType.KYC_PENDING:
+        case IvrCallType.DOCUMENT_PENDING:
+        case IvrCallType.GENERIC:
+          // TP-02 (Mandate) / TP-03 (E-Sign) / Application Pending
+          if (applicationId) {
+            await this.whatsappAutomationService.triggerPendingStepWhatsApp(applicationId);
+          }
+          break;
+
+        case IvrCallType.DISBURSEMENT:
+        case IvrCallType.DISBURSEMENT_CONFIRMATION:
+          // TP-04: Disbursal Welcome & Sanction Letter
+          if (lan) {
+            await this.whatsappAutomationService.triggerLoanDisbursedWhatsApp(lan, applicationId || undefined);
+          }
+          break;
+
+        case IvrCallType.EMI_REMINDER:
+        case IvrCallType.PAYMENT_OVERDUE:
+        case IvrCallType.PAYMENT_FOLLOW_UP:
+        case IvrCallType.PAYMENT_CONFIRMATION:
+          // TP-05: Pre-Due Payment Reminder
+          if (lan) {
+            const schedule = await this.prisma.plRepaymentSchedule.findFirst({
+              where: {
+                lan,
+                paymentStatus: { not: 'PAID' },
+              },
+              orderBy: { installmentNumber: 'asc' },
+            });
+            if (schedule) {
+              await this.whatsappAutomationService.triggerEmiDueReminderWhatsApp(schedule.id);
+            }
+          }
+          break;
+
+        case IvrCallType.REPEAT_LOAN_OFFER:
+          // TP-06: Fully Paid Customer Repeat Loan Offer
+          if (lan) {
+            await this.whatsappAutomationService.triggerLoanFullyPaidWhatsApp(lan, applicationId || undefined);
+          }
+          break;
+
+        default:
+          if (applicationId) {
+            await this.whatsappAutomationService.triggerPendingStepWhatsApp(applicationId);
+          }
+          break;
+      }
+    } catch (err: any) {
+      this.logger.error(`[Auto-IVR-WhatsApp] Error during WhatsApp auto-dispatch for Call #${matchedLog.id}: ${err?.message}`);
+    }
   }
 }
 

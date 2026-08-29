@@ -7,6 +7,7 @@ import { useAuth } from '../../../auth/AuthContext';
 import { Alert, Card, PageHeader, Spinner } from '../../../components/ui';
 import { StageStatusBadge } from '../components/StageStatusBadge';
 import { LoanChargesCard } from '../components/LoanChargesCard';
+import { RepaymentScheduleCard } from '../components/RepaymentScheduleCard';
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined) return '-';
@@ -280,6 +281,16 @@ export default function ApplicationDetailsPage() {
             <p className="mt-3 text-xs text-gray-500">Partner application ID: {link.partnerApplicationId}</p>
           )}
         </Card>
+      )}
+
+      {loan && (
+        <RepaymentScheduleCard
+          lan={loan.lan}
+          mandates={loan.mandates || []}
+          schedules={loan.repaymentSchedules || []}
+          canManage={auth.hasPermission('LOAN_MANAGE')}
+          onChanged={load}
+        />
       )}
 
       {loan && (
