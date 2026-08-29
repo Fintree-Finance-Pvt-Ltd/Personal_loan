@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, Optional, Logger } 
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
 import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
+import { WhatsAppAutomationService } from '../integrations/whatsapp/whatsapp-automation.service';
 
 @Injectable()
 export class CreditReviewService {
@@ -11,6 +12,7 @@ export class CreditReviewService {
     private readonly prisma: PrismaService,
     @Optional() private readonly ivrAutomationService?: IvrAutomationService,
     @Optional() private readonly smsAutomationService?: SmsAutomationService,
+    @Optional() private readonly whatsappAutomationService?: WhatsAppAutomationService,
   ) {}
 
   async listPending() {
@@ -185,6 +187,12 @@ export class CreditReviewService {
     if (this.smsAutomationService) {
       this.smsAutomationService.triggerLoanApprovedSms(applicationId, result.application.platformLan || undefined).catch((err) => {
         this.logger.warn(`Failed to auto-trigger SMS loan approval for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    if (this.whatsappAutomationService) {
+      this.whatsappAutomationService.triggerLoanApprovedWhatsApp(applicationId, result.application.platformLan || undefined).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger WhatsApp loan approval for app #${applicationId}: ${err?.message}`);
       });
     }
 

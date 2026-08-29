@@ -19,6 +19,7 @@ import { ApplicationTransitionService } from './services/application-transition.
 import { EasebuzzCollectionCronService } from './services/easebuzz-collection-cron.service';
 import { IvrModule } from '../integrations/ivr/ivr.module';
 import { SmsModule } from '../integrations/sms/sms.module';
+import { WhatsAppModule } from '../integrations/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SmsModule } from '../integrations/sms/sms.module';
     OtpModule,
     IvrModule,
     SmsModule,
+    WhatsAppModule,
   ],
   controllers: [LoanController, AdminLoanServicingController],
   providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, SigningStorageService],

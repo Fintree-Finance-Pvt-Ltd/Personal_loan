@@ -19,6 +19,7 @@ import { EmailService } from '../otp/email/email.service';
 import { SigningStorageService } from '../electronic-sign/services/signing-storage.service';
 import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
 import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
+import { WhatsAppAutomationService } from '../integrations/whatsapp/whatsapp-automation.service';
 
 @Injectable()
 export class LoanService {
@@ -37,6 +38,7 @@ export class LoanService {
     private readonly signingStorageService: SigningStorageService,
     @Optional() private readonly ivrAutomationService?: IvrAutomationService,
     @Optional() private readonly smsAutomationService?: SmsAutomationService,
+    @Optional() private readonly whatsappAutomationService?: WhatsAppAutomationService,
   ) { }
 
 
@@ -189,6 +191,12 @@ export class LoanService {
     if (this.smsAutomationService) {
       this.smsAutomationService.triggerLoanApprovedSms(applicationId, lan).catch((err) => {
         this.logger.warn(`Failed to auto-trigger SMS loan approval for app #${applicationId}: ${err?.message}`);
+      });
+    }
+
+    if (this.whatsappAutomationService) {
+      this.whatsappAutomationService.triggerLoanApprovedWhatsApp(applicationId, lan).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger WhatsApp loan approval for app #${applicationId}: ${err?.message}`);
       });
     }
 
@@ -2684,6 +2692,12 @@ export class LoanService {
           this.logger.warn(`Failed to auto-trigger SMS disbursement notification for loan ${lan}: ${err?.message}`);
         });
       }
+
+      if (this.whatsappAutomationService) {
+        this.whatsappAutomationService.triggerLoanDisbursedWhatsApp(lan).catch((err) => {
+          this.logger.warn(`Failed to auto-trigger WhatsApp disbursement notification for loan ${lan}: ${err?.message}`);
+        });
+      }
     }
 
     return result;
@@ -3256,6 +3270,12 @@ export class LoanService {
     if (result.loanFullyPaid && this.ivrAutomationService) {
       this.ivrAutomationService.triggerLoanFullyPaidRepeatOfferCall(lan, result.applicationId).catch((err) => {
         this.logger.warn(`Failed to auto-trigger repeat loan offer IVR call for loan ${lan}: ${err?.message}`);
+      });
+    }
+
+    if (result.loanFullyPaid && this.whatsappAutomationService) {
+      this.whatsappAutomationService.triggerLoanFullyPaidWhatsApp(lan, result.applicationId).catch((err) => {
+        this.logger.warn(`Failed to auto-trigger repeat loan offer WhatsApp message for loan ${lan}: ${err?.message}`);
       });
     }
 

@@ -700,6 +700,7 @@ model Customer {
   lenderDataSharingConsents LenderDataSharingConsent[]
   partnerApplications       PartnerApplication[]
   ivrCallLogs               IvrCallLog[]
+  whatsappMessageLogs       PlWhatsappMessageLog[]
 
   @@index([email], map: "idx_customers_email")
   @@index([accountStatus], map: "idx_customers_account_status")
@@ -1304,6 +1305,7 @@ model PlApplication {
   paymentLinks              PlPaymentLink[]
   partnerApplications       PartnerApplication[]
   ivrCallLogs               IvrCallLog[]
+  whatsappMessageLogs       PlWhatsappMessageLog[]
 
   @@index([customerId], map: "idx_pl_applications_customer_id")
   @@index([status], map: "idx_pl_applications_status")
@@ -3012,5 +3014,52 @@ model IvrCallLog {
   @@index([status], map: "idx_ivr_calls_status")
   @@map("ivr_call_logs")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WhatsApp Outbound Messaging Logs (Alots.io Cloud API v23.0)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PlWhatsappMessageLog {
+  id                    BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId            BigInt?   @map("customer_id") @db.UnsignedBigInt
+  applicationId         BigInt?   @map("application_id") @db.UnsignedBigInt
+  lan                   String?   @db.VarChar(50)
+  recipientMobile       String    @map("recipient_mobile") @db.VarChar(20)
+
+  eventType             String    @map("event_type") @db.VarChar(50)
+  templateName          String    @map("template_name") @db.VarChar(100)
+  languageCode          String    @default("en") @map("language_code") @db.VarChar(10)
+
+  providerMessageId     String?   @map("provider_message_id") @db.VarChar(150)
+  bizOpaqueCallbackData String?   @map("biz_opaque_callback_data") @db.VarChar(255)
+
+  status                String    @default("PENDING") @db.VarChar(50)
+  errorCode             String?   @map("error_code") @db.VarChar(100)
+  errorMessage          String?   @map("error_message") @db.Text
+
+  templateParameters   Json?     @map("template_parameters")
+  providerResponse     Json?     @map("provider_response")
+
+  sentAt                DateTime? @map("sent_at") @db.DateTime(0)
+  deliveredAt           DateTime? @map("delivered_at") @db.DateTime(0)
+  readAt                DateTime? @map("read_at") @db.DateTime(0)
+  failedAt              DateTime? @map("failed_at") @db.DateTime(0)
+
+  createdAt             DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  customer    Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  application PlApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([customerId], map: "idx_wa_logs_customer")
+  @@index([applicationId], map: "idx_wa_logs_app")
+  @@index([lan], map: "idx_wa_logs_lan")
+  @@index([providerMessageId], map: "idx_wa_logs_provider_id")
+  @@index([eventType], map: "idx_wa_logs_event")
+  @@index([status], map: "idx_wa_logs_status")
+  @@map("whatsapp_message_logs")
+}
+
 
 

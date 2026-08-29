@@ -45,5 +45,9 @@ export const applicationsApi = {
     const res = await api.get(`/admin/applications/${applicationId}/ivr/history`);
     return res.data.data;
   },
+  retryDebit: async (rpsId) => {
+    const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/retry-debit`);
+    return res.data.data;
+  },
 };
 
