@@ -2033,20 +2033,53 @@ export class LoanService {
 
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
     const txId =
-      payload?.transaction_id ||
       payload?.merchant_transaction_id ||
+      payload?.transaction_id ||
       payload?.udf1_tx_id ||
-      payload?.data?.transaction_id ||
       payload?.data?.merchant_transaction_id ||
+      payload?.data?.transaction_id ||
       payload?.data?.udf1_tx_id ||
       payload?.data?.mandate?.transaction_id ||
+      payload?.data?.merchant_request_number ||
+      payload?.merchant_request_number ||
       payload?.txnid ||
       payload?.merchant_txn ||
       payload?.data?.txnid ||
       payload?.data?.merchant_txn;
 
+    const providerMandateId =
+      payload?.mandate_id ||
+      payload?.provider_mandate_id ||
+      payload?.data?.mandate_id ||
+      payload?.data?.provider_mandate_id ||
+      payload?.data?.id ||
+      payload?.id ||
+      payload?.data?.mandate?.mandate_id ||
+      payload?.data?.mandate?.id;
+
+    const udf1 = String(payload?.data?.udf1 || payload?.udf1 || '').trim();
     const txIdStr = String(txId || '').trim();
-    const isPlmTransaction = txIdStr.toUpperCase().startsWith('PLM');
+
+    let isPlmTransaction =
+      txIdStr.toUpperCase().startsWith('PLM') ||
+      udf1.toUpperCase().startsWith('FTPL') ||
+      udf1.toUpperCase().startsWith('APP-');
+
+    if (!isPlmTransaction && (txIdStr || providerMandateId || udf1)) {
+      const existingPlMandate = await this.prisma.plLoanMandate.findFirst({
+        where: {
+          OR: [
+            ...(txIdStr ? [{ merchantTransactionId: txIdStr }, { lan: txIdStr }] : []),
+            ...(providerMandateId ? [{ providerMandateId: String(providerMandateId) }, { merchantTransactionId: String(providerMandateId) }] : []),
+            ...(udf1 ? [{ lan: udf1 }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (existingPlMandate) {
+        isPlmTransaction = true;
+      }
+    }
 
     if (!isPlmTransaction) {
       this.logger.log(
@@ -2068,14 +2101,6 @@ export class LoanService {
       this.logger.log('No EASEBUZZ_WEBHOOK_SECRET configured; skipping Easybuzz webhook signature verification.');
     }
 
-    const providerMandateId =
-      payload?.mandate_id ||
-      payload?.provider_mandate_id ||
-      payload?.data?.mandate_id ||
-      payload?.data?.provider_mandate_id ||
-      payload?.data?.id ||
-      payload?.data?.mandate?.mandate_id ||
-      payload?.data?.mandate?.id;
     const rawStatus =
       payload?.status ||
       payload?.mandate_status ||
@@ -2127,7 +2152,8 @@ export class LoanService {
           OR: [
             { merchantTransactionId: String(txId) },
             { lan: String(txId) },
-            ...(providerMandateId ? [{ providerMandateId: String(providerMandateId) }] : []),
+            ...(udf1 ? [{ lan: udf1 }] : []),
+            ...(providerMandateId ? [{ providerMandateId: String(providerMandateId) }, { merchantTransactionId: String(providerMandateId) }] : []),
           ],
         },
         include: { loan: true },

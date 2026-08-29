@@ -667,35 +667,58 @@ export class EasebuzzAutocollectService {
       const udf6 = String(data.udf6 || payload.udf6 || '').trim();
       const udf7 = String(data.udf7 || payload.udf7 || '').trim();
 
+      // Prepare amount variations (raw, 2 decimals, 1 decimal, integer)
+      const amountVariants = new Set<string>();
+      if (amount) {
+        amountVariants.add(amount);
+        const num = Number(amount);
+        if (!isNaN(num)) {
+          amountVariants.add(num.toFixed(2));
+          amountVariants.add(num.toFixed(1));
+          amountVariants.add(String(num));
+        }
+      } else {
+        amountVariants.add('');
+      }
+
       for (const k of keys) {
         for (const s of salts) {
           const candidates: string[] = [];
 
+          // 1. Mandate authorization hash: merchant_key|transaction_id|amount|customer_account_number|customer_ifsc|customer_upi_handle|merchant_salt
+          const txList = [transactionId, merchantRequestNumber, mandateId].filter(Boolean);
+          for (const tx of txList) {
+            for (const amt of amountVariants) {
+              candidates.push(`${k}|${tx}|${amt}|${accountNumber}|${ifsc}|${upiHandle}|${s}`);
+              candidates.push(`${k}|${tx}|${amt}|${accountNumber}|${ifsc}||${s}`);
+              candidates.push(`${k}|${tx}|${amt}|||${upiHandle}|${s}`);
+            }
+          }
+
+          // 2. Presentment authorization hash: merchant_key|transaction_id|merchant_request_number|status|merchant_salt
           if (transactionId && merchantRequestNumber && status) {
             candidates.push(`${k}|${transactionId}|${merchantRequestNumber}|${status}|${s}`);
             candidates.push(`${k}|${merchantRequestNumber}|${transactionId}|${status}|${s}`);
             candidates.push(`${k}|${status}|${merchantRequestNumber}|${transactionId}|${s}`);
           }
+          if (transactionId && status) {
+            candidates.push(`${k}|${transactionId}|${transactionId}|${status}|${s}`);
+            candidates.push(`${k}|${transactionId}|${status}|${s}`);
+            candidates.push(`${k}|${status}|${transactionId}|${s}`);
+          }
           if (merchantRequestNumber && status) {
             candidates.push(`${k}|${merchantRequestNumber}|${status}|${s}`);
             candidates.push(`${k}|${status}|${merchantRequestNumber}|${s}`);
-          }
-          if (transactionId && status) {
-            candidates.push(`${k}|${transactionId}|${status}|${s}`);
-            candidates.push(`${k}|${status}|${transactionId}|${s}`);
           }
           if (mandateId && status) {
             candidates.push(`${k}|${mandateId}|${status}|${s}`);
             candidates.push(`${k}|${status}|${mandateId}|${s}`);
           }
-          if (transactionId && amount && accountNumber && ifsc) {
-            candidates.push(`${k}|${transactionId}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${s}`);
+
+          // 3. Standard Easebuzz reverse-hash format: s|status|udf10..udf1|email|firstname|productinfo|amount|txnid|k
+          for (const amt of amountVariants) {
+            candidates.push(`${s}|${status}|||||||${udf7}|${udf6}|${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amt}|${transactionId || merchantRequestNumber}|${k}`);
           }
-          if (merchantRequestNumber && amount && accountNumber && ifsc) {
-            candidates.push(`${k}|${merchantRequestNumber}|${amount}|${accountNumber}|${ifsc}|${upiHandle}|${s}`);
-          }
-          // Standard Easebuzz reverse-hash format: s|status|udf10..udf1|email|firstname|productinfo|amount|txnid|k
-          candidates.push(`${s}|${status}|||||||${udf7}|${udf6}|${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${transactionId || merchantRequestNumber}|${k}`);
           candidates.push(`${s}|${status}|||||||||||${k}`);
           candidates.push(`${k}|${s}`);
 
