@@ -782,6 +782,9 @@ export class IvrService {
     const normalizedMobile = customData.TO;
     const agentId = this.configService.get<string>('IVR_AGENT_ID') || '';
     const clientId = this.configService.get<string>('IVR_CLIENT_ID') || '';
+    const secretKey =
+      this.configService.get<string>('IVR_SECRET_KEY') ||
+      'c7a1bd57bd090e3ba660e956ef148240e4b00addfdaf62f1b74bd2e043576f7';
 
     const effectiveAgentId = agentId || clientId;
 
@@ -793,7 +796,11 @@ export class IvrService {
 
     const payload: Record<string, any> = {
       to: normalizedMobile,
+      userMobileNo: normalizedMobile,
       agentId: effectiveAgentId,
+      phoneConfigId: effectiveAgentId,
+      externalApi: true,
+      secretKey,
       ...(clientId ? { clientId } : {}),
       customData,
     };
@@ -926,9 +933,17 @@ export class IvrService {
 
     let providerData: PipecatCallStatusResponse;
 
+    const secretKey =
+      this.configService.get<string>('IVR_SECRET_KEY') ||
+      'c7a1bd57bd090e3ba660e956ef148240e4b00addfdaf62f1b74bd2e043576f7';
+
     try {
       const response = await this.httpClient.get<PipecatCallStatusResponse>(
         `/calls/status/${cleanCallId}`,
+        {
+          params: { secretKey },
+          headers: { 'x-secret-key': secretKey },
+        },
       );
       providerData = response.data?.response || response.data;
     } catch (err: any) {
