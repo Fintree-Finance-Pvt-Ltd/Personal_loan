@@ -26,9 +26,10 @@ export class WhatsAppService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    const baseURL =
+    const rawBaseURL =
       this.configService.get<string>('WHATSAPP_API_BASE_URL') ||
-      'https://alots.io';
+      'https://graph.facebook.com';
+    const baseURL = rawBaseURL.trim() === 'https://alots.io' ? 'https://graph.facebook.com' : rawBaseURL;
     const timeout =
       this.configService.get<number>('WHATSAPP_REQUEST_TIMEOUT') || 30000;
 
