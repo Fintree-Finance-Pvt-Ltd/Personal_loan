@@ -26,10 +26,9 @@ export class WhatsAppService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    const rawBaseURL =
+    const baseURL =
       this.configService.get<string>('WHATSAPP_API_BASE_URL') ||
-      'https://graph.facebook.com';
-    const baseURL = rawBaseURL.trim() === 'https://alots.io' ? 'https://graph.facebook.com' : rawBaseURL;
+      'https://alots.io';
     const timeout =
       this.configService.get<number>('WHATSAPP_REQUEST_TIMEOUT') || 30000;
 
@@ -136,7 +135,8 @@ export class WhatsAppService {
     const apiVersion =
       this.configService.get<string>('WHATSAPP_API_VERSION') || 'v23.0';
     const accessToken =
-      this.configService.get<string>('WHATSAPP_ACCESS_TOKEN') || '';
+      this.configService.get<string>('WHATSAPP_ACCESS_TOKEN') ||
+      'f505b577-47cd-4c15-9c0f-ee3cbbebc824';
 
     const opaqueId =
       bizOpaqueCallbackData ||
