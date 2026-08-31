@@ -604,6 +604,8 @@ export class EasebuzzCollectionCronService {
     });
 
     let res: any = null;
+    let notifRequestNum: string | undefined = undefined;
+
     if (mandate.mandateType === PlMandateType.ENACH) {
       res = await this.easebuzzAutocollectService.initiateEnachPresentment({
         transactionId: mandateTxId,
@@ -616,10 +618,42 @@ export class EasebuzzCollectionCronService {
         udf4: source,
       });
     } else {
+      // For UPI / SI mandates, check or create Pre-Debit Notification first
+      const existingNotif = existingDebits.find((d: any) => Boolean(d.notificationRequestNumber));
+      if (existingNotif?.notificationRequestNumber) {
+        notifRequestNum = existingNotif.notificationRequestNumber;
+        this.logger.log(`[retryDebit] Reusing existing notification number "${notifRequestNum}" for RPS #${rpsId}`);
+      } else {
+        const notifMerchantReq = `NT_${rps.lan}_${rps.id}_${attemptNumber}`;
+        this.logger.log(`[retryDebit] Sending UPI pre-debit notification for RPS #${rpsId}, TxID: ${mandateTxId}...`);
+        const notifRes = await this.easebuzzAutocollectService.sendUpiPreDebitNotification({
+          transactionId: mandateTxId,
+          amount: debitAmount,
+          merchantRequestNumber: notifMerchantReq,
+          debitDate: todayStr,
+          udf1: rps.lan,
+          udf2: rps.id.toString(),
+          udf3: rps.installmentNumber.toString(),
+          udf4: source,
+        });
+
+        if (notifRes.success && notifRes.notificationRequestNumber) {
+          notifRequestNum = notifRes.notificationRequestNumber;
+          this.logger.log(`[retryDebit] UPI Pre-debit notification created: "${notifRequestNum}"`);
+          await this.prisma.easebuzzDebitRequest.update({
+            where: { id: debitReq.id },
+            data: { notificationRequestNumber: notifRequestNum },
+          });
+        } else {
+          this.logger.warn(`[retryDebit] UPI Pre-debit notification rejected: ${notifRes.error}`);
+        }
+      }
+
       res = await this.easebuzzAutocollectService.executeUpiOrSiDebit({
         transactionId: mandateTxId,
         amount: debitAmount,
         merchantRequestNumber: merchantReqNumber,
+        notificationRequestNumber: notifRequestNum,
         udf1: rps.lan,
         udf2: rps.id.toString(),
         udf3: rps.installmentNumber.toString(),
@@ -628,36 +662,42 @@ export class EasebuzzCollectionCronService {
     }
 
     let finalStatus = 'IN_PROCESS';
+    let responseMessage = 'Debit request submitted successfully. Waiting for reconciliation.';
+
     if (res.success) {
       finalStatus = 'IN_PROCESS';
+      responseMessage = 'Debit request submitted successfully. Waiting for reconciliation.';
     } else if (res.isUnknown) {
       finalStatus = 'UNKNOWN';
+      responseMessage = 'Debit request status is UNKNOWN (network timeout/provider error). It will be resolved by reconciliation.';
+    } else if (notifRequestNum && String(res.error || '').toLowerCase().includes('notification')) {
+      // Pre-debit notification was created and is in 'in_process' awaiting delivery to customer
+      finalStatus = 'IN_PROCESS';
+      responseMessage = `Pre-debit notification initiated successfully (Notification Ref: ${notifRequestNum}). Debit will execute once confirmed by bank/NPCI.`;
     } else {
       finalStatus = 'FAILURE';
+      responseMessage = `Debit request failed: ${res.error}`;
     }
 
     const updated = await this.prisma.easebuzzDebitRequest.update({
       where: { id: debitReq.id },
       data: {
         status: finalStatus,
-        failureReason: res.error ? String(res.error).slice(0, 500) : null,
+        failureReason: finalStatus === 'FAILURE' ? (res.error ? String(res.error).slice(0, 500) : null) : (notifRequestNum ? `Pre-debit notification active: ${notifRequestNum}` : null),
         completedAt: finalStatus === 'FAILURE' ? new Date() : null,
         responseEncrypted: JSON.stringify(res.rawResponse || {}),
       },
     });
 
     return {
-      success: res.success || res.isUnknown,
+      success: finalStatus === 'IN_PROCESS' || res.success || res.isUnknown,
       status: finalStatus,
       merchantRequestNumber: merchantReqNumber,
+      notificationRequestNumber: notifRequestNum,
       amount: debitAmount,
       attemptNumber,
       debitRequestId: updated.id.toString(),
-      message: res.success
-        ? 'Debit request submitted successfully. Waiting for reconciliation.'
-        : res.isUnknown
-        ? 'Debit request status is UNKNOWN (network timeout/provider error). It will be resolved by reconciliation.'
-        : `Debit request failed: ${res.error}`,
+      message: responseMessage,
     };
   }
 }

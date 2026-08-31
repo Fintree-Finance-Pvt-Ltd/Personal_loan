@@ -992,6 +992,7 @@ export class EasebuzzAutocollectService {
       transaction_id: input.transactionId,
       amount: Number(Number(input.amount).toFixed(2)),
       merchant_request_number: input.merchantRequestNumber,
+      notification_request_number: input.merchantRequestNumber,
       debit_date: input.debitDate,
       udf1: input.udf1 || '',
       udf2: input.udf2 || '',
@@ -999,15 +1000,19 @@ export class EasebuzzAutocollectService {
       udf4: input.udf4 || '',
     };
 
-    const candidateUrls = [
-      `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/notification/`,
-      `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/pre_debit_notification/`,
-    ];
+    const candidateBases = Array.from(new Set([
+      this.apiBaseUrl,
+      'https://api.easebuzz.in',
+      'https://dashboard.easebuzz.in',
+      'https://testpay.easebuzz.in',
+      'https://sandboxapi.easebuzz.in',
+    ]));
 
     let lastRes: any = null;
     let lastErr: any = null;
 
-    for (const endpoint of candidateUrls) {
+    for (const baseUrl of candidateBases) {
+      const endpoint = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/notify/`;
       try {
         const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
         const resData = response.data;
@@ -1017,11 +1022,14 @@ export class EasebuzzAutocollectService {
         const notifNumber =
           resData?.notification_request_number ||
           resData?.data?.notification_request_number ||
+          resData?.data?.id ||
+          resData?.id ||
           resData?.request_id ||
           resData?.data?.request_id ||
           input.merchantRequestNumber;
 
         if (isSuccess) {
+          this.logger.log(`[sendUpiPreDebitNotification] Successfully created notification "${notifNumber}" on ${baseUrl}`);
           return {
             success: true,
             notificationRequestNumber: notifNumber,
@@ -1030,8 +1038,10 @@ export class EasebuzzAutocollectService {
           };
         }
         lastRes = resData;
+        if (response.status < 500) break;
       } catch (err: any) {
         lastErr = err;
+        if (err?.response && err.response.status < 500) break;
       }
     }
 
@@ -1041,6 +1051,7 @@ export class EasebuzzAutocollectService {
       ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(lastErr?.code);
 
     const errorMsg = lastRes?.message || lastRes?.error || lastErr?.response?.data?.message || lastErr?.message || 'Pre-debit notification failed.';
+    this.logger.warn(`[sendUpiPreDebitNotification] Failed for TxID "${input.transactionId}": ${errorMsg}`);
     return {
       success: false,
       isUnknown: is5xxOrTimeout,
