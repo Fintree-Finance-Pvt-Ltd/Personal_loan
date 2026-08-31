@@ -25,10 +25,10 @@ export class WhatsAppWebhookController {
 
   /**
    * Meta / Alots.io Webhook verification challenge endpoint.
-   * Exposed on both /api/v1/meta/webhook and /api/webhooks/whatsapp.
+   * Exposed on /api/v1/meta/webhook and /api/webhooks/whatsapp.
    */
   @Public()
-  @Get(['api/v1/meta/webhook', 'api/webhooks/whatsapp'])
+  @Get(['v1/meta/webhook', 'webhooks/whatsapp', 'api/v1/meta/webhook', 'api/webhooks/whatsapp'])
   @HttpCode(HttpStatus.OK)
   verifyWebhook(
     @Query('hub.mode') mode?: string,
@@ -54,10 +54,10 @@ export class WhatsAppWebhookController {
 
   /**
    * Handles incoming WhatsApp message events and status callbacks (sent, delivered, read, failed).
-   * Exposed on both /api/v1/meta/webhook and /api/webhooks/whatsapp.
+   * Exposed on /api/v1/meta/webhook and /api/webhooks/whatsapp.
    */
   @Public()
-  @Post(['api/v1/meta/webhook', 'api/webhooks/whatsapp'])
+  @Post(['v1/meta/webhook', 'webhooks/whatsapp', 'api/v1/meta/webhook', 'api/webhooks/whatsapp'])
   @HttpCode(HttpStatus.OK)
   async handleWebhook(@Body() payload: WhatsAppWebhookPayload): Promise<{
     status: string;
