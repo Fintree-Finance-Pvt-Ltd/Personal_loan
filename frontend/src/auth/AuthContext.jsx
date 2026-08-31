@@ -53,12 +53,16 @@ export function AuthProvider({ children }) {
     }
   }, [clear]);
 
-  const value = useMemo(
+const value = useMemo(
     () => ({
       ...auth,
       login,
       logout,
-      hasPermission: (code) => auth.permissionCodes.includes(code),
+      hasPermission: (code) =>
+        auth.roleCodes.includes('SUPERADMIN') ||
+        auth.roleCodes.includes('OPERATIONS') ||
+        auth.roleCodes.includes(code) ||
+        auth.permissionCodes.includes(code),
     }),
     [auth, login, logout],
   );

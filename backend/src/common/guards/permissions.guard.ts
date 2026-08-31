@@ -20,8 +20,9 @@ export class PermissionsGuard implements CanActivate {
     if (required.length === 0) return true;
     const request = context.switchToHttp().getRequest<Request>();
     const user = request.user as AuthenticatedUser | undefined;
+   if (user?.roleCodes?.includes('SUPERADMIN')) return true;
     const granted = new Set(user?.permissionCodes ?? []);
-    if (required.every((permission) => granted.has(permission))) return true;
+    if (required.every((permission) => granted.has(permission) || user?.roleCodes?.includes(permission))) return true;
     await this.securityEvents.record({
       userId: user?.userId,
       sessionId: user?.sessionId,
