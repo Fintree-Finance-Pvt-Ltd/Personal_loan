@@ -19,6 +19,7 @@ import { CustomerProfilePage } from './features/customer/pages/CustomerProfilePa
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
+import { DebitRequestsPage } from './features/admin/pages/DebitRequestsPage';
 import { SessionsPage } from './features/admin/pages/SessionsPage';
 
 // Lenders
@@ -106,6 +107,16 @@ export default function App() {
             element={
               <PermissionRoute permission="ADMIN_DASHBOARD_VIEW">
                 <DashboardPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Debit Request List */}
+          <Route
+            path="/admin-master/debit-requests"
+            element={
+              <PermissionRoute permission="ADMIN_DASHBOARD_VIEW">
+                <DebitRequestsPage />
               </PermissionRoute>
             }
           />

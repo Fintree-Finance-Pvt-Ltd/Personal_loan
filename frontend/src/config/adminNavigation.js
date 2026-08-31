@@ -8,6 +8,12 @@ export const ADMIN_NAVIGATION = [
         path: '/admin-master/dashboard',
         permission: 'ADMIN_DASHBOARD_VIEW',
       },
+      {
+        label: 'Debit Request List',
+        shortLabel: 'DR',
+        path: '/admin-master/debit-requests',
+        permission: 'ADMIN_DASHBOARD_VIEW',
+      },
     ],
   },
   {

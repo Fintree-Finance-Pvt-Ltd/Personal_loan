@@ -49,9 +49,11 @@ export class EasebuzzAutocollectService {
     this.merchantSalt =
       this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SALT') ||
       this.configService.get<string>('EASEBUZZ_SALT') || '';
-    this.subMerchantId =
+    const rawSubMerchant = (
       this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_SUB_MERCHANT_ID') ||
-      this.configService.get<string>('EASEBUZZ_SUB_MERCHANT_ID') || '';
+      this.configService.get<string>('EASEBUZZ_SUB_MERCHANT_ID') || ''
+    ).trim();
+    this.subMerchantId = (rawSubMerchant && rawSubMerchant !== this.merchantKey) ? rawSubMerchant : '';
     
     this.apiBaseUrl = (
       this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_API_BASE_URL') ||
@@ -518,22 +520,33 @@ export class EasebuzzAutocollectService {
 
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
-      'https://pay.easebuzz.in',
+      'https://api.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://testpay.easebuzz.in',
       'https://sandboxapi.easebuzz.in',
+      'https://testpay.easebuzz.in',
     ]));
 
     let lastError: any = null;
+    const attemptErrors: string[] = [];
+
+    this.logger.log(`[Easebuzz Mandate Status] Starting retrieveMandate for TxID: "${transactionId}" (Candidate bases: ${candidateBases.join(', ')})`);
 
     for (const baseUrl of candidateBases) {
+      const url = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/${encodeURIComponent(transactionId)}/?key=${encodeURIComponent(this.merchantKey)}${subMerchantId ? `&sub_merchant_id=${encodeURIComponent(subMerchantId)}&submerchant_id=${encodeURIComponent(subMerchantId)}` : ''}`;
       try {
-        let url = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/${encodeURIComponent(transactionId)}/?key=${encodeURIComponent(this.merchantKey)}`;
-        if (subMerchantId) {
-          url += `&sub_merchant_id=${encodeURIComponent(subMerchantId)}&submerchant_id=${encodeURIComponent(subMerchantId)}`;
-        }
+        this.logger.debug(`[Easebuzz Mandate Status] Querying: ${url}`);
         const response = await axios.get(url, { headers, timeout: 30000 });
         const resData = response.data;
+
+        // Verify that response is valid JSON and not an HTML 404/gateway error page
+        if (typeof resData === 'string' && (resData.includes('<!DOCTYPE') || resData.includes('<html'))) {
+          throw new Error(`Endpoint ${baseUrl} returned an HTML page instead of API JSON response`);
+        }
+        if (resData && typeof resData === 'object' && resData.status === false && (resData.message || resData.error)) {
+          throw new Error(resData.message || resData.error);
+        }
+
+        this.logger.log(`[Easebuzz Mandate Status] Success from ${baseUrl} for TxID "${transactionId}". Response: ${JSON.stringify(resData)}`);
 
         return {
           success: true,
@@ -542,12 +555,17 @@ export class EasebuzzAutocollectService {
         };
       } catch (err: any) {
         lastError = err;
+        const status = err.response?.status;
+        const errData = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+        const errorSummary = `[${baseUrl}] HTTP ${status || 'ERR'}: ${errData}`;
+        attemptErrors.push(errorSummary);
+        this.logger.warn(`[Easebuzz Mandate Status] Attempt failed on ${baseUrl} for TxID "${transactionId}": HTTP ${status} -> ${errData}`);
       }
     }
 
-    const msg = lastError?.response?.data?.message || lastError?.message || 'Retrieve mandate request failed.';
-    this.logger.error(`Easebuzz retrieve mandate exception [TxID: ${transactionId}]: ${msg}`);
-    throw new ServiceUnavailableException(`Unable to retrieve mandate status from provider: ${msg}`);
+    const msg = lastError?.response?.data?.message || lastError?.response?.data?.error || lastError?.message || 'Retrieve mandate request failed.';
+    this.logger.error(`[Easebuzz Mandate Status] ALL endpoints failed for TxID "${transactionId}". Summary: ${attemptErrors.join(' | ')}`);
+    throw new ServiceUnavailableException(`Unable to retrieve mandate status from provider: ${msg} (Attempts: ${attemptErrors.join(' ; ')})`);
   }
 
   public verifyEasebuzzMandateWebhookHash(payload: any, webhookSecret?: string): boolean {
@@ -1032,6 +1050,88 @@ export class EasebuzzAutocollectService {
   }
 
   /**
+   * Retrieves notification details via notification_request_number or notification_id (UPI / SI)
+   * GET /autocollect/v1/mandate/notification/{notification_request_number}/
+   */
+  async retrieveNotification(notificationIdentifier: string, subMerchantId?: string): Promise<{
+    success: boolean;
+    status?: 'in_process' | 'pending' | 'notified' | 'failure' | 'cancelled' | string;
+    data?: any;
+    error?: string;
+    rawResponse?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz credentials not configured.');
+    }
+
+    const trimmedId = notificationIdentifier?.trim();
+    if (!trimmedId) {
+      throw new BadRequestException('notification_request_number or notification_id is required.');
+    }
+
+    const subMerchant = subMerchantId || this.subMerchantId;
+    // Authorization: SHA-512(<key>|<notification_request_number>|<salt>)
+    const authInput = `${this.merchantKey}|${trimmedId}|${this.merchantSalt}`;
+    const authorization = this.sha512Hex(authInput);
+
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      Accept: 'application/json',
+    };
+
+    if (subMerchant) {
+      headers['X-EB-SUB-MERCHANT-ID'] = subMerchant;
+      headers['sub_merchant_id'] = subMerchant;
+      headers['submerchant_id'] = subMerchant;
+      headers['sub-merchant-id'] = subMerchant;
+    }
+
+    const candidateBases = Array.from(new Set([
+      this.apiBaseUrl,
+      'https://api.easebuzz.in',
+      'https://pay.easebuzz.in',
+      'https://dashboard.easebuzz.in',
+      'https://testpay.easebuzz.in',
+      'https://sandboxapi.easebuzz.in',
+    ]));
+
+    let lastError: any = null;
+
+    for (const baseUrl of candidateBases) {
+      try {
+        let url = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/notification/${encodeURIComponent(trimmedId)}/?key=${encodeURIComponent(this.merchantKey)}`;
+        if (subMerchant) {
+          url += `&sub_merchant_id=${encodeURIComponent(subMerchant)}&submerchant_id=${encodeURIComponent(subMerchant)}`;
+        }
+        const response = await axios.get(url, { headers, timeout: 30000 });
+        const resData = response.data;
+        const dataObj = resData?.data || resData;
+        const status = dataObj?.status || resData?.status;
+        const isSuccess = resData?.status === true || resData?.success === true || (status && !['failure', 'cancelled'].includes(String(status).toLowerCase()));
+
+        return {
+          success: isSuccess,
+          status: status ? String(status).toLowerCase() : undefined,
+          data: dataObj,
+          rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+        };
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    const msg = lastError?.response?.data?.message || lastError?.response?.data?.error || lastError?.message || 'Retrieve notification request failed.';
+    this.logger.warn(`Easebuzz retrieve notification exception [NotificationID: ${trimmedId}]: ${msg}`);
+
+    return {
+      success: false,
+      error: msg,
+      rawResponse: lastError?.response?.data ? this.sanitizeEasebuzzMandatePayload(lastError.response.data) : null,
+    };
+  }
+
+  /**
    * Execute API for UPI / SI Mandates:
    * POST /autocollect/v1/mandate/execute/
    */
@@ -1040,10 +1140,19 @@ export class EasebuzzAutocollectService {
     amount: number;
     merchantRequestNumber: string;
     notificationRequestNumber?: string;
+    splitPayments?: Record<string, number>;
     udf1?: string;
     udf2?: string;
     udf3?: string;
     udf4?: string;
+    udf5?: string;
+    udf6?: string;
+    udf7?: string;
+    cryptogram?: string;
+    cardToken?: string;
+    cardExpiry?: string;
+    fetchBalance?: boolean;
+    forcePresentment?: boolean;
     subMerchantId?: string;
   }): Promise<{
     success: boolean;
@@ -1073,6 +1182,9 @@ export class EasebuzzAutocollectService {
       headers['X-EB-SUB-MERCHANT-ID'] = subMerchantId;
     }
 
+    const envFetchBalance = this.configService.get<string>('EASEBUZZ_PRESENTMENT_FETCH_BALANCE') === 'true';
+    const envForce = this.configService.get<string>('EASEBUZZ_PRESENTMENT_FORCE') === 'true';
+
     const payload: Record<string, any> = {
       key: this.merchantKey,
       transaction_id: input.transactionId,
@@ -1082,44 +1194,84 @@ export class EasebuzzAutocollectService {
       udf2: input.udf2 || '',
       udf3: input.udf3 || '',
       udf4: input.udf4 || '',
+      udf5: input.udf5 || '',
+      udf6: input.udf6 || '',
+      udf7: input.udf7 || '',
+      fetch_balance: input.fetchBalance ?? envFetchBalance,
+      force_presentment: input.forcePresentment ?? envForce,
     };
 
     if (input.notificationRequestNumber) {
       payload.notification_request_number = input.notificationRequestNumber;
     }
-
-    const endpoint = `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/execute/`;
-
-    try {
-      const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
-      const resData = response.data;
-      const status = resData?.status ?? resData?.success;
-      const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
-
-      return {
-        success: isSuccess,
-        data: resData?.data || resData,
-        rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
-        error: !isSuccess ? (resData?.message || resData?.error || 'Execute request rejected.') : undefined,
-      };
-    } catch (err: any) {
-      const is5xxOrTimeout =
-        !err.response ||
-        (err.response.status >= 500 && err.response.status < 600) ||
-        ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(err.code);
-
-      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Mandate execute network failure.';
-      this.logger.warn(`UPI/SI execute exception [MerchantReq: ${input.merchantRequestNumber}, Is5xx/Timeout: ${is5xxOrTimeout}]: ${errorMsg}`);
-
-      return {
-        success: false,
-        isUnknown: is5xxOrTimeout,
-        error: errorMsg,
-        rawResponse: err.response?.data ? this.sanitizeEasebuzzMandatePayload(err.response.data) : null,
-      };
+    if (input.splitPayments && Object.keys(input.splitPayments).length > 0) {
+      payload.split_payments = input.splitPayments;
     }
+    if (input.cryptogram) {
+      payload.cryptogram = input.cryptogram;
+    }
+    if (input.cardToken) {
+      payload.card_token = input.cardToken;
+    }
+    if (input.cardExpiry) {
+      payload.card_expiry = input.cardExpiry;
+    }
+
+    const candidateBases = Array.from(new Set([
+      this.apiBaseUrl,
+      'https://api.easebuzz.in',
+      'https://pay.easebuzz.in',
+      'https://dashboard.easebuzz.in',
+      'https://testpay.easebuzz.in',
+      'https://sandboxapi.easebuzz.in',
+    ]));
+
+    let lastRes: any = null;
+    let lastErr: any = null;
+
+    for (const baseUrl of candidateBases) {
+      try {
+        const endpoint = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/execute/`;
+        const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
+        const resData = response.data;
+        const status = resData?.status ?? resData?.success;
+        const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
+
+        return {
+          success: isSuccess,
+          data: resData?.data || resData,
+          rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+          error: !isSuccess ? (resData?.message || resData?.error || 'Execute request rejected.') : undefined,
+        };
+      } catch (err: any) {
+        lastErr = err;
+        // If received non-5xx (like 400 Bad Request, 401, 404), do not keep retrying other bases blindly
+        if (err?.response && err.response.status < 500) {
+          break;
+        }
+      }
+    }
+
+    const is5xxOrTimeout =
+      !lastErr?.response ||
+      (lastErr?.response?.status >= 500 && lastErr?.response?.status < 600) ||
+      ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(lastErr?.code);
+
+    const errorMsg = lastErr?.response?.data?.message || lastErr?.response?.data?.error || lastErr?.message || 'Mandate execute network failure.';
+    this.logger.warn(`UPI/SI execute exception [MerchantReq: ${input.merchantRequestNumber}, Is5xx/Timeout: ${is5xxOrTimeout}]: ${errorMsg}`);
+
+    return {
+      success: false,
+      isUnknown: is5xxOrTimeout,
+      error: errorMsg,
+      rawResponse: lastErr?.response?.data ? this.sanitizeEasebuzzMandatePayload(lastErr.response.data) : null,
+    };
   }
 
+  /**
+   * Retrieves Presentment / Debit Requests Status from Easebuzz:
+   * GET /autocollect/v1/mandate/presentment
+   */
   /**
    * Retrieves Presentment / Debit Requests Status from Easebuzz:
    * GET /autocollect/v1/mandate/presentment
@@ -1133,6 +1285,10 @@ export class EasebuzzAutocollectService {
     mandateTransactionId?: string;
     mandateType?: string;
     notificationRequestNumber?: string;
+    notificationId?: string;
+    schedulerMerchantRequestNumber?: string;
+    schedulerRequestId?: string;
+    umrn?: string;
     status?: string;
     pageSize?: number;
     current?: number;
@@ -1175,30 +1331,55 @@ export class EasebuzzAutocollectService {
     if (input.mandateTransactionId) queryParams.append('mandate_transaction_id', input.mandateTransactionId);
     if (input.mandateType) queryParams.append('mandate_type', input.mandateType);
     if (input.notificationRequestNumber) queryParams.append('notification_request_number', input.notificationRequestNumber);
+    if (input.notificationId) queryParams.append('notification_id', input.notificationId);
+    if (input.schedulerMerchantRequestNumber) queryParams.append('scheduler_merchant_request_number', input.schedulerMerchantRequestNumber);
+    if (input.schedulerRequestId) queryParams.append('scheduler_request_id', input.schedulerRequestId);
+    if (input.umrn) queryParams.append('umrn', input.umrn);
     if (input.status) queryParams.append('status', input.status);
     if (input.pageSize) queryParams.append('pageSize', String(Math.min(100, Math.max(1, input.pageSize || 50))));
     if (input.current) queryParams.append('current', String(Math.max(1, input.current || 1)));
+    if (subMerchantId) queryParams.append('sub_merchant_id', subMerchantId);
 
-    const endpoint = `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/presentment?${queryParams.toString()}`;
+    const candidateBases = Array.from(new Set([
+      this.apiBaseUrl,
+      'https://api.easebuzz.in',
+      'https://dashboard.easebuzz.in',
+      'https://sandboxapi.easebuzz.in',
+      'https://testpay.easebuzz.in',
+    ]));
 
-    try {
-      const response = await this.axiosClient.get(endpoint, { headers, timeout: 30000 });
-      const resData = response.data;
+    let lastError: any = null;
 
-      return {
-        success: true,
-        data: resData?.data || resData,
-        sanitizedResponse: this.sanitizeEasebuzzMandatePayload(resData),
-      };
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Get debit requests failed.';
-      this.logger.error(`Easebuzz getDebitRequests error: ${errorMsg}`);
-      return {
-        success: false,
-        error: errorMsg,
-        sanitizedResponse: err.response?.data ? this.sanitizeEasebuzzMandatePayload(err.response.data) : null,
-      };
+    for (const baseUrl of candidateBases) {
+      try {
+        const endpoint = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/presentment?${queryParams.toString()}`;
+        const response = await this.axiosClient.get(endpoint, { headers, timeout: 30000 });
+        const resData = response.data;
+
+        if (typeof resData === 'string' && (resData.includes('<!DOCTYPE') || resData.includes('<html'))) {
+          throw new Error(`Endpoint returned HTML page instead of API JSON`);
+        }
+
+        return {
+          success: true,
+          data: resData?.data || resData,
+          sanitizedResponse: this.sanitizeEasebuzzMandatePayload(resData),
+        };
+      } catch (err: any) {
+        lastError = err;
+        if (err?.response && err.response.status < 500) {
+          break;
+        }
+      }
     }
+
+    const errorMsg = lastError?.response?.data?.message || lastError?.response?.data?.error || lastError?.message || 'Get debit requests failed.';
+    this.logger.error(`Easebuzz getDebitRequests error: ${errorMsg}`);
+    return {
+      success: false,
+      error: errorMsg,
+      sanitizedResponse: lastError?.response?.data ? this.sanitizeEasebuzzMandatePayload(lastError.response.data) : null,
+    };
   }
 
   /**
@@ -1210,8 +1391,10 @@ export class EasebuzzAutocollectService {
     raw?: any;
   }> {
     try {
+      this.logger.log(`[getMandateStatus] Checking status for Mandate TxID: "${transactionId}"`);
       const res = await this.retrieveMandate(transactionId);
       if (!res.success || !res.data) {
+        this.logger.warn(`[getMandateStatus] retrieveMandate returned success=false or empty data for TxID: "${transactionId}". Result: ${JSON.stringify(res)}`);
         return { isActive: false, status: 'UNKNOWN' };
       }
 
@@ -1220,10 +1403,12 @@ export class EasebuzzAutocollectService {
         res.data.mandate_status ||
         res.data.state ||
         res.data.provider_status ||
+        res.data.model?.status ||
         ''
       ).toUpperCase();
 
       const isActive = ['AUTHORIZED', 'ACTIVE', 'COMPLETED', 'SUCCESS'].includes(rawStatus);
+      this.logger.log(`[getMandateStatus] Resolved for TxID "${transactionId}": rawStatus="${rawStatus}", isActive=${isActive}`);
 
       return {
         isActive,
@@ -1231,7 +1416,7 @@ export class EasebuzzAutocollectService {
         raw: res.sanitizedResponse,
       };
     } catch (err: any) {
-      this.logger.warn(`getMandateStatus failed for TxID ${transactionId}: ${err?.message || err}`);
+      this.logger.error(`[getMandateStatus] Failed for TxID "${transactionId}": ${err?.message || err}`, err?.stack);
       return { isActive: false, status: 'UNKNOWN' };
     }
   }

@@ -140,9 +140,10 @@ export class EasebuzzCollectionCronService {
 
         // Verify mandate status before debit
         const mandateTxId = mandate.merchantTransactionId || mandate.providerMandateId || '';
+        this.logger.log(`[Batch Collection] Checking mandate status for LAN ${rps.lan}, Mandate ID: ${mandate.id}, TxID: "${mandateTxId}", DB Status: ${mandate.status}`);
         const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(mandateTxId);
         if (!mandateCheck.isActive) {
-          this.logger.warn(`Mandate ${mandateTxId} for LAN ${rps.lan} is not active (${mandateCheck.status}). Skipping debit.`);
+          this.logger.warn(`[Batch Collection] Mandate ${mandateTxId} for LAN ${rps.lan} is not active (Live: ${mandateCheck.status}, DB: ${mandate.status}). Skipping debit.`);
           continue;
         }
 
@@ -568,9 +569,14 @@ export class EasebuzzCollectionCronService {
     const debitAmount = Math.min(Number(rps.remainingAmount), Number(mandate.amount));
     const mandateTxId = mandate.merchantTransactionId || mandate.providerMandateId || '';
 
+    this.logger.log(`[retryDebit] Initiating debit for RPS #${rpsId}, LAN: ${rps.lan}, Amount: ${debitAmount}, Mandate in DB: { id: ${mandate.id}, status: "${mandate.status}", type: "${mandate.mandateType}", merchantTransactionId: "${mandate.merchantTransactionId}", providerMandateId: "${mandate.providerMandateId}", UMRN: "${mandate.umrn}" }`);
+
     // Verify mandate status
     const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(mandateTxId);
+    this.logger.log(`[retryDebit] Mandate live check result for TxID "${mandateTxId}": isActive=${mandateCheck.isActive}, status="${mandateCheck.status}"`);
+
     if (!mandateCheck.isActive) {
+      this.logger.warn(`[retryDebit] Blocked: Mandate ${mandateTxId} is not active (Live Easebuzz Status: "${mandateCheck.status}", DB Status: "${mandate.status}", Mandate ID: ${mandate.id})`);
       throw new BadRequestException(`Mandate ${mandateTxId} is not active (Status: ${mandateCheck.status}). Cannot initiate debit.`);
     }
 
