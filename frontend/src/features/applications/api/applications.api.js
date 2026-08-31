@@ -49,5 +49,22 @@ export const applicationsApi = {
     const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/retry-debit`);
     return res.data.data;
   },
+  triggerWhatsAppEvent: async ({ eventType, applicationId, lan, installmentId }) => {
+    const res = await api.post('/admin/whatsapp/test-event', {
+      eventType,
+      applicationId,
+      lan,
+      installmentId,
+    });
+    return res.data;
+  },
+  sendWhatsAppTemplate: async (payload) => {
+    const res = await api.post('/admin/whatsapp/send-template', payload);
+    return res.data;
+  },
+  getWhatsAppLogs: async (params = {}) => {
+    const res = await api.get('/admin/whatsapp/logs', { params });
+    return res.data;
+  },
 };
 

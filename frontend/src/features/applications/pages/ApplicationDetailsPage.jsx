@@ -46,6 +46,13 @@ export default function ApplicationDetailsPage() {
   const [syncingCallId, setSyncingCallId] = useState(null);
   const [expandedTranscriptId, setExpandedTranscriptId] = useState(null);
 
+  // WhatsApp Messaging State
+  const [whatsappLogs, setWhatsappLogs] = useState([]);
+  const [loadingWhatsapp, setLoadingWhatsapp] = useState(false);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
+  const [whatsappEventType, setWhatsappEventType] = useState('LOAN_APPROVED');
+  const [whatsappMessage, setWhatsappMessage] = useState(null);
+
   const loadIvrHistory = () => {
     if (!applicationId) return;
     setLoadingIvr(true);
@@ -54,6 +61,16 @@ export default function ApplicationDetailsPage() {
       .then((data) => setIvrCalls(Array.isArray(data) ? data : []))
       .catch((err) => console.error('Failed to load IVR history:', err))
       .finally(() => setLoadingIvr(false));
+  };
+
+  const loadWhatsappHistory = () => {
+    if (!applicationId) return;
+    setLoadingWhatsapp(true);
+    applicationsApi
+      .getWhatsAppLogs({ applicationId })
+      .then((data) => setWhatsappLogs(Array.isArray(data?.logs) ? data.logs : Array.isArray(data) ? data : []))
+      .catch((err) => console.error('Failed to load WhatsApp history:', err))
+      .finally(() => setLoadingWhatsapp(false));
   };
 
   const load = () => {
@@ -65,6 +82,7 @@ export default function ApplicationDetailsPage() {
       .catch((err) => setError(apiError(err, 'Unable to load application details.')))
       .finally(() => setLoading(false));
     loadIvrHistory();
+    loadWhatsappHistory();
   };
 
   useEffect(() => {
@@ -111,6 +129,47 @@ export default function ApplicationDetailsPage() {
       console.error('Failed to sync call status:', err);
     } finally {
       setSyncingCallId(null);
+    }
+  };
+
+  const handleSendWhatsApp = async () => {
+    if (!customer?.mobileNumber) {
+      setWhatsappMessage({ type: 'error', text: 'Customer has no valid mobile number.' });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Send official WhatsApp message to customer ${customer.fullName || ''} (${customer.mobileNumber}) for "${formatLabel(whatsappEventType)}"?`
+    );
+    if (!confirmed) return;
+
+    setSendingWhatsapp(true);
+    setWhatsappMessage(null);
+    try {
+      const res = await applicationsApi.triggerWhatsAppEvent({
+        eventType: whatsappEventType,
+        applicationId,
+        lan: app?.platformLan || undefined,
+      });
+
+      if (res?.data?.success || res?.success) {
+        setWhatsappMessage({
+          type: 'success',
+          text: `WhatsApp message dispatched successfully! (Status: ${res?.data?.status || 'ACCEPTED'})`,
+        });
+      } else {
+        setWhatsappMessage({
+          type: 'error',
+          text: res?.data?.errorMessage || res?.message || 'WhatsApp message dispatch failed.',
+        });
+      }
+      loadWhatsappHistory();
+    } catch (err) {
+      setWhatsappMessage({
+        type: 'error',
+        text: apiError(err, 'Failed to trigger WhatsApp message.'),
+      });
+    } finally {
+      setSendingWhatsapp(false);
     }
   };
 
@@ -520,6 +579,130 @@ export default function ApplicationDetailsPage() {
                       >
                         {syncingCallId === call.providerCallId ? 'Syncing…' : 'Sync Status'}
                       </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* WhatsApp Automated Messaging Card */}
+      <Card className="mb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+          <div>
+            <div className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <span className="text-emerald-600 font-bold text-lg">💬</span> WhatsApp Automated Messaging (Alots.io)
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Dispatch official WhatsApp template notifications to customer ({customer?.fullName || 'Customer'} — {customer?.mobileNumber || 'No mobile'}) with real-time status tracking.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={whatsappEventType}
+              onChange={(e) => setWhatsappEventType(e.target.value)}
+              disabled={sendingWhatsapp}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-xs focus:border-brand-500 focus:outline-hidden"
+            >
+              <option value="LOAN_APPROVED">Loan Approved (loan_approved)</option>
+              <option value="LOAN_DISBURSED">Loan Disbursed (loan_disbursed)</option>
+              <option value="APPLICATION_PENDING">Application Incomplete Reminder (application_pending)</option>
+              <option value="EMI_DUE">EMI Due Reminder (emi_due_reminder)</option>
+              <option value="FULLY_PAID">Loan Fully Paid / Closed (fully_paid)</option>
+            </select>
+
+            <button
+              type="button"
+              disabled={sendingWhatsapp || !customer?.mobileNumber}
+              onClick={handleSendWhatsApp}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sendingWhatsapp ? 'Sending…' : '💬 Send WhatsApp'}
+            </button>
+
+            <button
+              type="button"
+              disabled={loadingWhatsapp}
+              onClick={loadWhatsappHistory}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              title="Refresh WhatsApp Message History"
+            >
+              🔄 Refresh Logs
+            </button>
+          </div>
+        </div>
+
+        {whatsappMessage && (
+          <div className="mt-4">
+            <Alert variant={whatsappMessage.type === 'success' ? 'success' : 'error'}>
+              {whatsappMessage.text}
+            </Alert>
+          </div>
+        )}
+
+        {/* WhatsApp Logs Table */}
+        <div className="mt-4 overflow-x-auto">
+          <div className="text-xs font-semibold uppercase text-gray-500 mb-2">WhatsApp Message Log History</div>
+          <table className="w-full text-left text-xs">
+            <thead className="bg-gray-50 text-gray-500 border-b">
+              <tr>
+                <th className="px-4 py-2.5">Date & Time</th>
+                <th className="px-4 py-2.5">Template / Event</th>
+                <th className="px-4 py-2.5">Recipient Mobile</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Provider Message ID</th>
+                <th className="px-4 py-2.5">Source / Trigger</th>
+                <th className="px-4 py-2.5">Error / Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {whatsappLogs.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="px-4 py-6 text-center text-gray-400">
+                    {loadingWhatsapp ? 'Loading WhatsApp logs…' : 'No WhatsApp messages sent yet for this application.'}
+                  </td>
+                </tr>
+              ) : (
+                whatsappLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-gray-50/80 align-top">
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600 font-medium">
+                      {formatDate(log.createdAt || log.sentAt)}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-gray-800">
+                      <div>{formatLabel(log.eventType || log.templateName)}</div>
+                      <div className="text-[10px] text-gray-500 font-mono">{log.templateName}</div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 font-mono">
+                      {log.recipientMobile || log.to || '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          log.status === 'DELIVERED' || log.status === 'READ' || log.status === 'ACCEPTED' || log.status === 'SENT'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : log.status === 'FAILED' || log.status === 'ERROR'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-gray-600 max-w-[180px] truncate" title={log.providerMessageId}>
+                      {log.providerMessageId || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {formatLabel(log.triggerSource || 'ADMIN')}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 max-w-xs">
+                      {log.errorMessage ? (
+                        <span className="text-red-600 text-[11px]">{log.errorMessage}</span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </td>
                   </tr>
                 ))
