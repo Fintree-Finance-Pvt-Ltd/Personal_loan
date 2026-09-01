@@ -10,6 +10,7 @@ import {
   Check,
   CheckCircle2,
   CircleUserRound,
+  ExternalLink,
   FileCheck2,
   Camera,
   Info,
@@ -2072,6 +2073,10 @@ function AadhaarKycStep({
   const [polling, setPolling] = useState(false);
   const pollTimerRef = useRef(null);
 
+  // Popup Blocked / SDK Launch handling
+  const [showPopupBlockedModal, setShowPopupBlockedModal] = useState(false);
+  const [pendingDigilockerUrl, setPendingDigilockerUrl] = useState('');
+
   const [sameAsPermanent, setSameAsPermanent] = useState(true);
   const [addressForm, setAddressForm] = useState({
     addressLine1: '',
@@ -2152,20 +2157,33 @@ function AadhaarKycStep({
     if (!consentGiven) return;
     setLoading(true);
     setError('');
+    setShowPopupBlockedModal(false);
     try {
       const res = await initiateCustomerAadhaarKyc(customerCode);
       if (res?.verificationUrl) {
-        const popup = window.open(
-          res.verificationUrl,
-          'DigitapDigiLocker',
-          'width=520,height=760,resizable=yes,scrollbars=yes'
-        );
-        if (!popup) {
-          setError('Popup was blocked by browser. Please allow popups and click Start DigiLocker Verification again.');
+        setPendingDigilockerUrl(res.verificationUrl);
+
+        let popup = null;
+        try {
+          popup = window.open(
+            res.verificationUrl,
+            'DigitapDigiLocker',
+            'width=520,height=760,resizable=yes,scrollbars=yes,status=yes,location=yes'
+          );
+        } catch (e) {
+          console.warn('Popup launch blocked by browser exception:', e);
+          popup = null;
+        }
+
+        // Detect if browser blocked popup (null, closed immediately, or no access)
+        const isBlocked = !popup || popup.closed || typeof popup.closed === 'undefined';
+        if (isBlocked) {
+          setShowPopupBlockedModal(true);
           setLoading(false);
           return;
         }
       }
+
       setPolling(true);
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       pollTimerRef.current = setInterval(async () => {
@@ -2180,6 +2198,32 @@ function AadhaarKycStep({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenDigilockerWindow = () => {
+    if (!pendingDigilockerUrl) {
+      handleStartDigilocker();
+      return;
+    }
+    setShowPopupBlockedModal(false);
+    try {
+      window.open(
+        pendingDigilockerUrl,
+        'DigitapDigiLocker',
+        'width=520,height=760,resizable=yes,scrollbars=yes,status=yes,location=yes'
+      );
+    } catch {
+      window.open(pendingDigilockerUrl, '_blank');
+    }
+    setPolling(true);
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(async () => {
+      const statusRes = await fetchStatus();
+      if (statusRes?.aadhaarVerified || statusRes?.status === 'VERIFIED') {
+        clearInterval(pollTimerRef.current);
+        setPolling(false);
+      }
+    }, 5000);
   };
 
   const isVerified = Boolean(
@@ -2599,6 +2643,84 @@ function AadhaarKycStep({
           )}
         </div>
       </div>
+
+      {/* Enable Popup Permission Modal */}
+      {showPopupBlockedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/60 backdrop-blur-xs animate-fade-in">
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border border-neutral-100 animate-scale-up">
+            {/* Top Accent Gradient */}
+            <div className="bg-gradient-to-r from-amber-500 via-brand-600 to-emerald-600 h-2 w-full" />
+            
+            <div className="p-6 sm:p-7">
+              {/* Header */}
+              <div className="flex items-start gap-4">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-600 shadow-xs">
+                  <ShieldCheck size={26} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-neutral-900 leading-snug">
+                    Enable Popup Permission
+                  </h3>
+                  <p className="mt-1 text-xs text-neutral-600 leading-relaxed">
+                    To continue Aadhaar verification, please allow pop-ups for this application.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPopupBlockedModal(false)}
+                  className="rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Step-by-Step Guide */}
+              <div className="mt-5 rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-950 mb-3 flex items-center gap-1.5">
+                  <Info size={14} className="text-amber-800" />
+                  Steps to allow popups:
+                </div>
+                <ol className="space-y-2.5 text-xs leading-relaxed text-neutral-700">
+                  <li className="flex items-start gap-2.5">
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-200/80 text-[10px] font-bold text-amber-950 mt-0.5">1</span>
+                    <span>Look for the <strong>Pop-up blocked icon (🚫)</strong> in your browser's address bar or open browser settings.</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-200/80 text-[10px] font-bold text-amber-950 mt-0.5">2</span>
+                    <span>Select <strong>"Always allow pop-ups and redirects"</strong> for this website.</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-200/80 text-[10px] font-bold text-amber-950 mt-0.5">3</span>
+                    <span>Return and click <strong>Open DigiLocker Window</strong> below.</span>
+                  </li>
+                </ol>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  onClick={handleOpenDigilockerWindow}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-bold text-white shadow-md hover:bg-brand-700 transition active:scale-[0.98] cursor-pointer"
+                >
+                  <ExternalLink size={16} />
+                  Open DigiLocker Window
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPopupBlockedModal(false);
+                    handleRefresh();
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition cursor-pointer"
+                >
+                  Check Status
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </StepCard>
   );
 }

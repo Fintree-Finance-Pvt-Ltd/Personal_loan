@@ -66,4 +66,8 @@ api.interceptors.response.use(
 );
 
 export const apiError = (error, fallback = 'The request could not be completed.') =>
-  error.response?.data?.error?.message || fallback;
+  error.response?.data?.error?.message ||
+  error.response?.data?.message ||
+  (Array.isArray(error.response?.data?.message) ? error.response.data.message.join(', ') : null) ||
+  error.message ||
+  fallback;
