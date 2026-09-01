@@ -26,6 +26,7 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
 
   const pollTimerRef = useRef(null);
   const startTimeRef = useRef(null);
+  const popupRef = useRef(null);
 
   // Poll status from backend API
   const fetchStatus = useCallback(async () => {
@@ -41,6 +42,14 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
       setBankSummary(statusData?.bankSummary || null);
 
       if (statusData?.completed || currentStatus === 'SUCCESS') {
+        // Auto-close the Unaport SDK popup window if open
+        if (popupRef.current && !popupRef.current.closed) {
+          try {
+            popupRef.current.close();
+          } catch (e) {
+            console.warn('Could not auto-close Unaport popup:', e);
+          }
+        }
         stopPolling();
         if (onComplete) onComplete();
       } else if (['FAILED', 'EXPIRED', 'CANCELLED'].includes(currentStatus)) {
@@ -83,6 +92,34 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
     };
   }, [fetchStatus, stopPolling]);
 
+  // Window message listener for Unaport SDK exit / completion postMessages
+  useEffect(() => {
+    const handleSdkMessage = (event) => {
+      const origin = event.origin || '';
+      const data = event.data;
+      const isUnaportOrigin = origin.includes('unaport.com') || origin.includes('premium.unaport.com');
+      
+      const eventType = typeof data === 'string' ? data : (data?.type || data?.event || data?.status || data?.action || data?.message || '');
+      const isExitEvent = /exit|close|complete|success|finish|done|submitted/i.test(String(eventType));
+
+      if (isUnaportOrigin || isExitEvent) {
+        if (popupRef.current && !popupRef.current.closed) {
+          try {
+            popupRef.current.close();
+          } catch (e) {
+            console.warn('Could not close SDK popup window upon exit event:', e);
+          }
+        }
+        fetchStatus();
+      }
+    };
+
+    window.addEventListener('message', handleSdkMessage);
+    return () => {
+      window.removeEventListener('message', handleSdkMessage);
+    };
+  }, [fetchStatus]);
+
   // Window focus listener to re-check status when user returns from consent popup tab
   useEffect(() => {
     const handleFocus = () => {
@@ -106,6 +143,8 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
       'UnaportAccountAggregator',
       `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes,status=yes`
     );
+
+    popupRef.current = popup;
 
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
       setPopupBlocked(true);
