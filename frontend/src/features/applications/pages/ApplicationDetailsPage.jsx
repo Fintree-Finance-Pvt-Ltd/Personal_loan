@@ -37,6 +37,13 @@ export default function ApplicationDetailsPage() {
   const [sendingWelcomeLetter, setSendingWelcomeLetter] = useState(false);
   const [welcomeLetterMessage, setWelcomeLetterMessage] = useState(null);
 
+  const customer = details?.customer;
+  const application = details?.application;
+  const loan = details?.loan;
+  const stages = details?.stages || [];
+  const link = details?.link;
+  const documents = details?.documents || [];
+
   // IVR AI Calling State
   const [ivrCalls, setIvrCalls] = useState([]);
   const [loadingIvr, setLoadingIvr] = useState(false);
@@ -148,7 +155,7 @@ export default function ApplicationDetailsPage() {
       const res = await applicationsApi.triggerWhatsAppEvent({
         eventType: whatsappEventType,
         applicationId,
-        lan: app?.platformLan || undefined,
+        lan: application?.platformLan || loan?.lan || undefined,
       });
 
       if (res?.data?.success || res?.success) {
@@ -217,7 +224,6 @@ export default function ApplicationDetailsPage() {
 
   if (!details) return null;
 
-  const { application, customer, link, loan, stages, documents } = details;
   const canRetry = auth.hasPermission('LENDER_UPDATE');
 
   return (

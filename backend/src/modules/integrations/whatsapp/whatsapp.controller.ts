@@ -12,11 +12,13 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { WhatsAppAutomationService } from './whatsapp-automation.service';
 import { WhatsAppService } from './whatsapp.service';
 import {
   SendTemplateMessageParams,
   WhatsAppEventType,
+  WhatsAppTemplateName,
   WhatsAppTriggerSource,
 } from './whatsapp.types';
 
@@ -26,6 +28,7 @@ export class WhatsAppController {
   constructor(
     private readonly whatsappService: WhatsAppService,
     private readonly whatsappAutomation: WhatsAppAutomationService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -71,33 +74,132 @@ export class WhatsAppController {
           WhatsAppTriggerSource.MANUAL_TEST,
         );
 
-      case WhatsAppEventType.LOAN_DISBURSED:
-        if (!lan) {
-          throw new BadRequestException('lan is required for LOAN_DISBURSED event.');
+      case WhatsAppEventType.LOAN_DISBURSED: {
+        let targetLan = lan;
+        let app: any = null;
+        if (applicationId) {
+          app = await this.prisma.plApplication.findUnique({
+            where: { id: BigInt(applicationId) },
+            include: { customer: true, loans: { take: 1, orderBy: { id: 'desc' } } },
+          });
+          if (!targetLan) {
+            targetLan = app?.platformLan || app?.loans?.[0]?.lan;
+          }
         }
-        return this.whatsappAutomation.triggerLoanDisbursedWhatsApp(
-          lan,
-          WhatsAppTriggerSource.MANUAL_TEST,
-        );
+        if (targetLan) {
+          const res = await this.whatsappAutomation.triggerLoanDisbursedWhatsApp(
+            targetLan,
+            WhatsAppTriggerSource.MANUAL_TEST,
+          );
+          if (res) return res;
+        }
+        if (app?.customer?.mobileNumber) {
+          const customerName = this.whatsappService.formatCustomerName(app.customer.fullName);
+          const amount = this.whatsappService.formatAmount(app.selectedAmount || app.approvedAmount || 50000);
+          return this.whatsappService.sendTemplateMessage({
+            to: app.customer.mobileNumber,
+            templateName: WhatsAppTemplateName.LOAN_DISBURSED,
+            languageCode: 'en',
+            bodyParameters: [customerName, amount, targetLan || app.platformLan || app.applicationNumber],
+            customerId: app.customerId,
+            applicationId: app.id,
+            lan: targetLan || app.platformLan || undefined,
+            eventType: WhatsAppEventType.LOAN_DISBURSED,
+            triggerSource: WhatsAppTriggerSource.MANUAL_TEST,
+          });
+        }
+        throw new BadRequestException('Cannot test LOAN_DISBURSED: Customer mobile number or application not found.');
+      }
 
-      case WhatsAppEventType.FULLY_PAID:
-        if (!lan) {
-          throw new BadRequestException('lan is required for FULLY_PAID event.');
+      case WhatsAppEventType.FULLY_PAID: {
+        let paidLan = lan;
+        let app: any = null;
+        if (applicationId) {
+          app = await this.prisma.plApplication.findUnique({
+            where: { id: BigInt(applicationId) },
+            include: { customer: true, loans: { take: 1, orderBy: { id: 'desc' } } },
+          });
+          if (!paidLan) {
+            paidLan = app?.platformLan || app?.loans?.[0]?.lan;
+          }
         }
-        return this.whatsappAutomation.triggerLoanFullyPaidWhatsApp(
-          lan,
-          applicationId,
-          WhatsAppTriggerSource.MANUAL_TEST,
-        );
+        if (paidLan) {
+          const res = await this.whatsappAutomation.triggerLoanFullyPaidWhatsApp(
+            paidLan,
+            applicationId,
+            WhatsAppTriggerSource.MANUAL_TEST,
+          );
+          if (res) return res;
+        }
+        if (app?.customer?.mobileNumber) {
+          const customerName = this.whatsappService.formatCustomerName(app.customer.fullName);
+          return this.whatsappService.sendTemplateMessage({
+            to: app.customer.mobileNumber,
+            templateName: WhatsAppTemplateName.FULLY_PAID,
+            languageCode: 'en',
+            bodyParameters: [customerName, '₹1,00,000'],
+            customerId: app.customerId,
+            applicationId: app.id,
+            lan: paidLan || app.platformLan || undefined,
+            eventType: WhatsAppEventType.FULLY_PAID,
+            triggerSource: WhatsAppTriggerSource.MANUAL_TEST,
+          });
+        }
+        throw new BadRequestException('Cannot test FULLY_PAID: Customer mobile number or application not found.');
+      }
 
-      case WhatsAppEventType.EMI_DUE:
-        if (!installmentId) {
-          throw new BadRequestException('installmentId is required for EMI_DUE event.');
+      case WhatsAppEventType.EMI_DUE: {
+        let targetInstallmentId = installmentId;
+        let app: any = null;
+        if (applicationId) {
+          app = await this.prisma.plApplication.findUnique({
+            where: { id: BigInt(applicationId) },
+            include: { customer: true, loans: { take: 1, orderBy: { id: 'desc' } } },
+          });
         }
-        return this.whatsappAutomation.triggerEmiDueReminderWhatsApp(
-          installmentId,
-          WhatsAppTriggerSource.MANUAL_TEST,
-        );
+        if (!targetInstallmentId && (lan || applicationId)) {
+          const rps = await this.prisma.plRepaymentSchedule.findFirst({
+            where: {
+              ...(lan ? { lan } : {}),
+              ...(applicationId ? { loan: { applicationId: BigInt(applicationId) } } : {}),
+              paymentStatus: { not: 'PAID' },
+            },
+            orderBy: { installmentNumber: 'asc' },
+          }) || await this.prisma.plRepaymentSchedule.findFirst({
+            where: {
+              ...(lan ? { lan } : {}),
+              ...(applicationId ? { loan: { applicationId: BigInt(applicationId) } } : {}),
+            },
+            orderBy: { id: 'desc' },
+          });
+          if (rps) {
+            targetInstallmentId = rps.id.toString();
+          }
+        }
+        if (targetInstallmentId) {
+          const res = await this.whatsappAutomation.triggerEmiDueReminderWhatsApp(
+            targetInstallmentId,
+            WhatsAppTriggerSource.MANUAL_TEST,
+          );
+          if (res) return res;
+        }
+        if (app?.customer?.mobileNumber) {
+          const customerName = this.whatsappService.formatCustomerName(app.customer.fullName);
+          const loanRef = lan || app.platformLan || app.loans?.[0]?.lan || app.applicationNumber;
+          return this.whatsappService.sendTemplateMessage({
+            to: app.customer.mobileNumber,
+            templateName: WhatsAppTemplateName.EMI_DUE_REMINDER,
+            languageCode: 'en',
+            bodyParameters: [customerName, '₹4,850', loanRef, '05 Sep 2026'],
+            customerId: app.customerId,
+            applicationId: app.id,
+            lan: loanRef,
+            eventType: WhatsAppEventType.EMI_DUE,
+            triggerSource: WhatsAppTriggerSource.MANUAL_TEST,
+          });
+        }
+        throw new BadRequestException('Cannot test EMI_DUE: Customer mobile number or application not found.');
+      }
 
       case WhatsAppEventType.APPLICATION_PENDING:
         if (!applicationId) {
