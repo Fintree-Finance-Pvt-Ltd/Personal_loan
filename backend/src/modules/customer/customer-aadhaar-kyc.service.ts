@@ -12,6 +12,7 @@ import * as path from 'path';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
+import { FaceMatchService } from '../external-api/face-match.service';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { namesLikelyMatch } from '../../common/utils/name-matcher.helper';
@@ -25,6 +26,7 @@ export class CustomerAadhaarKycService {
     private readonly digitapService: DigitapDigilockerService,
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService,
+    private readonly faceMatch: FaceMatchService,
   ) { }
 
   /**
@@ -629,6 +631,9 @@ export class CustomerAadhaarKycService {
         });
       });
       await this.snapshotVerifiedApplicationKyc(customer.id, transactionId, fullName, addr, maskedAadhaar, dateOfBirth, gender);
+      // The Aadhaar PDF (stored above) is the only source of the card-side photo, so the
+      // face match can only run now that both it and the earlier live photo exist.
+      await this.triggerFaceMatch(customer.id);
 
       // Audit log (non-blocking)
       this.auditLogs
@@ -1008,7 +1013,31 @@ export class CustomerAadhaarKycService {
       addr,
     );
 
+    // Runs after storeDigitapDocuments — the Aadhaar PDF it downloads is the card-side
+    // input, so triggering any earlier would only ever record SKIPPED.
+    await this.triggerFaceMatch(customerId);
+
     this.logger.log(`Aadhaar KYC successfully VERIFIED for customer ID: ${customerId}`);
+  }
+
+  /**
+   * Kicks off the advisory Digitap FaceMatch (live photo vs DigiLocker Aadhaar photo) for
+   * the customer's current application. Deliberately fire-and-forget: face match never
+   * gates the journey, so neither a provider outage nor a missing document may turn a
+   * successful Aadhaar verification into a failure.
+   */
+  private async triggerFaceMatch(customerId: bigint): Promise<void> {
+    try {
+      const application = await this.prisma.plApplication.findFirst({
+        where: { customerId },
+        orderBy: { id: 'desc' },
+        select: { id: true },
+      });
+      if (!application) return;
+      this.faceMatch.runInBackground(application.id);
+    } catch (error: any) {
+      this.logger.error(`Unable to trigger face match for customer ${customerId}: ${error?.message}`);
+    }
   }
 
   private async snapshotVerifiedApplicationKyc(customerId: bigint, providerReference: string, verifiedName: string | null, address: Record<string, any>, maskedAadhaar: string | null = null, dateOfBirth: Date | null = null, gender: CustomerGender | null = null) {

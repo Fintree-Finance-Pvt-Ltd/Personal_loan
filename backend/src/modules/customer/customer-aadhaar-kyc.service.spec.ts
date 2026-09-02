@@ -5,11 +5,13 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { FaceMatchService } from '../external-api/face-match.service';
 
 describe('CustomerAadhaarKycService', () => {
   let service: CustomerAadhaarKycService;
   let prisma: any;
   let digitapService: any;
+  let faceMatchService: any;
 
   const mockCustomer = {
     id: BigInt(1),
@@ -44,11 +46,17 @@ describe('CustomerAadhaarKycService', () => {
       getDigitapDigilockerDetails: jest.fn(),
     };
 
+    faceMatchService = {
+      runInBackground: jest.fn(),
+      runForApplication: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CustomerAadhaarKycService,
         { provide: PrismaService, useValue: prisma },
         { provide: DigitapDigilockerService, useValue: digitapService },
+        { provide: FaceMatchService, useValue: faceMatchService },
         {
           provide: AuditLogsService,
           useValue: { record: jest.fn().mockResolvedValue(undefined), logEvent: jest.fn() },

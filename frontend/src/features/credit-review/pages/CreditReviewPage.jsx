@@ -17,6 +17,7 @@ import {
   Maximize2,
   Phone,
   RefreshCw,
+  ScanFace,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -62,6 +63,14 @@ function formatDateOnly(value) {
   } catch {
     return String(value);
   }
+}
+
+// Face-match flags are tri-state: the provider may omit them entirely, so null/undefined
+// has to read as "unknown" rather than collapsing into "No".
+function formatBoolFlag(value) {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  return '-';
 }
 
 function formatLabel(value) {
@@ -129,6 +138,10 @@ export default function CreditReviewPage() {
   // Image Zoom Modal
   const [zoomedImage, setZoomedImage] = useState(null);
 
+  // Digitap FaceMatch re-run (live selfie vs DigiLocker Aadhaar photo)
+  const [faceMatchRunning, setFaceMatchRunning] = useState(false);
+  const [faceMatchError, setFaceMatchError] = useState('');
+
   const loadPendingApplications = () => {
     setLoading(true);
     setError('');
@@ -165,6 +178,21 @@ export default function CreditReviewPage() {
     setSelectedApplicationId(null);
     setDetails(null);
     setDetailsError('');
+    setFaceMatchError('');
+  };
+
+  const handleRunFaceMatch = async () => {
+    if (!selectedApplicationId) return;
+    setFaceMatchRunning(true);
+    setFaceMatchError('');
+    try {
+      const faceMatch = await creditReviewApi.runFaceMatch(selectedApplicationId);
+      setDetails((prev) => (prev ? { ...prev, faceMatch } : prev));
+    } catch (err) {
+      setFaceMatchError(apiError(err, 'Unable to run the face match right now.'));
+    } finally {
+      setFaceMatchRunning(false);
+    }
   };
 
   const handleApproveConfirm = async () => {
@@ -798,6 +826,144 @@ export default function CreditReviewPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* SECTION 2b: FACE MATCH — LIVE SELFIE vs AADHAAR PHOTO (advisory) */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-100 text-violet-700">
+                          <ScanFace className="h-3.5 w-3.5" />
+                        </span>
+                        <h4 className="text-sm font-bold text-slate-900">
+                          Face Match — Live Selfie vs Aadhaar Photo
+                        </h4>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Advisory
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRunFaceMatch}
+                        disabled={faceMatchRunning}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${faceMatchRunning ? 'animate-spin' : ''}`} />
+                        {faceMatchRunning ? 'Running...' : details.faceMatch ? 'Re-run' : 'Run Face Match'}
+                      </button>
+                    </div>
+
+                    {faceMatchError && (
+                      <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                        {faceMatchError}
+                      </div>
+                    )}
+
+                    {details.faceMatch ? (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div
+                          className={`rounded-xl border p-3.5 ${
+                            details.faceMatch.status === 'MATCHED'
+                              ? 'border-emerald-200 bg-emerald-50'
+                              : details.faceMatch.status === 'NOT_MATCHED'
+                                ? 'border-rose-200 bg-rose-50'
+                                : 'border-amber-200 bg-amber-50'
+                          }`}
+                        >
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            Result
+                          </span>
+                          <div className="mt-1 flex items-center gap-1.5">
+                            {details.faceMatch.status === 'MATCHED' ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            ) : details.faceMatch.status === 'NOT_MATCHED' ? (
+                              <XCircle className="h-4 w-4 text-rose-600" />
+                            ) : (
+                              <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            )}
+                            <span className="text-sm font-bold text-slate-900">
+                              {formatLabel(details.faceMatch.status)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {details.faceMatch.matchedAt
+                              ? `Checked ${formatDate(details.faceMatch.matchedAt)}`
+                              : formatDate(details.faceMatch.updatedAt)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            Match Confidence
+                          </span>
+                          {details.faceMatch.sameFaceConfidence !== null &&
+                          details.faceMatch.sameFaceConfidence !== undefined ? (
+                            <>
+                              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                                {(details.faceMatch.sameFaceConfidence * 100).toFixed(1)}%
+                              </div>
+                              <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    details.faceMatch.sameFaceConfidence >= 0.5
+                                      ? 'bg-emerald-500'
+                                      : 'bg-rose-500'
+                                  }`}
+                                  style={{
+                                    width: `${Math.min(100, Math.max(0, details.faceMatch.sameFaceConfidence * 100))}%`,
+                                  }}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <p className="mt-1 text-sm font-semibold text-slate-400">Not available</p>
+                          )}
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            Image Quality
+                          </span>
+                          <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
+                            <li className="flex items-center justify-between gap-2">
+                              <span>Face found in selfie</span>
+                              <span className="font-semibold text-slate-800">
+                                {formatBoolFlag(details.faceMatch.personImageFaceDetected)}
+                              </span>
+                            </li>
+                            <li className="flex items-center justify-between gap-2">
+                              <span>Face found in Aadhaar</span>
+                              <span className="font-semibold text-slate-800">
+                                {formatBoolFlag(details.faceMatch.cardImageFaceDetected)}
+                              </span>
+                            </li>
+                            <li className="flex items-center justify-between gap-2">
+                              <span>Selfie blurry</span>
+                              <span className="font-semibold text-slate-800">
+                                {formatBoolFlag(details.faceMatch.personImageBlurry)}
+                              </span>
+                            </li>
+                            <li className="flex items-center justify-between gap-2">
+                              <span>Aadhaar image blurry</span>
+                              <span className="font-semibold text-slate-800">
+                                {formatBoolFlag(details.faceMatch.cardImageBlurry)}
+                              </span>
+                            </li>
+                          </ul>
+                        </div>
+
+                        {details.faceMatch.failureReason && (
+                          <div className="sm:col-span-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            {details.faceMatch.failureReason}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center text-xs text-slate-400">
+                        No face match has been recorded for this application yet. It runs automatically
+                        once Aadhaar KYC is verified and a live selfie is on file.
+                      </div>
+                    )}
                   </div>
 
                   {/* SECTION 3: PERSONAL DEMOGRAPHICS & CONTACTS */}
