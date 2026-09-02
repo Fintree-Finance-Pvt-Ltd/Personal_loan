@@ -12,20 +12,35 @@ export class ApplicationsService {
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 20));
     const search = query.search?.trim();
 
-    const where: Prisma.PlApplicationWhereInput = {
-      ...(query.status ? { status: query.status as any } : {}),
-      ...(search
-        ? {
-          OR: [
-            { applicationNumber: { contains: search } },
-            { platformLan: { contains: search } },
-            { customer: { fullName: { contains: search } } },
-            { customer: { mobileNumber: { contains: search } } },
-            { customer: { customerCode: { contains: search } } },
-          ],
-        }
-        : {}),
-    };
+    // Combined via AND (each as its own OR clause), not spread as sibling `OR` keys —
+    // a second `OR` on the same object literal would silently clobber the first when
+    // both a status filter and a search term are active at once.
+    const conditions: Prisma.PlApplicationWhereInput[] = [];
+    if (query.status) {
+      // The status filter now covers the same two sources the list's displayed status
+      // does (see below): the application's own status, OR — once a loan exists — the
+      // loan's (richer, further-progressing) status. Values like DISBURSED only ever
+      // exist on PlLoan, never on PlApplication, so without the second branch selecting
+      // "Disbursed" in the filter would always return zero results.
+      conditions.push({
+        OR: [
+          { status: query.status as any },
+          { loans: { some: { status: query.status as any } } },
+        ],
+      });
+    }
+    if (search) {
+      conditions.push({
+        OR: [
+          { applicationNumber: { contains: search } },
+          { platformLan: { contains: search } },
+          { customer: { fullName: { contains: search } } },
+          { customer: { mobileNumber: { contains: search } } },
+          { customer: { customerCode: { contains: search } } },
+        ],
+      });
+    }
+    const where: Prisma.PlApplicationWhereInput = conditions.length ? { AND: conditions } : {};
 
     // customer is NOT included via a relation `include` here — some historical rows'
     // customerId points at a Customer that no longer exists (FK cascade is configured
@@ -57,16 +72,34 @@ export class ApplicationsService {
       : [];
     const customerById = new Map(customers.map((c) => [c.id.toString(), c]));
 
+    // PlApplication.status intentionally freezes at LENDER_APPROVED once a lender
+    // decision lands — everything after that (mandate, e-sign, disbursal, repayment)
+    // is deliberately tracked on PlLoan instead (see the comment in
+    // LoanService.selectPreApprovalOffer). That's correct for the business logic that
+    // depends on it staying stable, but it meant this admin list showed "Lender
+    // Approved" forever after disbursal, since it only ever read PlApplication.status.
+    // PlLoanStatus is the richer, further-progressing enum once a loan exists.
+    const applicationIds = applications.map((a) => a.id);
+    const loans = applicationIds.length
+      ? await this.prisma.plLoan.findMany({
+        where: { applicationId: { in: applicationIds } },
+        select: { applicationId: true, status: true },
+      })
+      : [];
+    const loanStatusByApplicationId = new Map(loans.map((l) => [l.applicationId.toString(), l.status]));
+
     return {
       total,
       page,
       pageSize,
       applications: applications.map((application) => {
         const customer = customerById.get(application.customerId.toString());
+        const loanStatus = loanStatusByApplicationId.get(application.id.toString());
         return {
           applicationId: application.id.toString(),
           applicationNumber: application.applicationNumber,
-          status: application.status,
+          status: loanStatus || application.status,
+          applicationStatus: application.status,
           customerCode: customer?.customerCode ?? null,
           customerName: customer?.fullName ?? '(customer record missing)',
           customerMobile: customer?.mobileNumber ?? null,

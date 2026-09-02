@@ -10,7 +10,13 @@ describe('AdminLoanServicingController', () => {
     const cronService: any = {
       retryDebit: jest.fn().mockResolvedValue({ success: true, status: 'IN_PROCESS' }),
     };
-    const controller = new AdminLoanServicingController(loanService, cronService);
+    const autocollectService: any = {
+      getDebitRequests: jest.fn(),
+    };
+    const prisma: any = {
+      easebuzzDebitRequest: { count: jest.fn(), findMany: jest.fn() },
+    };
+    const controller = new AdminLoanServicingController(loanService, cronService, autocollectService, prisma);
     return { controller, loanService, cronService };
   };
 

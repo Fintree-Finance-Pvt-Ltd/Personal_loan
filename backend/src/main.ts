@@ -44,7 +44,19 @@ async function bootstrap(): Promise<void> {
   // signature (?exp=&sig=), issued only by our own API responses when a document is
   // legitimately served to its owner (or authorized staff). A bare /uploads/... link
   // with no valid signature is now rejected outright, not served.
-  app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
+  //
+  // Mounted under the API prefix (/api/uploads), not bare /uploads — production's
+  // reverse proxy only forwards /api/* to this backend (bare /uploads/... falls
+  // through to the frontend's static hosting, which has no matching route for it and
+  // sends the browser to the SPA's login redirect instead of the file — the exact
+  // "clicking View navigates to login" symptom this fixes). This only changes the
+  // URL clients request; files still live in the same on-disk uploads/ folder, and
+  // relativePath is still stored in the DB without this prefix (see
+  // document-url-signer.helper.ts, which adds it only when signing a URL for a
+  // response, never in what's persisted).
+  const apiPrefix = config.getOrThrow<string>('API_PREFIX');
+  const uploadsMountPath = `/${apiPrefix}/uploads`;
+  app.use(uploadsMountPath, (req: Request, res: Response, next: NextFunction) => {
     const [pathname] = req.originalUrl.split('?');
     if (!verifyDocumentUrlSignature(pathname, req.query.exp, req.query.sig)) {
       res.status(403).json({ success: false, message: 'Missing or invalid document access signature.' });
@@ -52,8 +64,8 @@ async function bootstrap(): Promise<void> {
     }
     next();
   });
-  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
-  app.setGlobalPrefix(config.getOrThrow<string>('API_PREFIX'));
+  app.use(uploadsMountPath, express.static(join(process.cwd(), 'uploads')));
+  app.setGlobalPrefix(apiPrefix);
   app.enableCors({
     origin: true,
     credentials: true,
