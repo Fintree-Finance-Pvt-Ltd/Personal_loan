@@ -148,6 +148,7 @@ export class ApplicationsService {
       addresses,
       bankVerification,
       liveness,
+      faceMatch,
     ] = await Promise.all([
       this.prisma.customer.findUnique({ where: { id: application.customerId } }),
       this.prisma.plCustomerDocument.findMany({
@@ -200,6 +201,9 @@ export class ApplicationsService {
         orderBy: { id: 'desc' },
       }),
       this.prisma.applicationLiveness.findUnique({
+        where: { applicationId: application.id },
+      }),
+      this.prisma.applicationFaceMatch.findUnique({
         where: { applicationId: application.id },
       }),
     ]);
@@ -435,6 +439,24 @@ export class ApplicationsService {
               country: 'India',
             }
           : null,
+      // Digitap FaceMatch: live photo vs the photo on the DigiLocker Aadhaar. Advisory —
+      // never gates the journey, recorded here for the reviewer to weigh.
+      faceMatch: faceMatch
+        ? {
+            status: faceMatch.status,
+            provider: faceMatch.provider,
+            isSameFace: faceMatch.isSameFace,
+            sameFaceConfidence: faceMatch.sameFaceConfidence ? Number(faceMatch.sameFaceConfidence) : null,
+            personImageBlurry: faceMatch.personImageBlurry,
+            cardImageBlurry: faceMatch.cardImageBlurry,
+            personImageFaceDetected: faceMatch.personImageFaceDetected,
+            cardImageFaceDetected: faceMatch.cardImageFaceDetected,
+            failureReason: faceMatch.failureReason,
+            providerRequestId: faceMatch.providerRequestId,
+            matchedAt: faceMatch.matchedAt,
+            updatedAt: faceMatch.updatedAt,
+          }
+        : null,
       addresses: addresses.map((addr) => ({
         id: addr.id,
         addressType: addr.addressType,

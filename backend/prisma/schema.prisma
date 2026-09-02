@@ -1300,6 +1300,7 @@ model PlApplication {
   kycSnapshot               ApplicationKycSnapshot?
   addresses                 ApplicationAddress[]
   liveness                  ApplicationLiveness?
+  faceMatch                 ApplicationFaceMatch?
   stageConsents             ApplicationStageConsent[]
   documents                 PlCustomerDocument[]
   paymentLinks              PlPaymentLink[]
@@ -1553,6 +1554,55 @@ model ApplicationLiveness {
   photoDocument PlCustomerDocument? @relation(fields: [photoDocumentId], references: [id], onDelete: Restrict)
 
   @@map("application_liveness")
+}
+
+enum ApplicationFaceMatchStatus {
+  MATCHED
+  NOT_MATCHED
+  SKIPPED
+  ERROR
+}
+
+// Digitap FaceMatch (/fmfl/v4/face-match) result comparing the customer's captured
+// live photo against the photo on their DigiLocker Aadhaar. Advisory only — it never
+// gates the customer journey; it is recorded for the credit reviewer to judge. Runs
+// automatically once Aadhaar KYC verifies (both images only exist from that point on),
+// and can be re-run on demand from the admin application view.
+model ApplicationFaceMatch {
+  id            String @id @default(cuid())
+  applicationId BigInt @unique @db.UnsignedBigInt
+
+  provider          String  @default("DIGITAP") @db.VarChar(50)
+  providerRequestId String? @map("provider_request_id") @db.VarChar(150)
+  clientRefNum      String? @map("client_ref_num") @db.VarChar(64)
+
+  status ApplicationFaceMatchStatus
+
+  isSameFace         Boolean? @map("is_same_face")
+  // Digitap returns same_face_confidence as a 0..1 float with long precision.
+  sameFaceConfidence Decimal? @map("same_face_confidence") @db.Decimal(9, 8)
+
+  personImageBlurry        Boolean? @map("person_image_blurry")
+  cardImageBlurry          Boolean? @map("card_image_blurry")
+  personImageFaceDetected  Boolean? @map("person_image_face_detected")
+  cardImageFaceDetected    Boolean? @map("card_image_face_detected")
+
+  // Which stored documents were fed into the comparison, so a reviewer can trace the
+  // result back to the exact selfie / Aadhaar file that produced it.
+  livePhotoDocumentId BigInt? @map("live_photo_document_id") @db.UnsignedBigInt
+  aadhaarDocumentId   BigInt? @map("aadhaar_document_id") @db.UnsignedBigInt
+
+  rawResponse   String? @map("raw_response") @db.LongText
+  failureReason String? @map("failure_reason") @db.Text
+
+  matchedAt DateTime? @map("matched_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  application PlApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@index([status], map: "idx_app_face_match_status")
+  @@map("application_face_matches")
 }
 
 model ApplicationStageConsent {
