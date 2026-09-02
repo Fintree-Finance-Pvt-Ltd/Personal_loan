@@ -5,12 +5,24 @@
  *
  * Uses the exact files and the exact request shape FaceMatchService builds in production.
  */
+require('dotenv').config();
 const FormData = require('form-data');
 const axios = require('axios');
 const fs = require('fs');
 
-const URL = 'https://svcdemo.digitap.work/fmfl/v4/face-match';
-const AUTH = `Basic ${Buffer.from('26709580:sQvpGVTGJhQge558atn3hzOLaTdMC86p').toString('base64')}`;
+// Read from .env rather than hardcoding — this file is tracked in git.
+const URL =
+  process.env.FACE_MATCH_API_URL ||
+  (process.env.FACE_LIVENESS_API_URL || '').replace(/face-liveness\/?$/, 'face-match');
+const CLIENT_ID = process.env.FACE_MATCH_CLIENT_ID || process.env.FACE_LIVENESS_CLIENT_ID;
+const CLIENT_SECRET = process.env.FACE_MATCH_CLIENT_SECRET || process.env.FACE_LIVENESS_CLIENT_SECRET;
+
+if (!URL || !CLIENT_ID || !CLIENT_SECRET) {
+  console.error('Set FACE_MATCH_API_URL (or FACE_LIVENESS_API_URL) plus the client id/secret in .env');
+  process.exit(1);
+}
+
+const AUTH = `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`;
 
 const PAIRS = [
   {
