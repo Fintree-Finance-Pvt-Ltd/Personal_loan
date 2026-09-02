@@ -5,7 +5,9 @@ import { apiError } from '../../../lib/api';
 import { Alert, Card, Input, PageHeader, Select, Spinner } from '../../../components/ui';
 import { StageStatusBadge } from '../components/StageStatusBadge';
 
-const STATUS_OPTIONS = [
+// PlApplicationStatus — where LENDER_APPROVED is as far as the application record
+// itself ever goes before a loan exists (or the loan is fully repaid).
+const APPLICATION_STATUS_OPTIONS = [
   'DRAFT',
   'SUBMITTED',
   'PLATFORM_REJECTED',
@@ -17,6 +19,27 @@ const STATUS_OPTIONS = [
   'PENDING_CREDIT_REVIEW',
   'LENDER_APPROVED',
   'LENDER_REJECTED',
+  'LOAN_CLOSED',
+];
+
+// PlLoanStatus, once a loan exists — everything past LENDER_APPROVED (mandate,
+// e-sign, disbursal, repayment) only ever lives here, never on the application
+// itself. LENDER_APPROVED is intentionally omitted here since it's already covered
+// above and the backend filter matches it against either source.
+const LOAN_STATUS_OPTIONS = [
+  'OFFER_ACCEPTED',
+  'KYC_IN_PROGRESS',
+  'ADDRESS_CONFIRMED',
+  'BANK_VERIFIED',
+  'KFS_ACCEPTED',
+  'MANDATE_COMPLETED',
+  'ESIGN_COMPLETED',
+  'READY_FOR_DISBURSAL',
+  'DISBURSAL_PROCESSING',
+  'DISBURSED',
+  'FULLY_PAID',
+  'FAILED',
+  'CANCELLED',
 ];
 
 function formatCurrency(amount) {
@@ -93,11 +116,20 @@ export default function ApplicationsPage() {
             }}
           >
             <option value="">All statuses</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
+            <optgroup label="Application stage">
+              {APPLICATION_STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Loan stage (post-approval)">
+              {LOAN_STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </optgroup>
           </Select>
         </div>
         <button
