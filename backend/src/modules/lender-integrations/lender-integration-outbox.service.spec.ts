@@ -61,16 +61,19 @@ describe('LenderIntegrationOutboxService', () => {
 
       expect(events).toHaveLength(3);
       expect(prisma.lenderIntegrationOutbox.upsert.mock.calls.map((c: any) => c[0].where.idempotencyKey)).toEqual([
-        'APP-001:LENDER_SUBMIT_CONSENT:DATA_SHARING:V1',
+        // Data sharing keeps the original three-segment key so events queued before the
+        // fan-out shipped still resolve to the same row.
+        'APP-001:LENDER_SUBMIT_CONSENT:V1',
         'APP-001:LENDER_SUBMIT_CONSENT:AADHAAR_KYC:V1',
         'APP-001:LENDER_SUBMIT_CONSENT:LIVE_PHOTO_CAPTURE:V1',
       ]);
       expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING', 'AADHAAR_KYC', 'LIVE_PHOTO_CAPTURE']);
     });
 
-    // Default posture until the lender widens their consentType validation: the newer
-    // consents are still recorded as evidence, they are simply not forwarded yet.
-    it('forwards only the types the lender accepts while the flag is unset', async () => {
+    // The lender rejects the per-type Idempotency-Key with INVALID_IDEMPOTENCY_KEY, so the
+    // flag has to gate the whole fan-out — not merely the newer consent types. With it off,
+    // the wire behaviour must be byte-identical to what shipped before this work.
+    it('falls back to a single data-sharing submission on the original key while the flag is unset', async () => {
       delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
       const prisma: any = prismaWith([
         consentRow('DATA_SHARING'),
@@ -82,7 +85,21 @@ describe('LenderIntegrationOutboxService', () => {
 
       const events = await service.enqueueConsentSubmissions(1n);
 
-      expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING', 'BUREAU_ENQUIRY']);
+      expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING']);
+      expect(prisma.lenderIntegrationOutbox.upsert.mock.calls.map((c: any) => c[0].where.idempotencyKey)).toEqual([
+        'APP-001:LENDER_SUBMIT_CONSENT:V1',
+      ]);
+    });
+
+    // Every key the lender has ever accepted has exactly three colon-separated segments.
+    it('keeps the data-sharing key to the three segments the lender validates', async () => {
+      delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+      const prisma: any = prismaWith([consentRow('DATA_SHARING')]);
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      const events = await service.enqueueConsentSubmissions(1n);
+
+      expect(events[0].idempotencyKey.split(':')).toHaveLength(3);
     });
 
     // The consent endpoint is addressed by partnerApplicationId, so there is nothing to
