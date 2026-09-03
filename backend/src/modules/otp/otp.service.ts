@@ -233,6 +233,9 @@ export class OtpService {
           throw new UnauthorizedException('This customer account is blocked.');
         }
 
+        const isNewCustomer = !existingCustomer;
+        const cleanIp = input.ipAddress ? String(input.ipAddress).slice(0, 64) : null;
+
         const verifiedCustomer = await transaction.customer.upsert({
           where: {
             mobileNumber,
@@ -247,12 +250,23 @@ export class OtpService {
             customerCode: this.generateCustomerCode(),
             countryCode: '+91',
             mobileNumber,
+            customerCreationIp: cleanIp,
             mobileVerified: true,
             mobileVerifiedAt: now,
             onboardingStatus: CustomerOnboardingStatus.MOBILE_VERIFIED,
             eligibilityStatus: CustomerEligibilityStatus.NOT_CHECKED,
             lastLoginAt: now,
             lastActivityAt: now,
+          },
+        });
+
+        await transaction.customerLoginHistory.create({
+          data: {
+            customerId: verifiedCustomer.id,
+            mobileNumber,
+            ipAddress: cleanIp,
+            loginType: isNewCustomer ? 'FIRST_LOGIN' : 'LOGIN',
+            createdAt: now,
           },
         });
 

@@ -117,4 +117,63 @@ describe('PolicyEvaluationService', () => {
     expect(result.finalOutcome).toBe(PolicyDecisionOutcome.PASS);
     expect(result.ruleResults[0].outcome).toBe(PolicyDecisionOutcome.PASS);
   });
+
+  describe('SAME_IP_CUSTOMER_COUNT rule evaluation', () => {
+    it('evaluates LESS_THAN_OR_EQUAL: allows <= expected and fails when exceeded', () => {
+      const rules = [
+        createRule({
+          ruleCode: 'SAME_IP_CUSTOMER_COUNT',
+          ruleName: 'Same IP Customer Count',
+          inputKey: 'sameIpCustomerCount',
+          valueType: 'INTEGER',
+          operator: 'LESS_THAN_OR_EQUAL',
+          expectedValue: 2,
+          customerMessage: 'You are not eligible for this loan offer.',
+          reasonCode: 'SAME_IP_LIMIT_EXCEEDED',
+        }),
+      ];
+
+      // 1st customer -> PASS
+      expect(service.evaluate(rules, { sameIpCustomerCount: 1 }).finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+
+      // 2nd customer -> PASS
+      expect(service.evaluate(rules, { sameIpCustomerCount: 2 }).finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+
+      // 3rd customer -> FAIL with customer message
+      const failResult = service.evaluate(rules, { sameIpCustomerCount: 3 });
+      expect(failResult.finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
+      expect(failResult.ruleResults[0].message).toBe('You are not eligible for this loan offer.');
+      expect(failResult.ruleResults[0].reasonCode).toBe('SAME_IP_LIMIT_EXCEEDED');
+    });
+
+    it('evaluates LESS_THAN: allows strictly less than expected', () => {
+      const rules = [
+        createRule({
+          ruleCode: 'SAME_IP_CUSTOMER_COUNT',
+          inputKey: 'sameIpCustomerCount',
+          valueType: 'INTEGER',
+          operator: 'LESS_THAN',
+          expectedValue: 3,
+        }),
+      ];
+
+      expect(service.evaluate(rules, { sameIpCustomerCount: 2 }).finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+      expect(service.evaluate(rules, { sameIpCustomerCount: 3 }).finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
+    });
+
+    it('evaluates EQUALS: passes only when exactly equal to expected', () => {
+      const rules = [
+        createRule({
+          ruleCode: 'SAME_IP_CUSTOMER_COUNT',
+          inputKey: 'sameIpCustomerCount',
+          valueType: 'INTEGER',
+          operator: 'EQUALS',
+          expectedValue: 1,
+        }),
+      ];
+
+      expect(service.evaluate(rules, { sameIpCustomerCount: 1 }).finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+      expect(service.evaluate(rules, { sameIpCustomerCount: 2 }).finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
+    });
+  });
 });

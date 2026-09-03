@@ -686,6 +686,8 @@ model Customer {
   digilockerConsentAt   DateTime? @map("digilocker_consent_at") @db.DateTime(0)
   digilockerRawResponse String?   @map("digilocker_raw_response") @db.LongText
 
+  customerCreationIp String?   @map("customer_creation_ip") @db.VarChar(64)
+
   lastLoginAt    DateTime? @map("last_login_at") @db.DateTime(0)
   lastActivityAt DateTime? @map("last_activity_at") @db.DateTime(0)
 
@@ -697,17 +699,34 @@ model Customer {
   applications              PlApplication[]
   loans                     PlLoan[]
   sessions                  CustomerSession[]
+  loginHistory              CustomerLoginHistory[]
   lenderDataSharingConsents LenderDataSharingConsent[]
   partnerApplications       PartnerApplication[]
   ivrCallLogs               IvrCallLog[]
   whatsappMessageLogs       PlWhatsappMessageLog[]
 
   @@index([email], map: "idx_customers_email")
+  @@index([customerCreationIp], map: "idx_customers_creation_ip")
   @@index([accountStatus], map: "idx_customers_account_status")
   @@index([onboardingStatus], map: "idx_customers_onboarding_status")
   @@index([eligibilityStatus], map: "idx_customers_eligibility_status")
   @@index([createdAt], map: "idx_customers_created_at")
   @@map("customers")
+}
+
+model CustomerLoginHistory {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  customerId   BigInt   @map("customer_id") @db.UnsignedBigInt
+  mobileNumber String   @map("mobile_number") @db.VarChar(15)
+  ipAddress    String?  @map("ip_address") @db.VarChar(64)
+  loginType    String   @map("login_type") @db.VarChar(30)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([customerId], map: "idx_login_history_customer_id")
+  @@index([ipAddress], map: "idx_login_history_ip_address")
+  @@map("customer_login_history")
 }
 
 model CustomerSession {
