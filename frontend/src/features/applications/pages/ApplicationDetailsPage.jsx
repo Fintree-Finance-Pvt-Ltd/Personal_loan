@@ -841,7 +841,16 @@ export default function ApplicationDetailsPage() {
               stages.map((stage) => (
                 <tr key={stage.eventId} className="hover:bg-gray-50 align-top">
                   <td className="px-6 py-4">
-                    <div className="font-medium">{formatLabel(stage.integrationStage)}</div>
+                    <div className="font-medium">
+                      {formatLabel(stage.integrationStage)}
+                      {/* Consent is submitted once per consent type, so the stage name alone
+                          would repeat across several otherwise identical rows. */}
+                      {stage.consentType && (
+                        <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold text-gray-600">
+                          {formatLabel(stage.consentType)}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-500">{formatLabel(stage.eventType)}</div>
                   </td>
                   <td className="px-6 py-4">V{stage.payloadVersion}</td>
