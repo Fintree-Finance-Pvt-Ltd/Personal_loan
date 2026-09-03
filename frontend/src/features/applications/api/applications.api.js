@@ -56,15 +56,15 @@ export const applicationsApi = {
       lan,
       installmentId,
     });
-    return res.data;
+    return res.data?.data ?? res.data;
   },
   sendWhatsAppTemplate: async (payload) => {
     const res = await api.post('/admin/whatsapp/send-template', payload);
-    return res.data;
+    return res.data?.data ?? res.data;
   },
   getWhatsAppLogs: async (params = {}) => {
     const res = await api.get('/admin/whatsapp/logs', { params });
-    return res.data;
+    return res.data?.data ?? res.data;
   },
 };
 

@@ -82,12 +82,19 @@ export default function ApplicationDetailsPage() {
       .finally(() => setLoadingIvr(false));
   };
 
-  const loadWhatsappHistory = () => {
+  const loadWhatsappHistory = (appDetails = details) => {
     if (!applicationId) return;
     setLoadingWhatsapp(true);
     applicationsApi
-      .getWhatsAppLogs({ applicationId })
-      .then((data) => setWhatsappLogs(Array.isArray(data?.logs) ? data.logs : Array.isArray(data) ? data : []))
+      .getWhatsAppLogs({
+        applicationId,
+        lan: appDetails?.application?.platformLan || appDetails?.loan?.lan || undefined,
+        customerId: appDetails?.customer?.id || undefined,
+      })
+      .then((res) => {
+        const rawList = res?.data ?? res?.logs ?? res ?? [];
+        setWhatsappLogs(Array.isArray(rawList) ? rawList : []);
+      })
       .catch((err) => console.error('Failed to load WhatsApp history:', err))
       .finally(() => setLoadingWhatsapp(false));
   };
@@ -97,11 +104,13 @@ export default function ApplicationDetailsPage() {
     setError('');
     applicationsApi
       .getDetails(applicationId)
-      .then(setDetails)
+      .then((res) => {
+        setDetails(res);
+        loadWhatsappHistory(res);
+      })
       .catch((err) => setError(apiError(err, 'Unable to load application details.')))
       .finally(() => setLoading(false));
     loadIvrHistory();
-    loadWhatsappHistory();
   };
 
   useEffect(() => {
@@ -663,67 +672,139 @@ export default function ApplicationDetailsPage() {
 
         {/* WhatsApp Logs Table */}
         <div className="mt-4 overflow-x-auto">
-          <div className="text-xs font-semibold uppercase text-gray-500 mb-2">WhatsApp Message Log History</div>
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-500 border-b">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold uppercase text-gray-500">
+              WhatsApp Message Log History ({whatsappLogs.length})
+            </div>
+            {loadingWhatsapp && (
+              <span className="text-xs text-brand-600 animate-pulse font-medium">
+                Fetching latest delivery statuses…
+              </span>
+            )}
+          </div>
+          <table className="w-full text-left text-xs border rounded-lg overflow-hidden">
+            <thead className="bg-gray-50 text-gray-600 border-b font-semibold">
               <tr>
-                <th className="px-4 py-2.5">Date & Time</th>
-                <th className="px-4 py-2.5">Template / Event</th>
-                <th className="px-4 py-2.5">Recipient Mobile</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5">Provider Message ID</th>
-                <th className="px-4 py-2.5">Source / Trigger</th>
-                <th className="px-4 py-2.5">Error / Details</th>
+                <th className="px-4 py-3">Date & Time</th>
+                <th className="px-4 py-3">Template / Event</th>
+                <th className="px-4 py-3">Recipient</th>
+                <th className="px-4 py-3">Delivery Status</th>
+                <th className="px-4 py-3">Message Content / Parameters</th>
+                <th className="px-4 py-3">Provider Message ID</th>
+                <th className="px-4 py-3">Trigger Source</th>
+                <th className="px-4 py-3">Error / Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 bg-white">
               {whatsappLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-4 py-6 text-center text-gray-400">
+                  <td colSpan="8" className="px-4 py-8 text-center text-gray-400">
                     {loadingWhatsapp ? 'Loading WhatsApp logs…' : 'No WhatsApp messages sent yet for this application.'}
                   </td>
                 </tr>
               ) : (
-                whatsappLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50/80 align-top">
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-600 font-medium">
-                      {formatDate(log.createdAt || log.sentAt)}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-gray-800">
-                      <div>{formatLabel(log.eventType || log.templateName)}</div>
-                      <div className="text-[10px] text-gray-500 font-mono">{log.templateName}</div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 font-mono">
-                      {log.recipientMobile || log.to || '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                          log.status === 'DELIVERED' || log.status === 'READ' || log.status === 'ACCEPTED' || log.status === 'SENT'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : log.status === 'FAILED' || log.status === 'ERROR'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-gray-600 max-w-[180px] truncate" title={log.providerMessageId}>
-                      {log.providerMessageId || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {formatLabel(log.triggerSource || 'ADMIN')}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 max-w-xs">
-                      {log.errorMessage ? (
-                        <span className="text-red-600 text-[11px]">{log.errorMessage}</span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                whatsappLogs.map((log) => {
+                  const paramsArray = Array.isArray(log.templateParameters)
+                    ? log.templateParameters
+                    : typeof log.templateParameters === 'string'
+                    ? (() => {
+                        try {
+                          const parsed = JSON.parse(log.templateParameters);
+                          return Array.isArray(parsed) ? parsed : [log.templateParameters];
+                        } catch {
+                          return [log.templateParameters];
+                        }
+                      })()
+                    : [];
+
+                  return (
+                    <tr key={log.id} className="hover:bg-gray-50/80 align-top transition-colors">
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-600 font-medium">
+                        <div>{formatDate(log.createdAt || log.sentAt)}</div>
+                        {log.deliveredAt && (
+                          <div className="text-[10px] text-emerald-600 font-medium">
+                            Delivered: {formatDate(log.deliveredAt)}
+                          </div>
+                        )}
+                        {log.readAt && (
+                          <div className="text-[10px] text-blue-600 font-medium">
+                            Read: {formatDate(log.readAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-gray-800">
+                        <div className="text-gray-900">{formatLabel(log.eventType || log.templateName)}</div>
+                        <div className="text-[10px] text-gray-500 font-mono mt-0.5">{log.templateName}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 font-mono font-medium">
+                        {log.recipientMobile || log.to || '-'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {log.status === 'READ' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            <span>✓✓</span> Read
+                          </span>
+                        ) : log.status === 'DELIVERED' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span>✓✓</span> Delivered
+                          </span>
+                        ) : log.status === 'SENT' || log.status === 'ACCEPTED' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                            <span>✓</span> Sent / Accepted
+                          </span>
+                        ) : log.status === 'FAILED' || log.status === 'ERROR' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
+                            <span>✕</span> Failed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <span>⏳</span> {log.status || 'PENDING'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 max-w-[220px]">
+                        {paramsArray.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {paramsArray.map((p, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-medium border border-gray-200 truncate max-w-[190px]"
+                                title={String(p)}
+                              >
+                                {String(p)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-[11px]">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[11px] text-gray-600 max-w-[160px] truncate" title={log.providerMessageId}>
+                        {log.providerMessageId ? (
+                          <span className="bg-gray-50 px-1.5 py-0.5 rounded border border-gray-200 font-mono text-[10px]">
+                            {log.providerMessageId}
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                          {formatLabel(log.triggerSource || 'ADMIN')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 max-w-xs">
+                        {log.errorMessage ? (
+                          <span className="text-red-600 font-medium text-[11px] block">{log.errorMessage}</span>
+                        ) : log.errorCode ? (
+                          <span className="text-amber-600 font-mono text-[10px] block">Error: {log.errorCode}</span>
+                        ) : (
+                          <span className="text-gray-400 text-[11px]">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

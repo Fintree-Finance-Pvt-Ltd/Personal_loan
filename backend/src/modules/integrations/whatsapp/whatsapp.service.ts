@@ -373,12 +373,21 @@ export class WhatsAppService {
     limit?: number;
   }) {
     const { applicationId, lan, customerId, limit = 50 } = params;
+
+    const orConditions: any[] = [];
+    if (applicationId) orConditions.push({ applicationId: BigInt(applicationId) });
+    if (lan) orConditions.push({ lan: String(lan) });
+    if (customerId) orConditions.push({ customerId: BigInt(customerId) });
+
+    const where =
+      orConditions.length > 1
+        ? { OR: orConditions }
+        : orConditions.length === 1
+        ? orConditions[0]
+        : {};
+
     return this.prisma.plWhatsappMessageLog.findMany({
-      where: {
-        ...(applicationId ? { applicationId: BigInt(applicationId) } : {}),
-        ...(lan ? { lan: String(lan) } : {}),
-        ...(customerId ? { customerId: BigInt(customerId) } : {}),
-      },
+      where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(Number(limit) || 50, 100),
     });
