@@ -544,7 +544,16 @@ if (!platformLan) {
           UPDATE: 'updateStatus',
           DECISION: 'decisionStatus',
         };
-        const field = statusColumn[event.integrationStage];
+        // Only the gating data-sharing consent owns consentStatus. Replaying a
+        // supplementary consent must not knock the column back to PENDING, which
+        // processUpdate() reads as "consent not yet given" and would block the
+        // application — the same reason markStageFailure() leaves it alone.
+        const isGatingConsent =
+          event.integrationStage === 'CONSENT' && (event.consentType ?? 'DATA_SHARING') === 'DATA_SHARING';
+        const field =
+          event.integrationStage === 'CONSENT' && !isGatingConsent
+            ? null
+            : statusColumn[event.integrationStage];
         if (field) {
           await tx.lenderApplicationLink.update({ where: { id: application.lenderApplicationLink.id }, data: { [field]: 'PENDING', lastErrorCode: null, lastErrorMessage: null } });
         }

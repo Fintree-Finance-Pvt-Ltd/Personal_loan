@@ -207,6 +207,20 @@ describe('LenderIntegrationOutboxService', () => {
       expect(written).not.toHaveProperty('decisionStatus');
     });
 
+    // consentStatus gates processUpdate(). Replaying a supplementary consent must not knock
+    // it back to PENDING, or an application whose UPDATE has not run yet gets blocked.
+    it('leaves consentStatus alone when replaying a supplementary consent', async () => {
+      const { prisma, tx } = prismaFor({
+        id: 'EVENT-1', status: 'FAILED', applicationId: 1n, integrationStage: 'CONSENT', consentType: 'BUREAU_ENQUIRY',
+      });
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      await service.replayFailedEvent('EVENT-1');
+
+      expect(tx.lenderIntegrationOutbox.update).toHaveBeenCalled();
+      expect(tx.lenderApplicationLink.update).not.toHaveBeenCalled();
+    });
+
     it('refuses to replay once the lender decision is terminal', async () => {
       const { prisma } = prismaFor(
         { id: 'EVENT-1', status: 'RETRY_PENDING', applicationId: 1n, integrationStage: 'UPDATE' },
