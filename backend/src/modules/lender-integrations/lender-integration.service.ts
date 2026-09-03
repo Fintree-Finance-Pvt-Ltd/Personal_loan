@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { ApplicationConsentType, LenderIntegrationOperationStatus } from '@prisma/client';
 
@@ -55,6 +56,8 @@ import {
 
 @Injectable()
 export class LenderIntegrationService {
+  private readonly logger = new Logger(LenderIntegrationService.name);
+
   constructor(
   private readonly prisma:
     PrismaService,
@@ -649,7 +652,17 @@ async markStageFailure(
   // Every other consent already recorded by this point (live photo, Aadhaar KYC, and any
   // later ones once they land) gets its own submission event now that a
   // partnerApplicationId exists to address them to.
-  await this.outbox.enqueueConsentSubmissions(application.id);
+  //
+  // Best-effort: CREATE has already succeeded at the lender and been committed above.
+  // Throwing here would fail the event and force a retry of a call that has already
+  // landed, to fix nothing — the next recorded consent queues these again anyway.
+  try {
+    await this.outbox.enqueueConsentSubmissions(application.id);
+  } catch (error: any) {
+    this.logger.error(
+      `CREATE completed for ${application.applicationNumber} but queueing consent submissions failed: ${error?.message}`,
+    );
+  }
 
   return true;
 }

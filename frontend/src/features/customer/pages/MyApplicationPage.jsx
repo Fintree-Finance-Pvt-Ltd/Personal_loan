@@ -2081,7 +2081,14 @@ function AadhaarKycStep({
   onCompleted,
   onBack,
 }) {
-  const consentText = (type) => resolveConsentText(customer, type);
+  // Fallback matters: an unresolved consent would otherwise render an empty label next to a
+  // checkbox the customer still has to tick.
+  const consentText = (type) =>
+    resolveConsentText(
+      customer,
+      type,
+      'I consent to DigiLocker-based Aadhaar KYC being initiated using my verified account information, and authorize the retrieval and processing of permitted identity information for loan onboarding, verification and lender submission.',
+    );
   const [consentGiven, setConsentGiven] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

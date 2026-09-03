@@ -39,10 +39,17 @@ describe('LenderIntegrationOutboxService', () => {
       };
     };
 
+    const originalFlag = process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+    afterEach(() => {
+      if (originalFlag === undefined) delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+      else process.env.LENDER_SUBMIT_EXTENDED_CONSENTS = originalFlag;
+    });
+
     // One outbox row per consent type, because the lender's endpoint takes one consent per
     // POST — batching them under a single event would reuse one Idempotency-Key for
     // different bodies.
     it('queues a separate, per-type idempotent event for every recorded consent', async () => {
+      process.env.LENDER_SUBMIT_EXTENDED_CONSENTS = 'true';
       const prisma: any = prismaWith([
         consentRow('DATA_SHARING'),
         consentRow('AADHAAR_KYC'),
@@ -59,6 +66,23 @@ describe('LenderIntegrationOutboxService', () => {
         'APP-001:LENDER_SUBMIT_CONSENT:LIVE_PHOTO_CAPTURE:V1',
       ]);
       expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING', 'AADHAAR_KYC', 'LIVE_PHOTO_CAPTURE']);
+    });
+
+    // Default posture until the lender widens their consentType validation: the newer
+    // consents are still recorded as evidence, they are simply not forwarded yet.
+    it('forwards only the types the lender accepts while the flag is unset', async () => {
+      delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+      const prisma: any = prismaWith([
+        consentRow('DATA_SHARING'),
+        consentRow('AADHAAR_KYC'),
+        consentRow('LIVE_PHOTO_CAPTURE'),
+        consentRow('BUREAU_ENQUIRY'),
+      ]);
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      const events = await service.enqueueConsentSubmissions(1n);
+
+      expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING', 'BUREAU_ENQUIRY']);
     });
 
     // The consent endpoint is addressed by partnerApplicationId, so there is nothing to

@@ -2,6 +2,7 @@ import {
   ALL_CONSENT_TYPES,
   CONSENT_CATALOGUE,
   LENDER_SUBMITTED_CONSENT_TYPES,
+  canSubmitConsentToLender,
   consentTextFor,
   hashConsentText,
   isConsentEvidenceIntact,
@@ -52,6 +53,38 @@ describe('consent catalogue', () => {
     const text = consentTextFor('BUREAU_ENQUIRY', 'Acme Credit');
     expect(isConsentEvidenceIntact({ consentText: text, consentTextHash: hashConsentText(text) })).toBe(true);
     expect(isConsentEvidenceIntact({ consentText: 'tampered', consentTextHash: hashConsentText(text) })).toBe(false);
+  });
+
+  // Recording a consent and forwarding it are separate concerns. The lender validates
+  // consentType against a fixed list, so a type they have not deployed support for yet must
+  // stay stored-but-unsent rather than failing repeatedly against their API.
+  describe('canSubmitConsentToLender', () => {
+    const original = process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+    afterEach(() => {
+      if (original === undefined) delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+      else process.env.LENDER_SUBMIT_EXTENDED_CONSENTS = original;
+    });
+
+    it('always forwards the four types the lender already accepts', () => {
+      delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+      for (const type of ['DATA_SHARING', 'BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'] as const) {
+        expect(canSubmitConsentToLender(type)).toBe(true);
+      }
+    });
+
+    it('holds back the newer types until the lender is ready', () => {
+      delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
+      for (const type of ['LIVE_PHOTO_CAPTURE', 'AADHAAR_KYC', 'ACCOUNT_AGGREGATOR'] as const) {
+        expect(canSubmitConsentToLender(type)).toBe(false);
+      }
+    });
+
+    it('releases the newer types once the flag is set', () => {
+      process.env.LENDER_SUBMIT_EXTENDED_CONSENTS = 'true';
+      for (const type of ['LIVE_PHOTO_CAPTURE', 'AADHAAR_KYC', 'ACCOUNT_AGGREGATOR'] as const) {
+        expect(canSubmitConsentToLender(type)).toBe(true);
+      }
+    });
   });
 
   // These exact strings are what customers agreed to and what is hashed into stored

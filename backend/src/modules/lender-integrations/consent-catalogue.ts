@@ -106,6 +106,33 @@ export const LENDER_SUBMITTED_CONSENT_TYPES = ALL_CONSENT_TYPES.filter(
   (type) => CONSENT_CATALOGUE[type].submitToLender,
 );
 
+/**
+ * The consent types the lender's /consents endpoint accepted before this work. Their
+ * endpoint validates consentType, so forwarding a type it does not know yet would be
+ * rejected — producing failed submissions for consents that are otherwise recorded fine.
+ */
+const CONSENT_TYPES_ACCEPTED_BY_LENDER: ApplicationConsentType[] = [
+  'DATA_SHARING',
+  'BUREAU_ENQUIRY',
+  'LENDER_CREDIT_ASSESSMENT',
+  'LENDER_DECISION_REQUEST',
+];
+
+/**
+ * Whether this consent may be forwarded to the lender yet.
+ *
+ * Recording a consent and forwarding it are separate concerns: every consent is stored as
+ * evidence immediately, but the newer types only go out once the lender has widened their
+ * consentType validation. Set LENDER_SUBMIT_EXTENDED_CONSENTS=true to release them — the
+ * queued-but-unsent consents are picked up on the next submission pass, so nothing is lost
+ * by waiting.
+ */
+export function canSubmitConsentToLender(type: ApplicationConsentType): boolean {
+  if (!CONSENT_CATALOGUE[type]?.submitToLender) return false;
+  if (CONSENT_TYPES_ACCEPTED_BY_LENDER.includes(type)) return true;
+  return String(process.env.LENDER_SUBMIT_EXTENDED_CONSENTS ?? '').toLowerCase() === 'true';
+}
+
 export function consentTextFor(
   type: ApplicationConsentType,
   lenderDisplayName: string,
