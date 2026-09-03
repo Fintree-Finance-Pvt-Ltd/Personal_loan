@@ -9,12 +9,16 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { signDocumentUrl } from '../../common/utils/document-url-signer.helper';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outbox: LenderIntegrationOutboxService,
+  ) {}
 
   async saveCustomerLivePhoto(customerId: bigint, file: any, body: any) {
     if (!file) {
@@ -152,6 +156,20 @@ export class DocumentsService {
         await tx.customer.update({ where: { id: customerId }, data: { lastActivityAt: new Date() } });
         return created;
       });
+
+      // The customer ticked the capture/geolocation consent before the camera would open.
+      // Recorded here rather than at capture time so the evidence is tied to the photo that
+      // was actually kept. Non-fatal — a failure here must not discard an uploaded photo.
+      try {
+        await this.outbox.recordJourneyConsent({
+          applicationId: application.id,
+          consentType: 'LIVE_PHOTO_CAPTURE',
+          ipAddress: body?.ipAddress ?? null,
+          userAgent: body?.userAgent ?? null,
+        });
+      } catch (consentError: any) {
+        this.logger.error(`Unable to record live-photo consent: ${consentError?.message}`);
+      }
 
       this.logger.log(`Live photo document saved successfully for customer ${customer.customerCode}.`);
 

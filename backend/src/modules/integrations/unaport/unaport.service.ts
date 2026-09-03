@@ -14,6 +14,7 @@ import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { decryptPayload, encryptPayload } from '../../../common/utils/bank-security.helper';
 import { UnaportTokenService } from './unaport-token.service';
+import { LenderIntegrationOutboxService } from '../../lender-integrations/lender-integration-outbox.service';
 import {
   UnaportConsentNotificationPayload,
   UnaportDataNotificationPayload,
@@ -31,6 +32,7 @@ export class UnaportService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly tokenService: UnaportTokenService,
+    private readonly outbox: LenderIntegrationOutboxService,
   ) {
     const timeout = Number(
       this.configService.get<string>('UNAPORT_HTTP_TIMEOUT_MS') || '15000',
@@ -580,6 +582,20 @@ export class UnaportService {
         providerResponseEncrypted: encryptedResponse,
       },
     });
+
+    // Approving the AA consent inside the Unaport SDK is a consent point in its own right.
+    // It was previously recorded only as provider state on the AA request, so it could
+    // neither be evidenced as a platform consent nor forwarded to the lender.
+    if (normalizedConsentStatus === 'APPROVED' && request.applicationId) {
+      try {
+        await this.outbox.recordJourneyConsent({
+          applicationId: request.applicationId,
+          consentType: 'ACCOUNT_AGGREGATOR',
+        });
+      } catch (consentError: any) {
+        this.logger.error(`Unable to record Account Aggregator consent: ${consentError?.message}`);
+      }
+    }
 
     this.logger.log({
       event: 'unaport_consent_notification_processed',

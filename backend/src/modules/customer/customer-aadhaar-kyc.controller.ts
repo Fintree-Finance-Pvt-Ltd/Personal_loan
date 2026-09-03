@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { CurrentCustomer } from '../../common/decorators/current-customer.decorator';
 import { CustomerProtected } from '../auth/decorators/customer-protected.decorator';
@@ -22,8 +23,12 @@ export class CustomerAadhaarKycController {
   async initiate(
     @CurrentCustomer() customer: any,
     @Body() body: { consentGiven?: boolean },
+    @Req() req: any,
   ) {
-    return this.kycService.initiate(customer, body);
+    return this.kycService.initiate(customer, body, {
+      ipAddress: req?.ip || null,
+      userAgent: req?.headers?.['user-agent'] || null,
+    });
   }
 
   @CustomerProtected()

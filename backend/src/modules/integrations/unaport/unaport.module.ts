@@ -5,9 +5,11 @@ import { UnaportTokenService } from './unaport-token.service';
 import { UnaportService } from './unaport.service';
 import { UnaportController } from './unaport.controller';
 import { UnaportWebhookController } from './unaport-webhook.controller';
+import { LenderIntegrationModule } from '../../lender-integrations/lender-integration.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  // For LenderIntegrationOutboxService, to record the AA consent as journey evidence.
+  imports: [ConfigModule, PrismaModule, LenderIntegrationModule],
   controllers: [UnaportController, UnaportWebhookController],
   providers: [UnaportTokenService, UnaportService],
   exports: [UnaportTokenService, UnaportService],

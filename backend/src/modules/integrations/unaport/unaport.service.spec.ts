@@ -4,6 +4,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UnaportService } from './unaport.service';
 import { UnaportTokenService } from './unaport-token.service';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
+import { LenderIntegrationOutboxService } from '../../lender-integrations/lender-integration-outbox.service';
 
 describe('UnaportService', () => {
   let service: UnaportService;
@@ -66,6 +67,10 @@ describe('UnaportService', () => {
         {
           provide: UnaportTokenService,
           useValue: tokenService,
+        },
+        {
+          provide: LenderIntegrationOutboxService,
+          useValue: { recordJourneyConsent: jest.fn().mockResolvedValue(null) },
         },
       ],
     }).compile();

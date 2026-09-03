@@ -13,7 +13,7 @@ import {
   getAccountAggregatorStatus,
 } from '../customerApi';
 
-export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isCompleted }) {
+export function AccountAggregatorStep({ lan, consentText, onComplete, isCompleted: _isCompleted }) {
   const [loading, setLoading] = useState(false);
   const [sdkUrl, setSdkUrl] = useState(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
@@ -259,6 +259,16 @@ export function AccountAggregatorStep({ lan, onComplete, isCompleted: _isComplet
                 Come back to this tab — we'll detect it automatically once it's done.
               </li>
             </ol>
+          </div>
+        )}
+
+        {/* The exact consent recorded against this application once the bank authorises
+            sharing. Shown here because the approval itself happens inside the Account
+            Aggregator's own window — without this the customer would never see, on our
+            side, the wording we store as their consent evidence. */}
+        {consentText && status !== 'SUCCESS' && (
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3.5 text-xs leading-relaxed text-neutral-700">
+            {consentText}
           </div>
         )}
 

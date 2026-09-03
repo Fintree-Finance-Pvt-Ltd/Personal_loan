@@ -1,7 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { ApplicationConsentType, Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import {
+  CONSENT_CATALOGUE,
+  consentTextFor,
+  hashConsentText,
+  isConsentEvidenceIntact,
+} from './consent-catalogue';
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -9,10 +15,147 @@ import { LenderAdapterRegistry } from './lender-adapter.registry';
 
 @Injectable()
 export class LenderIntegrationOutboxService {
+  private readonly logger = new Logger(LenderIntegrationOutboxService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly adapters: LenderAdapterRegistry,
   ) {}
+
+  /**
+   * Records one journey consent as evidence and queues it for submission to the lender.
+   *
+   * This is the single entry point for every consent point — live photo, Aadhaar KYC,
+   * data sharing, Account Aggregator and the three decision consents. The wording and
+   * version come from CONSENT_CATALOGUE rather than the caller, so a consent can never be
+   * stored with text that differs from what the customer was shown.
+   *
+   * Deliberately tolerant: consent capture must never break the step that triggers it. If
+   * no lender is allocated yet (an auto-created DRAFT application, say) it records nothing
+   * and returns null rather than throwing.
+   */
+  async recordJourneyConsent(input: {
+    applicationId: bigint;
+    consentType: ApplicationConsentType;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    /** Skip queueing a lender submission — used when the caller enqueues in bulk itself. */
+    deferSubmission?: boolean;
+  }) {
+    const application = await this.prisma.plApplication.findUnique({
+      where: { id: input.applicationId },
+      select: { id: true, customerId: true, applicationNumber: true, lenderId: true },
+    });
+    if (!application?.lenderId) {
+      this.logger.warn(
+        `Skipping ${input.consentType} consent for application ${input.applicationId}: no lender allocated yet.`,
+      );
+      return null;
+    }
+
+    const lender = await this.prisma.lender.findUnique({
+      where: { id: application.lenderId },
+      select: { displayName: true },
+    });
+    if (!lender) return null;
+
+    const definition = CONSENT_CATALOGUE[input.consentType];
+    const consentText = consentTextFor(input.consentType, lender.displayName);
+    const consentTextHash = hashConsentText(consentText);
+
+    const stageConsent = await this.prisma.applicationStageConsent.upsert({
+      where: {
+        applicationId_lenderId_consentType_consentVersion: {
+          applicationId: application.id,
+          lenderId: application.lenderId,
+          consentType: input.consentType,
+          consentVersion: definition.version,
+        },
+      },
+      create: {
+        applicationId: application.id,
+        lenderId: application.lenderId,
+        consentType: input.consentType,
+        consentTemplateId: definition.templateId,
+        consentVersion: definition.version,
+        consentText,
+        consentTextHash,
+        acceptedAt: new Date(),
+        ipAddress: input.ipAddress?.slice(0, 64),
+        userAgent: input.userAgent?.slice(0, 512),
+      },
+      // Re-consenting is a no-op: the first acceptance is the evidence, and overwriting
+      // acceptedAt would destroy the record of when consent was actually given.
+      update: {},
+    });
+
+    if (!input.deferSubmission) {
+      await this.enqueueConsentSubmissions(application.id);
+    }
+    return stageConsent;
+  }
+
+  /**
+   * Queues a CONSENT-stage outbox event for every recorded consent that has not been sent
+   * yet. Safe to call repeatedly — each consent type gets its own idempotency key, so
+   * re-running only ever adds the newly recorded ones.
+   *
+   * Consents accumulate across the journey (Account Aggregator lands well after CREATE),
+   * so this runs both when CREATE completes and whenever a new consent is recorded.
+   */
+  async enqueueConsentSubmissions(applicationId: bigint) {
+    const application = await this.prisma.plApplication.findUnique({
+      where: { id: applicationId },
+      select: { id: true, applicationNumber: true, lenderId: true },
+    });
+    if (!application?.lenderId) return [];
+
+    // Nothing can be submitted before CREATE has returned a partnerApplicationId — the
+    // lender's consent endpoint is addressed by it. Those consents stay queued and go out
+    // when CREATE completes, which calls this method again.
+    const link = await this.prisma.lenderApplicationLink.findUnique({
+      where: { applicationId },
+      select: { partnerApplicationId: true, createStatus: true },
+    });
+    if (!link?.partnerApplicationId || !['ACKNOWLEDGED', 'COMPLETED'].includes(link.createStatus)) {
+      return [];
+    }
+
+    const consents = await this.prisma.applicationStageConsent.findMany({
+      where: { applicationId, lenderId: application.lenderId, revokedAt: null },
+    });
+
+    const events = [];
+    for (const consent of consents) {
+      if (!CONSENT_CATALOGUE[consent.consentType]?.submitToLender) continue;
+      // A consent whose text no longer hashes to its stored hash is not evidence and must
+      // not be forwarded as though it were.
+      if (!isConsentEvidenceIntact(consent)) {
+        this.logger.error(
+          `Refusing to submit tampered ${consent.consentType} consent for application ${application.applicationNumber}.`,
+        );
+        continue;
+      }
+      const idempotencyKey = `${application.applicationNumber}:LENDER_SUBMIT_CONSENT:${consent.consentType}:V1`;
+      events.push(
+        await this.prisma.lenderIntegrationOutbox.upsert({
+          where: { idempotencyKey },
+          create: {
+            eventType: 'LENDER_SUBMIT_CONSENT',
+            applicationId: application.id,
+            applicationReference: application.applicationNumber,
+            lenderId: application.lenderId,
+            integrationStage: 'CONSENT',
+            consentType: consent.consentType,
+            payloadVersion: 1,
+            idempotencyKey,
+          },
+          update: {},
+        }),
+      );
+    }
+    return events;
+  }
 
   async recordDataSharingConsent(input: {
     customerId: bigint;
@@ -33,14 +176,18 @@ export class LenderIntegrationOutboxService {
     const lenderId = application.lenderId;
     const lender = await this.prisma.lender.findUnique({ where: { id: lenderId } });
     if (!lender) throw new BadRequestException('Allocated lender was not found.');
-    const consentTemplateId = process.env.LENDER_DATA_SHARING_CONSENT_TEMPLATE_ID || 'LENDER_DATA_SHARING_V1';
-    const consentVersion = process.env.LENDER_DATA_SHARING_CONSENT_VERSION || '1.0';
+    // Definition comes from the catalogue so this stays in lockstep with every other
+    // consent point; the env overrides are kept for the two values that were already
+    // deployment-configurable.
+    const definition = CONSENT_CATALOGUE.DATA_SHARING;
+    const consentTemplateId = process.env.LENDER_DATA_SHARING_CONSENT_TEMPLATE_ID || definition.templateId;
+    const consentVersion = process.env.LENDER_DATA_SHARING_CONSENT_VERSION || definition.version;
     const consentReference = process.env.LENDER_DATA_SHARING_CONSENT_REFERENCE || 'CUSTOMER_LENDER_DATA_SHARING';
-    const consentText = `I consent to share my application data with ${lender.displayName} for eligibility assessment and final decision.`;
+    const consentText = consentTextFor('DATA_SHARING', lender.displayName);
     if (input.consentTemplateId !== consentTemplateId || input.consentVersion !== consentVersion || input.consentText !== consentText) {
       throw new BadRequestException('The lender data-sharing consent text or version is invalid.');
     }
-    const consentTextHash = createHash('sha256').update(consentText, 'utf8').digest('hex');
+    const consentTextHash = hashConsentText(consentText);
     const acceptedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       let consent = await tx.lenderDataSharingConsent.findUnique({
@@ -253,17 +400,21 @@ if (!platformLan) {
   async recordDecisionConsents(input: { customerId: bigint; applicationId: bigint; consents: Array<{ consentType: 'BUREAU_ENQUIRY' | 'LENDER_CREDIT_ASSESSMENT' | 'LENDER_DECISION_REQUEST'; consentTemplateId: string; consentVersion: string; consentText: string }>; ipAddress?: string | null; userAgent?: string | null }) {
     const application = await this.prisma.plApplication.findFirst({ where: { id: input.applicationId, customerId: input.customerId } });
     if (!application?.lenderId) throw new BadRequestException('Allocated canonical application was not found.');
+    // Definitions come from the catalogue rather than a local copy — the previous inline
+    // table was a second source of truth for the same three consents.
+    const lender = await this.prisma.lender.findUnique({ where: { id: application.lenderId }, select: { displayName: true } });
+    if (!lender) throw new BadRequestException('Allocated lender was not found.');
     const templates = {
-      BUREAU_ENQUIRY: { id: 'BUREAU_ENQUIRY_V1', version: '1.0', text: 'I authorize a bureau enquiry for this loan application.' },
-      LENDER_CREDIT_ASSESSMENT: { id: 'LENDER_CREDIT_ASSESSMENT_V1', version: '1.0', text: 'I authorize the allocated lender to assess my eligibility and credit profile.' },
-      LENDER_DECISION_REQUEST: { id: 'LENDER_DECISION_REQUEST_V1', version: '1.0', text: 'I authorize submission of my completed application to the allocated lender for a lending decision.' },
+      BUREAU_ENQUIRY: { id: CONSENT_CATALOGUE.BUREAU_ENQUIRY.templateId, version: CONSENT_CATALOGUE.BUREAU_ENQUIRY.version, text: consentTextFor('BUREAU_ENQUIRY', lender.displayName) },
+      LENDER_CREDIT_ASSESSMENT: { id: CONSENT_CATALOGUE.LENDER_CREDIT_ASSESSMENT.templateId, version: CONSENT_CATALOGUE.LENDER_CREDIT_ASSESSMENT.version, text: consentTextFor('LENDER_CREDIT_ASSESSMENT', lender.displayName) },
+      LENDER_DECISION_REQUEST: { id: CONSENT_CATALOGUE.LENDER_DECISION_REQUEST.templateId, version: CONSENT_CATALOGUE.LENDER_DECISION_REQUEST.version, text: consentTextFor('LENDER_DECISION_REQUEST', lender.displayName) },
     } as const;
     if (input.consents.length !== 3) throw new BadRequestException('All lender-decision consents are required.');
     await this.prisma.$transaction(async (tx) => {
       for (const submitted of input.consents) {
         const expected = templates[submitted.consentType];
         if (!expected || submitted.consentTemplateId !== expected.id || submitted.consentVersion !== expected.version || submitted.consentText !== expected.text) throw new BadRequestException(`Invalid ${submitted.consentType} consent evidence.`);
-        const consentTextHash = createHash('sha256').update(expected.text, 'utf8').digest('hex');
+        const consentTextHash = hashConsentText(expected.text);
         let stageConsent = await tx.applicationStageConsent.findUnique({
           where: { applicationId_lenderId_consentType_consentVersion: { applicationId: application.id, lenderId: application.lenderId!, consentType: submitted.consentType, consentVersion: expected.version } },
         });
@@ -278,6 +429,10 @@ if (!platformLan) {
         }
       }
     });
+    // These three were previously stored but never sent as consent submissions — only
+    // bureau and decision rode along inside the DECISION payload, and credit assessment
+    // was validated then dropped. They now go to the lender in their own right.
+    await this.enqueueConsentSubmissions(application.id);
     try {
       const event = await this.enqueueDecisionWhenReady(application.id);
       return { enqueued: true, event };

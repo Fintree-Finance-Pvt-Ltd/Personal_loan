@@ -127,6 +127,9 @@ export interface LenderConsentContext {
   consentType: string;
   consentTemplateId: string;
   consentVersion: string;
+  // Hash only, by agreement with the lender — the consent wording itself is not
+  // transmitted. consentTemplateId + consentVersion identify which text was accepted, and
+  // the hash lets the lender verify a copy they hold out of band is the same one.
   consentTextHash: string;
   consentReference: string | null;
   acceptedAt: string;

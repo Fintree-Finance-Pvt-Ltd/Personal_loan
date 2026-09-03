@@ -42,7 +42,12 @@ describe('LenderIntegrationService explicit requirements', () => {
       capabilities: { separateConsentSubmission: true, detailsUpdate: true, documentUpload: true, decisionRequest: false, statusPolling: false },
     };
     registry = new LenderAdapterRegistry([adapter]);
-    outbox = { enqueueUpdateWhenReady: jest.fn(), enqueueDecisionWhenReady: jest.fn() };
+    outbox = {
+      enqueueUpdateWhenReady: jest.fn(),
+      enqueueDecisionWhenReady: jest.fn(),
+      // Called when CREATE completes, to fan out the journey consents recorded so far.
+      enqueueConsentSubmissions: jest.fn().mockResolvedValue([]),
+    };
     decisions = { process: jest.fn() };
     let documentFiles = { loadDocument: jest.fn(), cleanupDocumentFile: jest.fn() };
     prisma = {
