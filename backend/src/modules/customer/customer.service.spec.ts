@@ -27,7 +27,7 @@ describe('CustomerService Integration', () => {
           useValue: {
             $transaction: jest.fn(async (cb) => cb(prisma)),
             $executeRaw: jest.fn().mockResolvedValue(0),
-            customer: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+            customer: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn() },
             plApplication: { findUnique: jest.fn(), create: jest.fn(), count: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
             plPaymentLink: { findFirst: jest.fn() },
             lender: { findUnique: jest.fn() },
@@ -128,6 +128,61 @@ describe('CustomerService Integration', () => {
         'PLATFORM_DEFAULT',
         expect.anything()
       );
+    });
+
+    it('evaluates SAME_IP_CUSTOMER_COUNT rule using customerCreationIp count and returns configured failure message', async () => {
+      const application = {
+        id: 10n, customerId: 1n, applicationNumber: 'APP-10', status: 'DRAFT',
+        platformProductId: 'PLATFORM-1', scopeCode: 'PLATFORM_DEFAULT', requestedAmount: null,
+      };
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({
+        id: 1n,
+        customerCreationIp: '103.25.45.67',
+        dateOfBirth: new Date('1990-01-01'),
+        applications: [application]
+      } as any);
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue(application as any);
+      jest.spyOn(prisma.plApplication, 'update').mockResolvedValue(application as any);
+      jest.spyOn(prisma.customer, 'update').mockResolvedValue({ id: 1n } as any);
+      jest.spyOn(prisma.customer, 'count').mockResolvedValue(3);
+
+      const mockRule = {
+        ruleCode: 'SAME_IP_CUSTOMER_COUNT',
+        inputKey: 'sameIpCustomerCount',
+        isActive: true,
+        operator: 'LESS_THAN_OR_EQUAL',
+        expectedValue: 2,
+        failureOutcome: 'FAIL',
+        customerMessage: 'You are not eligible for this loan offer.',
+        reasonCode: 'SAME_IP_LIMIT_EXCEEDED',
+      };
+      (service as any).platformPoliciesService.resolveActivePolicyVersion = jest.fn().mockResolvedValue({
+        id: 'BRE-V1',
+        rules: [mockRule],
+      });
+
+      jest.spyOn(policyEvalService, 'evaluate').mockImplementation((rules: any[], inputs: any) => {
+        expect(inputs.sameIpCustomerCount).toBe(3);
+        return {
+          finalOutcome: 'FAIL',
+          ruleResults: [{
+            ruleCode: 'SAME_IP_CUSTOMER_COUNT',
+            outcome: 'FAIL',
+            message: 'You are not eligible for this loan offer.',
+            reasonCode: 'SAME_IP_LIMIT_EXCEEDED',
+          }],
+        } as any;
+      });
+
+      const result = await service.runEligibility(1n, {});
+
+      expect(prisma.customer.count).toHaveBeenCalledWith({
+        where: { customerCreationIp: '103.25.45.67' },
+      });
+      expect(result).toEqual({
+        outcome: 'FAIL',
+        message: 'You are not eligible for this loan offer.',
+      });
     });
 
     it('persists the exact MLM decision product version without active-version re-resolution', async () => {

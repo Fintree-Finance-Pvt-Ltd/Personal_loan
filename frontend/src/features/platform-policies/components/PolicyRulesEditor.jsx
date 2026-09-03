@@ -109,7 +109,15 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                           const newDef = catalog.find(c => c.ruleCode === e.target.value);
                           if (newDef) {
                             setValue(`rules.${index}.operator`, newDef.supportedOperators[0]);
-                            setValue(`rules.${index}.expectedValue`, '');
+                            if (newDef.ruleCode === 'SAME_IP_CUSTOMER_COUNT') {
+                              setValue(`rules.${index}.expectedValue`, '2');
+                              setValue(`rules.${index}.reasonCode`, 'SAME_IP_LIMIT_EXCEEDED');
+                              setValue(`rules.${index}.customerMessage`, 'You are not eligible for this loan offer.');
+                            } else {
+                              setValue(`rules.${index}.expectedValue`, '');
+                              setValue(`rules.${index}.reasonCode`, `${newDef.ruleName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}_FAILED`);
+                              setValue(`rules.${index}.customerMessage`, `Does not meet ${newDef.ruleName.toLowerCase()} requirement.`);
+                            }
                           }
                         }
                       })}
