@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigitapDigilockerService } from '../external-api/digitap-digilocker.service';
 import { FaceMatchService } from '../external-api/face-match.service';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { namesLikelyMatch } from '../../common/utils/name-matcher.helper';
@@ -27,6 +28,7 @@ export class CustomerAadhaarKycService {
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService,
     private readonly faceMatch: FaceMatchService,
+    private readonly outbox: LenderIntegrationOutboxService,
   ) { }
 
   /**
@@ -35,9 +37,13 @@ export class CustomerAadhaarKycService {
   async initiate(
     currentCustomer: any,
     body?: { consentGiven?: boolean; forceNew?: boolean },
+    requestMetadata?: { ipAddress?: string | null; userAgent?: string | null },
   ) {
     if (!currentCustomer?.customerId) {
       throw new UnauthorizedException('Customer authentication is required.');
+    }
+    if (body?.consentGiven === false) {
+      throw new BadRequestException('DigiLocker Aadhaar KYC consent is required to continue.');
     }
     const customer = await this.prisma.customer.findUnique({
       where: { id: BigInt(currentCustomer.customerId) },
@@ -178,6 +184,11 @@ export class CustomerAadhaarKycService {
         digilockerRawResponse: JSON.stringify({ verificationUrl, transactionId: response.transactionId, attemptReference, expiresAt }),
       },
     });
+
+    // The customer ticked the DigiLocker consent box to get here. Until now `consentGiven`
+    // was accepted by the controller and silently dropped, so the KYC consent existed
+    // only as UI state and could never be evidenced or forwarded to the lender.
+    await this.recordKycConsent(customer.id, requestMetadata);
 
     this.logger.log(
       `DigiLocker KYC initiated for customer ${customer.customerCode} (Ref: ${attemptReference})`,
@@ -1026,6 +1037,33 @@ export class CustomerAadhaarKycService {
    * gates the journey, so neither a provider outage nor a missing document may turn a
    * successful Aadhaar verification into a failure.
    */
+  /**
+   * Persists the DigiLocker consent the customer accepted before initiation, against their
+   * current application. Non-fatal: a consent-recording failure must not stop a KYC
+   * journey the customer has already consented to.
+   */
+  private async recordKycConsent(
+    customerId: bigint,
+    requestMetadata?: { ipAddress?: string | null; userAgent?: string | null },
+  ): Promise<void> {
+    try {
+      const application = await this.prisma.plApplication.findFirst({
+        where: { customerId },
+        orderBy: { id: 'desc' },
+        select: { id: true },
+      });
+      if (!application) return;
+      await this.outbox.recordJourneyConsent({
+        applicationId: application.id,
+        consentType: 'AADHAAR_KYC',
+        ipAddress: requestMetadata?.ipAddress,
+        userAgent: requestMetadata?.userAgent,
+      });
+    } catch (error: any) {
+      this.logger.error(`Unable to record Aadhaar KYC consent for customer ${customerId}: ${error?.message}`);
+    }
+  }
+
   private async triggerFaceMatch(customerId: bigint): Promise<void> {
     try {
       const application = await this.prisma.plApplication.findFirst({

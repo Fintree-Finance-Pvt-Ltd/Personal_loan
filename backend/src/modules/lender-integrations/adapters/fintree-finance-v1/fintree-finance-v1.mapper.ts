@@ -173,7 +173,14 @@ export function mapFintreeConsentPayload(
         'lan',
       ),
 
-    consentType: 'LENDER_DATA_SHARING',
+    // Was hardcoded to LENDER_DATA_SHARING, which was correct only while that was the
+    // single consent ever sent. Every journey consent now has its own submission, so the
+    // type must come from the context or they would all arrive indistinguishable.
+    consentType:
+      requireString(
+        context.consentType,
+        'consentType',
+      ),
 
     consentId:
       requireString(

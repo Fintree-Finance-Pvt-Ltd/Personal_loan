@@ -120,6 +120,19 @@ const delay = (milliseconds) =>
     window.setTimeout(resolve, milliseconds);
   });
 
+/**
+ * The wording for a journey consent, served by the backend consent catalogue via
+ * customer.journey.consentTexts.
+ *
+ * Screens must render this rather than holding their own copy: the backend hashes the same
+ * string and stores it as the consent evidence, so a local paraphrase would mean recording
+ * a consent whose text differs from the one the customer actually agreed to. The fallback
+ * only covers the window before the journey payload has loaded.
+ */
+function resolveConsentText(customer, type, fallback = '') {
+  return customer?.journey?.consentTexts?.[type]?.text || fallback;
+}
+
 function normalizePersonName(value) {
   if (typeof value !== 'string') {
     return '';
@@ -1961,6 +1974,7 @@ export default function MyApplicationPage() {
           customerId={customerId}
           applicationId={customer?.latestApplicationId}
           customerCode={customer?.customerCode}
+          customer={customer}
           savedPhotoDocument={savedPhotoDocument}
           onPhotoSaved={setSavedPhotoDocument}
           form={form}
@@ -1989,6 +2003,7 @@ export default function MyApplicationPage() {
       {currentStep === 'account_aggregator' && (
         <AccountAggregatorStep
           lan={customer?.journey?.platformLan || customer?.journey?.applicationReference || customer?.latestApplicationReference || customer?.lan || applicationNumber}
+          consentText={resolveConsentText(customer, 'ACCOUNT_AGGREGATOR')}
           onComplete={() => {
             fetchCustomer();
           }}
@@ -2066,6 +2081,7 @@ function AadhaarKycStep({
   onCompleted,
   onBack,
 }) {
+  const consentText = (type) => resolveConsentText(customer, type);
   const [consentGiven, setConsentGiven] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2569,8 +2585,11 @@ function AadhaarKycStep({
                   onChange={(e) => setConsentGiven(e.target.checked)}
                   className="mt-1 h-5 w-5 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
                 />
+                {/* Text comes from the backend consent catalogue, which is also what gets
+                    hashed and stored as evidence — a local copy here would mean recording a
+                    consent whose wording differs from what was actually shown. */}
                 <span className="text-xs text-neutral-700 leading-relaxed">
-                  I consent to Fintree Finance Private Limited securely initiating DigiLocker-based Aadhaar KYC using my verified account information. I authorize the retrieval and processing of permitted identity information for loan onboarding, verification and lender submission.
+                  {consentText('AADHAAR_KYC')}
                 </span>
               </label>
             </div>
@@ -3975,6 +3994,7 @@ function LivePhotographSection({
   customerId,
   applicationId,
   customerCode,
+  customer,
   savedPhotoDocument,
   onPhotoSaved,
 }) {
@@ -4277,8 +4297,13 @@ function LivePhotographSection({
             }}
             className="mt-1 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
           />
+          {/* Backend consent catalogue supplies this — see resolveConsentText. */}
           <label htmlFor="photoConsent" className="text-xs leading-relaxed text-neutral-700">
-            I consent to the capture and processing of my live photograph and current location for identity verification, fraud prevention and loan application processing.
+            {resolveConsentText(
+              customer,
+              'LIVE_PHOTO_CAPTURE',
+              'I consent to the capture and processing of my live photograph and current location for identity verification, fraud prevention and loan application processing.',
+            )}
           </label>
         </div>
       )}
@@ -4451,6 +4476,7 @@ function ProfileDetailsStep({
   customerId,
   applicationId,
   customerCode,
+  customer,
   savedPhotoDocument,
   onPhotoSaved,
   form,
@@ -4864,6 +4890,7 @@ function ProfileDetailsStep({
         customerId={customerId}
         applicationId={applicationId}
         customerCode={customerCode}
+        customer={customer}
         savedPhotoDocument={savedPhotoDocument}
         onPhotoSaved={onPhotoSaved}
       />
