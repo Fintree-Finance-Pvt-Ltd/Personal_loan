@@ -607,6 +607,9 @@ export class ApplicationsService {
         eventId: event.id,
         eventType: event.eventType,
         integrationStage: event.integrationStage,
+        // CONSENT events only. Without this every consent submission renders identically in
+        // the call history, since they share a stage and event type.
+        consentType: event.consentType,
         payloadVersion: event.payloadVersion,
         status: event.status,
         attemptCount: event.attemptCount,
