@@ -263,6 +263,12 @@ export function CustomerLoanDetailsPage() {
   const handleOpenPayModal = (
     inst,
   ) => {
+    if (inst?.isMandateLocked) {
+      alert(
+        'Auto-debit mandate has already been presented for this installment. Manual payment is temporarily disabled on the due date to prevent double deduction.',
+      );
+      return;
+    }
     setSelectedInst(inst);
     setPaymentSuccessMsg('');
     setPaymentErrorMsg('');
@@ -1288,6 +1294,18 @@ export function CustomerLoanDetailsPage() {
           </div>
         ) : (
           <>
+            {rps.some((r) => r.isMandateLocked) && (
+              <div className="mx-4 mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-xs text-amber-900 shadow-xs sm:mx-6">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <span className="font-bold text-amber-950">Auto-Debit Clearing In Progress:</span>
+                  <p className="mt-0.5 text-amber-800 leading-relaxed">
+                    An auto-debit mandate has been presented to your bank account for due installment collection. Online manual payment for presented installments is temporarily paused on the due date to protect against duplicate deductions. (If overdue by 1 or more days, manual payment is re-enabled).
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Mobile schedule */}
             <div className="space-y-4 p-4 sm:p-5 lg:hidden">
               {rps.map(
@@ -1355,23 +1373,39 @@ export function CustomerLoanDetailsPage() {
                         0 &&
                         row.paymentStatus !==
                         'PAID' ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleOpenPayModal(
-                              row,
-                            )
-                          }
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-brand-600/15 transition hover:bg-brand-700"
-                        >
-                          <CreditCard
-                            size={15}
-                          />
-                          Pay{' '}
-                          {formatCurrency(
-                            row.remainingAmount,
-                          )}
-                        </button>
+                        row.isMandateLocked ? (
+                          <div className="flex flex-col items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-center shadow-xs">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                              <Clock size={13} className="text-amber-600 animate-spin" />
+                              Auto-Debit Presented
+                            </span>
+                            <span className="text-[11px] text-amber-800 font-medium">
+                              Bank clearing in progress. Manual payment paused on due date.
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenPayModal(
+                                row,
+                              )
+                            }
+                            className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-lg transition ${
+                              row.isOverdue
+                                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                                : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/15'
+                            }`}
+                          >
+                            <CreditCard
+                              size={15}
+                            />
+                            {row.isOverdue ? 'Pay Overdue ' : 'Pay '}
+                            {formatCurrency(
+                              row.remainingAmount,
+                            )}
+                          </button>
+                        )
                       ) : (
                         <span className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-xs font-bold text-brand-700">
                           <CheckCircle2
@@ -1388,87 +1422,87 @@ export function CustomerLoanDetailsPage() {
 
             {/* Desktop schedule */}
             <div className="hidden overflow-x-auto lg:block">
-              <table className="min-w-[1250px] w-full text-left text-xs">
-                <thead className="border-b border-neutral-200 bg-neutral-50">
-                  <tr className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">
-                    <th className="whitespace-nowrap px-4 py-4">
+              <table className="min-w-[980px] w-full text-left text-xs">
+                <thead className="border-b border-neutral-200 bg-neutral-50/80 text-[11px] font-bold uppercase tracking-wider text-neutral-600">
+                  <tr>
+                    <th className="px-4 py-3.5">
                       Inst. #
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4">
+                    <th className="px-4 py-3.5">
                       Due Date
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right">
+                    <th className="px-4 py-3.5 text-right">
                       Principal
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right">
+                    <th className="px-4 py-3.5 text-right">
                       Interest
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right text-neutral-700">
+                    <th className="px-4 py-3.5 text-right">
                       Bullet EMI
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right">
+                    <th className="px-4 py-3.5 text-right">
                       Opening
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right">
+                    <th className="px-4 py-3.5 text-right">
                       Closing
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-center">
+                    <th className="px-4 py-3.5 text-center">
                       Status
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right">
+                    <th className="px-4 py-3.5 text-right">
                       Paid
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-right">
+                    <th className="px-4 py-3.5 text-right">
                       Remaining
                     </th>
 
-                    <th className="whitespace-nowrap px-4 py-4 text-center">
+                    <th className="px-4 py-3.5 text-center">
                       Payment
                     </th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-neutral-100">
+                <tbody className="divide-y divide-neutral-100 font-sans">
                   {rps.map(
                     (row) => (
                       <tr
                         key={
                           row.installmentNumber
                         }
-                        className="transition hover:bg-brand-50/30"
+                        className="transition hover:bg-neutral-50/80"
                       >
-                        <td className="whitespace-nowrap px-4 py-4 font-bold text-neutral-950">
+                        <td className="whitespace-nowrap px-4 py-4 font-bold text-neutral-900">
                           #{row.installmentNumber}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 font-semibold text-neutral-700">
+                        <td className="whitespace-nowrap px-4 py-4 font-medium text-neutral-600">
                           {formatDate(
                             row.dueDate,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-700">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-600">
                           {formatCurrency(
                             row.principal,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-500">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono text-neutral-600">
                           {formatCurrency(
                             row.interest,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-neutral-950">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-brand-700">
                           {formatCurrency(
                             row.emi,
                           )}
@@ -1511,20 +1545,39 @@ export function CustomerLoanDetailsPage() {
                             0 &&
                             row.paymentStatus !==
                             'PAID' ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleOpenPayModal(
-                                  row,
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-[11px] font-bold text-white shadow-sm transition hover:bg-brand-700"
-                            >
-                              <CreditCard
-                                size={13}
-                              />
-                              Pay Now
-                            </button>
+                            row.isMandateLocked ? (
+                              <div className="inline-flex flex-col items-center gap-1">
+                                <span
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-900 shadow-xs"
+                                  title="Auto-debit mandate presented for clearing. Manual payment disabled on due date to prevent double deduction."
+                                >
+                                  <Clock size={12} className="text-amber-600 animate-spin" />
+                                  Mandate Presented
+                                </span>
+                                <span className="text-[10px] font-semibold text-amber-700 whitespace-nowrap">
+                                  Clearing in progress
+                                </span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleOpenPayModal(
+                                    row,
+                                  )
+                                }
+                                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold text-white shadow-sm transition ${
+                                  row.isOverdue
+                                    ? 'bg-rose-600 hover:bg-rose-700'
+                                    : 'bg-brand-600 hover:bg-brand-700'
+                                }`}
+                              >
+                                <CreditCard
+                                  size={13}
+                                />
+                                {row.isOverdue ? 'Pay Overdue' : 'Pay Now'}
+                              </button>
+                            )
                           ) : (
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[10px] font-bold text-brand-700">
                               <CheckCircle2

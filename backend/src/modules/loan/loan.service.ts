@@ -2857,6 +2857,12 @@ export class LoanService {
       where: { lan, customerId },
       include: {
         repaymentSchedules: {
+          include: {
+            debitRequests: {
+              orderBy: { id: 'desc' },
+              take: 5,
+            },
+          },
           orderBy: { installmentNumber: 'asc' },
         },
         repayments: {
@@ -2908,21 +2914,54 @@ export class LoanService {
 
     const totalOutstanding = principalOutstanding + interestOutstanding;
 
-    const formattedRps = rpsList.map((rps) => ({
-      installmentNumber: rps.installmentNumber,
-      dueDate: rps.dueDate ? rps.dueDate.toISOString().slice(0, 10) : null,
-      openingPrincipal: Number(rps.openingPrincipal),
-      emi: Number(rps.emi),
-      interest: Number(rps.interest),
-      principal: Number(rps.principal),
-      closingPrincipal: Number(rps.closingPrincipal),
-      outstandingPrincipal: Number(rps.outstandingPrincipal),
-      paymentStatus: rps.paymentStatus,
-      dpd: rps.dpd,
-      paidAmount: Number(rps.paidAmount),
-      paymentDate: rps.paymentDate,
-      remainingAmount: Number(rps.remainingAmount),
-    }));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const formattedRps = rpsList.map((rps: any) => {
+      const rpsDueDate = rps.dueDate ? new Date(rps.dueDate) : null;
+      const isOverdue = rpsDueDate
+        ? new Date(rpsDueDate).setHours(0, 0, 0, 0) < today.getTime() || rps.dpd > 0
+        : false;
+
+      const activeDebit = (rps.debitRequests || []).find((d: any) =>
+        ['SUBMITTING', 'IN_PROCESS', 'PRESENTED', 'INITIATED', 'PENDING', 'UNKNOWN'].includes(d.status),
+      );
+      const isMandatePresented = Boolean(activeDebit);
+      // Auto-debit locks manual payment only while NOT overdue (e.g. on due date).
+      // If overdue by 1+ day, re-enable manual payment so customer can clear overdue dues.
+      const isMandateLocked = isMandatePresented && !isOverdue;
+      const mandateDebitStatus = activeDebit ? activeDebit.status : null;
+      const mandateDebitMessage = isMandateLocked
+        ? `Auto-debit mandate presented (${activeDebit.status}). Bank clearing in progress.`
+        : isOverdue && isMandatePresented
+        ? `Overdue: Manual payment available.`
+        : null;
+
+      return {
+        installmentNumber: rps.installmentNumber,
+        dueDate: rps.dueDate ? rps.dueDate.toISOString().slice(0, 10) : null,
+        openingPrincipal: Number(rps.openingPrincipal),
+        emi: Number(rps.emi),
+        interest: Number(rps.interest),
+        principal: Number(rps.principal),
+        closingPrincipal: Number(rps.closingPrincipal),
+        outstandingPrincipal: Number(rps.outstandingPrincipal),
+        paymentStatus: rps.paymentStatus,
+        dpd: rps.dpd,
+        isOverdue,
+        paidAmount: Number(rps.paidAmount),
+        paymentDate: rps.paymentDate,
+        remainingAmount: Number(rps.remainingAmount),
+        isMandatePresented,
+        isMandateLocked,
+        mandateDebitStatus,
+        mandateDebitMessage,
+        canPayManually:
+          !isMandateLocked &&
+          rps.paymentStatus !== 'PAID' &&
+          Number(rps.remainingAmount) > 0,
+      };
+    });
 
     const formattedRepayments = repaymentsList.map((rep) => ({
       paymentId: rep.paymentId,
@@ -3451,6 +3490,35 @@ export class LoanService {
     const remainingAmount = Number(rps.remainingAmount);
     if (remainingAmount <= 0 || rps.paymentStatus === 'PAID') {
       throw new BadRequestException(`Installment #${instNum} is already fully paid.`);
+    }
+
+    // Guard against double collection on active presentation day:
+    // If the installment is NOT yet overdue (i.e. today <= dueDate and dpd <= 0),
+    // and an auto-debit mandate is presented / in process, block manual payment to prevent double deduction.
+    // If overdue by 1+ day (today > dueDate or dpd > 0), allow manual payment so customer can clear overdue debt.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const rpsDueDate = rps.dueDate ? new Date(rps.dueDate) : null;
+    const isOverdue = rpsDueDate
+      ? new Date(rpsDueDate).setHours(0, 0, 0, 0) < today.getTime() || rps.dpd > 0
+      : false;
+
+    if (!isOverdue) {
+      const activeDebit = await this.prisma.easebuzzDebitRequest.findFirst({
+        where: {
+          rpsId: rps.id,
+          status: {
+            in: ['SUBMITTING', 'IN_PROCESS', 'PRESENTED', 'INITIATED', 'PENDING', 'UNKNOWN'],
+          },
+        },
+        orderBy: { id: 'desc' },
+      });
+
+      if (activeDebit) {
+        throw new BadRequestException(
+          `Auto-debit mandate is already presented for Installment #${instNum} (Status: ${activeDebit.status}). Manual payment is disabled on the due date to prevent double deduction. Please wait for bank clearing.`,
+        );
+      }
     }
 
     const payAmount = amountInput && amountInput > 0 ? Math.min(amountInput, remainingAmount) : remainingAmount;
