@@ -133,5 +133,16 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     isMandatory: false,
     canBeDisabled: true,
     description: 'Days since last application rejection.',
+  },
+  SAME_IP_CUSTOMER_COUNT: {
+    ruleCode: 'SAME_IP_CUSTOMER_COUNT',
+    ruleName: 'Same IP Customer Count',
+    category: 'FRAUD',
+    inputKey: 'sameIpCustomerCount',
+    valueType: 'INTEGER',
+    supportedOperators: ['LESS_THAN_OR_EQUAL', 'LESS_THAN', 'EQUALS'],
+    isMandatory: false,
+    canBeDisabled: true,
+    description: 'Restricts the number of customer registrations permitted from the same IP address.',
   }
 };

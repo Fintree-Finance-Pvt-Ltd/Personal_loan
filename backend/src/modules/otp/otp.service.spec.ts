@@ -28,6 +28,7 @@ describe('OtpService', () => {
   beforeEach(() => {
     prisma = {
       customer: { findUnique: jest.fn(), upsert: jest.fn() },
+      customerLoginHistory: { create: jest.fn() },
       otpSession: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
       customerSession: { create: jest.fn(), update: jest.fn() },
       customerRefreshToken: { create: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
@@ -191,6 +192,88 @@ describe('OtpService', () => {
       expect(absoluteDays).toBeGreaterThan(29.9);
       expect(absoluteDays).toBeLessThanOrEqual(30);
       expect(sessionData.idleExpiresAt.getTime()).toBe(sessionData.absoluteExpiresAt.getTime());
+    });
+
+    it('captures customerCreationIp and logs FIRST_LOGIN on first-time registration', async () => {
+      prisma.otpSession.findFirst.mockResolvedValue(activeSession());
+      prisma.customer.findUnique.mockResolvedValue(null);
+      prisma.customer.upsert.mockResolvedValue({
+        id: 101n,
+        customerCode: 'CUS-101',
+        countryCode: '+91',
+        mobileNumber: '9876543210',
+        mobileVerified: true,
+        customerCreationIp: '103.25.45.67',
+        onboardingStatus: 'MOBILE_VERIFIED',
+        eligibilityStatus: 'NOT_CHECKED',
+      });
+      prisma.customerSession.create.mockResolvedValue({ id: 'session-101' });
+
+      await service.verifyMobileOtp({
+        mobileNumber: '9876543210',
+        otp: OTP,
+        ipAddress: '103.25.45.67',
+      });
+
+      // Verify customer creation received creation IP
+      expect(prisma.customer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            customerCreationIp: '103.25.45.67',
+          }),
+        }),
+      );
+
+      // Verify customer login history recorded FIRST_LOGIN
+      expect(prisma.customerLoginHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          customerId: 101n,
+          mobileNumber: '9876543210',
+          ipAddress: '103.25.45.67',
+          loginType: 'FIRST_LOGIN',
+        }),
+      });
+    });
+
+    it('does NOT update customerCreationIp and logs LOGIN when existing customer logs in from new IP', async () => {
+      prisma.otpSession.findFirst.mockResolvedValue(activeSession());
+      prisma.customer.findUnique.mockResolvedValue({
+        id: 101n,
+        mobileNumber: '9876543210',
+        customerCreationIp: '103.25.45.67',
+        accountStatus: 'ACTIVE',
+      });
+      prisma.customer.upsert.mockResolvedValue({
+        id: 101n,
+        customerCode: 'CUS-101',
+        countryCode: '+91',
+        mobileNumber: '9876543210',
+        mobileVerified: true,
+        customerCreationIp: '103.25.45.67',
+        onboardingStatus: 'MOBILE_VERIFIED',
+        eligibilityStatus: 'NOT_CHECKED',
+      });
+      prisma.customerSession.create.mockResolvedValue({ id: 'session-101' });
+
+      await service.verifyMobileOtp({
+        mobileNumber: '9876543210',
+        otp: OTP,
+        ipAddress: '49.36.12.89', // New IP
+      });
+
+      // Verify upsert update payload does NOT modify customerCreationIp
+      const upsertArgs = prisma.customer.upsert.mock.calls[0][0];
+      expect(upsertArgs.update).not.toHaveProperty('customerCreationIp');
+
+      // Verify login history recorded LOGIN (not FIRST_LOGIN) with the new IP
+      expect(prisma.customerLoginHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          customerId: 101n,
+          mobileNumber: '9876543210',
+          ipAddress: '49.36.12.89',
+          loginType: 'LOGIN',
+        }),
+      });
     });
   });
 

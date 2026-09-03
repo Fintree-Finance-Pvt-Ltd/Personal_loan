@@ -944,6 +944,22 @@ export class CustomerService {
         inputs.internalOverdueAmount = 0;
       }
 
+      if (requiredKeys.has('sameIpCustomerCount')) {
+        const creationIp = customer.customerCreationIp;
+        if (!creationIp) {
+          // If a customer has no creation IP stored (e.g. legacy records), treat as 1 (self only)
+          inputs.sameIpCustomerCount = 1;
+        } else {
+          // Count unique customers created using the same customer_creation_ip
+          const count = await tx.customer.count({
+            where: {
+              customerCreationIp: creationIp,
+            },
+          });
+          inputs.sameIpCustomerCount = count;
+        }
+      }
+
       // 5. Evaluate policy
       let evalResult;
       try {
@@ -1002,7 +1018,11 @@ export class CustomerService {
       });
 
       if (!isPass) {
-        return { outcome: 'FAIL' };
+        const firstFailedRule = evalResult.ruleResults?.find((r: any) => r.outcome === 'FAIL' || r.outcome === 'REFER');
+        return {
+          outcome: 'FAIL',
+          message: firstFailedRule?.message || 'You are not eligible for this loan offer.',
+        };
       }
 
       // 7. Invoke MLM Allocation
