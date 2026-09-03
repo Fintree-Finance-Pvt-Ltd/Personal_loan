@@ -5,6 +5,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import {
   CONSENT_CATALOGUE,
   canSubmitConsentToLender,
+  consentIdempotencyKey,
   consentTextFor,
   hashConsentText,
   isConsentEvidenceIntact,
@@ -148,7 +149,7 @@ export class LenderIntegrationOutboxService {
         );
         continue;
       }
-      const idempotencyKey = `${application.applicationNumber}:LENDER_SUBMIT_CONSENT:${consent.consentType}:V1`;
+      const idempotencyKey = consentIdempotencyKey(application.applicationNumber, consent.consentType);
       events.push(
         await this.prisma.lenderIntegrationOutbox.upsert({
           where: { idempotencyKey },

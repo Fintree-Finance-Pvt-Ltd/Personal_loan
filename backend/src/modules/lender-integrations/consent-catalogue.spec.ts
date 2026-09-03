@@ -3,6 +3,7 @@ import {
   CONSENT_CATALOGUE,
   LENDER_SUBMITTED_CONSENT_TYPES,
   canSubmitConsentToLender,
+  consentIdempotencyKey,
   consentTextFor,
   hashConsentText,
   isConsentEvidenceIntact,
@@ -65,18 +66,22 @@ describe('consent catalogue', () => {
       else process.env.LENDER_SUBMIT_EXTENDED_CONSENTS = original;
     });
 
-    it('always forwards the four types the lender already accepts', () => {
+    // With the flag off, only the data-sharing consent is forwarded — the exact behaviour
+    // that shipped before the fan-out. The lender validates the Idempotency-Key too, so
+    // even the consent types they accept cannot go out under a per-type key.
+    it('forwards only the data-sharing consent while the flag is unset', () => {
       delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
-      for (const type of ['DATA_SHARING', 'BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'] as const) {
-        expect(canSubmitConsentToLender(type)).toBe(true);
+      expect(canSubmitConsentToLender('DATA_SHARING')).toBe(true);
+      for (const type of ['LIVE_PHOTO_CAPTURE', 'AADHAAR_KYC', 'ACCOUNT_AGGREGATOR', 'BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'] as const) {
+        expect(canSubmitConsentToLender(type)).toBe(false);
       }
     });
 
-    it('holds back the newer types until the lender is ready', () => {
-      delete process.env.LENDER_SUBMIT_EXTENDED_CONSENTS;
-      for (const type of ['LIVE_PHOTO_CAPTURE', 'AADHAAR_KYC', 'ACCOUNT_AGGREGATOR'] as const) {
-        expect(canSubmitConsentToLender(type)).toBe(false);
-      }
+    it('builds the key the lender has always accepted for data sharing', () => {
+      expect(consentIdempotencyKey('APP-001', 'DATA_SHARING')).toBe('APP-001:LENDER_SUBMIT_CONSENT:V1');
+      expect(consentIdempotencyKey('APP-001', 'BUREAU_ENQUIRY')).toBe(
+        'APP-001:LENDER_SUBMIT_CONSENT:BUREAU_ENQUIRY:V1',
+      );
     });
 
     it('releases the newer types once the flag is set', () => {

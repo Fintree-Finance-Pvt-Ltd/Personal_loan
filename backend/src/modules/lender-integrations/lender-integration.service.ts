@@ -396,14 +396,24 @@ async markStageFailure(
       retrying ? 'RETRY_PENDING' : 'FAILED'
     ) as LenderIntegrationOperationStatus;
 
+    // consentStatus tracks the gating data-sharing consent, because that is what
+    // processUpdate() requires to be COMPLETED. A supplementary consent (Aadhaar KYC,
+    // Account Aggregator, live photo, and the three decision consents) is evidence we
+    // forward — its rejection must not regress the column and strand the application on
+    // LENDER_UPDATE_BEFORE_CONSENT. Its own outbox row still records the failure.
+    const isGatingConsent =
+      event.integrationStage === 'CONSENT' && (event.consentType ?? 'DATA_SHARING') === 'DATA_SHARING';
+
     const data =
       event.integrationStage === 'CREATE'
         ? { createStatus: status }
         : event.integrationStage === 'CONSENT'
-          ? { consentStatus: status }
+          ? (isGatingConsent ? { consentStatus: status } : null)
           : event.integrationStage === 'UPDATE'
             ? { updateStatus: status }
             : { decisionStatus: status };
+
+    if (!data) return;
 
     await tx.lenderApplicationLink.updateMany({
       where: {

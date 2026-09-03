@@ -107,30 +107,44 @@ export const LENDER_SUBMITTED_CONSENT_TYPES = ALL_CONSENT_TYPES.filter(
 );
 
 /**
- * The consent types the lender's /consents endpoint accepted before this work. Their
- * endpoint validates consentType, so forwarding a type it does not know yet would be
- * rejected — producing failed submissions for consents that are otherwise recorded fine.
- */
-const CONSENT_TYPES_ACCEPTED_BY_LENDER: ApplicationConsentType[] = [
-  'DATA_SHARING',
-  'BUREAU_ENQUIRY',
-  'LENDER_CREDIT_ASSESSMENT',
-  'LENDER_DECISION_REQUEST',
-];
-
-/**
- * Whether this consent may be forwarded to the lender yet.
+ * Whether the lender is ready to receive one submission per consent type.
  *
- * Recording a consent and forwarding it are separate concerns: every consent is stored as
- * evidence immediately, but the newer types only go out once the lender has widened their
- * consentType validation. Set LENDER_SUBMIT_EXTENDED_CONSENTS=true to release them — the
- * queued-but-unsent consents are picked up on the next submission pass, so nothing is lost
- * by waiting.
+ * This gates the entire per-type fan-out, not just the newer consent types, because the
+ * lender validates the Idempotency-Key as well as the consentType. Their validator
+ * reconstructs `{applicationReference}:LENDER_SUBMIT_CONSENT:V{n}` and compares, so a
+ * per-type key such as `...:LENDER_SUBMIT_CONSENT:BUREAU_ENQUIRY:V1` is rejected outright
+ * with INVALID_IDEMPOTENCY_KEY — including for the three consent types they already accept.
+ *
+ * Off (the default) reproduces the previous behaviour byte for byte: one data-sharing
+ * submission under the original key. Consents are recorded as evidence either way, so
+ * nothing is lost by waiting — held-back consents are queued on the next submission pass
+ * once the lender confirms support and this is switched on.
  */
+export function isPerTypeConsentSubmissionEnabled(): boolean {
+  return String(process.env.LENDER_SUBMIT_EXTENDED_CONSENTS ?? '').toLowerCase() === 'true';
+}
+
+/** Whether this consent may be forwarded to the lender right now. */
 export function canSubmitConsentToLender(type: ApplicationConsentType): boolean {
   if (!CONSENT_CATALOGUE[type]?.submitToLender) return false;
-  if (CONSENT_TYPES_ACCEPTED_BY_LENDER.includes(type)) return true;
-  return String(process.env.LENDER_SUBMIT_EXTENDED_CONSENTS ?? '').toLowerCase() === 'true';
+  if (!isPerTypeConsentSubmissionEnabled()) return type === 'DATA_SHARING';
+  return true;
+}
+
+/**
+ * The Idempotency-Key for a consent submission.
+ *
+ * Data sharing keeps the original three-segment key permanently — it is the shape the
+ * lender has always accepted, and reusing it means events queued before the fan-out shipped
+ * still resolve to the same outbox row rather than being re-sent under a new key.
+ */
+export function consentIdempotencyKey(
+  applicationReference: string,
+  type: ApplicationConsentType,
+): string {
+  return type === 'DATA_SHARING'
+    ? `${applicationReference}:LENDER_SUBMIT_CONSENT:V1`
+    : `${applicationReference}:LENDER_SUBMIT_CONSENT:${type}:V1`;
 }
 
 export function consentTextFor(
