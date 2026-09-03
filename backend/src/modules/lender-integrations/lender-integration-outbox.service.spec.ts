@@ -20,6 +20,96 @@ describe('LenderIntegrationOutboxService', () => {
     expect(storedFields).not.toContain('pan');
   });
 
+  describe('replayFailedEvent', () => {
+    const prismaFor = (event: any, application: any = {}) => {
+      const tx: any = {
+        lenderIntegrationOutbox: { update: jest.fn() },
+        lenderApplicationLink: { update: jest.fn() },
+        plLoan: { updateMany: jest.fn() },
+      };
+      const prisma: any = {
+        lenderIntegrationOutbox: { findUnique: jest.fn().mockResolvedValue(event) },
+        plApplication: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 1n,
+            status: 'ASSESSMENT_FEE_PAID',
+            lenderApplicationLink: { id: 'LINK-1' },
+            ...application,
+          }),
+        },
+        $transaction: jest.fn(async (cb: any) => cb(tx)),
+      };
+      return { prisma, tx };
+    };
+
+    // The retry backoff schedule ends at 3600s, so an operator who knows the lender-side
+    // error was transient would otherwise have to wait an hour for the next attempt.
+    it('replays an event that is still waiting on its retry backoff', async () => {
+      const { prisma, tx } = prismaFor({
+        id: 'EVENT-1', status: 'RETRY_PENDING', applicationId: 1n, integrationStage: 'UPDATE',
+      });
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      const result = await service.replayFailedEvent('EVENT-1');
+
+      expect(result).toEqual({ success: true, eventId: 'EVENT-1', status: 'PENDING' });
+      expect(tx.lenderIntegrationOutbox.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: 'PENDING', attemptCount: 0 }),
+      }));
+    });
+
+    it('still replays a permanently failed event', async () => {
+      const { prisma, tx } = prismaFor({
+        id: 'EVENT-1', status: 'FAILED', applicationId: 1n, integrationStage: 'UPDATE',
+      });
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      await service.replayFailedEvent('EVENT-1');
+
+      expect(tx.lenderApplicationLink.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ updateStatus: 'PENDING' }),
+      }));
+    });
+
+    // A worker still holds the lease on a PROCESSING event; resetting it underneath would
+    // let the same lender call go out twice.
+    it.each(['PROCESSING', 'PENDING', 'COMPLETED'])('refuses to replay a %s event', async (status) => {
+      const { prisma } = prismaFor({
+        id: 'EVENT-1', status, applicationId: 1n, integrationStage: 'UPDATE',
+      });
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      await expect(service.replayFailedEvent('EVENT-1')).rejects.toThrow(/failed or is awaiting retry/);
+    });
+
+    // Without its own branch CONSENT fell through to the decisionStatus column, leaving
+    // consentStatus stuck on FAILED while clobbering an unrelated stage.
+    it('resets consentStatus, not decisionStatus, when replaying a CONSENT stage', async () => {
+      const { prisma, tx } = prismaFor({
+        id: 'EVENT-1', status: 'FAILED', applicationId: 1n, integrationStage: 'CONSENT',
+      });
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      await service.replayFailedEvent('EVENT-1');
+
+      expect(tx.lenderApplicationLink.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ consentStatus: 'PENDING' }),
+      }));
+      const written = tx.lenderApplicationLink.update.mock.calls[0][0].data;
+      expect(written).not.toHaveProperty('decisionStatus');
+    });
+
+    it('refuses to replay once the lender decision is terminal', async () => {
+      const { prisma } = prismaFor(
+        { id: 'EVENT-1', status: 'RETRY_PENDING', applicationId: 1n, integrationStage: 'UPDATE' },
+        { status: 'LENDER_APPROVED' },
+      );
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      await expect(service.replayFailedEvent('EVENT-1')).rejects.toThrow(/Terminal lender decisions/);
+    });
+  });
+
   it('returns structured reason codes and does not enqueue an incomplete UPDATE', async () => {
     const application: any = {
       id: 1n,

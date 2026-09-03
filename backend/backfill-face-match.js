@@ -19,6 +19,7 @@
  *   node backfill-face-match.js --apply --force    # also redo apps already scored
  */
 require('dotenv').config();
+const { Logger } = require('@nestjs/common');
 const { PrismaClient } = require('@prisma/client');
 const axios = require('axios');
 const { from } = require('rxjs');
@@ -37,6 +38,10 @@ const LIMIT = value('limit') ? Number(value('limit')) : null;
 const APP_ID = value('app') ? BigInt(value('app')) : null;
 // Digitap is a paid per-call API and this can be a few hundred rows — stay polite.
 const DELAY_MS = value('delay') ? Number(value('delay')) : 400;
+
+// FaceMatchService logs one line per call, which interleaves with this script's own
+// per-row progress output. Keep warnings and errors, drop the routine chatter.
+Logger.overrideLogger(['warn', 'error']);
 
 const prisma = new PrismaClient();
 
@@ -84,6 +89,8 @@ async function main() {
       }),
     ]);
 
+    // These two lookups must stay customer-wide to mirror FaceMatchService exactly — if the
+    // filter here is looser than the service's, "eligible" rows come back SKIPPED.
     if (!selfie || !aadhaar) {
       ineligible.push({ ...app, reason: !selfie ? 'no live photo' : 'no Aadhaar document' });
       continue;

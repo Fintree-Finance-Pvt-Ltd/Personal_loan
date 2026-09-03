@@ -179,6 +179,36 @@ describe('FaceMatchService', () => {
     expect(body).not.toContain('name="input_pdf2"');
   });
 
+  // Repeat customers don't re-capture a selfie for a second loan, so their only live photo
+  // is attached to an EARLIER application. Scoping strictly to this application reported
+  // "no live photograph" for every returning borrower.
+  it('falls back to the customer\'s earlier live photo when this application has none of its own', async () => {
+    prisma.plCustomerDocument.findFirst = jest.fn(({ where }: any) => {
+      if (where.documentType === 'AADHAAR_CARD') return Promise.resolve(aadhaarDoc);
+      // Only the unscoped lookup (no OR clause) finds the previous application's selfie.
+      return Promise.resolve(where.OR ? null : { ...livePhoto, id: 99n });
+    });
+    respondWith({ is_same_face: true, same_face_confidence: 0.95 });
+
+    await service.runForApplication(5n);
+
+    const written = prisma.applicationFaceMatch.upsert.mock.calls[0][0].create;
+    expect(written.status).toBe('MATCHED');
+    expect(written.livePhotoDocumentId).toBe(99n);
+  });
+
+  it('prefers this application\'s own live photo over an earlier one', async () => {
+    prisma.plCustomerDocument.findFirst = jest.fn(({ where }: any) => {
+      if (where.documentType === 'AADHAAR_CARD') return Promise.resolve(aadhaarDoc);
+      return Promise.resolve(where.OR ? livePhoto : { ...livePhoto, id: 99n });
+    });
+    respondWith({ is_same_face: true, same_face_confidence: 0.95 });
+
+    await service.runForApplication(5n);
+
+    expect(prisma.applicationFaceMatch.upsert.mock.calls[0][0].create.livePhotoDocumentId).toBe(101n);
+  });
+
   it('records SKIPPED, not an error, when the customer has no Aadhaar document yet', async () => {
     prisma.plCustomerDocument.findFirst = documentsOnFile(livePhoto, null);
 

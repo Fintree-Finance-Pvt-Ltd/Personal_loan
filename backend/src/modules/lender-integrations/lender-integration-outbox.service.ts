@@ -326,7 +326,17 @@ if (!platformLan) {
 
   async replayFailedEvent(eventId: string) {
     const event = await this.prisma.lenderIntegrationOutbox.findUnique({ where: { id: eventId } });
-    if (!event || event.status !== 'FAILED') throw new BadRequestException('Only a permanently failed lender event can be replayed.');
+    // RETRY_PENDING is replayable too: the call already failed, it just has attempts left
+    // and is sitting on its backoff (the schedule ends at 3600s, so the last wait is an
+    // hour). An operator who has fixed the cause, or who knows the lender-side error was
+    // transient, should not have to wait that out. PROCESSING is deliberately excluded —
+    // a worker still holds the lease, and resetting underneath it would let the same
+    // lender call go out twice.
+    if (!event || !['FAILED', 'RETRY_PENDING'].includes(event.status)) {
+      throw new BadRequestException(
+        'Only a lender event that has failed or is awaiting retry can be replayed.',
+      );
+    }
     const application = await this.prisma.plApplication.findUnique({ where: { id: event.applicationId }, include: { lenderApplicationLink: true } });
     // A DISBURSE-stage event is expected to run while the application is already
     // LENDER_APPROVED (disbursal only happens post-approval) — that is not "terminal"
@@ -347,8 +357,18 @@ if (!platformLan) {
       // LenderIntegrationService.processDisburse/markStageFailure) — it tracks state
       // directly on PlLoan.disbursalStatus instead, so there is nothing to reset here.
       if (application.lenderApplicationLink && event.integrationStage !== 'DISBURSE') {
-        const field = event.integrationStage === 'CREATE' ? 'createStatus' : event.integrationStage === 'UPDATE' ? 'updateStatus' : 'decisionStatus';
-        await tx.lenderApplicationLink.update({ where: { id: application.lenderApplicationLink.id }, data: { [field]: 'PENDING', lastErrorCode: null, lastErrorMessage: null } });
+        // CONSENT needs its own branch — without it a replayed consent event reset
+        // decisionStatus (the fall-through) and left consentStatus stuck on FAILED.
+        const statusColumn: Record<string, string> = {
+          CREATE: 'createStatus',
+          CONSENT: 'consentStatus',
+          UPDATE: 'updateStatus',
+          DECISION: 'decisionStatus',
+        };
+        const field = statusColumn[event.integrationStage];
+        if (field) {
+          await tx.lenderApplicationLink.update({ where: { id: application.lenderApplicationLink.id }, data: { [field]: 'PENDING', lastErrorCode: null, lastErrorMessage: null } });
+        }
       }
       if (event.integrationStage === 'DISBURSE') {
         await tx.plLoan.updateMany({ where: { applicationId: application.id }, data: { disbursalStatus: 'DISBURSAL_REQUESTED' } });

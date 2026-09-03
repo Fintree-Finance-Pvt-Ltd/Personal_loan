@@ -95,15 +95,31 @@ export class FaceMatchService {
       }
     }
 
-    const livePhoto = await this.prisma.plCustomerDocument.findFirst({
-      where: {
-        customerId: application.customerId,
-        documentType: 'CUSTOMER_LIVE_PHOTO',
-        status: 'VERIFIED',
-        OR: [{ applicationId }, { applicationId: null }],
-      },
-      orderBy: { uploadedAt: 'desc' },
-    });
+    // Prefer this application's own selfie as the strongest evidence, but fall back to the
+    // customer's most recent verified one. Repeat customers don't re-capture a live photo
+    // for a second loan (same reason they don't redo DigiLocker — see
+    // CustomerService.saveApplicationAddress), so scoping strictly to this application
+    // would report "no live photograph" for every returning borrower. The Aadhaar lookup
+    // below is already customer-wide for exactly this reason. Whichever document is used is
+    // recorded as livePhotoDocumentId so a reviewer can always trace the comparison back.
+    const livePhoto =
+      (await this.prisma.plCustomerDocument.findFirst({
+        where: {
+          customerId: application.customerId,
+          documentType: 'CUSTOMER_LIVE_PHOTO',
+          status: 'VERIFIED',
+          OR: [{ applicationId }, { applicationId: null }],
+        },
+        orderBy: { uploadedAt: 'desc' },
+      })) ??
+      (await this.prisma.plCustomerDocument.findFirst({
+        where: {
+          customerId: application.customerId,
+          documentType: 'CUSTOMER_LIVE_PHOTO',
+          status: 'VERIFIED',
+        },
+        orderBy: { uploadedAt: 'desc' },
+      }));
 
     // The DigiLocker Aadhaar arrives as a PDF (stored by
     // CustomerAadhaarKycService.storeDigitapDocuments). Digitap FaceMatch reads the face
