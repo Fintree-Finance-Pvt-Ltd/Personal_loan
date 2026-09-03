@@ -1223,8 +1223,20 @@ enum ApplicationVerificationStatus {
   FAILED
 }
 
+// Every point in the customer journey where an explicit consent is taken. The text,
+// template id and version behind each of these live in ONE place —
+// lender-integrations/consent-catalogue.ts — so the copy shown to the customer, the
+// hash we store as evidence, and the payload sent to the lender cannot drift apart.
 enum ApplicationConsentType {
+  // Profile step: capturing and processing the live photograph + geolocation.
+  LIVE_PHOTO_CAPTURE
+  // DigiLocker Aadhaar KYC initiation.
+  AADHAAR_KYC
+  // Assessment-fee step: sharing the application with the allocated lender.
   DATA_SHARING
+  // Account Aggregator: sharing bank statement data via the AA network.
+  ACCOUNT_AGGREGATOR
+  // Submit-application step (all three taken together).
   BUREAU_ENQUIRY
   LENDER_CREDIT_ASSESSMENT
   LENDER_DECISION_REQUEST
@@ -1455,6 +1467,10 @@ model LenderIntegrationOutbox {
   integrationStage     LenderIntegrationStage
   payloadVersion       Int
   idempotencyKey       String                        @unique @db.VarChar(191)
+  // CONSENT-stage events only: which consent this event submits. The lender's
+  // /consents endpoint takes one consent per POST, so each consent type gets its own
+  // outbox row (and therefore its own Idempotency-Key) rather than being batched.
+  consentType          ApplicationConsentType?
   documentTransferId   BigInt?                       @db.UnsignedBigInt
   // Repayment/charge/waiver are many-per-application (unlike CREATE/UPDATE/DECISION/
   // DISBURSE, which are one-shot per application) — each outbox row needs to know

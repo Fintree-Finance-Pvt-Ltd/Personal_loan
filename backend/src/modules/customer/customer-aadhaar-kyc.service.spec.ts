@@ -6,6 +6,7 @@ import { DigitapDigilockerService } from '../external-api/digitap-digilocker.ser
 import { ConfigService } from '@nestjs/config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { FaceMatchService } from '../external-api/face-match.service';
+import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 
 describe('CustomerAadhaarKycService', () => {
   let service: CustomerAadhaarKycService;
@@ -57,6 +58,10 @@ describe('CustomerAadhaarKycService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: DigitapDigilockerService, useValue: digitapService },
         { provide: FaceMatchService, useValue: faceMatchService },
+        {
+          provide: LenderIntegrationOutboxService,
+          useValue: { recordJourneyConsent: jest.fn().mockResolvedValue(null) },
+        },
         {
           provide: AuditLogsService,
           useValue: { record: jest.fn().mockResolvedValue(undefined), logEvent: jest.fn() },

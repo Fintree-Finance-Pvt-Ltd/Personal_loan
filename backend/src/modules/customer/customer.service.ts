@@ -23,6 +23,7 @@ import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engin
 
 import { ApplicationTransitionService } from '../loan/services/application-transition.service';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
+import { ALL_CONSENT_TYPES, CONSENT_CATALOGUE, consentTextFor } from '../lender-integrations/consent-catalogue';
 import { ProductCalculationService } from '../products/product-calculation.service';
 
 @Injectable()
@@ -509,6 +510,23 @@ export class CustomerService {
 
     const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan, hasDecisionConsents, aaCompleted });
 
+    // Resolve every consent's wording once, against the allocated lender's display name.
+    // Falls back to a neutral label before allocation so the screens still render.
+    const allocatedLender = latestApp?.lenderId
+      ? await this.prisma.lender.findUnique({ where: { id: latestApp.lenderId }, select: { displayName: true } })
+      : null;
+    const lenderDisplayName = allocatedLender?.displayName || 'the allocated lending partner';
+    const consentTexts = Object.fromEntries(
+      ALL_CONSENT_TYPES.map((type) => [
+        type,
+        {
+          templateId: CONSENT_CATALOGUE[type].templateId,
+          version: CONSENT_CATALOGUE[type].version,
+          text: consentTextFor(type, lenderDisplayName),
+        },
+      ]),
+    );
+
     // Explicitly build response — never spread raw Prisma objects with BigInt fields
     return {
       success: true,
@@ -615,6 +633,11 @@ export class CustomerService {
           aaCompleted,
           aaStatus,
           nextPermittedStep,
+          // The exact wording of every consent, resolved against the allocated lender.
+          // Screens render these rather than holding their own copy: the backend hashes
+          // this same string as evidence, so anything the frontend paraphrased would mean
+          // storing a consent the customer never actually read.
+          consentTexts,
         } : null,
       },
     };

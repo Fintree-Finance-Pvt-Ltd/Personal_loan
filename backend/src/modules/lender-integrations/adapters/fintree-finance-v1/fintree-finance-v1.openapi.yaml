@@ -150,6 +150,9 @@ components:
           format: uuid
 
     SubmitConsentRequest:
+      description: >
+        One consent per request. The endpoint is called once for each consent taken in the
+        customer journey, each with its own Idempotency-Key.
       type: object
       required:
         - externalApplicationReference
@@ -166,7 +169,18 @@ components:
         lan:
           type: string
         consentType:
+          description: >
+            Which consent this is. LENDER_DATA_SHARING is the assessment-fee consent;
+            the remainder correspond to the other points in the journey.
           type: string
+          enum:
+            - LIVE_PHOTO_CAPTURE
+            - AADHAAR_KYC
+            - LENDER_DATA_SHARING
+            - ACCOUNT_AGGREGATOR
+            - BUREAU_ENQUIRY
+            - LENDER_CREDIT_ASSESSMENT
+            - LENDER_DECISION_REQUEST
         consentId:
           type: string
         consentTemplateId:
@@ -174,6 +188,10 @@ components:
         consentVersion:
           type: string
         consentTextHash:
+          description: >
+            SHA-256 (hex) of the consent wording. The wording itself is not transmitted —
+            consentTemplateId and consentVersion identify which text was accepted, and this
+            hash verifies a copy held out of band is the same one.
           type: string
         consentReference:
           type: string

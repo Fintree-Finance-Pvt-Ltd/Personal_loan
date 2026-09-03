@@ -2,7 +2,7 @@ import {
   BadRequestException,
   Injectable,
 } from '@nestjs/common';
-import { LenderIntegrationOperationStatus } from '@prisma/client';
+import { ApplicationConsentType, LenderIntegrationOperationStatus } from '@prisma/client';
 
 import {
   createHash,
@@ -509,6 +509,8 @@ async markStageFailure(
     );
   }
 
+  // The gating data-sharing consent keeps its original key so events queued before the
+  // per-type fan-out shipped still resolve to the same row.
   const consentKey =
     `${application.applicationNumber}:LENDER_SUBMIT_CONSENT:V1`;
 
@@ -634,12 +636,20 @@ async markStageFailure(
 
               idempotencyKey:
                 consentKey,
+
+              consentType:
+                'DATA_SHARING',
             },
 
             update: {},
           });
       },
     );
+
+  // Every other consent already recorded by this point (live photo, Aadhaar KYC, and any
+  // later ones once they land) gets its own submission event now that a
+  // partnerApplicationId exists to address them to.
+  await this.outbox.enqueueConsentSubmissions(application.id);
 
   return true;
 }
@@ -651,7 +661,13 @@ async markStageFailure(
   config: any,
   adapter: LenderAdapter,
 ): Promise<boolean> {
+  // link.consentStatus tracks the DATA_SHARING consent specifically, because that is what
+  // gates UPDATE. The other consent types each have their own outbox row and must not be
+  // short-circuited by (or allowed to regress) that single column.
+  const isGatingConsent = (event.consentType ?? 'DATA_SHARING') === 'DATA_SHARING';
+
   if (
+    isGatingConsent &&
     link.consentStatus ===
       'COMPLETED' &&
     ['CONSENT', 'UPDATE', 'DOCUMENT']
@@ -702,11 +718,17 @@ async markStageFailure(
       },
 
       data: {
-        consentStatus:
-          'PROCESSING',
+        // Only the gating consent moves consentStatus; a supplementary consent going out
+        // must not drag the link back out of COMPLETED and block UPDATE.
+        ...(isGatingConsent
+          ? {
+              consentStatus:
+                'PROCESSING' as const,
 
-        consentIdempotencyKey:
-          event.idempotencyKey,
+              consentIdempotencyKey:
+                event.idempotencyKey,
+            }
+          : {}),
 
         lastAttemptAt:
           new Date(),
@@ -758,11 +780,16 @@ async markStageFailure(
             },
 
             data: {
-              consentStatus:
-                'COMPLETED',
+              // See above: only the gating DATA_SHARING consent owns this column.
+              ...(isGatingConsent
+                ? {
+                    consentStatus:
+                      'COMPLETED' as const,
 
-              lastSyncedStage:
-                'CONSENT',
+                    lastSyncedStage:
+                      'CONSENT' as const,
+                  }
+                : {}),
 
               lastResponseStatus:
                 result
@@ -835,34 +862,36 @@ async markStageFailure(
   config: any,
   link: any,
 ): Promise<LenderConsentContext> {
+  // Each CONSENT event carries the one consent type it is responsible for submitting
+  // (the lender's endpoint takes one per POST). Legacy events created before the
+  // per-type fan-out have no consentType and mean the data-sharing consent.
+  const consentType: ApplicationConsentType = event.consentType ?? 'DATA_SHARING';
+
   const consent =
-    await this.prisma
-      .lenderDataSharingConsent
-      .findFirst({
-        where: {
-          applicationId:
-            application.id,
-
-          customerId:
-            application.customerId,
-
-          lenderId:
-            application.lenderId,
-
-          revokedAt:
-            null,
-        },
-
-        orderBy: {
-          acceptedAt:
-            'desc',
-        },
-      });
+    consentType === 'DATA_SHARING'
+      ? await this.prisma.lenderDataSharingConsent.findFirst({
+          where: {
+            applicationId: application.id,
+            customerId: application.customerId,
+            lenderId: application.lenderId,
+            revokedAt: null,
+          },
+          orderBy: { acceptedAt: 'desc' },
+        })
+      : await this.prisma.applicationStageConsent.findFirst({
+          where: {
+            applicationId: application.id,
+            lenderId: application.lenderId,
+            consentType,
+            revokedAt: null,
+          },
+          orderBy: { acceptedAt: 'desc' },
+        });
 
   if (!consent) {
     throw new LenderIntegrationError(
       'LENDER_CONSENT_MISSING',
-      'Valid lender data-sharing consent was not found.',
+      `Valid ${consentType} consent evidence was not found.`,
       'PERMANENT_VALIDATION',
     );
   }
@@ -930,8 +959,12 @@ async markStageFailure(
     consentId:
       consent.id,
 
+    // LENDER_DATA_SHARING is the name the lender's contract uses for what we call
+    // DATA_SHARING; every other type goes across under its own name.
     consentType:
-      'LENDER_DATA_SHARING',
+      consentType === 'DATA_SHARING'
+        ? 'LENDER_DATA_SHARING'
+        : consentType,
 
     consentTemplateId:
       consent
@@ -945,9 +978,12 @@ async markStageFailure(
       consent
         .consentTextHash,
 
+    // Only LenderDataSharingConsent carries a reference; stage consents fall back to
+    // their type, which is what the lender uses to categorise the submission.
     consentReference:
-      consent
-        .consentReference,
+      'consentReference' in consent
+        ? consent.consentReference
+        : consentType,
 
     acceptedAt:
       consent
@@ -2157,7 +2193,20 @@ async markStageFailure(
     const decision = consents.find((item) => item.consentType === 'LENDER_DECISION_REQUEST');
     const assessment = consents.find((item) => item.consentType === 'LENDER_CREDIT_ASSESSMENT');
     if (!product || !bureau || !decision || !assessment) throw new LenderIntegrationError('LENDER_DECISION_CONSENT_NOT_AVAILABLE', 'Persisted bureau, credit-assessment and decision consent evidence is required.', 'PERMANENT_VALIDATION');
-    return { idempotencyKey: event.idempotencyKey, correlationId: randomUUID(), payloadVersion: event.payloadVersion, transport: this.transport(config), partnerApplicationId: link.partnerApplicationId, applicationReference: application.applicationNumber, externalProductCode: product.code, profileComplete: true, bureauConsentReference: bureau.consentTemplateId, bureauConsentHash: bureau.consentTextHash, lenderDecisionConsentReference: decision.consentTemplateId, lenderDecisionConsentHash: decision.consentTextHash };
+    return {
+      idempotencyKey: event.idempotencyKey,
+      correlationId: randomUUID(),
+      payloadVersion: event.payloadVersion,
+      transport: this.transport(config),
+      partnerApplicationId: link.partnerApplicationId,
+      applicationReference: application.applicationNumber,
+      externalProductCode: product.code,
+      profileComplete: true,
+      bureauConsentReference: bureau.consentTemplateId,
+      bureauConsentHash: bureau.consentTextHash,
+      lenderDecisionConsentReference: decision.consentTemplateId,
+      lenderDecisionConsentHash: decision.consentTextHash,
+    };
   }
 
   private async buildDisburseContext(event: any, application: any, link: any, config: any, loan: any): Promise<LenderDisburseContext> {

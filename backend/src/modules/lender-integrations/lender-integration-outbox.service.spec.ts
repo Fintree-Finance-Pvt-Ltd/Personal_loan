@@ -20,6 +20,73 @@ describe('LenderIntegrationOutboxService', () => {
     expect(storedFields).not.toContain('pan');
   });
 
+  describe('enqueueConsentSubmissions', () => {
+    const application = { id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' };
+
+    const prismaWith = (consents: any[], link: any = { partnerApplicationId: 'P-1', createStatus: 'COMPLETED' }) => ({
+      plApplication: { findUnique: jest.fn().mockResolvedValue(application) },
+      lenderApplicationLink: { findUnique: jest.fn().mockResolvedValue(link) },
+      applicationStageConsent: { findMany: jest.fn().mockResolvedValue(consents) },
+      lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+    });
+
+    const consentRow = (consentType: string) => {
+      const consentText = `Consent text for ${consentType}`;
+      return {
+        consentType,
+        consentText,
+        consentTextHash: createHash('sha256').update(consentText, 'utf8').digest('hex'),
+      };
+    };
+
+    // One outbox row per consent type, because the lender's endpoint takes one consent per
+    // POST — batching them under a single event would reuse one Idempotency-Key for
+    // different bodies.
+    it('queues a separate, per-type idempotent event for every recorded consent', async () => {
+      const prisma: any = prismaWith([
+        consentRow('DATA_SHARING'),
+        consentRow('AADHAAR_KYC'),
+        consentRow('LIVE_PHOTO_CAPTURE'),
+      ]);
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      const events = await service.enqueueConsentSubmissions(1n);
+
+      expect(events).toHaveLength(3);
+      expect(prisma.lenderIntegrationOutbox.upsert.mock.calls.map((c: any) => c[0].where.idempotencyKey)).toEqual([
+        'APP-001:LENDER_SUBMIT_CONSENT:DATA_SHARING:V1',
+        'APP-001:LENDER_SUBMIT_CONSENT:AADHAAR_KYC:V1',
+        'APP-001:LENDER_SUBMIT_CONSENT:LIVE_PHOTO_CAPTURE:V1',
+      ]);
+      expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING', 'AADHAAR_KYC', 'LIVE_PHOTO_CAPTURE']);
+    });
+
+    // The consent endpoint is addressed by partnerApplicationId, so there is nothing to
+    // send to until CREATE has returned one. Those consents go out when CREATE completes.
+    it('queues nothing until CREATE has produced a partner application id', async () => {
+      const prisma: any = prismaWith([consentRow('DATA_SHARING')], { partnerApplicationId: null, createStatus: 'PENDING' });
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      expect(await service.enqueueConsentSubmissions(1n)).toEqual([]);
+      expect(prisma.lenderIntegrationOutbox.upsert).not.toHaveBeenCalled();
+    });
+
+    // A row whose text no longer hashes to its stored hash is not evidence, and forwarding
+    // it to the lender would assert a consent we cannot prove.
+    it('refuses to forward a consent whose stored text has been tampered with', async () => {
+      const prisma: any = prismaWith([
+        consentRow('DATA_SHARING'),
+        { consentType: 'AADHAAR_KYC', consentText: 'edited after the fact', consentTextHash: 'a'.repeat(64) },
+      ]);
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      const events = await service.enqueueConsentSubmissions(1n);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].consentType).toBe('DATA_SHARING');
+    });
+  });
+
   describe('replayFailedEvent', () => {
     const prismaFor = (event: any, application: any = {}) => {
       const tx: any = {
