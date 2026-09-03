@@ -9,7 +9,12 @@ import { LenderDecisionResult } from './lender-integration.types';
 export class LenderDecisionProcessor {
   constructor(private readonly prisma: PrismaService) {}
 
-  async process(eventId: string, lockToken: string, partnerApplicationId: string, result: LenderDecisionResult): Promise<void> {
+  /**
+   * @param canPollStatus whether the lender's adapter actually implements status polling.
+   *   A PENDING decision schedules a STATUS poll to chase the outcome; queueing one for an
+   *   adapter that cannot poll manufactures an event guaranteed to fail permanently.
+   */
+  async process(eventId: string, lockToken: string, partnerApplicationId: string, result: LenderDecisionResult, canPollStatus = true): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const event = await tx.lenderIntegrationOutbox.findFirst({ where: { id: eventId, status: 'PROCESSING', lockToken } });
       if (!event) throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Lender event lease is no longer owned by this worker.', 'TEMPORARY', true);
@@ -80,7 +85,13 @@ export class LenderDecisionProcessor {
           await tx.plApplication.update({ where: { id: application.id }, data: { lenderDecisionReference: result.decisionReference, lenderDecisionAt: decidedAt, lenderNextStatusCheckAt: nextStatusCheckAt } });
         }
         const nextVersion = event.integrationStage === 'STATUS' ? event.payloadVersion + 1 : 1;
-        if (nextVersion <= 5) {
+        // Only chase the outcome if the adapter can actually poll. Fintree v1 declares
+        // statusPolling: false and its getStatus() throws FINTREE_STATUS_CONTRACT_NOT_ENABLED,
+        // so scheduling a poll here produced a STATUS event that could only ever fail — and
+        // a permanently failed event puts the customer on the integration-support screen.
+        // Without polling the application waits at LENDER_REVIEW for the lender to come back
+        // (webhook or manual credit review), which is the correct state for it to be in.
+        if (canPollStatus && nextVersion <= 5) {
           const idempotencyKey = `${application.applicationNumber}:LENDER_STATUS_CHECK:V${nextVersion}`;
           await tx.lenderIntegrationOutbox.upsert({ where: { idempotencyKey }, create: { eventType: 'LENDER_STATUS_CHECK', applicationId: application.id, applicationReference: application.applicationNumber, lenderId: application.lenderId!, integrationStage: 'STATUS', payloadVersion: nextVersion, idempotencyKey, availableAt: nextStatusCheckAt }, update: {} });
         }
