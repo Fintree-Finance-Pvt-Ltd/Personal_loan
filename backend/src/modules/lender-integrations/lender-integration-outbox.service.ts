@@ -4,6 +4,7 @@ import { ApplicationConsentType, Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import {
   CONSENT_CATALOGUE,
+  canSubmitConsentToLender,
   consentTextFor,
   hashConsentText,
   isConsentEvidenceIntact,
@@ -89,8 +90,17 @@ export class LenderIntegrationOutboxService {
       update: {},
     });
 
+    // The consent itself is now durably recorded. Queueing its forwarding is best-effort:
+    // if it fails the evidence still stands, and the next consent recorded (or a CREATE
+    // completion) queues it again.
     if (!input.deferSubmission) {
-      await this.enqueueConsentSubmissions(application.id);
+      try {
+        await this.enqueueConsentSubmissions(application.id);
+      } catch (error: any) {
+        this.logger.error(
+          `Recorded ${input.consentType} consent but could not queue its submission: ${error?.message}`,
+        );
+      }
     }
     return stageConsent;
   }
@@ -127,7 +137,9 @@ export class LenderIntegrationOutboxService {
 
     const events = [];
     for (const consent of consents) {
-      if (!CONSENT_CATALOGUE[consent.consentType]?.submitToLender) continue;
+      // Recording and forwarding are separate: consents the lender cannot yet accept stay
+      // stored as evidence and are queued later, rather than failing against their API.
+      if (!canSubmitConsentToLender(consent.consentType)) continue;
       // A consent whose text no longer hashes to its stored hash is not evidence and must
       // not be forwarded as though it were.
       if (!isConsentEvidenceIntact(consent)) {
@@ -432,7 +444,18 @@ if (!platformLan) {
     // These three were previously stored but never sent as consent submissions — only
     // bureau and decision rode along inside the DECISION payload, and credit assessment
     // was validated then dropped. They now go to the lender in their own right.
-    await this.enqueueConsentSubmissions(application.id);
+    //
+    // Swallowed deliberately: this runs on the customer's Submit Application click. The
+    // consents are already durably recorded above, so failing to *queue* their forwarding
+    // must not fail the submit — the next consent recorded, or a CREATE completion, queues
+    // them again.
+    try {
+      await this.enqueueConsentSubmissions(application.id);
+    } catch (error: any) {
+      this.logger.error(
+        `Unable to queue consent submissions for application ${application.id}: ${error?.message}`,
+      );
+    }
     try {
       const event = await this.enqueueDecisionWhenReady(application.id);
       return { enqueued: true, event };

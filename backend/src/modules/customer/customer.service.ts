@@ -401,7 +401,9 @@ export class CustomerService {
           include: {
             loans: { orderBy: { id: 'desc' }, take: 1 },
             lenderApplicationLink: true,
-            lenderIntegrationOutbox: { orderBy: { createdAt: 'desc' }, take: 1 },
+            // More than one, because the newest event is not necessarily the one that
+            // decides whether the customer is blocked — see blockingOutbox below.
+            lenderIntegrationOutbox: { orderBy: { createdAt: 'desc' }, take: 20 },
             employmentSnapshot: true,
             kycSnapshot: true,
             addresses: true,
@@ -488,6 +490,17 @@ export class CustomerService {
     }
     const link = latestApp?.lenderApplicationLink ?? null;
     const currentOutbox = latestApp?.lenderIntegrationOutbox?.[0] ?? null;
+    // Which failure actually blocks the customer. A supplementary consent submission
+    // (Aadhaar KYC, Account Aggregator, live photo) is evidence we forward to the lender —
+    // it is not a prerequisite for anything the customer does next, so a rejection there
+    // must not strand them on the integration-support screen. Only the gating data-sharing
+    // consent and the CREATE/UPDATE/DECISION stages genuinely halt progression.
+    const blockingOutbox =
+      (latestApp?.lenderIntegrationOutbox ?? []).find(
+        (event: any) =>
+          event.status === 'FAILED' &&
+          !(event.integrationStage === 'CONSENT' && (event.consentType ?? 'DATA_SHARING') !== 'DATA_SHARING'),
+      ) ?? null;
     let hasDecisionConsents = false;
     if (latestApp) {
       const requiredConsentTypes = ['BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'];
@@ -508,7 +521,7 @@ export class CustomerService {
     const aaCompleted = Boolean(aaRequest);
     const aaStatus = aaRequest?.status || 'NOT_STARTED';
 
-    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: currentOutbox, updateReadiness, loan: latestLoan, hasDecisionConsents, aaCompleted });
+    const nextPermittedStep = this.nextPermittedStep({ application: latestApp, payment: latestSuccessPayment, link, outbox: blockingOutbox, updateReadiness, loan: latestLoan, hasDecisionConsents, aaCompleted });
 
     // Resolve every consent's wording once, against the allocated lender's display name.
     // Falls back to a neutral label before allocation so the screens still render.
@@ -1180,6 +1193,7 @@ export class CustomerService {
     });
   }
 
+  /** `outbox` is the most recent FAILED event that genuinely blocks progression, or null. */
   private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean; aaCompleted?: boolean }): string {
     const { application, payment, link, outbox, updateReadiness, loan, hasDecisionConsents, aaCompleted } = input;
     if (!application) return 'BASIC_DETAILS';
