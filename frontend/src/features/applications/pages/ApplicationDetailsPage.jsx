@@ -27,6 +27,18 @@ function formatLabel(value) {
     .join(' ');
 }
 
+// How long until the worker would pick a RETRY_PENDING stage up on its own. The backoff
+// schedule ends at 3600s, so this is worth showing — it tells the operator whether waiting
+// is even an option, or whether they should force it now.
+function formatRetryCountdown(availableAt) {
+  if (!availableAt) return null;
+  const seconds = Math.ceil((new Date(availableAt).getTime() - Date.now()) / 1000);
+  if (seconds <= 0) return 'due now';
+  if (seconds < 60) return `auto-retry in ${seconds}s`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes < 60 ? `auto-retry in ${minutes}m` : `auto-retry in ${Math.ceil(minutes / 60)}h`;
+}
+
 export default function ApplicationDetailsPage() {
   const { applicationId } = useParams();
   const auth = useAuth();
@@ -768,15 +780,29 @@ export default function ApplicationDetailsPage() {
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{formatDate(stage.updatedAt)}</td>
                   <td className="px-6 py-4 text-right whitespace-nowrap">
-                    {stage.status === 'FAILED' && canRetry && (
-                      <button
-                        type="button"
-                        disabled={retryingEventId === stage.eventId}
-                        onClick={() => handleRetry(stage.eventId)}
-                        className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-                      >
-                        {retryingEventId === stage.eventId ? 'Retrying…' : 'Retry'}
-                      </button>
+                    {/* RETRY_PENDING is retryable too — the call already failed and is just
+                        sitting on its backoff, which runs up to an hour on the last attempt.
+                        PROCESSING is excluded: a worker still holds the lease on it. */}
+                    {['FAILED', 'RETRY_PENDING'].includes(stage.status) && canRetry && (
+                      <>
+                        {stage.status === 'RETRY_PENDING' && (
+                          <div className="mb-1 text-xs text-gray-500">
+                            {formatRetryCountdown(stage.availableAt)}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          disabled={retryingEventId === stage.eventId}
+                          onClick={() => handleRetry(stage.eventId)}
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          {retryingEventId === stage.eventId
+                            ? 'Retrying…'
+                            : stage.status === 'RETRY_PENDING'
+                              ? 'Retry now'
+                              : 'Retry'}
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
