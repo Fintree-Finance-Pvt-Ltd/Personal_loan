@@ -79,9 +79,12 @@ describe('consent catalogue', () => {
 
     it('builds the key the lender has always accepted for data sharing', () => {
       expect(consentIdempotencyKey('APP-001', 'DATA_SHARING')).toBe('APP-001:LENDER_SUBMIT_CONSENT:V1');
-      expect(consentIdempotencyKey('APP-001', 'BUREAU_ENQUIRY')).toBe(
-        'APP-001:LENDER_SUBMIT_CONSENT:BUREAU_ENQUIRY:V1',
-      );
+    });
+
+    it('uses a short type code for other consent types — the full type name was rejected by the lender as an invalid Idempotency-Key', () => {
+      expect(consentIdempotencyKey('APP-001', 'BUREAU_ENQUIRY')).toBe('APP-001:CONSENT:BE:V1');
+      expect(consentIdempotencyKey('APP-001', 'LENDER_CREDIT_ASSESSMENT')).toBe('APP-001:CONSENT:CA:V1');
+      expect(consentIdempotencyKey('APP-001', 'LENDER_DECISION_REQUEST')).toBe('APP-001:CONSENT:DR:V1');
     });
 
     it('releases the newer types once the flag is set', () => {

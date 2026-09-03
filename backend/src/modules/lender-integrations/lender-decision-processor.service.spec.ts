@@ -72,6 +72,22 @@ describe('LenderDecisionProcessor', () => {
       }));
     });
 
+    // Fintree v1 declares statusPolling: false and its getStatus() throws
+    // FINTREE_STATUS_CONTRACT_NOT_ENABLED, so scheduling a poll for it created an event that
+    // could only fail permanently — which strands the customer on integration support.
+    it('does not schedule a status check when the adapter cannot poll', async () => {
+      const { processor, tx } = base();
+      await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
+        decision: 'PENDING', providerStatus: 'UNDER_REVIEW', decisionReference: 'DEC-3',
+      }, false);
+
+      // The application still parks at LENDER_REVIEW awaiting the lender's own callback.
+      expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: 'LENDER_REVIEW' }),
+      }));
+      expect(tx.lenderIntegrationOutbox.upsert).not.toHaveBeenCalled();
+    });
+
     it('is a no-op replay once pre-approval has already resolved', async () => {
       const { processor, tx } = base({ applicationStatus: 'LENDER_PRE_APPROVED' });
       await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {

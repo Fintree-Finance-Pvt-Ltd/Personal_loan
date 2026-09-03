@@ -62,10 +62,11 @@ describe('LenderIntegrationOutboxService', () => {
       expect(events).toHaveLength(3);
       expect(prisma.lenderIntegrationOutbox.upsert.mock.calls.map((c: any) => c[0].where.idempotencyKey)).toEqual([
         // Data sharing keeps the original three-segment key so events queued before the
-        // fan-out shipped still resolve to the same row.
+        // fan-out shipped still resolve to the same row. Other types use a short code —
+        // the full type name was rejected by the lender as an invalid Idempotency-Key.
         'APP-001:LENDER_SUBMIT_CONSENT:V1',
-        'APP-001:LENDER_SUBMIT_CONSENT:AADHAAR_KYC:V1',
-        'APP-001:LENDER_SUBMIT_CONSENT:LIVE_PHOTO_CAPTURE:V1',
+        'APP-001:CONSENT:KYC:V1',
+        'APP-001:CONSENT:LPC:V1',
       ]);
       expect(events.map((e: any) => e.consentType)).toEqual(['DATA_SHARING', 'AADHAAR_KYC', 'LIVE_PHOTO_CAPTURE']);
     });

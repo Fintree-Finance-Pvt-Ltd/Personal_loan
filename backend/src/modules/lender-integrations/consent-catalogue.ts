@@ -131,6 +131,23 @@ export function canSubmitConsentToLender(type: ApplicationConsentType): boolean 
   return true;
 }
 
+// Short codes for the per-type Idempotency-Key below. Fintree rejected the first shape
+// tried here (INVALID_IDEMPOTENCY_KEY, on every non-DATA_SHARING type, on the very first
+// attempt of each — not a duplicate-submission rejection) — the only thing distinguishing
+// those from the one shape confirmed to work is length: the full-name keys ran 60-70
+// characters against Data Sharing's ~45. Not confirmed against Fintree's documented
+// contract (they don't publish a max length for this header), but it's the strongest
+// evidence available, so every non-DATA_SHARING type now gets a short code instead of its
+// full name.
+const CONSENT_TYPE_SHORT_CODE: Partial<Record<ApplicationConsentType, string>> = {
+  LIVE_PHOTO_CAPTURE: 'LPC',
+  AADHAAR_KYC: 'KYC',
+  ACCOUNT_AGGREGATOR: 'AA',
+  BUREAU_ENQUIRY: 'BE',
+  LENDER_CREDIT_ASSESSMENT: 'CA',
+  LENDER_DECISION_REQUEST: 'DR',
+};
+
 /**
  * The Idempotency-Key for a consent submission.
  *
@@ -142,9 +159,11 @@ export function consentIdempotencyKey(
   applicationReference: string,
   type: ApplicationConsentType,
 ): string {
-  return type === 'DATA_SHARING'
-    ? `${applicationReference}:LENDER_SUBMIT_CONSENT:V1`
-    : `${applicationReference}:LENDER_SUBMIT_CONSENT:${type}:V1`;
+  if (type === 'DATA_SHARING') {
+    return `${applicationReference}:LENDER_SUBMIT_CONSENT:V1`;
+  }
+  const shortCode = CONSENT_TYPE_SHORT_CODE[type] ?? type;
+  return `${applicationReference}:CONSENT:${shortCode}:V1`;
 }
 
 export function consentTextFor(

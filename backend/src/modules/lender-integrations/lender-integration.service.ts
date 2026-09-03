@@ -1378,13 +1378,13 @@ async markStageFailure(
       if (!adapter.getStatus) throw new LenderIntegrationError('LENDER_STATUS_NOT_SUPPORTED', 'Selected lender adapter does not support status inquiry.', 'AUTHENTICATION_CONFIGURATION');
       const context = await this.buildStatusContext(event, application, link, config);
       const result = await adapter.getStatus(context);
-      await this.decisions.process(event.id, lockToken, link.partnerApplicationId, result);
+      await this.decisions.process(event.id, lockToken, link.partnerApplicationId, result, adapter.capabilities.statusPolling);
       return;
     }
     const context = await this.buildDecisionContext(event, application, link, config);
     await this.prisma.lenderApplicationLink.update({ where: { id: link.id }, data: { decisionStatus: 'PROCESSING', decisionIdempotencyKey: event.idempotencyKey, lastAttemptAt: new Date(), lastRequestHash: this.hash(context), lastErrorCode: null, lastErrorMessage: null } });
     const result = await adapter.requestDecision(context);
-    await this.decisions.process(event.id, lockToken, link.partnerApplicationId, result);
+    await this.decisions.process(event.id, lockToken, link.partnerApplicationId, result, adapter.capabilities.statusPolling);
   }
 
   private async processDisburse(event: any, application: any, link: any, config: any, adapter: LenderAdapter): Promise<boolean> {
