@@ -47,13 +47,35 @@ export function RepaymentScheduleCard({
       const res = await applicationsApi.retryDebit(schedule.id);
       setMessage({
         type: 'success',
-        text: `Debit Request dispatched successfully! Status: ${res?.status || 'IN_PROCESS'}`,
+        text: res?.message || `Debit Request dispatched successfully! Status: ${res?.status || 'IN_PROCESS'}`,
       });
       if (onChanged) onChanged();
     } catch (err) {
       setMessage({
         type: 'error',
         text: apiError(err, 'Failed to trigger mandate debit request.'),
+      });
+    } finally {
+      setProcessingRpsId(null);
+    }
+  };
+
+  const handleReconcileDebit = async (schedule) => {
+    if (!canManage) return;
+    setProcessingRpsId(`rec_${schedule.id}`);
+    setMessage(null);
+
+    try {
+      const res = await applicationsApi.reconcileDebit(schedule.id);
+      setMessage({
+        type: res?.status === 'SUCCESS' ? 'success' : res?.status === 'FAILURE' ? 'danger' : 'info',
+        text: res?.message || `Reconciliation result: ${res?.status}`,
+      });
+      if (onChanged) onChanged();
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        text: apiError(err, 'Failed to reconcile debit status.'),
       });
     } finally {
       setProcessingRpsId(null);
@@ -92,7 +114,7 @@ export function RepaymentScheduleCard({
 
       {message && (
         <div className="p-4 bg-gray-50 border-b">
-          <Alert variant={message.type === 'success' ? 'success' : 'danger'}>
+          <Alert variant={message.type === 'success' ? 'success' : message.type === 'danger' ? 'danger' : 'info'}>
             {message.text}
           </Alert>
         </div>
@@ -120,6 +142,7 @@ export function RepaymentScheduleCard({
               {schedules.map((schedule) => {
                 const isPaid = schedule.paymentStatus === 'PAID';
                 const isProcessing = processingRpsId === schedule.id;
+                const isReconciling = processingRpsId === `rec_${schedule.id}`;
                 const debit = schedule.latestDebitRequest;
 
                 return (
@@ -175,24 +198,45 @@ export function RepaymentScheduleCard({
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {!isPaid && canManage && (
-                        <button
-                          type="button"
-                          disabled={isProcessing || !activeMandate}
-                          onClick={() => handleRetryDebit(schedule)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
-                          title="Trigger AutoCollect Debit API"
-                        >
-                          {isProcessing ? (
-                            <>
-                              <Spinner size="xs" />
-                              <span>Presenting...</span>
-                            </>
-                          ) : (
-                            <span>Present / Debit Now</span>
-                          )}
-                        </button>
-                      )}
+                      <div className="inline-flex items-center gap-2 justify-end">
+                        {debit && canManage && (
+                          <button
+                            type="button"
+                            disabled={isProcessing || isReconciling}
+                            onClick={() => handleReconcileDebit(schedule)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors shadow-sm"
+                            title="Check live status from Easebuzz"
+                          >
+                            {isReconciling ? (
+                              <>
+                                <Spinner size="xs" />
+                                <span>Checking...</span>
+                              </>
+                            ) : (
+                              <span>Sync Status</span>
+                            )}
+                          </button>
+                        )}
+
+                        {!isPaid && canManage && (
+                          <button
+                            type="button"
+                            disabled={isProcessing || isReconciling || !activeMandate}
+                            onClick={() => handleRetryDebit(schedule)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+                            title="Trigger AutoCollect Debit API"
+                          >
+                            {isProcessing ? (
+                              <>
+                                <Spinner size="xs" />
+                                <span>Presenting...</span>
+                              </>
+                            ) : (
+                              <span>Present / Debit Now</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

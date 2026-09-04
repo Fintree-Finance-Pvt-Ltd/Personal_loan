@@ -121,6 +121,16 @@ export class AdminLoanServicingController {
   }
 
   @Permissions('LOAN_MANAGE')
+  @Post('repayment-schedule/:rpsId/reconcile-debit')
+  @HttpCode(HttpStatus.OK)
+  reconcileDebit(@Param('rpsId') rpsId: string) {
+    if (!/^[1-9][0-9]*$/.test(rpsId)) {
+      throw new BadRequestException('Invalid repayment schedule ID.');
+    }
+    return this.easebuzzCollectionCronService.reconcileRpsDebit(rpsId);
+  }
+
+  @Permissions('LOAN_MANAGE')
   @Post(':lan/welcome-letter/resend')
   @HttpCode(HttpStatus.OK)
   resendWelcomeLetter(@Param('lan') lan: string) {
