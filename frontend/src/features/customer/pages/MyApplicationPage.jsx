@@ -1620,7 +1620,7 @@ export default function MyApplicationPage() {
               setEligibilityModalState({
                 isOpen: true,
                 status: 'REJECTED',
-                message: result?.message || 'We are unable to proceed with your application based on platform policy.',
+                message: 'Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.',
                 allocatedLender: lenderDisplayName,
               });
               await fetchCustomer();
@@ -1637,11 +1637,10 @@ export default function MyApplicationPage() {
             await fetchCustomer();
           } catch (breErr) {
             console.error('Automatic eligibility check error:', breErr);
-            const errMsg = breErr instanceof Error ? breErr.message : 'Unable to complete eligibility evaluation.';
             setEligibilityModalState({
               isOpen: true,
               status: 'REJECTED',
-              message: errMsg,
+              message: 'Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.',
               allocatedLender: lenderDisplayName,
             });
             await fetchCustomer();
@@ -1984,23 +1983,18 @@ export default function MyApplicationPage() {
 
       {currentStep === 'rejection_screen' && (
         <StepCard>
-          <div className="flex flex-col items-center justify-center p-8 text-center">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-danger-100 text-danger-600 mb-6">
-              <AlertCircle size={32} />
+          <div className="flex flex-col items-center justify-center p-8 sm:p-12 text-center max-w-xl mx-auto">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-danger-50 text-danger-600 mb-6 shadow-sm ring-8 ring-danger-50/50">
+              <AlertCircle size={34} className="stroke-[2.2]" />
             </div>
-            <h2 className="text-2xl font-bold text-neutral-900 mb-3">Application Unsuccessful</h2>
-            <p className="text-neutral-600 max-w-md mx-auto mb-8">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-3 tracking-tight">Application Unsuccessful</h2>
+            <p className="text-base font-bold text-neutral-800 leading-relaxed mb-8 max-w-md">
               Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
-              {customer?.eligibilityReason && customer.eligibilityReason !== 'Platform policy rejection' && (
-                <span className="block mt-4 p-3 bg-danger-50 text-sm text-danger-700 rounded border border-danger-100 font-medium text-left">
-                  {customer.eligibilityReason}
-                </span>
-              )}
             </p>
             <button
               type="button"
               onClick={() => navigate('/')}
-              className="rounded-xl bg-info-600 px-6 py-3 text-sm font-semibold text-white hover:bg-info-700 transition"
+              className="rounded-2xl bg-brand-600 px-8 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 active:scale-[0.98] transition cursor-pointer"
             >
               Return to Home
             </button>
@@ -2133,33 +2127,33 @@ function EligibilityCheckModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200">
-        {/* Top Accent Gradient */}
+        {/* Top Accent Bar */}
         <div
           className={`h-2.5 w-full transition-colors duration-300 ${
             status === 'APPROVED'
               ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600'
               : status === 'REJECTED'
-              ? 'bg-gradient-to-r from-danger-500 via-rose-500 to-danger-600'
-              : 'bg-gradient-to-r from-brand-500 via-blue-500 to-brand-600 animate-pulse'
+              ? 'bg-gradient-to-r from-rose-500 via-danger-500 to-rose-600'
+              : 'bg-gradient-to-r from-brand-500 via-indigo-500 to-brand-600 animate-pulse'
           }`}
         />
 
-        <div className="p-6 sm:p-8 text-center">
+        <div className="p-7 sm:p-9 text-center">
           {status === 'CHECKING' && (
             <div className="flex flex-col items-center">
-              <div className="relative mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-50 text-brand-600 shadow-inner">
+              <div className="relative mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-50 text-brand-600 shadow-inner">
                 <div className="absolute inset-0 rounded-3xl border-2 border-brand-400/40 animate-ping opacity-30" />
                 <LoaderCircle size={38} className="animate-spin text-brand-600" />
               </div>
               <h3 className="text-xl font-bold text-neutral-900 tracking-tight">
                 Checking Loan Eligibility
               </h3>
-              <p className="mt-2 text-sm text-neutral-600 leading-relaxed max-w-xs">
+              <p className="mt-2.5 text-sm text-neutral-600 leading-relaxed max-w-xs">
                 {message || 'Evaluating your application against platform policy and underwriting guidelines...'}
               </p>
-              <div className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-neutral-500 bg-neutral-100 py-2 px-4 rounded-full">
+              <div className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-neutral-500 bg-neutral-100/80 py-2 px-4 rounded-full">
                 <ShieldCheck size={14} className="text-brand-600" />
                 <span>Secured Bank-Grade Evaluation</span>
               </div>
@@ -2169,19 +2163,19 @@ function EligibilityCheckModal({
           {status === 'APPROVED' && (
             <div className="flex flex-col items-center animate-in zoom-in-95 duration-300">
               <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-600 shadow-md ring-8 ring-emerald-50">
-                <CheckCircle2 size={40} className="stroke-[2.5]" />
+                <CheckCircle2 size={42} className="stroke-[2.5]" />
               </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-2.5">
                 <Sparkles size={13} />
                 <span>Eligibility Passed</span>
               </div>
               <h3 className="text-2xl font-bold text-neutral-900 tracking-tight">
                 Congratulations! 🎉
               </h3>
-              <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
+              <p className="mt-2.5 text-sm text-neutral-600 leading-relaxed max-w-sm">
                 {message || `Your application has passed eligibility criteria with ${allocatedLender || 'our lending partner'}.`}
               </p>
-              <div className="mt-6 w-full pt-2">
+              <div className="mt-7 w-full">
                 <button
                   type="button"
                   onClick={onProceed}
@@ -2196,25 +2190,25 @@ function EligibilityCheckModal({
 
           {status === 'REJECTED' && (
             <div className="flex flex-col items-center animate-in zoom-in-95 duration-300">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-danger-100 text-danger-600 shadow-md ring-8 ring-danger-50">
-                <AlertCircle size={40} className="stroke-[2.5]" />
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-danger-50 text-danger-600 shadow-md ring-8 ring-danger-50/60">
+                <AlertCircle size={42} className="stroke-[2.2]" />
               </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-danger-50 text-danger-700 text-xs font-bold uppercase tracking-wider mb-2">
-                <span>Application Ineligible</span>
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-danger-50 text-danger-700 text-xs font-bold uppercase tracking-wider mb-2.5">
+                <span>Application Unsuccessful</span>
               </div>
-              <h3 className="text-2xl font-bold text-neutral-900 tracking-tight">
-                Application Not Eligible
+              <h3 className="text-2xl font-bold text-neutral-900 tracking-tight mb-2">
+                Application Unsuccessful
               </h3>
-              <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
-                {message || 'Based on the information provided, we are unable to approve your application at this time.'}
+              <p className="mt-2 text-sm font-bold text-neutral-800 leading-relaxed max-w-sm">
+                Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
               </p>
-              <div className="mt-6 w-full pt-2">
+              <div className="mt-7 w-full flex flex-col gap-2.5">
                 <button
                   type="button"
                   onClick={onViewRejection}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-neutral-900 px-6 py-3.5 text-sm font-bold text-white shadow-lg hover:bg-neutral-800 active:scale-[0.98] transition cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 active:scale-[0.98] transition cursor-pointer"
                 >
-                  <span>View Details</span>
+                  <span>Return to Home</span>
                   <ArrowRight size={18} />
                 </button>
               </div>
