@@ -81,10 +81,23 @@ describe('consent catalogue', () => {
       expect(consentIdempotencyKey('APP-001', 'DATA_SHARING')).toBe('APP-001:LENDER_SUBMIT_CONSENT:V1');
     });
 
-    it('uses a short type code for other consent types — the full type name was rejected by the lender as an invalid Idempotency-Key', () => {
-      expect(consentIdempotencyKey('APP-001', 'BUREAU_ENQUIRY')).toBe('APP-001:CONSENT:BE:V1');
-      expect(consentIdempotencyKey('APP-001', 'LENDER_CREDIT_ASSESSMENT')).toBe('APP-001:CONSENT:CA:V1');
-      expect(consentIdempotencyKey('APP-001', 'LENDER_DECISION_REQUEST')).toBe('APP-001:CONSENT:DR:V1');
+    // Confirmed directly against Fintree's validation source: their suffix map is keyed by
+    // AADHAAR_KYC / ACCOUNT_AGGREGATOR / LIVE_PHOTO_CAPTURE / LENDER_DATA_SHARING; every
+    // other consentType (including our DATA_SHARING, which never equals their
+    // LENDER_DATA_SHARING key) falls through to their default suffix.
+    it('uses the suffix the lender requires for each mapped consent type', () => {
+      expect(consentIdempotencyKey('APP-001', 'AADHAAR_KYC')).toBe('APP-001:CONSENT:KYC:V1');
+      expect(consentIdempotencyKey('APP-001', 'ACCOUNT_AGGREGATOR')).toBe('APP-001:CONSENT:AA:V1');
+      expect(consentIdempotencyKey('APP-001', 'LIVE_PHOTO_CAPTURE')).toBe('APP-001:CONSENT:LPC:V1');
+    });
+
+    // Types absent from the lender's suffix map must still end with their default suffix —
+    // it's an endsWith check, not exact-match — so the type name goes right before it to
+    // keep each key unique per type without failing that check.
+    it('prefixes the default suffix with the type name for consent types the lender has not mapped a suffix for', () => {
+      expect(consentIdempotencyKey('APP-001', 'BUREAU_ENQUIRY')).toBe('APP-001:BUREAU_ENQUIRY:LENDER_SUBMIT_CONSENT:V1');
+      expect(consentIdempotencyKey('APP-001', 'LENDER_CREDIT_ASSESSMENT')).toBe('APP-001:LENDER_CREDIT_ASSESSMENT:LENDER_SUBMIT_CONSENT:V1');
+      expect(consentIdempotencyKey('APP-001', 'LENDER_DECISION_REQUEST')).toBe('APP-001:LENDER_DECISION_REQUEST:LENDER_SUBMIT_CONSENT:V1');
     });
 
     it('releases the newer types once the flag is set', () => {
