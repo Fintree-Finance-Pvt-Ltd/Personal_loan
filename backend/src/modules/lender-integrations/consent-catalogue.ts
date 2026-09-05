@@ -131,39 +131,48 @@ export function canSubmitConsentToLender(type: ApplicationConsentType): boolean 
   return true;
 }
 
-// Short codes for the per-type Idempotency-Key below. Fintree rejected the first shape
-// tried here (INVALID_IDEMPOTENCY_KEY, on every non-DATA_SHARING type, on the very first
-// attempt of each — not a duplicate-submission rejection) — the only thing distinguishing
-// those from the one shape confirmed to work is length: the full-name keys ran 60-70
-// characters against Data Sharing's ~45. Not confirmed against Fintree's documented
-// contract (they don't publish a max length for this header), but it's the strongest
-// evidence available, so every non-DATA_SHARING type now gets a short code instead of its
-// full name.
-const CONSENT_TYPE_SHORT_CODE: Partial<Record<ApplicationConsentType, string>> = {
-  LIVE_PHOTO_CAPTURE: 'LPC',
-  AADHAAR_KYC: 'KYC',
-  ACCOUNT_AGGREGATOR: 'AA',
-  BUREAU_ENQUIRY: 'BE',
-  LENDER_CREDIT_ASSESSMENT: 'CA',
-  LENDER_DECISION_REQUEST: 'DR',
+// Confirmed directly against Fintree's own validation source (shared by their team):
+//
+//   const CONSENT_IDEMPOTENCY_SUFFIXES = {
+//     LENDER_DATA_SHARING: ":LENDER_SUBMIT_CONSENT:V1",
+//     AADHAAR_KYC: ":CONSENT:KYC:V1",
+//     ACCOUNT_AGGREGATOR: ":CONSENT:AA:V1",
+//     LIVE_PHOTO_CAPTURE: ":CONSENT:LPC:V1",
+//   };
+//   const expectedSuffix = CONSENT_IDEMPOTENCY_SUFFIXES[req.body.consentType] || ":LENDER_SUBMIT_CONSENT:V1";
+//   if (!idempotencyKey.endsWith(expectedSuffix)) return 400 INVALID_IDEMPOTENCY_KEY;
+//
+// It's a suffix check keyed off the *body's* consentType, not an exact-match or a length
+// rule — the two earlier guesses here (a full type name inserted, then a version number
+// instead) were both wrong because neither was checked against this source. This table
+// mirrors it exactly. Their map is keyed by `LENDER_DATA_SHARING`, which our own
+// `DATA_SHARING` never equals, so — like BUREAU_ENQUIRY, LENDER_CREDIT_ASSESSMENT and
+// LENDER_DECISION_REQUEST, none of which appear in their map either — it falls through to
+// their default suffix.
+const CONSENT_TYPE_SUFFIX: Partial<Record<ApplicationConsentType, string>> = {
+  AADHAAR_KYC: ':CONSENT:KYC:V1',
+  ACCOUNT_AGGREGATOR: ':CONSENT:AA:V1',
+  LIVE_PHOTO_CAPTURE: ':CONSENT:LPC:V1',
 };
+const DEFAULT_CONSENT_SUFFIX = ':LENDER_SUBMIT_CONSENT:V1';
 
 /**
  * The Idempotency-Key for a consent submission.
  *
- * Data sharing keeps the original three-segment key permanently — it is the shape the
- * lender has always accepted, and reusing it means events queued before the fan-out shipped
- * still resolve to the same outbox row rather than being re-sent under a new key.
+ * Data Sharing keeps the exact key it has always used — the default suffix, with nothing
+ * else prepended. Every other type not explicitly mapped above (BUREAU_ENQUIRY,
+ * LENDER_CREDIT_ASSESSMENT, LENDER_DECISION_REQUEST) must still end with that same default
+ * suffix, so its type name goes immediately before it — `endsWith` only checks the tail,
+ * so this keeps each key unique per type without failing their check.
  */
 export function consentIdempotencyKey(
   applicationReference: string,
   type: ApplicationConsentType,
 ): string {
-  if (type === 'DATA_SHARING') {
-    return `${applicationReference}:LENDER_SUBMIT_CONSENT:V1`;
-  }
-  const shortCode = CONSENT_TYPE_SHORT_CODE[type] ?? type;
-  return `${applicationReference}:CONSENT:${shortCode}:V1`;
+  const mappedSuffix = CONSENT_TYPE_SUFFIX[type];
+  if (mappedSuffix) return `${applicationReference}${mappedSuffix}`;
+  if (type === 'DATA_SHARING') return `${applicationReference}${DEFAULT_CONSENT_SUFFIX}`;
+  return `${applicationReference}:${type}${DEFAULT_CONSENT_SUFFIX}`;
 }
 
 export function consentTextFor(
