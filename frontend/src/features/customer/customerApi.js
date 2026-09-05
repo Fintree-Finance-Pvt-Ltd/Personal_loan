@@ -134,14 +134,14 @@ customerAxios.interceptors.request.use((config) => {
 //       originalConfig._retry = true;
 //       try {
 //         const newToken = await doCustomerRefresh();
-        
+
 //         // Ensure the new token is applied to the retried request
 //         if (originalConfig.headers.set) {
 //           originalConfig.headers.set('Authorization', `Bearer ${newToken}`);
 //         } else {
 //           originalConfig.headers.Authorization = `Bearer ${newToken}`;
 //         }
-        
+
 //         return await customerAxios(originalConfig);
 //       } catch (e) {
 //         setCustomerAccessToken(null);
@@ -569,6 +569,14 @@ export async function runEligibility(customerId) {
   return result;
 }
 
+export async function allocateLender(customerId) {
+  const result = await apiRequest(`/customer/${customerId}/allocate-lender`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  return result;
+}
+
 export async function updatePincode(customerId, body) {
   const result = await apiRequest(`/customer/${customerId}/pincode`, {
     method: 'PATCH',
@@ -600,6 +608,59 @@ export async function refreshAccountAggregatorStatus(lan) {
   return response?.data?.data || response?.data || response;
 }
 
+export async function uploadBankStatement(lan, { file, password, bankCode, bankName, accountType }) {
+  const formData = new FormData();
+  if (file) {
+    formData.append('file', file);
+  }
+  if (password) {
+    formData.append('password', password);
+  }
+  if (bankCode) {
+    formData.append('bankCode', bankCode);
+  }
+  if (bankName) {
+    formData.append('bankName', bankName);
+  }
+  if (accountType) {
+    formData.append('accountType', accountType);
+  }
+
+  const response = await customerAxios.post(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/upload-statement`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  );
+  return response?.data?.data || response?.data || response;
+}
+
+export async function getBsaBankList(lan) {
+  const response = await customerAxios.get(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/bank-list`
+  );
+  return response?.data?.data || response?.data || response;
+}
+
+export async function getBsaAccountSummary(lan, accountUid) {
+  const response = await customerAxios.post(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/summary`,
+    { accountUid }
+  );
+  return response?.data?.data || response?.data || response;
+}
+
+export async function triggerBsaFallback(lan) {
+  const response = await customerAxios.post(
+    `/customer/loans/${encodeURIComponent(lan)}/account-aggregator/trigger-bsa-fallback`,
+    {}
+  );
+  return response?.data?.data || response?.data || response;
+}
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
@@ -622,10 +683,15 @@ export const customerApi = {
   getCustomerAadhaarKycStatus,
   refreshCustomerAadhaarKycStatus,
   runEligibility,
+  allocateLender,
   retryLenderSubmission,
   initiateAccountAggregator,
   getAccountAggregatorStatus,
   refreshAccountAggregatorStatus,
+  uploadBankStatement,
+  getBsaBankList,
+  getBsaAccountSummary,
+  triggerBsaFallback,
 };
 
 

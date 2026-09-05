@@ -857,7 +857,7 @@ export class CustomerService {
         application = await tx.plApplication.findFirst({
           where: {
             customerId,
-            status: { in: ['DRAFT', 'SUBMITTED', 'ALLOCATION_PENDING', 'LENDER_ALLOCATED', 'LENDER_REVIEW'] }
+            status: { in: ['DRAFT', 'SUBMITTED', 'ALLOCATION_PENDING', 'LENDER_ALLOCATED', 'ASSESSMENT_FEE_PAID', 'LENDER_REVIEW'] }
           },
           orderBy: { id: 'desc' }
         }) as any;
@@ -867,8 +867,8 @@ export class CustomerService {
         }
       }
 
-      // If already PASS and LENDER_ALLOCATED, return idempotent response
-      if (application.status === 'LENDER_ALLOCATED' && application.platformDecisionOutcome === 'PASS') {
+      // If already PASS and LENDER_ALLOCATED / ASSESSMENT_FEE_PAID, return idempotent response
+      if (['LENDER_ALLOCATED', 'ASSESSMENT_FEE_PAID'].includes(String(application.status)) && application.platformDecisionOutcome === 'PASS') {
         return {
           success: true,
           message: 'Eligibility already passed.',
@@ -1020,7 +1020,13 @@ export class CustomerService {
         platformDecisionOutcome: evalResult.finalOutcome,
         platformPolicyVersionId: policyVersion.id,
         platformEvaluationReference: `EVAL-${application.applicationNumber}-${Date.now()}`,
-        status: isPass ? PlApplicationStatus.ALLOCATION_PENDING : PlApplicationStatus.PLATFORM_REJECTED
+        status: isPass
+          ? (application.status === 'ASSESSMENT_FEE_PAID'
+              ? 'ASSESSMENT_FEE_PAID'
+              : application.lenderId
+                ? PlApplicationStatus.LENDER_ALLOCATED
+                : PlApplicationStatus.ALLOCATION_PENDING)
+          : PlApplicationStatus.PLATFORM_REJECTED
       };
 
       if (!isPass) {
@@ -1061,135 +1067,299 @@ export class CustomerService {
         };
       }
 
-      // 7. Invoke MLM Allocation
-      try {
-        // Repeat-customer detection: a customer with a prior DISBURSED/FULLY_PAID loan
-        // should be routed back to that exact lender+product whenever it's still eligible,
-        // not put through a fresh round-robin draw — see mlm-allocation-engine.service.ts's
-        // stickyRouteHint handling.
-        const previousLoan = await tx.plLoan.findFirst({
-          where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
-          orderBy: { id: 'desc' },
-          include: { application: { select: { lenderId: true, lenderProductId: true } } },
-        });
-        const isRepeatCustomer = Boolean(previousLoan);
-        const previousLenderId = previousLoan?.application?.lenderId ?? null;
-        const previousLenderProductId = previousLoan?.application?.lenderProductId ?? null;
+      // 7. Invoke MLM Allocation if not already allocated
+      if (!application.lenderId) {
+        try {
+          // Repeat-customer detection: a customer with a prior DISBURSED/FULLY_PAID loan
+          // should be routed back to that exact lender+product whenever it's still eligible,
+          // not put through a fresh round-robin draw — see mlm-allocation-engine.service.ts's
+          // stickyRouteHint handling.
+          const previousLoan = await tx.plLoan.findFirst({
+            where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+            orderBy: { id: 'desc' },
+            include: { application: { select: { lenderId: true, lenderProductId: true } } },
+          });
+          const isRepeatCustomer = Boolean(previousLoan);
+          const previousLenderId = previousLoan?.application?.lenderId ?? null;
+          const previousLenderProductId = previousLoan?.application?.lenderProductId ?? null;
 
-        const activeMlmPolicies = await tx.mlmPolicy.findMany({
-          where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
-          include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
-        });
+          const activeMlmPolicies = await tx.mlmPolicy.findMany({
+            where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
+            include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } }
+          });
 
-        if (activeMlmPolicies.length === 1 && activeMlmPolicies[0].versions.length === 1) {
-          const mlmVersion = activeMlmPolicies[0].versions[0];
-          const mlmDto = {
-            applicationReference: application.applicationNumber,
-            requestedAmount: application.requestedAmount == null
-              ? null
-              : Number(application.requestedAmount),
-            platformDecisionOutcome: 'PASS',
-            platformProductId: application.platformProductId,
-            customerSegment: (isRepeatCustomer ? 'REPEAT' : 'NEW') as 'REPEAT' | 'NEW',
-            stickyRouteHint: isRepeatCustomer && previousLenderId && previousLenderProductId
-              ? { lenderId: previousLenderId, productId: previousLenderProductId }
-              : null,
-          };
+          if (activeMlmPolicies.length === 1 && activeMlmPolicies[0].versions.length === 1) {
+            const mlmVersion = activeMlmPolicies[0].versions[0];
+            const mlmDto = {
+              applicationReference: application.applicationNumber,
+              requestedAmount: application.requestedAmount == null
+                ? null
+                : Number(application.requestedAmount),
+              platformDecisionOutcome: 'PASS',
+              platformProductId: application.platformProductId,
+              customerSegment: (isRepeatCustomer ? 'REPEAT' : 'NEW') as 'REPEAT' | 'NEW',
+              stickyRouteHint: isRepeatCustomer && previousLenderId && previousLenderProductId
+                ? { lenderId: previousLenderId, productId: previousLenderProductId }
+                : null,
+            };
 
             const allocationDecision = await this.mlmAllocationEngineService.executeWithTx(tx, mlmDto, mlmVersion as any);
 
             if (allocationDecision && allocationDecision.status === 'ASSIGNED') {
-               const decision = allocationDecision;
-               if (!decision.productVersionId) {
-                 throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
-               }
-               const productVersion = await tx.lenderProductVersion.findUnique({
-                 where: { id: decision.productVersionId },
-                 include: { multipliers: true, tenures: { orderBy: { sortOrder: 'asc' } } },
-               });
-               if (!productVersion || productVersion.productId !== decision.productId) {
-                 throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
-               }
+              const decision = allocationDecision;
+              if (!decision.productVersionId) {
+                throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
+              }
+              const productVersion = await tx.lenderProductVersion.findUnique({
+                where: { id: decision.productVersionId },
+                include: { multipliers: true, tenures: { orderBy: { sortOrder: 'asc' } } },
+              });
+              if (!productVersion || productVersion.productId !== decision.productId) {
+                throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
+              }
 
-               const baseAmount = productVersion?.assessmentFeeAmount ? new Prisma.Decimal(productVersion.assessmentFeeAmount) : new Prisma.Decimal(0);
-               const gstRate = productVersion?.assessmentFeeGstPercent ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent) : new Prisma.Decimal(18);
-               const gstAmount = baseAmount.mul(gstRate).dividedBy(100);
-               const totalAmount = baseAmount.add(gstAmount);
+              const baseAmount = productVersion?.assessmentFeeAmount ? new Prisma.Decimal(productVersion.assessmentFeeAmount) : new Prisma.Decimal(0);
+              const gstRate = productVersion?.assessmentFeeGstPercent ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent) : new Prisma.Decimal(18);
+              const gstAmount = baseAmount.mul(gstRate).dividedBy(100);
+              const totalAmount = baseAmount.add(gstAmount);
 
-               // Deterministic initial amount/tenure requested from the lender at CREATE
-               // time (spec section 1): reuse the same multiplier/rounding logic as every
-               // other offer calculation, with no lender-approved cap yet (use the
-               // product's own cap) and the lowest-sortOrder configured tenure.
-               const validTenures = productVersion.tenures.map((t) => t.tenure);
-               if (validTenures.length === 0) {
-                 throw new BadRequestException('The allocated product has no configured tenure options.');
-               }
-               const completedLoans = await tx.plLoan.count({ where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } } });
-               const initialSimulation = this.productCalculationService.simulate(
-                 completedLoans,
-                 validTenures[0],
-                 productVersion.maximumAmountCap.toString(),
-                 productVersion as any,
-                 productVersion.multipliers,
-                 validTenures,
-               );
+              const validTenures = productVersion.tenures.map((t) => t.tenure);
+              if (validTenures.length === 0) {
+                throw new BadRequestException('The allocated product has no configured tenure options.');
+              }
+              const completedLoans = await tx.plLoan.count({ where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } } });
+              const initialSimulation = this.productCalculationService.simulate(
+                completedLoans,
+                validTenures[0],
+                productVersion.maximumAmountCap.toString(),
+                productVersion as any,
+                productVersion.multipliers,
+                validTenures,
+              );
 
-               updatedApp = await tx.plApplication.update({
+              updatedApp = await tx.plApplication.update({
+                where: { id: application.id },
+                data: {
+                  status: PlApplicationStatus.LENDER_ALLOCATED,
+                  lenderCode: decision.lenderId,
+                  mlmAllocationDecisionId: decision.id,
+                  mlmPolicyId: decision.policyId,
+                  mlmPolicyVersionId: decision.policyVersionId,
+                  lenderId: decision.lenderId,
+                  lenderProductId: decision.productId,
+                  productStrategyVersionId: decision.productVersionId,
+                  allocatedAt: new Date(),
+                  requestedAmount: new Prisma.Decimal(initialSimulation.finalPrincipalAmount),
+                  requestedTenure: validTenures[0],
+                  assessmentFeeBaseAmount: baseAmount,
+                  assessmentFeeGstRate: gstRate,
+                  assessmentFeeGstAmount: gstAmount,
+                  assessmentFeeTotalAmount: totalAmount,
+                  assessmentFeeCurrency: 'INR'
+                }
+              });
+
+              const lender = await tx.lender.findUnique({ where: { id: decision.lenderId! } });
+              if (lender) {
+                await tx.plApplication.update({
                   where: { id: application.id },
-                  data: {
-                     status: PlApplicationStatus.LENDER_ALLOCATED,
-                     lenderCode: decision.lenderId, // Assuming lenderId is code, or fetch from Lender table
-                     mlmAllocationDecisionId: decision.id,
-                     mlmPolicyId: decision.policyId,
-                     mlmPolicyVersionId: decision.policyVersionId,
-                     lenderId: decision.lenderId,
-                     lenderProductId: decision.productId,
-                     productStrategyVersionId: decision.productVersionId,
-                     allocatedAt: new Date(),
-                     requestedAmount: new Prisma.Decimal(initialSimulation.finalPrincipalAmount),
-                     requestedTenure: validTenures[0],
-                     assessmentFeeBaseAmount: baseAmount,
-                     assessmentFeeGstRate: gstRate,
-                     assessmentFeeGstAmount: gstAmount,
-                     assessmentFeeTotalAmount: totalAmount,
-                     assessmentFeeCurrency: 'INR'
-                  }
-               });
-
-               // Attempt to find lender code
-               const lender = await tx.lender.findUnique({ where: { id: decision.lenderId! } });
-               if (lender) {
-                  await tx.plApplication.update({
-                     where: { id: application.id },
-                     data: { lenderCode: lender.code }
-                  });
-               }
-
-               return {
-                 outcome: 'PASS',
-                 lenderId: decision.lenderId,
-                 lenderProductId: decision.productId,
-                 applicationNumber: application.applicationNumber,
-                   assessmentFee: {
-                     baseAmount: baseAmount.toNumber(),
-                     gstRate: gstRate.toNumber(),
-                     gstAmount: gstAmount.toNumber(),
-                     totalAmount: totalAmount.toNumber(),
-                     currency: 'INR'
-                   }
-               };
+                  data: { lenderCode: lender.code }
+                });
+              }
+            }
           }
+        } catch (err: any) {
+          this.logger.error(`MLM Error: ${err.message}`, err.stack);
         }
-      } catch (err: any) {
-        this.logger.error(`MLM Error: ${err.message}`, err.stack);
-        this.logger.error(`MLM Full Error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
-        // Keep BRE as PASS, status as ALLOCATION_PENDING
-        throw new BadRequestException('Eligibility passed but we could not allocate a lender at this moment. Please try again.');
       }
 
-      // If we reach here, MLM didn't assign
-      throw new BadRequestException('Eligibility passed but no lender route available. Please try again later.');
+      return {
+        outcome: 'PASS',
+        lenderId: updatedApp.lenderId || application.lenderId,
+        lenderProductId: updatedApp.lenderProductId || application.lenderProductId,
+        applicationNumber: application.applicationNumber,
+        assessmentFee: {
+          baseAmount: (updatedApp.assessmentFeeBaseAmount || application.assessmentFeeBaseAmount)?.toNumber() ?? null,
+          gstRate: (updatedApp.assessmentFeeGstRate || application.assessmentFeeGstRate)?.toNumber() ?? null,
+          gstAmount: (updatedApp.assessmentFeeGstAmount || application.assessmentFeeGstAmount)?.toNumber() ?? null,
+          totalAmount: (updatedApp.assessmentFeeTotalAmount || application.assessmentFeeTotalAmount)?.toNumber() ?? null,
+          currency: 'INR'
+        }
+      };
 
+    });
+  }
+
+  async allocateLender(customerId: bigint, body?: any) {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findUnique({
+        where: { id: customerId },
+        include: { applications: { orderBy: { id: 'desc' }, take: 1 } },
+      });
+
+      if (!customer) throw new NotFoundException('Customer not found.');
+
+      let application: any;
+      if (body?.applicationId) {
+        application = await tx.plApplication.findUnique({ where: { id: BigInt(body.applicationId) } });
+        if (!application) throw new NotFoundException('Application not found');
+        if (application.customerId !== customerId) {
+          throw new ForbiddenException('Application ownership verification failed');
+        }
+      } else {
+        application = await tx.plApplication.findFirst({
+          where: {
+            customerId,
+            status: { in: ['DRAFT', 'SUBMITTED', 'ALLOCATION_PENDING', 'LENDER_ALLOCATED', 'ASSESSMENT_FEE_PAID', 'LENDER_REVIEW'] },
+          },
+          orderBy: { id: 'desc' },
+        });
+
+        if (!application) {
+          throw new BadRequestException('No active application found to allocate lender.');
+        }
+      }
+
+      if (application.lenderId && application.assessmentFeeTotalAmount) {
+        return {
+          success: true,
+          message: 'Lender already allocated.',
+          data: {
+            lenderId: application.lenderId,
+            lenderProductId: application.lenderProductId,
+            applicationNumber: application.applicationNumber,
+            assessmentFee: {
+              baseAmount: application.assessmentFeeBaseAmount ? application.assessmentFeeBaseAmount.toNumber() : null,
+              gstRate: application.assessmentFeeGstRate ? application.assessmentFeeGstRate.toNumber() : null,
+              gstAmount: application.assessmentFeeGstAmount ? application.assessmentFeeGstAmount.toNumber() : null,
+              totalAmount: application.assessmentFeeTotalAmount ? application.assessmentFeeTotalAmount.toNumber() : null,
+              currency: application.assessmentFeeCurrency,
+            },
+          },
+        };
+      }
+
+      if (!application.platformProductId) {
+        throw new BadRequestException('Canonical application is missing platformProductId.');
+      }
+
+      const previousLoan = await tx.plLoan.findFirst({
+        where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+        orderBy: { id: 'desc' },
+        include: { application: { select: { lenderId: true, lenderProductId: true } } },
+      });
+      const isRepeatCustomer = Boolean(previousLoan);
+      const previousLenderId = previousLoan?.application?.lenderId ?? null;
+      const previousLenderProductId = previousLoan?.application?.lenderProductId ?? null;
+
+      const activeMlmPolicies = await tx.mlmPolicy.findMany({
+        where: { platformProductId: application.platformProductId, operationalStatus: 'ACTIVE' },
+        include: { versions: { where: { status: 'ACTIVE' }, include: { routes: { include: { routeState: true } } } } },
+      });
+
+      if (activeMlmPolicies.length === 1 && activeMlmPolicies[0].versions.length === 1) {
+        const mlmVersion = activeMlmPolicies[0].versions[0];
+        const mlmDto = {
+          applicationReference: application.applicationNumber,
+          requestedAmount: application.requestedAmount == null ? null : Number(application.requestedAmount),
+          platformDecisionOutcome: 'PASS',
+          platformProductId: application.platformProductId,
+          customerSegment: (isRepeatCustomer ? 'REPEAT' : 'NEW') as 'REPEAT' | 'NEW',
+          stickyRouteHint:
+            isRepeatCustomer && previousLenderId && previousLenderProductId
+              ? { lenderId: previousLenderId, productId: previousLenderProductId }
+              : null,
+        };
+
+        const allocationDecision = await this.mlmAllocationEngineService.executeWithTx(tx, mlmDto, mlmVersion as any);
+
+        if (allocationDecision && allocationDecision.status === 'ASSIGNED') {
+          const decision = allocationDecision;
+          if (!decision.productVersionId) {
+            throw new BadRequestException('MLM allocation is missing its Product Strategy Version snapshot.');
+          }
+          const productVersion = await tx.lenderProductVersion.findUnique({
+            where: { id: decision.productVersionId },
+            include: { multipliers: true, tenures: { orderBy: { sortOrder: 'asc' } } },
+          });
+          if (!productVersion || productVersion.productId !== decision.productId) {
+            throw new BadRequestException('MLM Product Strategy Version does not match the allocated lender product.');
+          }
+
+          const baseAmount = productVersion?.assessmentFeeAmount
+            ? new Prisma.Decimal(productVersion.assessmentFeeAmount)
+            : new Prisma.Decimal(0);
+          const gstRate = productVersion?.assessmentFeeGstPercent
+            ? new Prisma.Decimal(productVersion.assessmentFeeGstPercent)
+            : new Prisma.Decimal(18);
+          const gstAmount = baseAmount.mul(gstRate).dividedBy(100);
+          const totalAmount = baseAmount.add(gstAmount);
+
+          const validTenures = productVersion.tenures.map((t) => t.tenure);
+          if (validTenures.length === 0) {
+            throw new BadRequestException('The allocated product has no configured tenure options.');
+          }
+          const completedLoans = await tx.plLoan.count({
+            where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+          });
+          const initialSimulation = this.productCalculationService.simulate(
+            completedLoans,
+            validTenures[0],
+            productVersion.maximumAmountCap.toString(),
+            productVersion as any,
+            productVersion.multipliers,
+            validTenures,
+          );
+
+          await tx.plApplication.update({
+            where: { id: application.id },
+            data: {
+              status: PlApplicationStatus.LENDER_ALLOCATED,
+              mlmAllocationDecisionId: decision.id,
+              mlmPolicyId: decision.policyId,
+              mlmPolicyVersionId: decision.policyVersionId,
+              lenderId: decision.lenderId,
+              lenderProductId: decision.productId,
+              productStrategyVersionId: decision.productVersionId,
+              allocatedAt: new Date(),
+              requestedAmount: new Prisma.Decimal(initialSimulation.finalPrincipalAmount),
+              requestedTenure: validTenures[0],
+              assessmentFeeBaseAmount: baseAmount,
+              assessmentFeeGstRate: gstRate,
+              assessmentFeeGstAmount: gstAmount,
+              assessmentFeeTotalAmount: totalAmount,
+              assessmentFeeCurrency: 'INR',
+            },
+          });
+
+          const lender = await tx.lender.findUnique({ where: { id: decision.lenderId! } });
+          if (lender) {
+            await tx.plApplication.update({
+              where: { id: application.id },
+              data: { lenderCode: lender.code },
+            });
+          }
+
+          return {
+            success: true,
+            message: 'Lender allocated successfully.',
+            data: {
+              lenderId: decision.lenderId,
+              lenderProductId: decision.productId,
+              applicationNumber: application.applicationNumber,
+              assessmentFee: {
+                baseAmount: baseAmount.toNumber(),
+                gstRate: gstRate.toNumber(),
+                gstAmount: gstAmount.toNumber(),
+                totalAmount: totalAmount.toNumber(),
+                currency: 'INR',
+              },
+            },
+          };
+        }
+      }
+
+      throw new BadRequestException('No lender route available for allocation at this moment.');
     });
   }
 
@@ -1210,8 +1380,9 @@ export class CustomerService {
     // awaiting the async result (or a manual credit-review override).
     if (application.status === 'PENDING_CREDIT_REVIEW') return 'APPROVAL_PROCESSING';
     if (outbox?.status === 'FAILED') return 'INTEGRATION_SUPPORT';
-    if (application.platformDecisionOutcome !== 'PASS') return application.status === 'PLATFORM_REJECTED' ? 'PLATFORM_REJECTED' : 'BASIC_DETAILS';
+    if (application.status === 'PLATFORM_REJECTED') return 'PLATFORM_REJECTED';
     if (!payment) return 'ASSESSMENT_FEE';
+    if (application.platformDecisionOutcome !== 'PASS') return 'BASIC_DETAILS';
     if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';
     if (updateReadiness.reasons.some((reason) => ['DIGILOCKER_KYC_NOT_VERIFIED', 'AADHAAR_VERIFIED_NAME_MISSING'].includes(reason))) return 'AADHAAR_KYC';
     if (updateReadiness.reasons.some((reason) => ['PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'SAME_ADDRESS_DECISION_MISSING'].includes(reason))) return 'ADDRESS_DETAILS';

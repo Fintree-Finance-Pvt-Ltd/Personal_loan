@@ -5,6 +5,7 @@ import { UnaportService } from './unaport.service';
 import { UnaportTokenService } from './unaport-token.service';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { LenderIntegrationOutboxService } from '../../lender-integrations/lender-integration-outbox.service';
+import { BoostMoneyBsaService } from '../../../integrations/boost-money-bsa.service';
 
 describe('UnaportService', () => {
   let service: UnaportService;
@@ -36,6 +37,7 @@ describe('UnaportService', () => {
         update: jest.fn(),
       },
       customerBankAccountData: {
+        findFirst: jest.fn(),
         create: jest.fn(),
       },
       customerBankTransaction: {
@@ -71,6 +73,17 @@ describe('UnaportService', () => {
         {
           provide: LenderIntegrationOutboxService,
           useValue: { recordJourneyConsent: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          provide: BoostMoneyBsaService,
+          useValue: {
+            parseTransactions: jest.fn().mockResolvedValue({
+              success: true,
+              accountUID: 'ACC_UID_TEST',
+              status: 'SUCCESS',
+            }),
+            downloadFraudAnalyticsPdf: jest.fn().mockResolvedValue({ success: true }),
+          },
         },
       ],
     }).compile();
@@ -203,4 +216,37 @@ describe('UnaportService', () => {
       );
     });
   });
+
+  describe('executeBankStatementAnalysisFallback', () => {
+    it('should trigger BSA fallback and update request to SUCCESS when BSA succeeds', async () => {
+      prisma.customerBankAccountData.findFirst.mockResolvedValue({
+        id: BigInt(201),
+        currentBalance: 50000,
+        transactions: [],
+      });
+      prisma.customerAccountAggregatorRequest.update.mockResolvedValue({});
+
+      const req = {
+        id: BigInt(100),
+        customerId: BigInt(1),
+        applicationId: BigInt(10),
+        lan: 'PL-LAN-12345',
+      };
+
+      const result = await service.executeBankStatementAnalysisFallback(req);
+
+      expect(result.success).toBe(true);
+      expect(result.accountUID).toBe('ACC_UID_TEST');
+      expect(prisma.customerAccountAggregatorRequest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: BigInt(100) },
+          data: expect.objectContaining({
+            status: 'SUCCESS',
+            dataStatus: 'BSA_VERIFIED',
+          }),
+        }),
+      );
+    });
+  });
 });
+
