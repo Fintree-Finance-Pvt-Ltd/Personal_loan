@@ -569,6 +569,14 @@ export async function runEligibility(customerId) {
   return result;
 }
 
+export async function allocateLender(customerId) {
+  const result = await apiRequest(`/customer/${customerId}/allocate-lender`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  return result;
+}
+
 export async function updatePincode(customerId, body) {
   const result = await apiRequest(`/customer/${customerId}/pincode`, {
     method: 'PATCH',
@@ -675,6 +683,7 @@ export const customerApi = {
   getCustomerAadhaarKycStatus,
   refreshCustomerAadhaarKycStatus,
   runEligibility,
+  allocateLender,
   retryLenderSubmission,
   initiateAccountAggregator,
   getAccountAggregatorStatus,
