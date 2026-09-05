@@ -53,6 +53,7 @@ import {
   getCustomerAadhaarKycStatus,
   refreshCustomerAadhaarKycStatus,
   runEligibility,
+  allocateLender,
   updatePincode,
   sendEmailOtp,
   verifyEmailOtp,
@@ -354,12 +355,10 @@ function deriveCustomerWorkflow(customer) {
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
     currentStep = 'basic_details';
-  } else if (eligibilityCompleted && !eligibilityPassed) {
-    currentStep = 'rejection_screen';
-  } else if (!eligibilityCompleted || !eligibilityPassed) {
-    currentStep = 'basic_details';
   } else if (!assessmentFeePaid) {
     currentStep = 'assessment_fee';
+  } else if (eligibilityCompleted && !eligibilityPassed) {
+    currentStep = 'rejection_screen';
   } else if (!profileDetailsCompleted) {
     currentStep = 'profile_details';
   } else if (!aadhaarKycCompleted) {
@@ -498,6 +497,12 @@ export default function MyApplicationPage() {
   const [lenderConsent, setLenderConsent] = useState(false);
   const [feePaid, setFeePaid] = useState(false);
   const [isFeeProcessing, setIsFeeProcessing] = useState(false);
+  const [eligibilityModalState, setEligibilityModalState] = useState({
+    isOpen: false,
+    status: 'CHECKING',
+    message: '',
+    allocatedLender: '',
+  });
   // Shown if the Easebuzz widget never calls back at all — e.g. it silently fails to
   // open, the customer's connection drops, or they close a tab it opened in. Without
   // this, isFeeProcessing (set the instant Pay is clicked, before the widget opens)
@@ -1396,44 +1401,21 @@ export default function MyApplicationPage() {
         }
       }
 
-      let result;
+      // Allocate eligible lender and compute assessment fee
       try {
-        const rawResult = await runEligibility(customerId);
-        // apiRequest unpacks success/data automatically, so we wrap it back to match the component's expectations
-        result = { success: true, data: rawResult };
+        await allocateLender(customerId);
       } catch (err) {
-        result = { success: false, error: err };
+        console.warn('Lender allocation note:', err);
       }
-
-      if (!result.success) {
-        // ERROR state
-        const errorMsg = result.error?.message || result.message;
-        console.error('Eligibility technical error:', errorMsg);
-        showMessage(errorMsg || 'Unable to complete the eligibility check. Please try again.', 'error');
-        setBrePassed(false);
-        return;
-      }
-
-      if (result.data.outcome === 'FAIL') {
-        // FAIL state
-        setBrePassed(false);
-        setCurrentStep('rejection_screen'); // or however rejection is handled
-        showMessage('We are unable to proceed with your application based on our platform policy.', 'error');
-        // Refresh customer to get persistent rejection status
-        await fetchCustomer();
-        return;
-      }
-
-      // PASS state
-      setBrePassed(true);
-      setCurrentStep('assessment_fee');
-      setErrors({});
 
       // Refresh customer profile to load allocated lender and fee snapshot
       await fetchCustomer();
 
+      setCurrentStep('assessment_fee');
+      setErrors({});
+
       showMessage(
-        'Eligibility check passed. An eligible lender has been assigned.',
+        'Basic details saved. Please review and pay the assessment fee.',
       );
 
       window.scrollTo({
@@ -1441,10 +1423,9 @@ export default function MyApplicationPage() {
         behavior: 'smooth',
       });
     } catch (error) {
-      console.error('Platform BRE or Father Name save failed:', error);
-      setBrePassed(false);
+      console.error('Save basic details or lender allocation failed:', error);
       showMessage(
-        'Unable to complete the eligibility check. Please try again.',
+        'Unable to proceed. Please check your details and try again.',
         'error',
       );
     } finally {
@@ -1618,7 +1599,53 @@ export default function MyApplicationPage() {
           setIsFeeProcessing(false);
           setIsCheckingPayment(false);
           setFeePaid(true);
-          showMessage('Assessment fee payment verified successfully.');
+
+          const lenderDisplayName = customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Lending Partner';
+
+          // Open Eligibility Evaluation Modal in CHECKING state
+          setEligibilityModalState({
+            isOpen: true,
+            status: 'CHECKING',
+            message: 'Evaluating your application against platform policy and underwriting guidelines...',
+            allocatedLender: lenderDisplayName,
+          });
+
+          // Automatically trigger Check Eligibility (Platform Policy / BRE)
+          try {
+            const rawResult = await runEligibility(customerId);
+            const result = rawResult?.data || rawResult;
+
+            if (result?.outcome === 'FAIL') {
+              setBrePassed(false);
+              setEligibilityModalState({
+                isOpen: true,
+                status: 'REJECTED',
+                message: result?.message || 'We are unable to proceed with your application based on platform policy.',
+                allocatedLender: lenderDisplayName,
+              });
+              await fetchCustomer();
+              return;
+            }
+
+            setBrePassed(true);
+            setEligibilityModalState({
+              isOpen: true,
+              status: 'APPROVED',
+              message: `Congratulations! Your application has passed eligibility criteria with ${lenderDisplayName}. You can now complete your profile details.`,
+              allocatedLender: lenderDisplayName,
+            });
+            await fetchCustomer();
+          } catch (breErr) {
+            console.error('Automatic eligibility check error:', breErr);
+            const errMsg = breErr instanceof Error ? breErr.message : 'Unable to complete eligibility evaluation.';
+            setEligibilityModalState({
+              isOpen: true,
+              status: 'REJECTED',
+              message: errMsg,
+              allocatedLender: lenderDisplayName,
+            });
+            await fetchCustomer();
+          }
           return;
         }
 
@@ -1663,6 +1690,18 @@ export default function MyApplicationPage() {
       }
     };
   }, []);
+
+  const handleProceedFromEligibilityModal = () => {
+    setEligibilityModalState((prev) => ({ ...prev, isOpen: false }));
+    goToStep('profile_details');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleViewRejectionFromEligibilityModal = () => {
+    setEligibilityModalState((prev) => ({ ...prev, isOpen: false }));
+    goToStep('rejection_screen');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleProceedToProfile = () => {
     goToStep('profile_details');
@@ -2068,6 +2107,120 @@ export default function MyApplicationPage() {
           </div>
         </StepCard>
       )}
+
+      {/* Auto Eligibility Check Result Modal */}
+      <EligibilityCheckModal
+        isOpen={eligibilityModalState.isOpen}
+        status={eligibilityModalState.status}
+        message={eligibilityModalState.message}
+        allocatedLender={eligibilityModalState.allocatedLender}
+        onProceed={handleProceedFromEligibilityModal}
+        onViewRejection={handleViewRejectionFromEligibilityModal}
+      />
+      </div>
+    </div>
+  );
+}
+
+function EligibilityCheckModal({
+  isOpen,
+  status,
+  message,
+  allocatedLender,
+  onProceed,
+  onViewRejection,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200">
+        {/* Top Accent Gradient */}
+        <div
+          className={`h-2.5 w-full transition-colors duration-300 ${
+            status === 'APPROVED'
+              ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600'
+              : status === 'REJECTED'
+              ? 'bg-gradient-to-r from-danger-500 via-rose-500 to-danger-600'
+              : 'bg-gradient-to-r from-brand-500 via-blue-500 to-brand-600 animate-pulse'
+          }`}
+        />
+
+        <div className="p-6 sm:p-8 text-center">
+          {status === 'CHECKING' && (
+            <div className="flex flex-col items-center">
+              <div className="relative mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-50 text-brand-600 shadow-inner">
+                <div className="absolute inset-0 rounded-3xl border-2 border-brand-400/40 animate-ping opacity-30" />
+                <LoaderCircle size={38} className="animate-spin text-brand-600" />
+              </div>
+              <h3 className="text-xl font-bold text-neutral-900 tracking-tight">
+                Checking Loan Eligibility
+              </h3>
+              <p className="mt-2 text-sm text-neutral-600 leading-relaxed max-w-xs">
+                {message || 'Evaluating your application against platform policy and underwriting guidelines...'}
+              </p>
+              <div className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-neutral-500 bg-neutral-100 py-2 px-4 rounded-full">
+                <ShieldCheck size={14} className="text-brand-600" />
+                <span>Secured Bank-Grade Evaluation</span>
+              </div>
+            </div>
+          )}
+
+          {status === 'APPROVED' && (
+            <div className="flex flex-col items-center animate-in zoom-in-95 duration-300">
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-600 shadow-md ring-8 ring-emerald-50">
+                <CheckCircle2 size={40} className="stroke-[2.5]" />
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-2">
+                <Sparkles size={13} />
+                <span>Eligibility Passed</span>
+              </div>
+              <h3 className="text-2xl font-bold text-neutral-900 tracking-tight">
+                Congratulations! 🎉
+              </h3>
+              <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
+                {message || `Your application has passed eligibility criteria with ${allocatedLender || 'our lending partner'}.`}
+              </p>
+              <div className="mt-6 w-full pt-2">
+                <button
+                  type="button"
+                  onClick={onProceed}
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-700 active:scale-[0.98] transition cursor-pointer"
+                >
+                  <span>Continue to Profile Details</span>
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {status === 'REJECTED' && (
+            <div className="flex flex-col items-center animate-in zoom-in-95 duration-300">
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-danger-100 text-danger-600 shadow-md ring-8 ring-danger-50">
+                <AlertCircle size={40} className="stroke-[2.5]" />
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-danger-50 text-danger-700 text-xs font-bold uppercase tracking-wider mb-2">
+                <span>Application Ineligible</span>
+              </div>
+              <h3 className="text-2xl font-bold text-neutral-900 tracking-tight">
+                Application Not Eligible
+              </h3>
+              <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
+                {message || 'Based on the information provided, we are unable to approve your application at this time.'}
+              </p>
+              <div className="mt-6 w-full pt-2">
+                <button
+                  type="button"
+                  onClick={onViewRejection}
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-neutral-900 px-6 py-3.5 text-sm font-bold text-white shadow-lg hover:bg-neutral-800 active:scale-[0.98] transition cursor-pointer"
+                >
+                  <span>View Details</span>
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -3667,8 +3820,8 @@ function BasicDetailsStep({
             onNext={onContinue}
             nextLabel={
               isBreRunning
-                ? 'Checking Eligibility...'
-                : 'Check Eligibility'
+                ? 'Allocating Lender...'
+                : 'Save & Next'
             }
             nextDisabled={
               isBreRunning ||

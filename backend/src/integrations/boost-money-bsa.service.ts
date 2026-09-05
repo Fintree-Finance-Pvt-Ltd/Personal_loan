@@ -1065,7 +1065,7 @@ export class BoostMoneyBsaService {
     });
 
     return {
-      success: isSuccess,
+      success: isSuccess, 
       jobId: jobId ? String(jobId) : undefined,
       status: finalStatus,
       accountUID: accountUid ? String(accountUid) : undefined,

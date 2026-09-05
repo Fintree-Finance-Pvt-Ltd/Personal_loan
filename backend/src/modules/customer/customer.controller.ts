@@ -93,6 +93,16 @@ export class CustomerController {
     return this.customerService.runEligibility(BigInt(customer.customerId), body);
   }
 
+  @Post(':id/allocate-lender')
+  async allocateLender(
+    @CurrentCustomer() customer: any,
+    @Param('id', new ParseIntPipe()) id: number,
+    @Body() body: any,
+  ) {
+    if (customer.customerId !== id.toString()) throw new UnauthorizedException('Access denied.');
+    return this.customerService.allocateLender(BigInt(customer.customerId), body);
+  }
+
   @Patch('application/address')
   async saveApplicationAddress(@CurrentCustomer() customer: any, @Body() body: any) {
     return this.customerService.saveApplicationAddress(BigInt(customer.customerId), body);
