@@ -96,6 +96,11 @@ const schema = z
     SMS_TEMPLATE_REPAYMENT_REMINDER_ID: z.string().optional().default('1777178755725728690'),
     SMS_TEMPLATE_PENDING_STEP_ID: z.string().optional().default('1777178773892460194'),
     SMS_TEMPLATE_LOAN_FULLY_PAID_ID: z.string().optional().default('1777178774771045828'),
+    BSA_API_BASE_URL: z.string().url().optional().default('https://bsa.boost.money'),
+    BSA_CLIENT_ID: z.string().optional().default(''),
+    BSA_CLIENT_SECRET: z.string().optional().default(''),
+    BSA_API_TOKEN: z.string().optional().default(''),
+    BSA_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).optional().default(30000),
   })
   .superRefine((env, context) => {
     if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) {
