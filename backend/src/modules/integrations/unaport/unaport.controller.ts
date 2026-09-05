@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CustomerProtected } from '../../auth/decorators/customer-protected.decorator';
 import { CurrentCustomer } from '../../../common/decorators/current-customer.decorator';
 import { UnaportService } from './unaport.service';
@@ -55,6 +56,74 @@ export class UnaportController {
     console.log(`[AA CONTROLLER] [RESPONSE] POST /refresh-status - result:`, JSON.stringify(result, null, 2));
     return {
       success: true,
+      data: result,
+    };
+  }
+
+  @Post('trigger-bsa-fallback')
+  async triggerBsaFallback(
+    @CurrentCustomer() customer: any,
+    @Param('lan') lan: string,
+  ) {
+    const customerId = BigInt(customer.customerId || customer.id);
+    console.log(`[AA CONTROLLER] [CALL] POST /trigger-bsa-fallback - customerId: ${customerId}, lan: ${lan}`);
+    const result = await this.unaportService.triggerBsaFallback(
+      customerId,
+      lan,
+    );
+    console.log(`[AA CONTROLLER] [RESPONSE] POST /trigger-bsa-fallback - result:`, JSON.stringify(result, null, 2));
+    return {
+      success: result.success,
+      data: result,
+    };
+  }
+
+  @Post('upload-statement')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadBankStatement(
+    @UploadedFile() file: any,
+    @Body() body: any,
+    @CurrentCustomer() customer: any,
+    @Param('lan') lan: string,
+  ) {
+    const customerId = BigInt(customer.customerId || customer.id);
+    console.log(`[AA CONTROLLER] [CALL] POST /upload-statement - customerId: ${customerId}, lan: ${lan}, filename: ${file?.originalname}`);
+    const result = await this.unaportService.uploadBankStatementAndAnalyze(
+      customerId,
+      lan,
+      file,
+      body,
+    );
+    console.log(`[AA CONTROLLER] [RESPONSE] POST /upload-statement - result:`, JSON.stringify(result, null, 2));
+    return {
+      success: result.success,
+      data: result,
+    };
+  }
+
+  @Get('bank-list')
+  async getBankList(
+    @CurrentCustomer() customer: any,
+    @Param('lan') lan: string,
+  ) {
+    console.log(`[AA CONTROLLER] [CALL] GET /bank-list - lan: ${lan}`);
+    const result = await this.unaportService.getBankList();
+    return {
+      success: result.success,
+      data: result,
+    };
+  }
+
+  @Post('summary')
+  async getAccountSummary(
+    @Body('accountUid') accountUid: string,
+    @CurrentCustomer() customer: any,
+    @Param('lan') lan: string,
+  ) {
+    console.log(`[AA CONTROLLER] [CALL] POST /summary - lan: ${lan}, accountUid: ${accountUid}`);
+    const result = await this.unaportService.getAccountSummary(accountUid);
+    return {
+      success: result.success,
       data: result,
     };
   }

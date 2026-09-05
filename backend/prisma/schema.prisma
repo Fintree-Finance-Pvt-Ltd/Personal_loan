@@ -3146,5 +3146,35 @@ model PlWhatsappMessageLog {
   @@map("whatsapp_message_logs")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Boost Money Bank Statement Analysis (BSA) Models
+// ─────────────────────────────────────────────────────────────────────────────
 
+model CustomerBankStatementAnalysis {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
 
+  customerId    BigInt  @map("customer_id") @db.UnsignedBigInt
+  applicationId BigInt? @map("application_id") @db.UnsignedBigInt
+  lan           String  @db.VarChar(50)
+
+  source String @default("BANK_STATEMENT") @db.VarChar(30) // AA | BANK_STATEMENT
+
+  jobId             String? @map("job_id") @db.VarChar(100)
+  accountUid        String? @map("account_uid") @db.VarChar(150)
+  parseStatus       String  @map("parse_status") @db.VarChar(50)
+  parseMessage      String? @map("parse_message") @db.Text
+  fraudReportStatus String? @map("fraud_report_status") @db.VarChar(50)
+  fraudReportPath   String? @map("fraud_report_path") @db.VarChar(500)
+  failureReason     String? @map("failure_reason") @db.Text
+  rawResponse       String? @map("raw_response") @db.LongText
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([customerId], map: "idx_pl_bsa_customer")
+  @@index([applicationId], map: "idx_pl_bsa_app")
+  @@index([lan], map: "idx_pl_bsa_lan")
+  @@index([accountUid], map: "idx_pl_bsa_acc_uid")
+  @@index([jobId], map: "idx_pl_bsa_job")
+  @@map("customer_bank_statement_analysis")
+}
