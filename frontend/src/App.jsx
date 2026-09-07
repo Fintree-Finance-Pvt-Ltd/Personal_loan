@@ -76,6 +76,11 @@ import { EditUserPage } from './features/users/pages/EditUserPage';
 
 
 
+function RedirectToCustomerLogin() {
+  const location = useLocation();
+  return <Navigate to={`/customer/login${location.search}`} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -397,9 +402,9 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* Root redirects to customer login */}
-      <Route path="/" element={<Navigate to="/customer/login" replace />} />
-      <Route path="*" element={<Navigate to="/customer/login" replace />} />
+      {/* Root redirects to customer login while preserving query parameters */}
+      <Route path="/" element={<RedirectToCustomerLogin />} />
+      <Route path="*" element={<RedirectToCustomerLogin />} />
     </Routes>
   );
 }

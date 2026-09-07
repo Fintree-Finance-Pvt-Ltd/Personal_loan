@@ -14,10 +14,13 @@ import { CustomerAuthController } from './customer-auth.controller';
 import { LenderIntegrationModule } from '../lender-integrations/lender-integration.module';
 import { ProductsModule } from '../products/products.module';
 
+import { AttributionService } from './attribution.service';
+
 @Module({
   imports: [LoanModule, PlatformPoliciesModule, MlmModule, ExternalApiModule, LenderIntegrationModule, ProductsModule, OtpModule, JwtModule.register({})],
   controllers: [CustomerController, CustomerAadhaarKycController, CustomerAuthController],
-  providers: [CustomerService, CustomerAadhaarKycService],
-  exports: [CustomerService, CustomerAadhaarKycService],
+  providers: [CustomerService, CustomerAadhaarKycService, AttributionService],
+  exports: [CustomerService, CustomerAadhaarKycService, AttributionService],
 })
 export class CustomerModule {}
+

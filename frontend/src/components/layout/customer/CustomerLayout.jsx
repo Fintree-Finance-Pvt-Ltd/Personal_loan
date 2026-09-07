@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { getCustomerAccessToken, doCustomerRefresh, shouldClearCustomerSession } from '../../../features/customer/customerApi';
 import CustomerHeader from './CustomerHeader';
 import CustomerSidebar from './CustomerSidebar';
@@ -8,6 +8,7 @@ export default function CustomerLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (getCustomerAccessToken()) {
@@ -18,7 +19,7 @@ export default function CustomerLayout() {
     const hasStoredSession = Boolean(localStorage.getItem('customerSession') || sessionStorage.getItem('customerSession'));
 
     if (!hasStoredSession) {
-      navigate('/customer/login', { replace: true });
+      navigate(`/customer/login${location.search}`, { replace: true });
       return;
     }
 
@@ -36,10 +37,10 @@ export default function CustomerLayout() {
         if (shouldClearCustomerSession(error)) {
           localStorage.removeItem('customerSession');
           sessionStorage.removeItem('customerSession');
-          navigate('/customer/login', { replace: true });
+          navigate(`/customer/login${location.search}`, { replace: true });
         }
       });
-  }, [navigate]);
+  }, [navigate, location.search]);
 
   // Customer sessions have no idle timeout (only a 30-day absolute cap — see
   // otp.service.ts), so this heartbeat isn't preventing a logout. It's here so

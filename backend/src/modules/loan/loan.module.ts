@@ -21,6 +21,8 @@ import { IvrModule } from '../integrations/ivr/ivr.module';
 import { SmsModule } from '../integrations/sms/sms.module';
 import { WhatsAppModule } from '../integrations/whatsapp/whatsapp.module';
 
+import { AttributionService } from '../customer/attribution.service';
+
 @Module({
   imports: [
     forwardRef(() => ExternalApiModule),
@@ -32,8 +34,9 @@ import { WhatsAppModule } from '../integrations/whatsapp/whatsapp.module';
     WhatsAppModule,
   ],
   controllers: [LoanController, AdminLoanServicingController],
-  providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, SigningStorageService],
-  exports: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService],
+  providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, SigningStorageService, AttributionService],
+  exports: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, AttributionService],
 })
 export class LoanModule { }
+
 
