@@ -48,9 +48,13 @@ describe('OtpService', () => {
     };
 
     jwt = { signAsync: jest.fn().mockResolvedValue('signed.customer.jwt') };
+    const attributionService = {
+      recordCustomerAttribution: jest.fn().mockResolvedValue({ id: 1n }),
+    };
 
-    service = new OtpService(prisma, smsService, emailService, config, jwt);
+    service = new OtpService(prisma, smsService, emailService, config, jwt, attributionService as any);
   });
+
 
   describe('sendMobileOtp', () => {
     it('rejects a blocked customer', async () => {

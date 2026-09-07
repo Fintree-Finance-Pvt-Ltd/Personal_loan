@@ -37,14 +37,26 @@ describe('WhatsAppWebhookController', () => {
   describe('GET Webhook Verification Challenge', () => {
     it('should return hub.challenge when verify token matches', () => {
       const challenge = 'test_challenge_123456';
-      const result = controller.verifyWebhook('subscribe', mockVerifyToken, challenge);
-      expect(result).toBe(challenge);
+      const mockRes: any = {
+        status: jest.fn().mockReturnThis(),
+        type: jest.fn().mockReturnThis(),
+        send: jest.fn().mockReturnThis(),
+      };
+
+      controller.verifyWebhook('subscribe', mockVerifyToken, challenge, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith(challenge);
     });
 
-    it('should throw ForbiddenException on token mismatch', () => {
-      expect(() => {
-        controller.verifyWebhook('subscribe', 'wrong_token', '123456');
-      }).toThrow(ForbiddenException);
+    it('should respond with 403 on token mismatch', () => {
+      const mockRes: any = {
+        status: jest.fn().mockReturnThis(),
+        type: jest.fn().mockReturnThis(),
+        send: jest.fn().mockReturnThis(),
+      };
+
+      controller.verifyWebhook('subscribe', 'wrong_token', '123456', mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(403);
     });
   });
 
@@ -98,10 +110,17 @@ describe('WhatsAppWebhookController', () => {
         ],
       };
 
-      const result = await controller.handleWebhook(payload);
+      const mockReq: any = {};
+      const mockRes: any = {
+        status: jest.fn().mockReturnThis(),
+        type: jest.fn().mockReturnThis(),
+        send: jest.fn().mockReturnThis(),
+      };
 
-      expect(result.status).toBe('SUCCESS');
-      expect(result.processed).toBe(true);
+      await controller.handleWebhook(payload, mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith('EVENT_RECEIVED');
 
       // Delivered status update
       expect(mockWhatsappService.updateMessageStatus).toHaveBeenCalledWith(

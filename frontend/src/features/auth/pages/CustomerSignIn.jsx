@@ -13,6 +13,7 @@ import {
   getCustomerAccessToken,
   setCustomerAccessToken,
 } from '../../customer/customerApi';
+import { getAttributionPayload } from '../../utm/utm';
 
 const INDIAN_MOBILE_REGEX =
   /^[6-9]\d{9}$/;
@@ -58,14 +59,17 @@ export default function CustomerSignIn() {
       );
 
     if (hasActiveSession) {
+      const currentSearch = searchParams.toString()
+        ? `?${searchParams.toString()}`
+        : '';
       navigate(
-        '/customer/dashboard',
+        `/customer/dashboard${currentSearch}`,
         {
           replace: true,
         },
       );
     }
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   const otpInputRefs =
     useRef([]);
@@ -216,9 +220,13 @@ export default function CustomerSignIn() {
               consentText:
                 CONSENT_TEXT,
 
+              attribution:
+                getAttributionPayload(),
+
               ...trackingData,
             },
           );
+
 
         setOtp(
           Array(
@@ -426,6 +434,7 @@ export default function CustomerSignIn() {
             {
               mobileNumber,
               otp: enteredOtp,
+              attribution: getAttributionPayload(),
             },
           );
 
@@ -476,8 +485,13 @@ export default function CustomerSignIn() {
           'OTP verified successfully.',
         );
 
+        const currentSearch =
+          searchParams.toString()
+            ? `?${searchParams.toString()}`
+            : '';
+
         navigate(
-          '/customer/dashboard',
+          `/customer/dashboard${currentSearch}`,
           {
             replace: true,
 
@@ -490,6 +504,7 @@ export default function CustomerSignIn() {
             },
           },
         );
+
       } catch (
       verificationError
       ) {

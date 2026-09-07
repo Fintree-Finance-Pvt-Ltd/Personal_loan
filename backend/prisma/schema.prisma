@@ -704,6 +704,8 @@ model Customer {
   partnerApplications       PartnerApplication[]
   ivrCallLogs               IvrCallLog[]
   whatsappMessageLogs       PlWhatsappMessageLog[]
+  attribution               CustomerAttribution?
+
 
   @@index([email], map: "idx_customers_email")
   @@index([customerCreationIp], map: "idx_customers_creation_ip")
@@ -1338,6 +1340,8 @@ model PlApplication {
   partnerApplications       PartnerApplication[]
   ivrCallLogs               IvrCallLog[]
   whatsappMessageLogs       PlWhatsappMessageLog[]
+  attribution               ApplicationAttribution?
+
 
   @@index([customerId], map: "idx_pl_applications_customer_id")
   @@index([status], map: "idx_pl_applications_status")
@@ -3178,3 +3182,102 @@ model CustomerBankStatementAnalysis {
   @@index([jobId], map: "idx_pl_bsa_job")
   @@map("customer_bank_statement_analysis")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Acquisition Source & Marketing Attribution Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AcquisitionSource {
+  RM
+  GOOGLE
+  META
+  MARKETING
+  PARTNER
+  ORGANIC
+  REFERRAL
+  WEBSITE
+  OTHER
+}
+
+model CustomerAttribution {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  customerId BigInt   @unique @map("customer_id") @db.UnsignedBigInt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // ── First-Touch Attribution (Immutable) ──────────────────────────────
+  firstSource       AcquisitionSource @default(WEBSITE) @map("first_source")
+  firstUtmSource    String?           @map("first_utm_source") @db.VarChar(100)
+  firstUtmMedium    String?           @map("first_utm_medium") @db.VarChar(100)
+  firstUtmCampaign  String?           @map("first_utm_campaign") @db.VarChar(150)
+  firstUtmTerm      String?           @map("first_utm_term") @db.VarChar(150)
+  firstUtmContent   String?           @map("first_utm_content") @db.VarChar(150)
+  firstRmId         String?           @map("first_rm_id") @db.VarChar(100)
+  firstRmName       String?           @map("first_rm_name") @db.VarChar(150)
+  firstPartnerCode  String?           @map("first_partner_code") @db.VarChar(100)
+  firstPartnerName  String?           @map("first_partner_name") @db.VarChar(150)
+  firstReferralCode String?           @map("first_referral_code") @db.VarChar(100)
+  firstClickId      String?           @map("first_click_id") @db.VarChar(255)
+  firstLandingPage  String?           @map("first_landing_page") @db.VarChar(500)
+  firstReferrer     String?           @map("first_referrer") @db.VarChar(500)
+  firstTouchAt      DateTime          @default(now()) @map("first_touch_at") @db.DateTime(0)
+
+  // ── Last-Touch Attribution (Updated on repeat marketing visits) ───────
+  lastSource       AcquisitionSource? @map("last_source")
+  lastUtmSource    String?            @map("last_utm_source") @db.VarChar(100)
+  lastUtmMedium    String?            @map("last_utm_medium") @db.VarChar(100)
+  lastUtmCampaign  String?            @map("last_utm_campaign") @db.VarChar(150)
+  lastUtmTerm      String?            @map("last_utm_term") @db.VarChar(150)
+  lastUtmContent   String?            @map("last_utm_content") @db.VarChar(150)
+  lastRmId         String?            @map("last_rm_id") @db.VarChar(100)
+  lastRmName       String?            @map("last_rm_name") @db.VarChar(150)
+  lastPartnerCode  String?            @map("last_partner_code") @db.VarChar(100)
+  lastPartnerName  String?            @map("last_partner_name") @db.VarChar(150)
+  lastReferralCode String?            @map("last_referral_code") @db.VarChar(100)
+  lastClickId      String?            @map("last_click_id") @db.VarChar(255)
+  lastLandingPage  String?            @map("last_landing_page") @db.VarChar(500)
+  lastReferrer     String?            @map("last_referrer") @db.VarChar(500)
+  lastTouchAt      DateTime?          @map("last_touch_at") @db.DateTime(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([firstSource], map: "idx_customer_attr_first_source")
+  @@index([firstRmId], map: "idx_customer_attr_first_rm_id")
+  @@index([firstPartnerCode], map: "idx_customer_attr_first_partner_code")
+  @@index([firstReferralCode], map: "idx_customer_attr_first_referral_code")
+  @@map("customer_attributions")
+}
+
+model ApplicationAttribution {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+
+  applicationId BigInt        @unique @map("application_id") @db.UnsignedBigInt
+  application   PlApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  acquisitionSource AcquisitionSource @default(WEBSITE) @map("acquisition_source")
+  utmSource         String?           @map("utm_source") @db.VarChar(100)
+  utmMedium         String?           @map("utm_medium") @db.VarChar(100)
+  utmCampaign       String?           @map("utm_campaign") @db.VarChar(150)
+  utmTerm           String?           @map("utm_term") @db.VarChar(150)
+  utmContent        String?           @map("utm_content") @db.VarChar(150)
+  rmId              String?           @map("rm_id") @db.VarChar(100)
+  rmName            String?           @map("rm_name") @db.VarChar(150)
+  partnerCode       String?           @map("partner_code") @db.VarChar(100)
+  partnerName       String?           @map("partner_name") @db.VarChar(150)
+  referralCode      String?           @map("referral_code") @db.VarChar(100)
+  clickId           String?           @map("click_id") @db.VarChar(255)
+  landingPage       String?           @map("landing_page") @db.VarChar(500)
+  referrer          String?           @map("referrer") @db.VarChar(500)
+
+  capturedAt DateTime @default(now()) @map("captured_at") @db.DateTime(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([acquisitionSource], map: "idx_app_attr_source")
+  @@index([rmId], map: "idx_app_attr_rm_id")
+  @@index([partnerCode], map: "idx_app_attr_partner_code")
+  @@index([referralCode], map: "idx_app_attr_referral_code")
+  @@map("application_attributions")
+}
+

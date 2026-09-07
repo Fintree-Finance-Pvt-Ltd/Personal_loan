@@ -102,6 +102,8 @@ export const authApi = {
     mobileNumber,
     consentGiven,
     consentText,
+    attribution,
+    ...rest
   }) {
     return apiRequest('/otp/mobile/send', {
       method: 'POST',
@@ -110,6 +112,8 @@ export const authApi = {
         mobileNumber,
         consentGiven,
         consentText,
+        attribution,
+        ...rest,
       }),
     });
   },
@@ -117,6 +121,8 @@ export const authApi = {
   verifyMobileOtp({
     mobileNumber,
     otp,
+    attribution,
+    ...rest
   }) {
     return apiRequest('/otp/mobile/verify', {
       method: 'POST',
@@ -124,9 +130,12 @@ export const authApi = {
       body: JSON.stringify({
         mobileNumber,
         otp,
+        attribution,
+        ...rest,
       }),
     });
   },
+
 
   sendEmailOtp({
     customerId,

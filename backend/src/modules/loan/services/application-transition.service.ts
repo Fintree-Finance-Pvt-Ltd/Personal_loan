@@ -4,11 +4,16 @@ import { PlApplicationStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { ACTIVE_APPLICATION_STATUSES } from '../../../common/constants/application.constants';
 
+import { AttributionService } from '../../customer/attribution.service';
+
 @Injectable()
 export class ApplicationTransitionService {
   private readonly logger = new Logger(ApplicationTransitionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly attributionService: AttributionService,
+  ) {}
 
   /**
    * Idempotently creates or resumes an application for the customer.
@@ -63,8 +68,16 @@ export class ApplicationTransitionService {
         },
       });
 
+      // Snapshot customer's attribution to the new application
+      await this.attributionService.createApplicationAttributionSnapshot(
+        tx,
+        newApp.id,
+        customerId,
+      );
+
       this.logger.log(`Created new canonical application ${applicationNumber} for customer ${customerId}`);
       return newApp;
+
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable, // Prevent race conditions on active check
     });
