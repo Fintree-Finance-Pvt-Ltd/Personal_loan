@@ -1519,7 +1519,7 @@ export class LoanService {
 
     const amount = Math.max(acceptedTotalRepayment, approvedAmount, 100);
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
-    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly';
+    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'AS_PRESENTED';
     const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
 
     let mandateType = (requestedMandateType || configMandateType) as PlMandateType;
@@ -1791,6 +1791,8 @@ export class LoanService {
       endDate: config.endDate,
       frequency: config.frequency,
       amountRule: config.amountRule,
+      autoDebitType: config.mandateType === 'UPI' ? 'UPI' : undefined,
+      mandateType: config.mandateType,
       paymentModes: config.paymentModes,
       accountNumber: decryptedAccountNumber,
       ifscCode: bankIfsc,
