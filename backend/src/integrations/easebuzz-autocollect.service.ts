@@ -21,6 +21,8 @@ export interface EasebuzzGenerateAccessKeyInput {
   accountHolderName?: string;
   accountType?: string;
   authMode?: string;
+  autoDebitType?: string;
+  mandateType?: string;
   subMerchantId?: string;
   udf1?: string;
   udf2?: string;
@@ -320,9 +322,10 @@ export class EasebuzzAutocollectService {
         phone: cleanPhone,
         start_date: startDate,
         end_date: input.endDate,
-        frequency: input.frequency || 'monthly',
-        amount_rule: input.amountRule || 'MAX',
+        frequency: input.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'AS_PRESENTED',
+        amount_rule: input.amountRule || this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX',
         payment_modes: input.paymentModes || ['EN'],
+        ...(input.autoDebitType || input.mandateType === 'UPI' || (input.paymentModes && input.paymentModes.includes('UPIAD')) ? { auto_debit_type: input.autoDebitType || 'UPI' } : {}),
         udf1: input.udf1 || '',
         udf2: input.udf2 || '',
         udf3: input.udf3 || '',
@@ -425,13 +428,18 @@ export class EasebuzzAutocollectService {
 
         for (const currentPayload of payloadsToTry) {
           try {
+            const endpoint = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/access-key/generate/`;
+            this.logger.log(`[Easebuzz Mandate Create] Calling ${endpoint} for TxID: "${input.transactionId}", Amount: ${amountString}`);
+            this.logger.log(`[Easebuzz Mandate Create] Payload Sent: ${JSON.stringify(this.sanitizeEasebuzzMandatePayload(currentPayload))}`);
+
             const response = await axios.post(
-              `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/access-key/generate/`,
+              endpoint,
               currentPayload,
               { headers, timeout: 30000 }
             );
 
             const resData = response.data;
+            this.logger.log(`[Easebuzz Mandate Create] Response Received from ${baseUrl}: ${JSON.stringify(resData)}`);
             const status = resData?.status ?? resData?.success;
             const resStr = JSON.stringify(resData || {});
 
@@ -1143,6 +1151,100 @@ export class EasebuzzAutocollectService {
   }
 
   /**
+   * Retrieves list of notifications (UPI / SI)
+   * GET /autocollect/v1/mandate/notification/
+   */
+  async retrieveNotificationList(params: {
+    createdAt?: string;
+    createdAtStart?: string;
+    createdAtEnd?: string;
+    status?: string;
+    transactionId?: string;
+    notificationRequestNumber?: string;
+    schedulerId?: string;
+    schedulerMerchantRequestNumber?: string;
+    subMerchantId?: string;
+  }): Promise<{
+    success: boolean;
+    results?: any[];
+    pagination?: any;
+    data?: any;
+    error?: string;
+    rawResponse?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz credentials not configured.');
+    }
+
+    const subMerchant = params.subMerchantId || this.subMerchantId;
+    const authInput = `${this.merchantKey}|${this.merchantSalt}`;
+    const authorization = this.sha512Hex(authInput);
+
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      Accept: 'application/json',
+    };
+
+    if (subMerchant) {
+      headers['X-EB-SUB-MERCHANT-ID'] = subMerchant;
+    }
+
+    const query = new URLSearchParams();
+    query.set('key', this.merchantKey);
+    if (params.createdAt) query.set('created_at', params.createdAt);
+    if (params.createdAtStart) query.set('created_at_start', params.createdAtStart);
+    if (params.createdAtEnd) query.set('created_at_end', params.createdAtEnd);
+    if (params.status) query.set('status', params.status);
+    if (params.transactionId) query.set('transaction_id', params.transactionId);
+    if (params.notificationRequestNumber) query.set('notification_request_number', params.notificationRequestNumber);
+    if (params.schedulerId) query.set('scheduler_id', params.schedulerId);
+    if (params.schedulerMerchantRequestNumber) query.set('scheduler_merchant_request_number', params.schedulerMerchantRequestNumber);
+    if (subMerchant) {
+      query.set('sub_merchant_id', subMerchant);
+    }
+
+    const candidateBases = Array.from(new Set([
+      this.apiBaseUrl,
+      'https://api.easebuzz.in',
+      'https://pay.easebuzz.in',
+      'https://dashboard.easebuzz.in',
+      'https://testpay.easebuzz.in',
+      'https://sandboxapi.easebuzz.in',
+    ]));
+
+    let lastError: any = null;
+
+    for (const baseUrl of candidateBases) {
+      try {
+        const url = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/notification/?${query.toString()}`;
+        const response = await axios.get(url, { headers, timeout: 30000 });
+        const resData = response.data;
+        const isSuccess = resData?.status === true || resData?.success === true || Array.isArray(resData?.results) || Array.isArray(resData?.data);
+
+        return {
+          success: isSuccess,
+          results: resData?.results || resData?.data || [],
+          pagination: resData?.pagination,
+          data: resData?.data || resData,
+          rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+        };
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    const msg = lastError?.response?.data?.message || lastError?.response?.data?.error || lastError?.message || 'Retrieve notification list request failed.';
+    this.logger.warn(`Easebuzz retrieve notification list exception: ${msg}`);
+
+    return {
+      success: false,
+      error: msg,
+      rawResponse: lastError?.response?.data ? this.sanitizeEasebuzzMandatePayload(lastError.response.data) : null,
+    };
+  }
+
+  /**
    * Execute API for UPI / SI Mandates:
    * POST /autocollect/v1/mandate/execute/
    */
@@ -1243,10 +1345,15 @@ export class EasebuzzAutocollectService {
     for (const baseUrl of candidateBases) {
       try {
         const endpoint = `${baseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/execute/`;
+        this.logger.log(`[Easebuzz Execute] Calling ${endpoint} with MerchantReq: "${input.merchantRequestNumber}", TxID: "${input.transactionId}", NotificationReq: "${input.notificationRequestNumber || 'N/A'}"`);
+        this.logger.debug(`[Easebuzz Execute] Payload: ${JSON.stringify(payload)}`);
+
         const response = await this.axiosClient.post(endpoint, payload, { headers, timeout: 30000 });
         const resData = response.data;
         const status = resData?.status ?? resData?.success;
         const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
+
+        this.logger.log(`[Easebuzz Execute] Response from ${endpoint}: ${JSON.stringify(resData)}`);
 
         return {
           success: isSuccess,
@@ -1256,6 +1363,7 @@ export class EasebuzzAutocollectService {
         };
       } catch (err: any) {
         lastErr = err;
+        this.logger.warn(`[Easebuzz Execute] Failed on ${baseUrl}: ${err?.response?.status || 'ERR'} -> ${JSON.stringify(err?.response?.data || err.message)}`);
         // If received non-5xx (like 400 Bad Request, 401, 404), do not keep retrying other bases blindly
         if (err?.response && err.response.status < 500) {
           break;
