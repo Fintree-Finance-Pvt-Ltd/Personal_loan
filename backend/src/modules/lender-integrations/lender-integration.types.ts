@@ -247,9 +247,11 @@ export interface LenderUpdateApplicationContext {
     verifiedAt: string;
   } | null;
 
-  // Populated only after the eNACH/mandate webhook has authorized the mandate.
+  // Populated once the mandate is authorized. umrn is nullable — it's an
+  // NACH/NPCI concept, and UPI Autopay mandates (identified by providerMandateId
+  // instead) generally never get one at all, even once fully authorized.
   mandate: {
-    umrn: string;
+    umrn: string | null;
     provider: string;
     mandateType: string;
     authorizedAt: string;

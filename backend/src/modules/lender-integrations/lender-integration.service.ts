@@ -1104,14 +1104,21 @@ async markStageFailure(
           .plCustomerDocument
           .findMany({
             where: {
-              applicationId:
-                application.id,
-
               customerId:
                 application.customerId,
 
               status:
                 'VERIFIED',
+
+              // Aadhaar/PAN are captured once per customer via DigiLocker, not
+              // per application, so they're stored with applicationId: null.
+              // Bank statement / live photo are captured per application and
+              // do carry it. Matching either keeps both kinds eligible instead
+              // of silently excluding the customer-level ones.
+              OR: [
+                { applicationId: application.id },
+                { applicationId: null },
+              ],
             },
           })
       : [];
@@ -1860,7 +1867,13 @@ async markStageFailure(
         }
       : null,
 
-    mandate: mandate?.umrn
+    // Gating on the mandate row itself existing (already filtered to status:
+    // AUTHORIZED above), not on umrn specifically. UMRN is an NACH/NPCI concept —
+    // UPI Autopay mandates (the majority of mandates on this platform) never get
+    // one at all and are identified by providerMandateId instead. Requiring umrn
+    // here meant an authorized UPI mandate silently sent `mandate: null` and
+    // Fintree never received any mandate details for it.
+    mandate: mandate
       ? {
           umrn: mandate.umrn,
           provider: mandate.provider,
@@ -1948,7 +1961,11 @@ async markStageFailure(
     transfer.sourceDocument;
 
   if (
-    document.applicationId !== application.id ||
+    // Aadhaar/PAN are captured once per customer (applicationId: null) rather
+    // than per application — only reject when applicationId is actually set
+    // and points at a different application. customerId still anchors this
+    // document to the right person either way.
+    (document.applicationId !== null && document.applicationId !== application.id) ||
     document.customerId !== application.customerId ||
     document.status !== 'VERIFIED' ||
     document.applicantType !== 'BORROWER' ||
