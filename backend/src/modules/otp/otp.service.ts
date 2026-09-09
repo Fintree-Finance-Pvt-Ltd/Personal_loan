@@ -25,6 +25,8 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EmailService } from './email/email.service';
 import { SmsService } from './sms/sms.service';
 import { deviceLabel } from '../../common/utils/security.utils';
+import { AttributionService } from '../customer/attribution.service';
+import { AttributionInput } from '../customer/attribution.types';
 
 export type SendMobileOtpInput = {
   mobileNumber?: unknown;
@@ -41,6 +43,7 @@ export type VerifyMobileOtpInput = {
   ipAddress?: string | null;
   userAgent?: string | null;
   requestId?: string;
+  attribution?: AttributionInput | null;
 };
 
 export type SendEmailOtpInput = {
@@ -71,6 +74,7 @@ export class OtpService {
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly jwt: JwtService,
+    private readonly attributionService: AttributionService,
   ) {
     this.otpExpiryMinutes = this.readPositiveNumber('OTP_EXPIRY_MINUTES', 5);
     this.maxAttempts = this.readPositiveNumber('OTP_MAX_ATTEMPTS', 5);
@@ -269,6 +273,12 @@ export class OtpService {
             createdAt: now,
           },
         });
+
+        await this.attributionService.recordCustomerAttribution(
+          transaction,
+          verifiedCustomer.id,
+          input.attribution,
+        );
 
         await transaction.otpSession.update({
           where: {

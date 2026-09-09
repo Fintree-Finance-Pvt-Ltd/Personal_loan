@@ -58,7 +58,9 @@ export class OtpController {
       ipAddress,
       userAgent: request.headers['user-agent'] || null,
       requestId: request.headers['x-request-id'] as string || 'test-req-id', // Assuming request ID is handled by middleware
+      attribution: (body.attribution as any) || null,
     };
+
 
     const result = await this.otpService.verifyMobileOtp(input);
     

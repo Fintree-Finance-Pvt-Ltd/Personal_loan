@@ -4,6 +4,7 @@ import { OtpController } from './otp.controller';
 import { OtpService } from './otp.service';
 import { SmsService } from './sms/sms.service';
 
+import { AttributionService } from '../customer/attribution.service';
 import { JwtModule } from '@nestjs/jwt';
 
 @Module({
@@ -13,11 +14,14 @@ import { JwtModule } from '@nestjs/jwt';
     OtpService,
     SmsService,
     EmailService,
+    AttributionService,
   ],
   exports: [
     OtpService,
     SmsService,
     EmailService,
+    AttributionService,
   ],
 })
+
 export class OtpModule {}
