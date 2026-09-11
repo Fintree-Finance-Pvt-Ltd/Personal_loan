@@ -2013,6 +2013,15 @@ export class LoanService {
           newValue: { lan: loan.lan, transactionId: activeMandate.merchantTransactionId, status: 'AUTHORIZED' },
           requestId: randomBytes(16).toString('hex'),
         }).catch(() => { });
+
+        // Same trigger as handleEasebuzzMandateWebhook's mandateJustAuthorized branch —
+        // this is the other path a mandate can become AUTHORIZED from (the customer's
+        // frontend polling this directly against Easebuzz's status API instead of via
+        // webhook). Without this, a mandate authorized here rather than by webhook never
+        // got its details pushed to the lender at all.
+        this.lenderIntegrationOutbox.enqueueUpdateWhenReady(loan.applicationId, 4).catch((err) => {
+          this.logger.warn(`Failed to enqueue mandate profile update for application ${loan.applicationId}: ${err?.message || err}`);
+        });
       } else if (([PlMandateStatus.FAILED, PlMandateStatus.REJECTED, PlMandateStatus.CANCELLED, PlMandateStatus.USER_CANCELLED, PlMandateStatus.EXPIRED] as PlMandateStatus[]).includes(normalizedStatus)) {
         await this.prisma.plLoanMandate.update({
           where: { id: activeMandate.id },

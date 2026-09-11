@@ -4,8 +4,11 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 const buildService = () => {
   const prisma: any = {
-    $transaction: jest.fn((cb: any) => cb(prisma)),
+    // refreshMandateStatus uses the array form ($transaction([...promises])), everything
+    // else here uses the callback form — support both.
+    $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     plLoan: { findFirst: jest.fn(), update: jest.fn() },
+    plLoanMandate: { update: jest.fn() },
     plApplication: { update: jest.fn() },
     plRepaymentSchedule: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(1) },
     plRepayment: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn().mockResolvedValue(null), create: jest.fn() },
@@ -19,20 +22,22 @@ const buildService = () => {
     enqueueRepaymentNotification: jest.fn().mockResolvedValue(undefined),
     enqueueChargeNotification: jest.fn().mockResolvedValue(undefined),
     enqueueChargeWaiverNotification: jest.fn().mockResolvedValue(undefined),
+    enqueueUpdateWhenReady: jest.fn().mockResolvedValue(undefined),
   };
+  const easebuzzAutocollectService: any = { retrieveMandate: jest.fn() };
   const service = new LoanService(
     prisma,
     auditLogs,
     {} as any, // digitapService
     {} as any, // externalApiService
-    {} as any, // easebuzzAutocollectService
+    easebuzzAutocollectService,
     {} as any, // configService
     {} as any, // productCalculationService
     lenderIntegrationOutbox,
     {} as any, // emailService
     {} as any, // electronicSignService
   );
-  return { service, prisma, auditLogs, lenderIntegrationOutbox };
+  return { service, prisma, auditLogs, lenderIntegrationOutbox, easebuzzAutocollectService };
 };
 
 describe('LoanService.processRepayment', () => {
@@ -275,5 +280,60 @@ describe('LoanService.acceptOffer', () => {
     prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan, acceptedTenureDays: 30 });
 
     await expect(service.acceptOffer('FTPL00000001', 5n, 30)).rejects.toThrow('Offer already accepted');
+  });
+});
+
+describe('LoanService.refreshMandateStatus', () => {
+  const baseLoan = {
+    id: 20n, applicationId: 1n, lan: 'FTPL00000001', customerId: 5n,
+    mandates: [{ id: 30n, merchantTransactionId: 'MR260902ABC', status: 'INITIATED', lastStatusCheckedAt: null }],
+  };
+
+  // handleEasebuzzMandateWebhook already enqueues an UPDATE(V4) when a mandate is
+  // authorized via the incoming webhook. This is the OTHER path a mandate can become
+  // AUTHORIZED from — the customer's frontend polling this directly against Easebuzz's
+  // status API — which previously had no equivalent trigger at all, so the lender never
+  // received mandate details for any mandate authorized this way instead of by webhook.
+  it('enqueues an UPDATE(V4) for the lender when the provider confirms the mandate is authorized', async () => {
+    const { service, prisma, lenderIntegrationOutbox, easebuzzAutocollectService } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan });
+    easebuzzAutocollectService.retrieveMandate.mockResolvedValue({
+      data: { status: 'authorized', umrn: null, provider_mandate_id: 'MR260902ABC' },
+      sanitizedResponse: {},
+    });
+    jest.spyOn(service, 'getMandateStatus').mockResolvedValue({ success: true, data: {} } as any);
+
+    await service.refreshMandateStatus('FTPL00000001', 5n);
+
+    expect(prisma.plLoan.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 20n },
+      data: expect.objectContaining({ mandateCompleted: true, mandateStatus: 'AUTHORIZED' }),
+    }));
+    expect(lenderIntegrationOutbox.enqueueUpdateWhenReady).toHaveBeenCalledWith(1n, 4);
+  });
+
+  it('does not re-enqueue an UPDATE for a mandate that was already authorized', async () => {
+    const { service, prisma, lenderIntegrationOutbox, easebuzzAutocollectService } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({
+      ...baseLoan,
+      mandates: [{ ...baseLoan.mandates[0], status: 'AUTHORIZED', lastStatusCheckedAt: new Date(Date.now() - 60000) }],
+    });
+    easebuzzAutocollectService.retrieveMandate.mockResolvedValue({ data: { status: 'authorized' }, sanitizedResponse: {} });
+    jest.spyOn(service, 'getMandateStatus').mockResolvedValue({ success: true, data: {} } as any);
+
+    await service.refreshMandateStatus('FTPL00000001', 5n);
+
+    expect(lenderIntegrationOutbox.enqueueUpdateWhenReady).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue an UPDATE when the provider reports the mandate is still pending', async () => {
+    const { service, prisma, lenderIntegrationOutbox, easebuzzAutocollectService } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan });
+    easebuzzAutocollectService.retrieveMandate.mockResolvedValue({ data: { status: 'initiated' }, sanitizedResponse: {} });
+    jest.spyOn(service, 'getMandateStatus').mockResolvedValue({ success: true, data: {} } as any);
+
+    await service.refreshMandateStatus('FTPL00000001', 5n);
+
+    expect(lenderIntegrationOutbox.enqueueUpdateWhenReady).not.toHaveBeenCalled();
   });
 });
