@@ -64,7 +64,7 @@ export class EasebuzzAutocollectService {
 
     this.portalBaseUrl = (
       this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_PORTAL_BASE_URL') ||
-      'https://testpay.easebuzz.in/pay'
+      'https://pay.easebuzz.in/pay'
     ).replace(/\/+$/, '');
 
     const timeout = Number(this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_TIMEOUT_MS') || '30000');
@@ -245,13 +245,10 @@ export class EasebuzzAutocollectService {
   /**
    * Generates safe portal URL for access_key
    */
-  public getPortalUrl(accessKey: string, matchedBaseUrl?: string): string {
-    const targetUrl = matchedBaseUrl || this.apiBaseUrl;
-    const isProd = (targetUrl.includes('api.easebuzz.in') || targetUrl.includes('pay.easebuzz.in')) && !targetUrl.includes('testpay') && !targetUrl.includes('sandbox');
-    const defaultPortal = isProd ? 'https://pay.easebuzz.in/pay' : 'https://testpay.easebuzz.in/pay';
-
+  public getPortalUrl(accessKey: string, _matchedBaseUrl?: string): string {
+    const defaultPortal = 'https://pay.easebuzz.in/pay';
     let basePortal = (this.configService.get<string>('EASEBUZZ_AUTOCOLLECT_PORTAL_BASE_URL') || defaultPortal).replace(/\/+$/, '');
-    if (isProd && basePortal.includes('testpay')) {
+    if (basePortal.includes('testpay') || basePortal.includes('sandbox')) {
       basePortal = 'https://pay.easebuzz.in/pay';
     }
 
@@ -287,9 +284,7 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
-      'https://wire.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in'));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     const subMerchantOptions = initialSubMerchantId ? [initialSubMerchantId, undefined] : [undefined];
 
@@ -323,11 +318,8 @@ export class EasebuzzAutocollectService {
         end_date: input.endDate,
         frequency: (() => {
           const raw = String(input.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly').trim().toLowerCase();
-          if (['monthly', 'adhoc', 'daily', 'weekly', 'bimonthly', 'quarterly', 'half_yearly', 'yearly'].includes(raw)) {
+          if (['monthly', 'daily', 'weekly', 'bimonthly', 'quarterly', 'half_yearly', 'yearly'].includes(raw)) {
             return raw;
-          }
-          if (raw.includes('adho') || raw.includes('present')) {
-            return 'adhoc';
           }
           return 'monthly';
         })(),
@@ -537,10 +529,8 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
-      'https://wire.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in'));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     let lastError: any = null;
     const attemptErrors: string[] = [];
@@ -1020,9 +1010,7 @@ export class EasebuzzAutocollectService {
       this.apiBaseUrl,
       'https://api.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://testpay.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     let lastRes: any = null;
     let lastErr: any = null;
@@ -1117,11 +1105,8 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
-      'https://pay.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://testpay.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     let lastError: any = null;
 
@@ -1215,11 +1200,8 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
-      'https://pay.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://testpay.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     let lastError: any = null;
 
@@ -1341,11 +1323,8 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
-      'https://pay.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://testpay.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     let lastRes: any = null;
     let lastErr: any = null;
@@ -1471,9 +1450,7 @@ export class EasebuzzAutocollectService {
       this.apiBaseUrl,
       'https://api.easebuzz.in',
       'https://dashboard.easebuzz.in',
-      'https://sandboxapi.easebuzz.in',
-      'https://testpay.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in') && !url.includes('sandbox') && !url.includes('wire.easebuzz.in'));
 
     let lastError: any = null;
 
