@@ -1519,7 +1519,7 @@ export class LoanService {
 
     const amount = Math.max(acceptedTotalRepayment, approvedAmount, 1);
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
-    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'AS_PRESENTED';
+    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly';
     const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
 
     let mandateType = (requestedMandateType || configMandateType) as PlMandateType;

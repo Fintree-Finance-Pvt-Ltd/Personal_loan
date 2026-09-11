@@ -413,61 +413,56 @@ export default function CustomerDashboard() {
     'Customer';
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] space-y-6 pb-8">
-      {/* Main hero */}
-      <section className="relative overflow-hidden rounded-3xl border border-brand-800/20 bg-gradient-to-r from-[#064e3b] via-[#047857] to-[#0f766e] text-white shadow-lg shadow-brand-900/10">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-16 -top-20 h-56 w-56 rounded-full bg-brand-300/15 blur-3xl" />
-
-          <div className="absolute -bottom-20 right-8 h-64 w-64 rounded-full bg-info-300/15 blur-3xl" />
-
-          <div
-            className="absolute inset-0 opacity-[0.035]"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(255,255,255,0.65) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.65) 1px, transparent 1px)',
-              backgroundSize: '40px 40px',
-            }}
-          />
+    <div className="mx-auto w-full max-w-[1480px] space-y-5 px-0 pb-8">
+      {/* Premium dashboard header */}
+      <section className="relative overflow-hidden rounded-[30px] border border-slate-200 bg-[#f8fafc] shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -right-24 -top-32 h-96 w-96 rounded-full bg-emerald-200/40 blur-3xl" />
+          <div className="absolute -bottom-40 left-1/3 h-80 w-80 rounded-full bg-cyan-200/30 blur-3xl" />
+          <div className="absolute inset-y-0 right-0 w-[45%] bg-gradient-to-l from-white/90 to-transparent" />
         </div>
 
-        <div className="relative grid items-center gap-5 px-5 py-5 sm:px-6 sm:py-6 lg:grid-cols-[1fr_240px] lg:px-7 lg:py-6">
-          <div className="min-w-0">
+        <div className="relative grid min-h-[310px] lg:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="flex flex-col justify-center px-6 py-7 sm:px-8 lg:px-11 lg:py-9">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-brand-50 backdrop-blur">
+              <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3.5 py-2 text-[11px] font-bold text-white shadow-sm">
                 <Sparkles size={13} />
                 Welcome back, {firstName}
               </span>
 
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-brand-950/20 px-3 py-1.5 text-[11px] font-semibold text-brand-100">
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-[11px] font-bold text-emerald-700">
                 <ShieldCheck size={13} />
-                Secure customer portal
+                Secure & protected
               </span>
             </div>
 
-            <div className="mt-4 max-w-2xl">
-              <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-2xl">
+            <div className="mt-6 max-w-2xl">
+              {/* <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-600">
+                FinLeaf Personal Finance
+              </p> */}
+
+              <h1 className="mt-2 text-3xl font-black leading-[1.08] tracking-[-0.035em] text-slate-950 sm:text-4xl">
                 {isFullyPaidRepeatCustomer
                   ? 'Your previous loan is fully repaid.'
                   : applicationSubmitted
                     ? 'Your loan application is moving forward.'
-                    : 'Complete your personal loan application.'}
+                    : 'Your personal loan starts here.'}
               </h1>
 
-              <p className="mt-2 max-w-xl text-sm leading-6 text-brand-50/80">
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-[15px]">
                 {isFullyPaidRepeatCustomer
                   ? 'Congratulations on clearing your loan! Start a new application whenever you need to borrow again.'
                   : applicationSubmitted
-                    ? 'Review your submitted details, track the lender decision and continue the next available step.'
-                    : 'Finish your secure digital application and track every step from verification to disbursal.'}
+                    ? 'Your application is safely with the lender. Continue whenever your next action is ready.'
+                    : 'Complete your digital application securely and keep track of every important update.'}
               </p>
             </div>
 
-            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:items-center">
+            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={handleApplicationButton}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-brand-800 shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-50 hover:shadow-md"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(5,150,105,0.22)] transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_14px_28px_rgba(5,150,105,0.28)]"
               >
                 {buttonLabel}
                 <ArrowRight size={16} />
@@ -475,21 +470,18 @@ export default function CustomerDashboard() {
 
               <button
                 type="button"
-                onClick={() =>
-                  navigate('/customer/support')
-                }
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/15"
+                onClick={() => navigate('/customer/support')}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
               >
                 <Headphones size={16} />
                 Get Support
               </button>
             </div>
-
-
           </div>
 
-          <div className="relative hidden h-full min-h-[190px] lg:block">
-            <div className="absolute bottom-0 left-1/2 h-32 w-40 -tranneutral-x-1/2 rounded-full bg-white/10 blur-2xl" />
+          <div className="relative hidden min-h-[310px] items-end justify-center overflow-hidden lg:flex">
+            <div className="absolute bottom-0 right-8 h-72 w-72 rounded-full bg-emerald-100/70 blur-3xl" />
+            <div className="absolute bottom-0 right-12 h-44 w-72 rounded-t-[100%] bg-gradient-to-t from-emerald-100/80 to-transparent" />
 
             <img
               src={
@@ -498,37 +490,27 @@ export default function CustomerDashboard() {
                   : '/image/Img_F.png'
               }
               alt="FinLeaf personal loan assistance"
-              className="absolute bottom-[-24px] left-1/2 z-10 max-h-[240px] w-full max-w-[280px] -tranneutral-x-1/2 object-contain object-bottom"
+              className="relative z-10 mt-auto h-[285px] w-[330px] translate-y-4 object-contain object-bottom"
             />
+
           </div>
         </div>
       </section>
 
-      {/* Status overview */}
-      <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Compact status strip */}
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <DashboardMetricCard
           icon={FileText}
           label="Application"
-          value={
-            applicationSubmitted
-              ? applicationNumber
-              : 'Not submitted'
-          }
-          helper={
-            applicationSubmitted
-              ? 'Application created'
-              : 'Start your application'
-          }
+          value={applicationSubmitted ? applicationNumber : 'Not submitted'}
+          helper={applicationSubmitted ? 'Application created' : 'Start your application'}
           tone="emerald"
         />
 
         <DashboardMetricCard
           icon={BadgeCheck}
           label="Current Status"
-          value={formatStatus(
-            backendCustomer?.onboardingStatus ||
-            applicationStatus,
-          )}
+          value={formatStatus(backendCustomer?.onboardingStatus || applicationStatus)}
           helper="Backend-confirmed status"
           tone="blue"
         />
@@ -536,98 +518,61 @@ export default function CustomerDashboard() {
         <DashboardMetricCard
           icon={Landmark}
           label="Loan Account"
-          value={
-            hasLan
-              ? backendCustomer.latestLan
-              : 'Not generated'
-          }
-          helper={
-            hasLan
-              ? 'LAN available'
-              : 'Generated after approval'
-          }
+          value={hasLan ? backendCustomer.latestLan : 'Not generated'}
+          helper={hasLan ? 'LAN available' : 'Generated after approval'}
           tone="violet"
         />
 
         <DashboardMetricCard
           icon={WalletCards}
           label="Disbursal"
-          value={
-            formatStatus(
-              backendCustomer?.latestDisbursalStatus ||
-              backendCustomer?.latestLoanStatus ||
-              'NOT_STARTED',
-            )
-          }
+          value={formatStatus(backendCustomer?.latestDisbursalStatus || backendCustomer?.latestLoanStatus || 'NOT_STARTED')}
           helper="Latest disbursal stage"
           tone="amber"
         />
       </section>
 
-      {/* Application details */}
+      {/* Application overview */}
       {applicationSubmitted && (
-        <section className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
-          <div className="flex flex-col justify-between gap-4 border-b border-neutral-100 px-6 py-6 sm:flex-row sm:items-center sm:px-8">
+        <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">
-                Submitted Application
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-emerald-600">
+                  Application
+                </p>
+              </div>
 
-              <h2 className="mt-2 text-xl font-bold text-neutral-950 sm:text-2xl">
-                Application overview
+              <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                Your submitted details
               </h2>
 
-              <p className="mt-1 text-sm text-neutral-500">
-                Review the information shared with the lender.
+              <p className="mt-1 text-sm text-slate-500">
+                A clear view of the information currently associated with your application.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={
-                handleApplicationButton
-              }
-              className="inline-flex w-fit items-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-neutral-800"
+              onClick={handleApplicationButton}
+              className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-extrabold text-slate-800 transition hover:border-slate-300 hover:bg-slate-100"
             >
-              View full journey
-
-              <ArrowRight
-                size={15}
-              />
+              View application
+              <ArrowRight size={15} />
             </button>
           </div>
 
-          <div className="grid gap-5 p-6 sm:p-8 lg:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-px bg-slate-100 md:grid-cols-2 xl:grid-cols-4">
             <ApplicationDetailCard
               icon={FileText}
               title="Application"
               subtitle="Reference and status"
             >
-              <DetailRow
-                label="Application Number"
-                value={
-                  applicationNumber
-                }
-              />
-
-              <DetailRow
-                label="Current Status"
-                value={formatStatus(
-                  applicationStatus,
-                )}
-              />
-
-              <DetailRow
-                label="Submitted On"
-                value={formatDateTime(
-                  submittedAt,
-                )}
-              />
-
-              <DetailRow
-                label="Assigned Lender"
-                value={lender}
-              />
+              <DetailRow label="Application Number" value={applicationNumber} />
+              <DetailRow label="Current Status" value={formatStatus(applicationStatus)} />
+              <DetailRow label="Submitted On" value={formatDateTime(submittedAt)} />
+              <DetailRow label="Assigned Lender" value={lender} />
             </ApplicationDetailCard>
 
             <ApplicationDetailCard
@@ -635,33 +580,10 @@ export default function CustomerDashboard() {
               title="Personal Details"
               subtitle="Verified identity information"
             >
-              <DetailRow
-                label="Applicant Name"
-                value={
-                  applicant.fullName
-                }
-              />
-
-              <DetailRow
-                label="PAN Number"
-                value={maskPan(
-                  applicant.panNumber,
-                )}
-              />
-
-              <DetailRow
-                label="Date of Birth"
-                value={formatDate(
-                  applicant.dateOfBirth,
-                )}
-              />
-
-              <DetailRow
-                label="Gender"
-                value={formatStatus(
-                  applicant.gender,
-                )}
-              />
+              <DetailRow label="Applicant Name" value={applicant.fullName} />
+              <DetailRow label="PAN Number" value={maskPan(applicant.panNumber)} />
+              <DetailRow label="Date of Birth" value={formatDate(applicant.dateOfBirth)} />
+              <DetailRow label="Gender" value={formatStatus(applicant.gender)} />
             </ApplicationDetailCard>
 
             <ApplicationDetailCard
@@ -671,28 +593,13 @@ export default function CustomerDashboard() {
             >
               <DetailRow
                 label="Mobile Number"
-                value={
-                  mobileNumber
-                    ? `+91 ${mobileNumber}`
-                    : 'Not available'
-                }
+                value={mobileNumber ? `+91 ${mobileNumber}` : 'Not available'}
                 icon={Phone}
               />
-
-              <DetailRow
-                label="Email Address"
-                value={
-                  applicant.email
-                }
-                icon={Mail}
-              />
-
+              <DetailRow label="Email Address" value={applicant.email} icon={Mail} />
               <DetailRow
                 label="Residential PIN"
-                value={
-                  applicant.pincode ||
-                  applicant.residentialPincode
-                }
+                value={applicant.pincode || applicant.residentialPincode}
                 icon={MapPin}
               />
             </ApplicationDetailCard>
@@ -704,213 +611,131 @@ export default function CustomerDashboard() {
             >
               <DetailRow
                 label="Employment Type"
-                value={formatStatus(
-                  applicant.employmentType,
-                )}
+                value={formatStatus(applicant.employmentType)}
               />
-
               <DetailRow
-                label={
-                  applicant.employmentType ===
-                    'SELF_EMPLOYED'
-                    ? 'Business Name'
-                    : 'Company Name'
-                }
+                label={applicant.employmentType === 'SELF_EMPLOYED' ? 'Business Name' : 'Company Name'}
                 value={
-                  applicant.employmentType ===
-                    'SELF_EMPLOYED'
+                  applicant.employmentType === 'SELF_EMPLOYED'
                     ? applicant.businessName
                     : applicant.companyName
                 }
               />
-
               <DetailRow
                 label="Monthly Income"
-                value={formatCurrency(
-                  applicant.monthlyIncome,
-                )}
+                value={formatCurrency(applicant.monthlyIncome)}
                 icon={IndianRupee}
               />
-
-              <DetailRow
-                label="Work PIN Code"
-                value={
-                  applicant.workPincode
-                }
-                icon={MapPin}
-              />
+              <DetailRow label="Work PIN Code" value={applicant.workPincode} icon={MapPin} />
             </ApplicationDetailCard>
           </div>
         </section>
       )}
 
-      {/* Lender and fee */}
+      {/* Lender + payment workspace */}
       {applicationSubmitted && (
-        <section className="grid gap-6 lg:grid-cols-[1fr_380px]">
-          <div className="relative overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
-            <div className="grid min-h-[330px] sm:grid-cols-[1fr_220px]">
-              <div className="relative z-10 p-6 sm:p-8">
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_350px]">
+          <div className="relative overflow-hidden rounded-[26px] border border-slate-200 bg-slate-950 text-white shadow-[0_15px_40px_rgba(15,23,42,0.12)]">
+            <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-emerald-500/15 blur-3xl" />
+            <div className="absolute -bottom-32 left-1/3 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+
+            <div className="relative grid min-h-[315px] sm:grid-cols-[minmax(0,1fr)_230px]">
+              <div className="p-6 sm:p-8">
                 <div className="flex items-center gap-3">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-100 text-brand-700">
-                    <Landmark
-                      size={22}
-                    />
+                  <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/10 text-emerald-300 ring-1 ring-white/10">
+                    <Landmark size={21} />
                   </div>
 
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-700">
-                      Assigned lender
-                    </p>
-
-                    <h3 className="mt-1 text-lg font-bold text-neutral-950">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-300">
                       Lending partner
+                    </p>
+                    <h3 className="mt-1 text-lg font-black text-white">
+                      {lender}
                     </h3>
                   </div>
                 </div>
 
-                <div className="mt-7 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-base font-bold text-neutral-950">
-                        {lender}
-                      </p>
-
-                      <p className="mt-1 text-xs text-neutral-500">
-                        Personal Loan Partner
-                      </p>
-                    </div>
-
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-100 px-3 py-1.5 text-[11px] font-bold text-brand-700">
-                      <BadgeCheck
-                        size={14}
-                      />
-                      Assigned
-                    </span>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <MiniInfoCard
-                      label="Application"
-                      value={
-                        applicationNumber
-                      }
-                    />
-
-                    <MiniInfoCard
-                      label="Current stage"
-                      value={formatStatus(
-                        backendCustomer?.onboardingStatus ||
-                        applicationStatus,
-                      )}
-                    />
-                  </div>
+                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                  <MiniInfoCard label="Application" value={applicationNumber} />
+                  <MiniInfoCard
+                    label="Current stage"
+                    value={formatStatus(backendCustomer?.onboardingStatus || applicationStatus)}
+                  />
                 </div>
 
-                <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-brand-700">
-                  <CheckCircle2
-                    size={15}
-                  />
-
-                  Your application is securely shared with the assigned lender.
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-emerald-400/10 text-emerald-300">
+                      <CheckCircle2 size={17} />
+                    </span>
+                    <div>
+                      <p className="text-sm font-bold text-white">Application securely shared</p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        Your application is with the assigned lending partner.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="relative hidden items-end justify-center overflow-hidden bg-gradient-to-b from-brand-50 to-info-50 px-3 sm:flex">
-                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-brand-100/70 to-transparent" />
-
+              <div className="relative hidden overflow-hidden sm:flex sm:items-end sm:justify-center">
+                <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 via-transparent to-transparent" />
                 <img
                   src="/image/Img_F.png"
                   alt="FinLeaf lending support"
-                  className="relative z-10 max-h-[300px] w-full object-contain object-bottom"
+                  className="relative z-10 max-h-[285px] w-full object-contain object-bottom"
                 />
               </div>
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-sm sm:p-7">
-            <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-info-100 text-info-700">
-                <ReceiptText
-                  size={22}
-                />
-              </div>
-
+          <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,0.06)] sm:p-7">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-info-700">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-600">
                   Payment
                 </p>
-
-                <h3 className="mt-1 text-lg font-bold text-neutral-950">
+                <h3 className="mt-1 text-lg font-black text-slate-950">
                   Assessment fee
                 </h3>
+              </div>
+
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-50 text-cyan-700">
+                <ReceiptText size={19} />
               </div>
             </div>
 
             <div className="mt-7 space-y-4">
               <DetailRow
                 label="Base Fee"
-                value={
-                  feeDetails
-                    ? formatCurrency(
-                      feeDetails.baseFee,
-                      true,
-                    )
-                    : '—'
-                }
+                value={feeDetails ? formatCurrency(feeDetails.baseFee, true) : '—'}
               />
 
               <DetailRow
                 label="GST"
-                value={
-                  feeDetails
-                    ? formatCurrency(
-                      feeDetails.gst,
-                      true,
-                    )
-                    : '—'
-                }
+                value={feeDetails ? formatCurrency(feeDetails.gst, true) : '—'}
               />
 
-              <div className="border-t border-dashed border-neutral-200 pt-4">
+              <div className="border-t border-dashed border-slate-200 pt-4">
                 <DetailRow
-                  label={
-                    assessmentFeePaid
-                      ? 'Total Paid'
-                      : 'Total Payable'
-                  }
-                  value={
-                    feeDetails
-                      ? formatCurrency(
-                        feeDetails.total,
-                        true,
-                      )
-                      : '—'
-                  }
+                  label={assessmentFeePaid ? 'Total Paid' : 'Total Payable'}
+                  value={feeDetails ? formatCurrency(feeDetails.total, true) : '—'}
                   prominent
                 />
               </div>
 
-              {/* This used to unconditionally claim "Payment completed successfully"
-                  for every customer with a submitted application, whether or not they'd
-                  actually paid — genuinely misleading, since it could make a customer
-                  think a required payment step was already done. */}
               {assessmentFeePaid ? (
-                <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-brand-700">
-                    <CheckCircle2
-                      size={16}
-                    />
-
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3.5">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-700">
+                    <CheckCircle2 size={16} />
                     Payment completed successfully
                   </div>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-caution-100 bg-caution-50 px-4 py-3.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-caution-700">
-                    <LoaderCircle
-                      size={16}
-                    />
-
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-3.5">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-amber-700">
+                    <LoaderCircle size={16} />
                     Payment pending
                   </div>
                 </div>
@@ -920,53 +745,39 @@ export default function CustomerDashboard() {
         </section>
       )}
 
-      {/* Help cards */}
-      <section className="grid gap-5 md:grid-cols-2">
+      {/* Support */}
+      <section className="grid gap-3 md:grid-cols-2">
         <button
           type="button"
-          onClick={() =>
-            navigate(
-              '/customer/support',
-            )
-          }
-          className="group flex items-center gap-4 rounded-[24px] border border-neutral-200 bg-white p-5 text-left shadow-sm transition hover:-tranneutral-y-0.5 hover:border-brand-200 hover:shadow-lg"
+          onClick={() => navigate('/customer/support')}
+          className="group flex min-h-[105px] items-center gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)]"
         >
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
-            <Headphones
-              size={22}
-            />
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white">
+            <Headphones size={21} />
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-neutral-950">
-              Need assistance?
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-neutral-500">
-              Contact our customer support team for help with your loan journey.
+            <p className="text-sm font-black text-slate-950">Need assistance?</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Get help from our customer support team.
             </p>
           </div>
 
           <ChevronRight
             size={19}
-            className="shrink-0 text-neutral-400 transition group-hover:tranneutral-x-1 group-hover:text-brand-600"
+            className="shrink-0 text-slate-300 transition group-hover:translate-x-1 group-hover:text-emerald-600"
           />
         </button>
 
-        <div className="flex items-center gap-4 rounded-[24px] border border-info-100 bg-info-50/70 p-5">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-info-700 shadow-sm">
-            <CalendarDays
-              size={22}
-            />
+        <div className="flex min-h-[105px] items-center gap-4 rounded-[22px] border border-cyan-100 bg-cyan-50/70 px-5 py-4">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-cyan-700 shadow-sm">
+            <CalendarDays size={21} />
           </div>
 
           <div>
-            <p className="text-sm font-bold text-info-950">
-              What happens next?
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-info-800/75">
-              Your next action will appear automatically when the lender updates your application.
+            <p className="text-sm font-black text-cyan-950">What happens next?</p>
+            <p className="mt-1 text-xs leading-5 text-cyan-900/65">
+              Your next action will appear automatically when your application is updated.
             </p>
           </div>
         </div>
@@ -1023,30 +834,30 @@ function DashboardMetricCard({
 
   return (
     <article
-      className={`rounded-[24px] border p-5 shadow-sm ${selectedTone.container}`}
+      className={`group relative overflow-hidden rounded-[20px] border p-4 shadow-[0_6px_20px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)] ${selectedTone.container}`}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-5 border-b border-slate-50 pb-3 last:border-0 last:pb-0">
         <div
-          className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${selectedTone.icon}`}
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${selectedTone.icon}`}
         >
           <Icon size={20} />
         </div>
 
-        <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-neutral-500 shadow-sm">
+        <span className="inline-flex items-center gap-1 rounded-full border border-slate-100 bg-white px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
           Live
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
         </span>
       </div>
 
-      <p className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
+      <p className="mt-4 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
         {label}
       </p>
 
-      <p className="mt-2 break-words text-base font-bold leading-6 text-neutral-950">
+      <p className="mt-1.5 break-words text-sm font-black leading-5 text-slate-950">
         {value}
       </p>
 
-      <p className="mt-1 text-xs text-neutral-500">
+      <p className="mt-1 text-[11px] leading-4 text-slate-500">
         {helper}
       </p>
     </article>
@@ -1058,12 +869,12 @@ function MiniInfoCard({
   value,
 }) {
   return (
-    <div className="rounded-xl bg-white p-3.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+      <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
         {label}
       </p>
 
-      <p className="mt-1.5 break-words text-xs font-bold text-neutral-900">
+      <p className="mt-1.5 break-words text-xs font-extrabold text-slate-800">
         {value ||
           'Not available'}
       </p>
@@ -1090,26 +901,26 @@ function ApplicationDetailCard({
   children,
 }) {
   return (
-    <article className="rounded-2xl border border-neutral-200 bg-neutral-50/50 p-5 transition hover:border-brand-200 hover:bg-white hover:shadow-lg hover:shadow-neutral-900/5">
-      <div className="flex items-center gap-3 border-b border-neutral-200 pb-4">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-brand-700 shadow-sm">
+    <article className="bg-white p-5 transition hover:bg-slate-50/60 sm:p-6">
+      <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700">
           <Icon size={19} />
         </div>
 
         <div>
-          <h3 className="text-sm font-bold text-neutral-950">
+          <h3 className="text-sm font-black text-slate-950">
             {title}
           </h3>
 
           {subtitle && (
-            <p className="mt-0.5 text-[11px] text-neutral-500">
+            <p className="mt-0.5 text-[10px] text-slate-400">
               {subtitle}
             </p>
           )}
         </div>
       </div>
 
-      <div className="mt-5 space-y-4">
+      <div className="mt-5 space-y-3.5">
         {children}
       </div>
     </article>
@@ -1123,8 +934,8 @@ function DetailRow({
   prominent = false,
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="flex items-center gap-1.5 text-xs leading-5 text-neutral-500">
+    <div className="flex items-start justify-between gap-5 border-b border-slate-50 pb-3 last:border-0 last:pb-0">
+      <span className="flex items-center gap-1.5 text-[11px] leading-5 text-slate-400">
         {Icon && (
           <Icon
             size={13}

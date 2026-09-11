@@ -321,7 +321,16 @@ export class EasebuzzAutocollectService {
         phone: cleanPhone,
         start_date: startDate,
         end_date: input.endDate,
-        frequency: input.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'AS_PRESENTED',
+        frequency: (() => {
+          const raw = String(input.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly').trim().toLowerCase();
+          if (['monthly', 'adhoc', 'daily', 'weekly', 'bimonthly', 'quarterly', 'half_yearly', 'yearly'].includes(raw)) {
+            return raw;
+          }
+          if (raw.includes('adho') || raw.includes('present')) {
+            return 'adhoc';
+          }
+          return 'monthly';
+        })(),
         amount_rule: input.amountRule || this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX',
         payment_modes: input.paymentModes || ['EN'],
         ...(input.autoDebitType || input.mandateType === 'UPI' || (input.paymentModes && input.paymentModes.includes('UPIAD')) ? { auto_debit_type: input.autoDebitType || 'UPI' } : {}),
