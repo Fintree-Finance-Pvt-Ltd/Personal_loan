@@ -287,10 +287,9 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
-      'https://pay.easebuzz.in',
+      'https://wire.easebuzz.in',
       'https://sandboxapi.easebuzz.in',
-      'https://testpay.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in'));
 
     const subMerchantOptions = initialSubMerchantId ? [initialSubMerchantId, undefined] : [undefined];
 
@@ -529,10 +528,10 @@ export class EasebuzzAutocollectService {
     const candidateBases = Array.from(new Set([
       this.apiBaseUrl,
       'https://api.easebuzz.in',
+      'https://wire.easebuzz.in',
       'https://dashboard.easebuzz.in',
       'https://sandboxapi.easebuzz.in',
-      'https://testpay.easebuzz.in',
-    ]));
+    ])).filter((url) => Boolean(url) && !url.includes('pay.easebuzz.in') && !url.includes('testpay.easebuzz.in'));
 
     let lastError: any = null;
     const attemptErrors: string[] = [];
