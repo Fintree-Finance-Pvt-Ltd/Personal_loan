@@ -1517,7 +1517,7 @@ export class LoanService {
     const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
     const acceptedTotalRepayment = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
 
-    const amount = Math.max(acceptedTotalRepayment, approvedAmount, 100);
+    const amount = Math.max(acceptedTotalRepayment, approvedAmount, 1);
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
     const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'AS_PRESENTED';
     const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
