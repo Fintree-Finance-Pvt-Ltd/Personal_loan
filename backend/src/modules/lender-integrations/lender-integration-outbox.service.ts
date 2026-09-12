@@ -519,14 +519,19 @@ if (!platformLan) {
     const application = await this.prisma.plApplication.findUnique({ where: { id: event.applicationId }, include: { lenderApplicationLink: true } });
     // A DISBURSE-stage event is expected to run while the application is already
     // LENDER_APPROVED (disbursal only happens post-approval) — that is not "terminal"
-    // for this stage the way it is for CREATE/UPDATE/DECISION. LOAN_CLOSED (the loan
-    // linked to this application has been fully repaid) is unconditionally terminal
-    // for every stage, including DISBURSE — there is nothing left to replay once the
+    // for this stage the way it is for CREATE/UPDATE/DECISION. DOCUMENT is exempted for
+    // a different reason: it carries KYC evidence (Aadhaar/PAN), not a decision input —
+    // it doesn't change anything the lender already decided, and a document that failed
+    // to reach the lender before the decision (e.g. a config gap) should still be
+    // deliverable afterwards rather than permanently stuck. LOAN_CLOSED (the loan linked
+    // to this application has been fully repaid) is unconditionally terminal for every
+    // stage, including DISBURSE and DOCUMENT — there is nothing left to replay once the
     // loan itself is closed.
     if (
       !application ||
       application.status === 'LOAN_CLOSED' ||
-      (event.integrationStage !== 'DISBURSE' && ['LENDER_APPROVED', 'LENDER_REJECTED'].includes(application.status))
+      (!['DISBURSE', 'DOCUMENT'].includes(event.integrationStage) &&
+        ['LENDER_APPROVED', 'LENDER_REJECTED'].includes(application.status))
     ) {
       throw new BadRequestException('Terminal lender decisions cannot be replayed.');
     }
