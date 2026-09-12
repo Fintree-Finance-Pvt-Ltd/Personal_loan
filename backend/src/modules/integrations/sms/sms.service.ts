@@ -205,16 +205,10 @@ export class SmsService {
 
     const normalizedMobile = this.normalizeMobileNumber(input.mobile);
     const customerName = this.formatCustomerName(input.customerName);
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ||
-      process.env.FRONTEND_URL ||
-      'https://finle-prod.fintreelms.com';
-
-    const journeyLink =
-      input.journeyLink ||
-      (input.applicationId
-        ? `${frontendUrl}/apply/${input.applicationId}`
-        : `${frontendUrl}/customer/application`);
+    const fallbackPath = input.applicationId
+      ? `/apply/${input.applicationId}`
+      : `/customer/application`;
+    const journeyLink = this.sanitizeLink(input.journeyLink, fallbackPath);
 
     const text = `Dear ${customerName}, your Personal Loan of Rs. ${input.approvedAmount} has been approved. Please complete the remaining steps to proceed with disbursal: ${journeyLink}. LAN: ${input.lan}. - Fintree Finance Pvt. Ltd.`;
 
@@ -293,14 +287,7 @@ export class SmsService {
 
     const normalizedMobile = this.normalizeMobileNumber(input.mobile);
     const customerName = this.formatCustomerName(input.customerName);
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ||
-      process.env.FRONTEND_URL ||
-      'https://finle-prod.fintreelms.com';
-
-    const resumeLink =
-      input.resumeLink ||
-      `${frontendUrl}/customer/login`;
+    const resumeLink = this.sanitizeLink(input.resumeLink, '/customer/login');
 
     const text = `Dear ${customerName}, your Personal Loan application is pending at the ${input.pendingStep} step. Please complete this step to continue your application: ${resumeLink}. Application Ref: ${input.applicationRef}. - Fintree Finance Pvt Ltd.`;
 
@@ -327,14 +314,7 @@ export class SmsService {
 
     const normalizedMobile = this.normalizeMobileNumber(input.mobile);
     const customerName = this.formatCustomerName(input.customerName);
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ||
-      process.env.FRONTEND_URL ||
-      'https://finle-prod.fintreelms.com';
-
-    const applyLink =
-      input.applyLink ||
-      `${frontendUrl}/customer/login`;
+    const applyLink = this.sanitizeLink(input.applyLink, '/customer/login');
 
     const text = `Dear ${customerName}, congratulations! You have successfully completed repayment of your Personal Loan LAN ${input.previousLan}. Based on your repayment history, you are eligible to apply for a new Personal Loan of up to Rs. ${input.eligibleAmount}. Apply now: ${applyLink}. - Fintree Finance Pvt Ltd`;
 
@@ -344,6 +324,27 @@ export class SmsService {
       dltTemplateId: templateId,
       templateType: SmsTemplateType.LOAN_FULLY_PAID,
     });
+  }
+
+  private getFrontendUrl(): string {
+    const raw = (
+      this.configService.get<string>('FRONTEND_URL') ||
+      process.env.FRONTEND_URL ||
+      'https://finle-prod.fintreelms.com'
+    ).trim();
+
+    if (!raw || raw.includes('localhost') || raw.includes('127.0.0.1')) {
+      return 'https://finle-prod.fintreelms.com';
+    }
+    return raw.replace(/\/+$/, '');
+  }
+
+  private sanitizeLink(link?: string, fallbackPath: string = '/customer/login'): string {
+    const baseUrl = this.getFrontendUrl();
+    if (!link || link.includes('localhost') || link.includes('127.0.0.1')) {
+      return `${baseUrl}${fallbackPath.startsWith('/') ? fallbackPath : '/' + fallbackPath}`;
+    }
+    return link.replace(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, baseUrl);
   }
 
   /**
