@@ -150,7 +150,7 @@ export class CustomerAadhaarKycService {
       lastName: customer.lastName || undefined,
       redirectionUrl:
         this.config.get<string>('DIGITAP_DIGILOCKER_REDIRECT_URL') ||
-        'http://localhost:5173/customer/digilocker/callback',
+        'https://finle-prod.fintreelms.com/customer/digilocker/callback',
     });
 
     const verificationUrl = response.url || response.kycUrl;

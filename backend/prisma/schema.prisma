@@ -1879,7 +1879,7 @@ model PlLoanMandate {
 
   amount     Decimal @db.Decimal(15, 2)
   amountRule String  @default("MAX") @map("amount_rule") @db.VarChar(20)
-  frequency  String  @default("monthly") @db.VarChar(30)
+  frequency  String  @default("as_presented") @db.VarChar(30)
 
   startDate DateTime @map("start_date") @db.Date
   endDate   DateTime @map("end_date") @db.Date

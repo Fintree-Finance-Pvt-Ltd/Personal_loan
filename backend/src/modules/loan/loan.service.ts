@@ -542,7 +542,7 @@ export class LoanService {
           completed: Boolean(isMandateAuth),
           mandateType: latestMandate?.mandateType || 'ENACH',
           amount: latestMandate?.amount ? Number(latestMandate.amount) : totalRepaymentAmount,
-          frequency: latestMandate?.frequency || 'monthly',
+          frequency: latestMandate?.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'as_presented',
           startDate: parseDateString(latestMandate?.startDate),
           endDate: parseDateString(latestMandate?.endDate),
           maskedAccountNumber: latestMandate?.accountNumberMasked || loan.bankAccountMasked || null,
@@ -1519,7 +1519,7 @@ export class LoanService {
 
     const amount = Math.max(acceptedTotalRepayment, approvedAmount, 1);
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
-    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly';
+    const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'as_presented';
     const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
 
     let mandateType = (requestedMandateType || configMandateType) as PlMandateType;
@@ -1693,7 +1693,7 @@ export class LoanService {
           mandateType: latestMandate?.mandateType || 'ENACH',
           portalUrl: null,
           amount: latestMandate?.amount ? Number(latestMandate.amount).toFixed(2) : Number(loan.approvedAmount).toFixed(2),
-          frequency: latestMandate?.frequency || 'monthly',
+          frequency: latestMandate?.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'as_presented',
           startDate: latestMandate?.startDate ? new Date(latestMandate.startDate).toISOString().split('T')[0] : null,
           endDate: latestMandate?.endDate ? new Date(latestMandate.endDate).toISOString().split('T')[0] : null,
           pollAfterSeconds: 5,
@@ -1912,7 +1912,7 @@ export class LoanService {
           mandateId: loan.mandateProviderRef || null,
           mandateType: 'ENACH',
           amount: loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment).toFixed(2) : Number(loan.approvedAmount).toFixed(2),
-          frequency: 'monthly',
+          frequency: this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'as_presented',
           umrn: null,
           tpvValidationStatus: null,
           authorizedAt: loan.mandateCompletedAt || null,
@@ -3565,10 +3565,10 @@ export class LoanService {
 
     const successUrl =
       this.configService.get<string>('EASEBUZZ_SUCCESS_URL') ||
-      `${this.configService.get('FRONTEND_URL') || 'http://localhost:5173'}/customer/loan/${lan}/details`;
+      `${this.configService.get('FRONTEND_URL') || 'https://finle-prod.fintreelms.com'}/customer/loan/${lan}/details`;
     const failureUrl =
       this.configService.get<string>('EASEBUZZ_FAILURE_URL') ||
-      `${this.configService.get('FRONTEND_URL') || 'http://localhost:5173'}/customer/loan/${lan}/details`;
+      `${this.configService.get('FRONTEND_URL') || 'https://finle-prod.fintreelms.com'}/customer/loan/${lan}/details`;
 
     const initiatedPayment = await initiateEasebuzzIframePayment({
       txnid,

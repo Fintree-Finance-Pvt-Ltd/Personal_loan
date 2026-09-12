@@ -317,11 +317,11 @@ export class EasebuzzAutocollectService {
         start_date: startDate,
         end_date: input.endDate,
         frequency: (() => {
-          const raw = String(input.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'monthly').trim().toLowerCase();
-          if (['monthly', 'daily', 'weekly', 'bimonthly', 'quarterly', 'half_yearly', 'yearly'].includes(raw)) {
+          const raw = String(input.frequency || this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'as_presented').trim().toLowerCase();
+          if (['monthly', 'daily', 'weekly', 'bimonthly', 'quarterly', 'half_yearly', 'yearly', 'as_presented', 'adhoc'].includes(raw)) {
             return raw;
           }
-          return 'monthly';
+          return 'as_presented';
         })(),
         amount_rule: input.amountRule || this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX',
         payment_modes: input.paymentModes || ['EN'],
