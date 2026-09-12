@@ -231,6 +231,37 @@ describe('LenderIntegrationOutboxService', () => {
 
       await expect(service.replayFailedEvent('EVENT-1')).rejects.toThrow(/Terminal lender decisions/);
     });
+
+    // DOCUMENT carries KYC evidence, not a decision input — a document that failed to
+    // reach the lender before a decision (e.g. a config gap) must still be replayable
+    // afterwards, the same as DISBURSE.
+    it.each(['LENDER_APPROVED', 'LENDER_REJECTED'])(
+      'replays a DOCUMENT-stage event even when the application status is %s',
+      async (status) => {
+        const { prisma, tx } = prismaFor(
+          { id: 'EVENT-1', status: 'FAILED', applicationId: 1n, integrationStage: 'DOCUMENT' },
+          { status },
+        );
+        const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+        const result = await service.replayFailedEvent('EVENT-1');
+
+        expect(result).toEqual({ success: true, eventId: 'EVENT-1', status: 'PENDING' });
+        expect(tx.lenderIntegrationOutbox.update).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({ status: 'PENDING', attemptCount: 0 }),
+        }));
+      },
+    );
+
+    it('still refuses to replay a DOCUMENT-stage event once the loan is closed', async () => {
+      const { prisma } = prismaFor(
+        { id: 'EVENT-1', status: 'FAILED', applicationId: 1n, integrationStage: 'DOCUMENT' },
+        { status: 'LOAN_CLOSED' },
+      );
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+
+      await expect(service.replayFailedEvent('EVENT-1')).rejects.toThrow(/Terminal lender decisions/);
+    });
   });
 
   it('returns structured reason codes and does not enqueue an incomplete UPDATE', async () => {
