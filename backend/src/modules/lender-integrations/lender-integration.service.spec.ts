@@ -509,6 +509,62 @@ describe('LenderIntegrationService explicit requirements', () => {
     expect(prisma.lenderDocumentTransfer.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ transferStatus: 'ACKNOWLEDGED' }) }));
   });
 
+  // Regression test: processDocument()'s catch block used to collapse any error that
+  // wasn't already a LenderIntegrationError (e.g. a raw Prisma error from the
+  // finalizing $transaction) into a generic, undiagnosable "Document processing
+  // failed." — losing the one piece of information (the real error message) an
+  // operator needs to fix it. It must now preserve that message instead.
+  it('preserves the real error message instead of a generic fallback when an unexpected error occurs mid-upload', async () => {
+    const config = configFor('FINTREE_FINANCE_V1');
+    const application = applicationFor(config);
+    const link = application.lenderApplicationLink;
+    link.createStatus = 'ACKNOWLEDGED';
+    (link as any).partnerApplicationId = 'PARTNER-1';
+
+    prisma.lenderIntegrationOutbox.findUnique.mockResolvedValue({ id: 'EVENT-3', status: 'PROCESSING', lockToken: 'LOCK-1', integrationStage: 'DOCUMENT', payloadVersion: 1, idempotencyKey: 'APP-001:LENDER_DOCUMENT:AADHAAR_XML:101:V1', documentTransferId: '200', applicationId: 1n, applicationReference: 'APP-001', lenderId: config.lenderId });
+    prisma.plApplication.findUnique.mockResolvedValue(application);
+    prisma.mlmAllocationDecision.findUnique.mockResolvedValue({ id: 'DEC-1', status: 'ASSIGNED', lenderId: config.lenderId, productId: 'PRODUCT-1', productVersionId: 'PSV-1' });
+
+    adapter.capabilities = { documentUpload: true };
+    adapter.uploadDocument = jest.fn().mockResolvedValue({
+      acknowledged: true,
+      providerStatus: 'RECEIVED',
+      partnerDocumentId: 'DOC-2',
+      fileSha256: 'mocked-hash',
+      acknowledgedAt: new Date().toISOString(),
+    });
+
+    const mockDocument = { id: 101n, applicationId: null, customerId: 10n, documentType: 'AADHAAR_CARD', fileSize: 1000, filePath: '/valid/path', mimeType: 'text/xml', status: 'VERIFIED', applicantType: 'BORROWER', uploadedAt: new Date('2026-08-01T00:00:00Z'), source: 'CUSTOMER' };
+
+    let updateCallCount = 0;
+    prisma.lenderDocumentTransfer = {
+      findUnique: jest.fn().mockResolvedValue({ id: 200n, applicationId: 1n, transferStatus: 'PENDING', sourceDocumentId: 101n, lenderApplicationLinkId: 'LINK-1', sourceDocument: mockDocument }),
+      update: jest.fn().mockImplementation(() => {
+        updateCallCount += 1;
+        // 1st call marks the transfer PROCESSING (fine). 2nd call — finalizing to
+        // ACKNOWLEDGED inside the transaction — simulates the kind of raw, unwrapped
+        // DB failure this catch block exists to handle.
+        if (updateCallCount === 2) {
+          return Promise.reject(new Error('Unique constraint failed on the fields: (`partnerDocumentId`)'));
+        }
+        return Promise.resolve({});
+      }),
+    };
+
+    (service as any).documentFiles.loadDocument = jest.fn().mockResolvedValue({ fileSize: 1000, fileSha256: 'mocked-hash', mimeType: 'text/xml', contentBase64: 'bW9jaw==' });
+
+    await expect(service.processEvent('EVENT-3', 'LOCK-1')).rejects.toThrow(/Unique constraint failed/);
+
+    // The 3rd call is the catch block persisting the failure — it must carry the real
+    // error message, not the old generic "Document processing failed." fallback.
+    expect(prisma.lenderDocumentTransfer.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        transferStatus: 'FAILED',
+        lastErrorMessage: expect.stringContaining('Unique constraint failed'),
+      }),
+    }));
+  });
+
   it('PENDING invokes getStatus only', async () => {
     adapter.capabilities.statusPolling = true;
     const config = configFor('FINTREE_FINANCE_V1');
