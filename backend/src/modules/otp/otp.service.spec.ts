@@ -109,6 +109,105 @@ describe('OtpService', () => {
     });
   });
 
+  describe('sendEmailOtp', () => {
+    const activeCustomer = (overrides: any = {}) => ({
+      id: 1n,
+      accountStatus: 'ACTIVE',
+      email: 'old@example.com',
+      emailVerified: false,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      prisma.customer.findUnique.mockResolvedValue(activeCustomer());
+      prisma.otpSession.findFirst.mockResolvedValue(null);
+      prisma.otpSession.create.mockResolvedValue({ id: 777n });
+    });
+
+    const REAL_DEADLINE_MS = (OtpService as any).EMAIL_SEND_RESPONSE_DEADLINE_MS;
+
+    afterEach(() => {
+      // Restore whatever the two "slow send" tests below overrode this to — using a
+      // real (tiny) deadline instead of fake timers, since sendEmailOtp's earlier
+      // awaits (argon2 hashing, in particular) are genuine async work that fake timers
+      // don't advance, so faking the clock here just hangs the test instead.
+      (OtpService as any).EMAIL_SEND_RESPONSE_DEADLINE_MS = REAL_DEADLINE_MS;
+    });
+
+    it('sends the email and responds successfully when the SMTP send completes quickly', async () => {
+      emailService.sendOtp.mockResolvedValue(undefined);
+
+      const result = await service.sendEmailOtp({ customerId: '1', email: 'new@example.com' });
+
+      expect(result.success).toBe(true);
+      expect((result.data as any).otpSessionId).toBe('777');
+      expect(prisma.otpSession.update).not.toHaveBeenCalled();
+    });
+
+    it('invalidates the session and throws when the SMTP send fails quickly', async () => {
+      emailService.sendOtp.mockRejectedValue(new Error('bad SMTP credentials'));
+
+      await expect(
+        service.sendEmailOtp({ customerId: '1', email: 'new@example.com' }),
+      ).rejects.toThrow('Unable to send email OTP');
+
+      expect(prisma.otpSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 777n },
+          data: expect.objectContaining({ invalidatedAt: expect.any(Date) }),
+        }),
+      );
+    });
+
+    // Regression test for the "customer gets the OTP email but the frontend times out
+    // and never shows the OTP box" bug — a slow SMTP handshake must not block the
+    // response past OtpService's response deadline once the OTP session is valid.
+    it('responds successfully without waiting when the SMTP send is still in flight past the deadline, and does not invalidate it if it later succeeds', async () => {
+      (OtpService as any).EMAIL_SEND_RESPONSE_DEADLINE_MS = 20;
+      let resolveSend: () => void = () => undefined;
+      emailService.sendOtp.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveSend = resolve;
+        }),
+      );
+
+      const result = await service.sendEmailOtp({ customerId: '1', email: 'new@example.com' });
+
+      expect(result.success).toBe(true);
+      expect((result.data as any).otpSessionId).toBe('777');
+      expect(prisma.otpSession.update).not.toHaveBeenCalled();
+
+      resolveSend();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(prisma.otpSession.update).not.toHaveBeenCalled();
+    });
+
+    it('invalidates the session in the background if a slow SMTP send eventually fails after the deadline', async () => {
+      (OtpService as any).EMAIL_SEND_RESPONSE_DEADLINE_MS = 20;
+      prisma.otpSession.update.mockResolvedValue({ id: 777n });
+      let rejectSend: (error: Error) => void = () => undefined;
+      emailService.sendOtp.mockReturnValue(
+        new Promise<void>((_resolve, reject) => {
+          rejectSend = reject;
+        }),
+      );
+
+      const result = await service.sendEmailOtp({ customerId: '1', email: 'new@example.com' });
+      expect(result.success).toBe(true);
+
+      rejectSend(new Error('smtp connection dropped'));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(prisma.otpSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 777n },
+          data: expect.objectContaining({ invalidatedAt: expect.any(Date) }),
+        }),
+      );
+    });
+  });
+
   describe('verifyMobileOtp', () => {
     const activeSession = (overrides: any = {}) => ({
       id: 555n,
@@ -386,6 +485,21 @@ describe('OtpService', () => {
       expect(options.httpOnly).toBe(true);
       expect(options.path).toBe('/api/customer/auth');
       expect(options.sameSite).toBe('strict');
+    });
+
+    // Regression test: the cookie's maxAge was wired to REFRESH_SESSION_HOURS (the
+    // ADMIN session-length setting — 8h in production) instead of the customer
+    // session's own CUSTOMER_REFRESH_SESSION_DAYS, so the browser discarded a
+    // still-server-valid 30-day session's cookie after just 8 hours.
+    it('derives the cookie maxAge from CUSTOMER_REFRESH_SESSION_DAYS, not REFRESH_SESSION_HOURS', () => {
+      CONFIG_VALUES.CUSTOMER_REFRESH_SESSION_DAYS = 30;
+      CONFIG_VALUES.REFRESH_SESSION_HOURS = 8; // the admin setting — must be ignored here
+
+      const options = service.getCookieOptions();
+
+      expect(options.maxAge).toBe(30 * 86_400_000);
+      delete CONFIG_VALUES.CUSTOMER_REFRESH_SESSION_DAYS;
+      delete CONFIG_VALUES.REFRESH_SESSION_HOURS;
     });
   });
 });

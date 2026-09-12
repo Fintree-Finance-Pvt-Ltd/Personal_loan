@@ -68,6 +68,16 @@ export class EmailService {
           user,
           pass: password,
         },
+        // Pooled connections reuse the TLS handshake across sends instead of paying
+        // for it on every OTP — that handshake is the main reason a cold send can run
+        // long enough to trip the caller's response deadline (see OtpService). The
+        // explicit timeouts make a genuinely stuck connection fail fast rather than
+        // hang for nodemailer's much longer defaults (2 min connect / 10 min socket).
+        pool: true,
+        maxConnections: 5,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 20000,
       });
 
     console.log('SMTP configured:', {
