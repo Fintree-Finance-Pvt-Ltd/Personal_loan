@@ -63,6 +63,11 @@ export type VerifyEmailOtpInput = {
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
 
+  // How long sendEmailOtp() waits for the real SMTP send before responding anyway
+  // (see the comment at its call site) — comfortably under the frontend's request
+  // timeout so a slow-but-successful send never surfaces there as a client error.
+  private static readonly EMAIL_SEND_RESPONSE_DEADLINE_MS = 6000;
+
   private readonly otpExpiryMinutes: number;
   private readonly maxAttempts: number;
   private readonly resendCooldownSeconds: number;
@@ -481,25 +486,23 @@ export class OtpService {
       },
     });
 
-    try {
-      await this.emailService.sendOtp(email, otp);
+    // The SMTP handshake (TLS negotiation + greeting + auth) occasionally runs longer
+    // than the frontend's request timeout, even though the send itself goes on to
+    // succeed a few seconds later — the customer would see a client-side "timeout"
+    // error and never get the OTP input box, despite the email genuinely arriving
+    // moments after. The OTP session above is already created and verifiable, so a
+    // slow-but-successful send doesn't need to block the response: give the real send
+    // a bounded window to respond synchronously (preserving immediate, honest failure
+    // feedback for a fast failure like bad SMTP credentials), and if it's still
+    // in-flight past that window, respond success anyway and let it finish in the
+    // background — invalidating the session only if it ultimately fails.
+    const sendPromise = this.emailService.sendOtp(email, otp);
+    const raceResult = await this.raceWithDeadline(
+      sendPromise,
+      OtpService.EMAIL_SEND_RESPONSE_DEADLINE_MS,
+    );
 
-      return {
-        success: true,
-        message: 'Email verification OTP sent successfully.',
-        data: {
-          otpSessionId: otpSession.id.toString(),
-          expiresAt,
-          resendAfterSeconds: this.resendCooldownSeconds,
-
-          ...(this.exposeOtpInResponse
-            ? {
-                developmentOtp: otp,
-              }
-            : {}),
-        },
-      };
-    } catch (error) {
+    if (raceResult.settled && raceResult.error) {
       await this.prisma.otpSession.update({
         where: {
           id: otpSession.id,
@@ -513,6 +516,64 @@ export class OtpService {
         'Unable to send email OTP. Please try again.',
       );
     }
+
+    if (!raceResult.settled) {
+      sendPromise.catch(async (error) => {
+        this.logger.error(
+          `Email OTP send exceeded ${OtpService.EMAIL_SEND_RESPONSE_DEADLINE_MS}ms and then failed for session ${otpSession.id}: ${error?.message || error}`,
+        );
+
+        await this.prisma.otpSession
+          .update({
+            where: {
+              id: otpSession.id,
+            },
+            data: {
+              invalidatedAt: new Date(),
+            },
+          })
+          .catch(() => undefined);
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Email verification OTP sent successfully.',
+      data: {
+        otpSessionId: otpSession.id.toString(),
+        expiresAt,
+        resendAfterSeconds: this.resendCooldownSeconds,
+
+        ...(this.exposeOtpInResponse
+          ? {
+              developmentOtp: otp,
+            }
+          : {}),
+      },
+    };
+  }
+
+  // Waits up to `ms` for `promise` to settle. Resolves `{ settled: false }` on timeout
+  // without rejecting or losing the original promise — the caller still holds `promise`
+  // and can attach a background handler for whenever it eventually settles.
+  private raceWithDeadline<T>(
+    promise: Promise<T>,
+    ms: number,
+  ): Promise<{ settled: true; error?: unknown } | { settled: false }> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ settled: false }), ms);
+
+      promise.then(
+        () => {
+          clearTimeout(timer);
+          resolve({ settled: true });
+        },
+        (error) => {
+          clearTimeout(timer);
+          resolve({ settled: true, error });
+        },
+      );
+    });
   }
 
   async verifyEmailOtp(input: VerifyEmailOtpInput) {
@@ -1028,7 +1089,15 @@ export class OtpService {
 
   getCookieOptions(): any {
     const isProd = this.configService.get('NODE_ENV') === 'production';
-    const maxAgeHours = this.configService.get<number>('REFRESH_SESSION_HOURS', 168);
+    // Was reading REFRESH_SESSION_HOURS — the ADMIN session-length setting (8h in
+    // production) — instead of the customer session's own config. The server-side
+    // CustomerSession/CustomerRefreshToken rows are correctly created with a
+    // CUSTOMER_REFRESH_SESSION_DAYS (30-day) expiry (see the session-creation code
+    // above), but the browser was discarding the cookie carrying that refresh token
+    // after just REFRESH_SESSION_HOURS — so a customer closing the browser or coming
+    // back after that window had a still-valid session server-side with no way to
+    // present it, and looked logged out.
+    const sessionLengthDays = this.configService.get<number>('CUSTOMER_REFRESH_SESSION_DAYS', 30);
     const apiPrefix = this.configService.get<string>('API_PREFIX', 'api');
     const secure = this.configService.get<boolean>('COOKIE_SECURE', false) || isProd;
     const sameSite = this.configService.get<'strict' | 'lax' | 'none'>('COOKIE_SAME_SITE', 'strict');
@@ -1038,7 +1107,7 @@ export class OtpService {
       secure,
       sameSite,
       path: `/${apiPrefix}/customer/auth`,
-      maxAge: maxAgeHours * 3600000,
+      maxAge: sessionLengthDays * 86_400_000,
     };
   }
 
