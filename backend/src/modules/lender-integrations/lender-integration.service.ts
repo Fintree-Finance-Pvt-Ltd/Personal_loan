@@ -28,6 +28,7 @@ import {
 
 import {
   LenderIntegrationError,
+  normalizeLenderIntegrationError,
 } from './lender-integration.errors';
 
 import {
@@ -2193,15 +2194,16 @@ async markStageFailure(
 
     return true;
   } catch (error) {
+    // Every known failure point above (loadDocument, the Fintree adapter, the HTTP
+    // client) already throws a properly classified LenderIntegrationError — this catch
+    // exists for whatever ISN'T anticipated, most plausibly a raw Prisma error from the
+    // $transaction above (e.g. a constraint violation). normalizeLenderIntegrationError
+    // is the same helper LenderHttpService uses for exactly this: it preserves the real
+    // error's message (redacted) instead of collapsing it to a generic, undiagnosable
+    // "Document processing failed." — swallowing that message here previously left no
+    // way to see why a document actually failed short of reading server logs directly.
     const normalized =
-      error instanceof
-        LenderIntegrationError
-        ? error
-        : new LenderIntegrationError(
-            'LENDER_DOCUMENT_PROCESSING_FAILED',
-            'Document processing failed.',
-            'UNKNOWN',
-          );
+      normalizeLenderIntegrationError(error);
 
     await this.prisma
       .lenderDocumentTransfer
