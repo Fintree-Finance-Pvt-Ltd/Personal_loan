@@ -2205,6 +2205,17 @@ async markStageFailure(
     const normalized =
       normalizeLenderIntegrationError(error);
 
+    // The message alone (LENDER_INTEGRATION_UNKNOWN's "Cannot read properties of
+    // undefined (reading 'x')" and similar) isn't enough to locate a genuine code bug —
+    // only the stack trace pinpoints the exact line. Log it here, once, rather than
+    // guessing at the cause from the error text alone.
+    if (!(error instanceof LenderIntegrationError)) {
+      this.logger.error(
+        `Unexpected error while processing DOCUMENT event for transfer ${transfer.id}: ${normalized.message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
     await this.prisma
       .lenderDocumentTransfer
       .update({
