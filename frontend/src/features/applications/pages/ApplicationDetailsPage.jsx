@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import {
+  ArrowLeft,
+  Check,
+  CheckCheck,
+  Clock,
+  ExternalLink,
+  MessageCircle,
+  Phone,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
 import { resolveFileUrl } from '../../../lib/files';
 import { useAuth } from '../../../auth/AuthContext';
-import { Alert, Card, PageHeader, Spinner } from '../../../components/ui';
+import { Alert, Badge, Button, Card, Panel, PageHeader, Spinner, TableShell } from '../../../components/ui';
 import { StageStatusBadge } from '../components/StageStatusBadge';
 import { LoanChargesCard } from '../components/LoanChargesCard';
 import { RepaymentScheduleCard } from '../components/RepaymentScheduleCard';
@@ -38,6 +49,21 @@ function formatRetryCountdown(availableAt) {
   const minutes = Math.ceil(seconds / 60);
   return minutes < 60 ? `auto-retry in ${minutes}m` : `auto-retry in ${Math.ceil(minutes / 60)}h`;
 }
+
+const IVR_STATUS_TONES = {
+  COMPLETED: 'brand',
+  FAILED: 'danger',
+  ERROR: 'danger',
+  IN_PROGRESS: 'caution',
+  INITIATED: 'caution',
+};
+
+const SummaryRow = ({ label, children }) => (
+  <div className="flex items-start justify-between gap-4 border-b border-neutral-100 py-2 text-sm last:border-0">
+    <dt className="text-neutral-500">{label}</dt>
+    <dd className="font-numeric text-right font-semibold text-ink">{children}</dd>
+  </div>
+);
 
 export default function ApplicationDetailsPage() {
   const { applicationId } = useParams();
@@ -229,18 +255,14 @@ export default function ApplicationDetailsPage() {
 
   if (loading && !details) {
     return (
-      <div className="p-6">
-        <Spinner />
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Spinner label="Loading application…" />
       </div>
     );
   }
 
   if (error && !details) {
-    return (
-      <div className="p-6">
-        <Alert>{error}</Alert>
-      </div>
-    );
+    return <Alert>{error}</Alert>;
   }
 
   if (!details) return null;
@@ -248,83 +270,84 @@ export default function ApplicationDetailsPage() {
   const canRetry = auth.hasPermission('LENDER_UPDATE');
 
   return (
-    <div className="p-6">
-      <Link to="/admin-master/applications" className="mb-4 inline-block text-sm text-brand-700 hover:underline">
-        &larr; Back to Applications
+    <div>
+      <Link
+        to="/admin-master/applications"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700 hover:underline"
+      >
+        <ArrowLeft size={15} /> Back to Applications
       </Link>
 
       <PageHeader
+        eyebrow="Application"
         title={application.applicationNumber}
-        description={`Customer ${customer.fullName} (${customer.customerCode}) — ${customer.mobileNumber}`}
+        description={`${customer.fullName} (${customer.customerCode}) · ${customer.mobileNumber}`}
         actions={<StageStatusBadge value={application.status} />}
       />
 
-      {error && (
-        <div className="mb-4">
-          <Alert>{error}</Alert>
-        </div>
-      )}
+      {error && <div className="mb-5"><Alert>{error}</Alert></div>}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <div className="text-xs font-semibold uppercase text-gray-500">Customer</div>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-gray-500">Name</dt><dd>{customer.fullName || '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Code</dt><dd>{customer.customerCode || '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Mobile</dt><dd>{customer.mobileNumber || '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Email</dt><dd className="truncate">{customer.email || '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">PAN</dt><dd>{customer.panNumber || '-'}</dd></div>
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">Customer</p>
+          <dl className="mt-2">
+            <SummaryRow label="Name">{customer.fullName || '-'}</SummaryRow>
+            <SummaryRow label="Code">{customer.customerCode || '-'}</SummaryRow>
+            <SummaryRow label="Mobile">{customer.mobileNumber || '-'}</SummaryRow>
+            <SummaryRow label="Email"><span className="truncate">{customer.email || '-'}</span></SummaryRow>
+            <SummaryRow label="PAN">{customer.panNumber || '-'}</SummaryRow>
           </dl>
         </Card>
 
         <Card>
-          <div className="text-xs font-semibold uppercase text-gray-500">Application</div>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-gray-500">LAN</dt><dd>{application.platformLan || '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Lender</dt><dd>{application.lenderCode || '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Requested</dt><dd>{formatCurrency(application.requestedAmount)}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Selected</dt><dd>{formatCurrency(application.selectedAmount)} / {application.selectedTenure ?? '-'}d</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Approved</dt><dd>{formatCurrency(application.approvedAmount)}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Submitted</dt><dd>{formatDate(application.submittedAt)}</dd></div>
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">Application</p>
+          <dl className="mt-2">
+            <SummaryRow label="LAN">{application.platformLan || '-'}</SummaryRow>
+            <SummaryRow label="Lender">{application.lenderCode || '-'}</SummaryRow>
+            <SummaryRow label="Requested">{formatCurrency(application.requestedAmount)}</SummaryRow>
+            <SummaryRow label="Selected">{formatCurrency(application.selectedAmount)} / {application.selectedTenure ?? '-'}d</SummaryRow>
+            <SummaryRow label="Approved">{formatCurrency(application.approvedAmount)}</SummaryRow>
+            <SummaryRow label="Submitted">{formatDate(application.submittedAt)}</SummaryRow>
           </dl>
         </Card>
 
         <Card>
-          <div className="text-xs font-semibold uppercase text-gray-500">Lender Decision</div>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-gray-500">Normalized</dt><dd>{link ? <StageStatusBadge value={link.normalizedDecision} /> : '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Lender approved</dt><dd>{formatCurrency(application.lenderApprovedAmount)}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Lender tenure</dt><dd>{application.lenderApprovedTenure ?? '-'}</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Lender ROI</dt><dd>{application.lenderApprovedRoi ?? '-'}%</dd></div>
-            <div className="flex justify-between"><dt className="text-gray-500">Decision at</dt><dd>{formatDate(application.lenderDecisionAt)}</dd></div>
-            {application.lenderDecisionReason && (
-              <div className="text-xs text-gray-500">{application.lenderDecisionReason}</div>
-            )}
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">Lender decision</p>
+          <dl className="mt-2">
+            <SummaryRow label="Normalized">{link ? <StageStatusBadge value={link.normalizedDecision} /> : '-'}</SummaryRow>
+            <SummaryRow label="Lender approved">{formatCurrency(application.lenderApprovedAmount)}</SummaryRow>
+            <SummaryRow label="Lender tenure">{application.lenderApprovedTenure ?? '-'}</SummaryRow>
+            <SummaryRow label="Lender ROI">{application.lenderApprovedRoi ?? '-'}%</SummaryRow>
+            <SummaryRow label="Decision at">{formatDate(application.lenderDecisionAt)}</SummaryRow>
           </dl>
+          {application.lenderDecisionReason && (
+            <p className="mt-2 text-xs text-neutral-500">{application.lenderDecisionReason}</p>
+          )}
         </Card>
 
         <Card>
-          <div className="text-xs font-semibold uppercase text-gray-500">Loan</div>
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">Loan</p>
           {loan ? (
             <>
-              <dl className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between"><dt className="text-gray-500">LAN</dt><dd>{loan.lan}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Status</dt><dd><StageStatusBadge value={loan.status} /></dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Disbursal</dt><dd><StageStatusBadge value={loan.disbursalStatus} /></dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Approved amount</dt><dd>{formatCurrency(loan.approvedAmount)}</dd></div>
+              <dl className="mt-2">
+                <SummaryRow label="LAN">{loan.lan}</SummaryRow>
+                <SummaryRow label="Status"><StageStatusBadge value={loan.status} /></SummaryRow>
+                <SummaryRow label="Disbursal"><StageStatusBadge value={loan.disbursalStatus} /></SummaryRow>
+                <SummaryRow label="Approved amount">{formatCurrency(loan.approvedAmount)}</SummaryRow>
               </dl>
               {(loan.status === 'DISBURSED' || loan.status === 'FULLY_PAID') && auth.hasPermission('LOAN_MANAGE') && (
-                <div className="mt-4 border-t pt-4">
-                  <button
+                <div className="mt-4 border-t border-neutral-100 pt-4">
+                  <Button
                     type="button"
+                    variant="secondary"
+                    className="w-full"
                     disabled={sendingWelcomeLetter}
                     onClick={() => handleSendWelcomeLetter(loan.lan)}
-                    className="w-full rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                   >
-                    {sendingWelcomeLetter ? 'Sending…' : 'Send Welcome Letter'}
-                  </button>
+                    {sendingWelcomeLetter ? 'Sending…' : 'Send welcome letter'}
+                  </Button>
                   {welcomeLetterMessage && (
-                    <p className={`mt-2 text-xs ${welcomeLetterMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+                    <p className={`mt-2 text-xs font-semibold ${welcomeLetterMessage.type === 'success' ? 'text-brand-700' : 'text-danger-600'}`}>
                       {welcomeLetterMessage.text}
                     </p>
                   )}
@@ -332,41 +355,40 @@ export default function ApplicationDetailsPage() {
               )}
             </>
           ) : (
-            <p className="mt-3 text-sm text-gray-500">No loan created yet.</p>
+            <p className="mt-3 text-sm text-neutral-500">No loan created yet.</p>
           )}
         </Card>
       </div>
 
       {link && (
-        <Card className="mb-6">
-          <div className="text-xs font-semibold uppercase text-gray-500">Current Stage Status</div>
-          <div className="mt-3 flex flex-wrap gap-6 text-sm">
+        <Panel title="Current stage status" className="mb-6">
+          <div className="flex flex-wrap gap-6">
             <div>
-              <div className="text-gray-500">Create</div>
+              <p className="mb-1.5 text-xs font-semibold text-neutral-500">Create</p>
               <StageStatusBadge value={link.createStatus} />
             </div>
             <div>
-              <div className="text-gray-500">Consent</div>
+              <p className="mb-1.5 text-xs font-semibold text-neutral-500">Consent</p>
               <StageStatusBadge value={link.consentStatus} />
             </div>
             <div>
-              <div className="text-gray-500">Update</div>
+              <p className="mb-1.5 text-xs font-semibold text-neutral-500">Update</p>
               <StageStatusBadge value={link.updateStatus} />
             </div>
             <div>
-              <div className="text-gray-500">Decision</div>
+              <p className="mb-1.5 text-xs font-semibold text-neutral-500">Decision</p>
               <StageStatusBadge value={link.decisionStatus} />
             </div>
           </div>
           {link.lastErrorMessage && (
-            <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700">
-              <span className="font-semibold">{link.lastErrorCode}:</span> {link.lastErrorMessage}
+            <div className="mt-4 rounded-lg border-l-4 border-danger-300 bg-danger-50 px-4 py-3 text-sm text-danger-800">
+              <span className="font-bold">{link.lastErrorCode}:</span> {link.lastErrorMessage}
             </div>
           )}
           {link.partnerApplicationId && (
-            <p className="mt-3 text-xs text-gray-500">Partner application ID: {link.partnerApplicationId}</p>
+            <p className="mt-3 text-xs text-neutral-500">Partner application ID: {link.partnerApplicationId}</p>
           )}
-        </Card>
+        </Panel>
       )}
 
       {loan && (
@@ -388,49 +410,49 @@ export default function ApplicationDetailsPage() {
         />
       )}
 
-      <Card className="mb-6 !p-0 overflow-hidden">
-        <div className="border-b bg-gray-50 px-6 py-4">
-          <div className="font-bold text-gray-700">Documents</div>
-          <p className="mt-1 text-sm text-gray-500">All documents uploaded by the customer for this application.</p>
-        </div>
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
+      <Panel
+        title="Documents"
+        description="All documents uploaded by the customer for this application."
+        className="mb-6"
+      >
+        <TableShell>
+          <thead className="border-b border-neutral-200 bg-neutral-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Applicant</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded</th>
-              <th className="px-6 py-3"></th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Type</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Applicant</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Source</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Uploaded</th>
+              <th className="px-5 py-3" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-neutral-100">
             {!documents || documents.length === 0 ? (
               <tr>
-                <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                <td colSpan="6" className="px-5 py-8 text-center text-neutral-500">
                   No documents uploaded yet for this application.
                 </td>
               </tr>
             ) : (
               documents.map((document) => (
-                <tr key={document.documentId} className="align-top hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="font-medium">{formatLabel(document.documentType)}</div>
-                    <div className="text-xs text-gray-500">{document.fileName}</div>
+                <tr key={document.documentId} className="align-top hover:bg-neutral-50/70">
+                  <td className="px-5 py-3.5">
+                    <div className="font-semibold text-ink">{formatLabel(document.documentType)}</div>
+                    <div className="text-xs text-neutral-500">{document.fileName}</div>
                   </td>
-                  <td className="px-6 py-4">{formatLabel(document.applicantType)}</td>
-                  <td className="px-6 py-4"><StageStatusBadge value={document.status} /></td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{formatLabel(document.source)}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{formatDate(document.uploadedAt)}</td>
-                  <td className="px-6 py-4 text-right whitespace-nowrap">
+                  <td className="px-5 py-3.5">{formatLabel(document.applicantType)}</td>
+                  <td className="px-5 py-3.5"><StageStatusBadge value={document.status} /></td>
+                  <td className="px-5 py-3.5 text-sm text-neutral-500">{formatLabel(document.source)}</td>
+                  <td className="whitespace-nowrap px-5 py-3.5 text-sm text-neutral-500">{formatDate(document.uploadedAt)}</td>
+                  <td className="whitespace-nowrap px-5 py-3.5 text-right">
                     {document.fileUrl && (
                       <a
                         href={resolveFileUrl(document.fileUrl)}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700"
                       >
-                        View
+                        View <ExternalLink size={12} />
                       </a>
                     )}
                   </td>
@@ -438,27 +460,27 @@ export default function ApplicationDetailsPage() {
               ))
             )}
           </tbody>
-        </table>
-      </Card>
+        </TableShell>
+      </Panel>
 
       {/* AI IVR Outbound Calling Card */}
-      <Card className="mb-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+      <Panel className="mb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <span>📞</span> AI Outbound Calling (IVR)
+            <div className="font-display flex items-center gap-2 text-base font-bold text-ink">
+              <Phone size={17} className="text-brand-600" /> AI outbound calling (IVR)
             </div>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-neutral-500">
               Initiate automated AI voice calls to the customer ({customer.fullName || 'Customer'} — {customer.mobileNumber || 'No mobile'}) with real-time context.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <select
               value={callType}
               onChange={(e) => setCallType(e.target.value)}
               disabled={callingCustomer}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-xs focus:border-brand-500 focus:outline-hidden"
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
             >
               <option value="APPLICATION_FOLLOW_UP">Application Follow-up</option>
               <option value="DOCUMENT_PENDING">Document Pending</option>
@@ -473,93 +495,79 @@ export default function ApplicationDetailsPage() {
               <option value="CUSTOMER_SUPPORT">Customer Support</option>
             </select>
 
-            <button
+            <Button
               type="button"
               disabled={callingCustomer || !customer?.mobileNumber}
               onClick={handleInitiateCall}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="!min-h-9 !px-3.5 text-xs"
             >
-              {callingCustomer ? 'Initiating Call…' : '📞 Call Customer'}
-            </button>
+              <Phone size={13} /> {callingCustomer ? 'Initiating call…' : 'Call customer'}
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
               disabled={loadingIvr}
               onClick={loadIvrHistory}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              className="!min-h-9 !px-3.5 text-xs"
               title="Refresh IVR Call History"
             >
-              🔄 Refresh History
-            </button>
+              <RefreshCw size={13} className={loadingIvr ? 'animate-spin' : ''} /> Refresh
+            </Button>
           </div>
         </div>
 
         {callMessage && (
           <div className="mt-4">
-            <Alert variant={callMessage.type === 'success' ? 'success' : 'error'}>
-              {callMessage.text}
-            </Alert>
+            <Alert tone={callMessage.type}>{callMessage.text}</Alert>
           </div>
         )}
 
-        {/* IVR History Table */}
         <div className="mt-4 overflow-x-auto">
-          <div className="text-xs font-semibold uppercase text-gray-500 mb-2">IVR Call Log History</div>
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-500 border-b">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Call log history</p>
+          <TableShell>
+            <thead className="border-b border-neutral-200 bg-neutral-50 text-neutral-500">
               <tr>
-                <th className="px-4 py-2.5">Date & Time</th>
-                <th className="px-4 py-2.5">Purpose / Type</th>
-                <th className="px-4 py-2.5">Mobile</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5">Duration</th>
-                <th className="px-4 py-2.5">Call Summary & Notes</th>
-                <th className="px-4 py-2.5">Recording</th>
-                <th className="px-4 py-2.5 text-right">Action</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Date &amp; time</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Purpose / type</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Mobile</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Status</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Duration</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Summary &amp; notes</th>
+                <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide">Recording</th>
+                <th className="px-4 py-2.5 text-right text-xs font-bold uppercase tracking-wide">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-neutral-100 text-xs">
               {ivrCalls.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-6 text-center text-gray-400">
+                  <td colSpan="8" className="px-4 py-6 text-center text-neutral-400">
                     {loadingIvr ? 'Loading call history…' : 'No IVR calls recorded yet for this application.'}
                   </td>
                 </tr>
               ) : (
                 ivrCalls.map((call) => (
-                  <tr key={call.id || call.providerCallId} className="hover:bg-gray-50/80 align-top">
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-600 font-medium">
+                  <tr key={call.id || call.providerCallId} className="align-top hover:bg-neutral-50/70">
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-neutral-600">
                       {formatDate(call.createdAt || call.startTime)}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-gray-800">
+                    <td className="px-4 py-3 font-semibold text-ink">
                       {formatLabel(call.callType)}
                     </td>
-                    <td className="px-4 py-3 text-gray-600 font-mono">
+                    <td className="font-numeric px-4 py-3 text-neutral-600">
                       {call.customerMobile || '-'}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                          call.status === 'COMPLETED'
-                            ? 'bg-green-100 text-green-800'
-                            : call.status === 'FAILED' || call.status === 'ERROR'
-                            ? 'bg-red-100 text-red-800'
-                            : call.status === 'IN_PROGRESS' || call.status === 'INITIATED'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {call.status}
-                      </span>
+                      <Badge tone={IVR_STATUS_TONES[call.status] || 'neutral'}>{call.status}</Badge>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                    <td className="whitespace-nowrap px-4 py-3 text-neutral-600">
                       {call.duration != null ? `${call.duration}s` : '-'}
                     </td>
-                    <td className="px-4 py-3 max-w-xs text-gray-700">
+                    <td className="max-w-xs px-4 py-3 text-neutral-700">
                       {call.callSummary ? (
-                        <p className="line-clamp-2 text-[11px]">{call.callSummary}</p>
+                        <p className="line-clamp-2">{call.callSummary}</p>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-neutral-400">-</span>
                       )}
                       {call.transcript && (
                         <div className="mt-1">
@@ -570,69 +578,70 @@ export default function ApplicationDetailsPage() {
                                 expandedTranscriptId === call.providerCallId ? null : call.providerCallId
                               )
                             }
-                            className="text-[10px] text-brand-600 hover:underline font-semibold"
+                            className="font-semibold text-brand-600 hover:underline"
                           >
-                            {expandedTranscriptId === call.providerCallId ? 'Hide Transcript' : 'View Transcript'}
+                            {expandedTranscriptId === call.providerCallId ? 'Hide transcript' : 'View transcript'}
                           </button>
                           {expandedTranscriptId === call.providerCallId && (
-                            <div className="mt-2 p-2 bg-gray-50 border rounded-sm text-[10px] whitespace-pre-wrap text-gray-800 max-h-40 overflow-y-auto">
+                            <div className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-neutral-200 bg-neutral-50 p-2 text-neutral-800">
                               {call.transcript}
                             </div>
                           )}
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3">
                       {call.recordingLink ? (
                         <a
                           href={call.recordingLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline"
+                          className="inline-flex items-center gap-1 font-semibold text-brand-600 hover:underline"
                         >
-                          ▶ Play Audio
+                          Play audio
                         </a>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-neutral-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
                       <button
                         type="button"
                         disabled={syncingCallId === call.providerCallId}
                         onClick={() => handleSyncCallStatus(call.providerCallId)}
-                        className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
                         title="Fetch latest status from provider"
                       >
-                        {syncingCallId === call.providerCallId ? 'Syncing…' : 'Sync Status'}
+                        {syncingCallId === call.providerCallId ? 'Syncing…' : 'Sync status'}
                       </button>
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
-          </table>
+          </TableShell>
         </div>
-      </Card>
+      </Panel>
 
       {/* WhatsApp Automated Messaging Card */}
-      <Card className="mb-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+      <Panel className="mb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <span className="text-emerald-600 font-bold text-lg">💬</span> WhatsApp Automated Messaging (Alots.io)
+            <div className="font-display flex items-center gap-2 text-base font-bold text-ink">
+              <MessageCircle size={17} className="text-brand-600" /> WhatsApp automated messaging
+              <span className="font-normal text-neutral-400">(Alots.io)</span>
             </div>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-neutral-500">
               Dispatch official WhatsApp template notifications to customer ({customer?.fullName || 'Customer'} — {customer?.mobileNumber || 'No mobile'}) with real-time status tracking.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <select
               value={whatsappEventType}
               onChange={(e) => setWhatsappEventType(e.target.value)}
               disabled={sendingWhatsapp}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-xs focus:border-brand-500 focus:outline-hidden"
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
             >
               <option value="LOAN_APPROVED">Loan Approved (loan_approved)</option>
               <option value="LOAN_DISBURSED">Loan Disbursed (loan_disbursed)</option>
@@ -641,64 +650,62 @@ export default function ApplicationDetailsPage() {
               <option value="FULLY_PAID">Loan Fully Paid / Closed (fully_paid)</option>
             </select>
 
-            <button
+            <Button
               type="button"
               disabled={sendingWhatsapp || !customer?.mobileNumber}
               onClick={handleSendWhatsApp}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="!min-h-9 !px-3.5 text-xs"
             >
-              {sendingWhatsapp ? 'Sending…' : '💬 Send WhatsApp'}
-            </button>
+              <MessageCircle size={13} /> {sendingWhatsapp ? 'Sending…' : 'Send WhatsApp'}
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
               disabled={loadingWhatsapp}
               onClick={loadWhatsappHistory}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              className="!min-h-9 !px-3.5 text-xs"
               title="Refresh WhatsApp Message History"
             >
-              🔄 Refresh Logs
-            </button>
+              <RefreshCw size={13} className={loadingWhatsapp ? 'animate-spin' : ''} /> Refresh
+            </Button>
           </div>
         </div>
 
         {whatsappMessage && (
           <div className="mt-4">
-            <Alert variant={whatsappMessage.type === 'success' ? 'success' : 'error'}>
-              {whatsappMessage.text}
-            </Alert>
+            <Alert tone={whatsappMessage.type}>{whatsappMessage.text}</Alert>
           </div>
         )}
 
-        {/* WhatsApp Logs Table */}
         <div className="mt-4 overflow-x-auto">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold uppercase text-gray-500">
-              WhatsApp Message Log History ({whatsappLogs.length})
-            </div>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">
+              Message log history ({whatsappLogs.length})
+            </p>
             {loadingWhatsapp && (
-              <span className="text-xs text-brand-600 animate-pulse font-medium">
+              <span className="animate-pulse text-xs font-semibold text-brand-600">
                 Fetching latest delivery statuses…
               </span>
             )}
           </div>
-          <table className="w-full text-left text-xs border rounded-lg overflow-hidden">
-            <thead className="bg-gray-50 text-gray-600 border-b font-semibold">
+          <TableShell>
+            <thead className="border-b border-neutral-200 bg-neutral-50 text-neutral-500">
               <tr>
-                <th className="px-4 py-3">Date & Time</th>
-                <th className="px-4 py-3">Template / Event</th>
-                <th className="px-4 py-3">Recipient</th>
-                <th className="px-4 py-3">Delivery Status</th>
-                <th className="px-4 py-3">Message Content / Parameters</th>
-                <th className="px-4 py-3">Provider Message ID</th>
-                <th className="px-4 py-3">Trigger Source</th>
-                <th className="px-4 py-3">Error / Details</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Date &amp; time</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Template / event</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Recipient</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Delivery status</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Content / parameters</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Provider message ID</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Trigger source</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">Error / details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
+            <tbody className="divide-y divide-neutral-100 text-xs">
               {whatsappLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan="8" className="px-4 py-8 text-center text-neutral-400">
                     {loadingWhatsapp ? 'Loading WhatsApp logs…' : 'No WhatsApp messages sent yet for this application.'}
                   </td>
                 </tr>
@@ -718,57 +725,47 @@ export default function ApplicationDetailsPage() {
                     : [];
 
                   return (
-                    <tr key={log.id} className="hover:bg-gray-50/80 align-top transition-colors">
-                      <td className="px-4 py-3 whitespace-nowrap text-gray-600 font-medium">
+                    <tr key={log.id} className="align-top transition-colors hover:bg-neutral-50/70">
+                      <td className="whitespace-nowrap px-4 py-3 font-medium text-neutral-600">
                         <div>{formatDate(log.createdAt || log.sentAt)}</div>
                         {log.deliveredAt && (
-                          <div className="text-[10px] text-emerald-600 font-medium">
+                          <div className="font-medium text-brand-600">
                             Delivered: {formatDate(log.deliveredAt)}
                           </div>
                         )}
                         {log.readAt && (
-                          <div className="text-[10px] text-blue-600 font-medium">
+                          <div className="font-medium text-info-600">
                             Read: {formatDate(log.readAt)}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-gray-800">
-                        <div className="text-gray-900">{formatLabel(log.eventType || log.templateName)}</div>
-                        <div className="text-[10px] text-gray-500 font-mono mt-0.5">{log.templateName}</div>
+                      <td className="px-4 py-3 font-semibold text-ink">
+                        <div>{formatLabel(log.eventType || log.templateName)}</div>
+                        <div className="mt-0.5 font-mono text-neutral-500">{log.templateName}</div>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 font-mono font-medium">
+                      <td className="font-numeric px-4 py-3 font-medium text-neutral-700">
                         {log.recipientMobile || log.to || '-'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="whitespace-nowrap px-4 py-3">
                         {log.status === 'READ' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            <span>✓✓</span> Read
-                          </span>
+                          <Badge tone="info"><CheckCheck size={11} /> Read</Badge>
                         ) : log.status === 'DELIVERED' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span>✓✓</span> Delivered
-                          </span>
+                          <Badge tone="brand"><CheckCheck size={11} /> Delivered</Badge>
                         ) : log.status === 'SENT' || log.status === 'ACCEPTED' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
-                            <span>✓</span> Sent / Accepted
-                          </span>
+                          <Badge tone="accent"><Check size={11} /> Sent / accepted</Badge>
                         ) : log.status === 'FAILED' || log.status === 'ERROR' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
-                            <span>✕</span> Failed
-                          </span>
+                          <Badge tone="danger"><X size={11} /> Failed</Badge>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            <span>⏳</span> {log.status || 'PENDING'}
-                          </span>
+                          <Badge tone="caution"><Clock size={11} /> {log.status || 'PENDING'}</Badge>
                         )}
                       </td>
-                      <td className="px-4 py-3 max-w-[220px]">
+                      <td className="max-w-[220px] px-4 py-3">
                         {paramsArray.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {paramsArray.map((p, idx) => (
                               <span
                                 key={idx}
-                                className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-medium border border-gray-200 truncate max-w-[190px]"
+                                className="inline-block max-w-[190px] truncate rounded-md border border-neutral-200 bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-700"
                                 title={String(p)}
                               >
                                 {String(p)}
@@ -776,30 +773,28 @@ export default function ApplicationDetailsPage() {
                             ))}
                           </div>
                         ) : (
-                          <span className="text-gray-400 text-[11px]">-</span>
+                          <span className="text-neutral-400">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-gray-600 max-w-[160px] truncate" title={log.providerMessageId}>
+                      <td className="max-w-[160px] truncate px-4 py-3 font-mono text-neutral-600" title={log.providerMessageId}>
                         {log.providerMessageId ? (
-                          <span className="bg-gray-50 px-1.5 py-0.5 rounded border border-gray-200 font-mono text-[10px]">
+                          <span className="rounded-md border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 font-mono">
                             {log.providerMessageId}
                           </span>
                         ) : (
                           '-'
                         )}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
-                          {formatLabel(log.triggerSource || 'ADMIN')}
-                        </span>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <Badge tone="neutral">{formatLabel(log.triggerSource || 'ADMIN')}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs">
+                      <td className="max-w-xs px-4 py-3 text-neutral-600">
                         {log.errorMessage ? (
-                          <span className="text-red-600 font-medium text-[11px] block">{log.errorMessage}</span>
+                          <span className="block font-medium text-danger-600">{log.errorMessage}</span>
                         ) : log.errorCode ? (
-                          <span className="text-amber-600 font-mono text-[10px] block">Error: {log.errorCode}</span>
+                          <span className="block font-mono text-caution-600">Error: {log.errorCode}</span>
                         ) : (
-                          <span className="text-gray-400 text-[11px]">-</span>
+                          <span className="text-neutral-400">-</span>
                         )}
                       </td>
                     </tr>
@@ -807,101 +802,95 @@ export default function ApplicationDetailsPage() {
                 })
               )}
             </tbody>
-          </table>
+          </TableShell>
         </div>
-      </Card>
+      </Panel>
 
-      <Card className="!p-0 overflow-hidden">
-        <div className="border-b bg-gray-50 px-6 py-4">
-          <div className="font-bold text-gray-700">Stages — Lender API Call History</div>
-          <p className="mt-1 text-sm text-gray-500">
-            Every call made to the partner's API for this application, in order, most recent first.
-          </p>
-        </div>
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
+      <Panel
+        title="Stages — lender API call history"
+        description="Every call made to the partner's API for this application, in order, most recent first."
+      >
+        <TableShell>
+          <thead className="border-b border-neutral-200 bg-neutral-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attempts</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Updated</th>
-              <th className="px-6 py-3"></th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Stage</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Version</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Attempts</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Error</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Updated</th>
+              <th className="px-5 py-3" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-neutral-100">
             {stages.length === 0 ? (
               <tr>
-                <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                <td colSpan="7" className="px-5 py-8 text-center text-neutral-500">
                   No lender API calls recorded yet for this application.
                 </td>
               </tr>
             ) : (
               stages.map((stage) => (
-                <tr key={stage.eventId} className="hover:bg-gray-50 align-top">
-                  <td className="px-6 py-4">
-                    <div className="font-medium">
+                <tr key={stage.eventId} className="align-top hover:bg-neutral-50/70">
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-2 font-semibold text-ink">
                       {formatLabel(stage.integrationStage)}
                       {/* Consent is submitted once per consent type, so the stage name alone
                           would repeat across several otherwise identical rows. */}
                       {stage.consentType && (
-                        <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold text-gray-600">
-                          {formatLabel(stage.consentType)}
-                        </span>
+                        <Badge tone="neutral">{formatLabel(stage.consentType)}</Badge>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500">{formatLabel(stage.eventType)}</div>
+                    <div className="text-xs text-neutral-500">{formatLabel(stage.eventType)}</div>
                   </td>
-                  <td className="px-6 py-4">V{stage.payloadVersion}</td>
-                  <td className="px-6 py-4">
+                  <td className="font-numeric px-5 py-3.5">V{stage.payloadVersion}</td>
+                  <td className="px-5 py-3.5">
                     <StageStatusBadge value={stage.status} />
                   </td>
-                  <td className="px-6 py-4">{stage.attemptCount}</td>
-                  <td className="px-6 py-4 max-w-xs">
+                  <td className="font-numeric px-5 py-3.5">{stage.attemptCount}</td>
+                  <td className="max-w-xs px-5 py-3.5">
                     {stage.lastErrorMessage ? (
                       <>
-                        <div className="text-xs font-semibold text-red-700">{stage.lastErrorCode}</div>
-                        <div className="text-xs text-red-600">{stage.lastErrorMessage}</div>
+                        <div className="text-xs font-bold text-danger-700">{stage.lastErrorCode}</div>
+                        <div className="text-xs text-danger-600">{stage.lastErrorMessage}</div>
                       </>
                     ) : (
-                      <span className="text-gray-400">-</span>
+                      <span className="text-neutral-400">-</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{formatDate(stage.updatedAt)}</td>
-                  <td className="px-6 py-4 text-right whitespace-nowrap">
+                  <td className="whitespace-nowrap px-5 py-3.5 text-sm text-neutral-500">{formatDate(stage.updatedAt)}</td>
+                  <td className="whitespace-nowrap px-5 py-3.5 text-right">
                     {/* RETRY_PENDING is retryable too — the call already failed and is just
                         sitting on its backoff, which runs up to an hour on the last attempt.
                         PROCESSING is excluded: a worker still holds the lease on it. */}
                     {['FAILED', 'RETRY_PENDING'].includes(stage.status) && canRetry && (
-                      <>
+                      <div className="inline-flex flex-col items-end gap-1">
                         {stage.status === 'RETRY_PENDING' && (
-                          <div className="mb-1 text-xs text-gray-500">
+                          <span className="text-xs text-neutral-500">
                             {formatRetryCountdown(stage.availableAt)}
-                          </div>
+                          </span>
                         )}
-                        <button
+                        <Button
                           type="button"
                           disabled={retryingEventId === stage.eventId}
                           onClick={() => handleRetry(stage.eventId)}
-                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                          className="!min-h-8 !px-3 text-xs"
                         >
                           {retryingEventId === stage.eventId
                             ? 'Retrying…'
                             : stage.status === 'RETRY_PENDING'
                               ? 'Retry now'
                               : 'Retry'}
-                        </button>
-                      </>
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
               ))
             )}
           </tbody>
-        </table>
-      </Card>
+        </TableShell>
+      </Panel>
     </div>
   );
 }
-

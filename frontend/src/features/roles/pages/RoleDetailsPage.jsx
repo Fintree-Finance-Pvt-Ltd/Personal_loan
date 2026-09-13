@@ -77,31 +77,31 @@ export function RoleDetailsPage() {
       />
 
       <div className="grid gap-6 md:grid-cols-3 mb-8">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Code</p>
-          <p className="mt-1 font-mono text-lg text-slate-900">{role.code}</p>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Code</p>
+          <p className="mt-1 font-mono text-lg text-neutral-900">{role.code}</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Status</p>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Status</p>
           <div className="mt-2"><RoleStatusBadge status={role.status} /></div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Type</p>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Type</p>
           <div className="mt-2"><Badge tone={role.isSystem ? 'brand' : 'neutral'}>{role.isSystem ? 'System' : 'Custom'}</Badge></div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="mb-4 font-semibold text-slate-800">
-          Permissions <span className="ml-2 text-sm font-normal text-slate-500">({role.permissions?.length ?? 0})</span>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+        <h2 className="mb-4 font-semibold text-neutral-800">
+          Permissions <span className="ml-2 text-sm font-normal text-neutral-500">({role.permissions?.length ?? 0})</span>
         </h2>
         {Object.keys(grouped).length === 0 ? (
-          <p className="text-sm text-slate-400">No permissions assigned.</p>
+          <p className="text-sm text-neutral-400">No permissions assigned.</p>
         ) : (
           <div className="space-y-4">
             {Object.entries(grouped).sort().map(([module, perms]) => (
               <div key={module}>
-                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">{module}</p>
+                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-neutral-400">{module}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {perms.map(p => (
                     <span key={p.id} className="rounded-full bg-brand-50 px-2.5 py-1 font-mono text-xs text-brand-700">{p.code}</span>

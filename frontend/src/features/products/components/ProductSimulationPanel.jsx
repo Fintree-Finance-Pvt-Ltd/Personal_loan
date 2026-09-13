@@ -40,8 +40,8 @@ export function ProductSimulationPanel({ versionId, tenures = [], tenureType = '
   };
 
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mt-4">
-      <h5 className="font-semibold text-slate-900 mb-3">Pricing & Disbursal Simulation</h5>
+    <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-5 mt-4">
+      <h5 className="font-semibold text-neutral-900 mb-3">Pricing & Disbursal Simulation</h5>
       
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-wrap items-end gap-4 mb-4">
         <Input label="Completed Loans" type="number" className="w-32" {...register('completedLoans')} error={errors.completedLoans?.message} />
@@ -54,44 +54,44 @@ export function ProductSimulationPanel({ versionId, tenures = [], tenureType = '
 
       {result && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white border border-slate-200 rounded p-4 text-sm font-mono space-y-2">
-            <h6 className="font-semibold text-slate-700 border-b pb-1 mb-2">Loan Sizing</h6>
+          <div className="bg-white border border-neutral-200 rounded p-4 text-sm font-mono space-y-2">
+            <h6 className="font-semibold text-neutral-700 border-b pb-1 mb-2">Loan Sizing</h6>
             <div className="flex justify-between"><span>Base Amount:</span><span>{result.baseAmount}</span></div>
             <div className="flex justify-between"><span>Multiplier (Min Loans {result.matchedMultiplier.minimumCompletedLoans}):</span><span>x {result.matchedMultiplier.multiplier}</span></div>
             <div className="flex justify-between"><span>Multiplied Amount:</span><span>{result.multipliedAmount}</span></div>
-            <div className="border-t border-slate-100 my-1 pt-1 flex justify-between text-slate-500"><span>Product Max Cap:</span><span>{result.productCap}</span></div>
-            <div className="flex justify-between text-slate-500"><span>Lender Cap:</span><span>{result.lenderApprovedAmount || 'None'}</span></div>
-            <div className="border-t border-slate-100 my-1 pt-1 flex justify-between font-semibold text-slate-800"><span>Amount Before Rounding:</span><span>{result.amountBeforeRounding}</span></div>
+            <div className="border-t border-neutral-100 my-1 pt-1 flex justify-between text-neutral-500"><span>Product Max Cap:</span><span>{result.productCap}</span></div>
+            <div className="flex justify-between text-neutral-500"><span>Lender Cap:</span><span>{result.lenderApprovedAmount || 'None'}</span></div>
+            <div className="border-t border-neutral-100 my-1 pt-1 flex justify-between font-semibold text-neutral-800"><span>Amount Before Rounding:</span><span>{result.amountBeforeRounding}</span></div>
             {result.roundingMethod !== 'NONE' && (
-              <div className="flex justify-between text-slate-500">
+              <div className="flex justify-between text-neutral-500">
                 <span>Rounding ({result.roundingMethod} to {result.roundingUnit}):</span>
                 <span>Applied</span>
               </div>
             )}
-            <div className="border-t border-slate-200 my-1 pt-2 flex justify-between font-bold text-slate-800 text-base">
+            <div className="border-t border-neutral-200 my-1 pt-2 flex justify-between font-bold text-neutral-800 text-base">
               <span>Final Principal Amount:</span><span>{result.finalPrincipalAmount}</span>
             </div>
           </div>
           
-          <div className="bg-white border border-slate-200 rounded p-4 text-sm font-mono space-y-2">
-            <h6 className="font-semibold text-slate-700 border-b pb-1 mb-2">Pricing & Deductions</h6>
+          <div className="bg-white border border-neutral-200 rounded p-4 text-sm font-mono space-y-2">
+            <h6 className="font-semibold text-neutral-700 border-b pb-1 mb-2">Pricing & Deductions</h6>
             <div className="flex justify-between"><span>{tenureType === 'DAYS' ? 'Bullet Repayment' : 'EMI'} ({result.tenure} {tenureType === 'DAYS' ? 'days' : 'months'}, {result.interestMethod}):</span><span>{result.emiAmount}</span></div>
             <div className="flex justify-between"><span>Total Interest (ROI {result.annualRoiPercent}%):</span><span>{result.totalInterest}</span></div>
             
-            <div className="border-t border-slate-100 my-1 pt-1 flex justify-between text-slate-500"><span>Processing Fee:</span><span>-{result.processingFeeAmount}</span></div>
-            <div className="flex justify-between text-slate-500"><span>PF GST:</span><span>-{result.processingFeeGst}</span></div>
-            <div className="flex justify-between text-slate-500"><span>Assessment Fee:</span><span>-{result.assessmentFeeAmount}</span></div>
-            <div className="flex justify-between text-slate-500"><span>Assessment Fee GST:</span><span>-{result.assessmentFeeGst}</span></div>
+            <div className="border-t border-neutral-100 my-1 pt-1 flex justify-between text-neutral-500"><span>Processing Fee:</span><span>-{result.processingFeeAmount}</span></div>
+            <div className="flex justify-between text-neutral-500"><span>PF GST:</span><span>-{result.processingFeeGst}</span></div>
+            <div className="flex justify-between text-neutral-500"><span>Assessment Fee:</span><span>-{result.assessmentFeeAmount}</span></div>
+            <div className="flex justify-between text-neutral-500"><span>Assessment Fee GST:</span><span>-{result.assessmentFeeGst}</span></div>
             
-            <div className="border-t border-slate-100 my-1 pt-1 flex justify-between font-semibold text-red-600">
+            <div className="border-t border-neutral-100 my-1 pt-1 flex justify-between font-semibold text-danger-600">
               <span>Total Upfront Deductions:</span><span>-{result.totalDeductions}</span>
             </div>
             
-            <div className="border-t border-slate-200 my-1 pt-2 flex justify-between font-bold text-brand-600 text-lg">
+            <div className="border-t border-neutral-200 my-1 pt-2 flex justify-between font-bold text-brand-600 text-lg">
               <span>Net Disbursal Amount:</span><span>{result.netDisbursalAmount}</span>
             </div>
             
-            <div className="border-t border-slate-200 my-1 pt-2 flex justify-between font-semibold text-slate-800 text-base">
+            <div className="border-t border-neutral-200 my-1 pt-2 flex justify-between font-semibold text-neutral-800 text-base">
               <span>Preview APR:</span><span>{result.aprPercent}%</span>
             </div>
           </div>

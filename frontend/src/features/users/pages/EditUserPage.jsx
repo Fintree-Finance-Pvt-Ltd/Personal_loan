@@ -50,10 +50,10 @@ export function EditUserPage() {
       <PageHeader title={`Edit: ${user?.name}`} description="Update name or email address for this user." />
       <form onSubmit={handleSubmit(submit)} noValidate className="space-y-6 max-w-lg">
         {apiErr && <Alert>{apiErr}</Alert>}
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-5">
           <Input label="Full name" error={errors.name?.message} {...register('name')} />
           <Input label="Email address" type="email" error={errors.email?.message} {...register('email')} />
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-neutral-400">
             Password and roles cannot be updated here. Use the user details page for role assignment or contact security for password resets.
           </p>
         </div>

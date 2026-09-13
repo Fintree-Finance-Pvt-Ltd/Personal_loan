@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Plus } from 'lucide-react';
 import { mlmApi } from '../api/mlm.api';
+import { Badge, Button, PageHeader, Panel, Spinner, TableShell } from '../../../components/ui';
 import MlmSimulationPanel from '../components/MlmSimulationPanel';
 
 export default function MlmPolicyDetailsPage() {
@@ -38,66 +40,74 @@ export default function MlmPolicyDetailsPage() {
     }
   };
 
-  if (!policy) return <div className="p-6">Loading...</div>;
+  if (!policy) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Spinner label="Loading policy…" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{policy.name}</h1>
-          <p className="text-gray-500">Code: {policy.code} | Status: {policy.operationalStatus}</p>
-          <p className="text-gray-500 mt-1">Platform Product ID: {policy.platformProductId}</p>
-        </div>
-        <button onClick={handleCreateDraft} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700">
-          Create Draft Version
-        </button>
-      </div>
+    <div>
+      <PageHeader
+        eyebrow="Configuration"
+        title={policy.name}
+        description={`Code: ${policy.code} · Platform product ID: ${policy.platformProductId}`}
+        actions={
+          <div className="flex items-center gap-3">
+            <Badge tone={policy.operationalStatus === 'ACTIVE' ? 'brand' : 'neutral'}>{policy.operationalStatus}</Badge>
+            <Button onClick={handleCreateDraft}>
+              <Plus size={15} /> Create draft version
+            </Button>
+          </div>
+        }
+      />
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-4 bg-gray-50 border-b font-bold text-gray-700">Versions</div>
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
+      <Panel title="Versions">
+        <TableShell>
+          <thead className="border-b border-neutral-200 bg-neutral-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-              <th className="px-6 py-3"></th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Version</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Method</th>
+              <th className="px-5 py-3"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-neutral-100">
             {policy.versions?.map((version) => (
-              <tr key={version.id}>
-                <td className="px-6 py-4">v{version.versionNumber}</td>
-                <td className="px-6 py-4">{version.status}</td>
-                <td className="px-6 py-4">{version.allocationMethod}</td>
-                <td className="px-6 py-4 text-right space-x-2">
+              <tr key={version.id} className="hover:bg-neutral-50/70">
+                <td className="font-numeric px-5 py-3.5 font-semibold text-ink">v{version.versionNumber}</td>
+                <td className="px-5 py-3.5"><Badge tone="info">{version.status}</Badge></td>
+                <td className="px-5 py-3.5 text-neutral-600">{version.allocationMethod}</td>
+                <td className="space-x-3 px-5 py-3.5 text-right text-sm">
                   {version.status === 'DRAFT' && (
                     <>
-                      <Link to={`/admin-master/mlm-policy-versions/${version.id}/edit?policyId=${policy.id}`} className="text-blue-600 hover:underline">Edit Routes</Link>
-                      <button onClick={() => handleAction('submit', version.id)} className="text-green-600 hover:underline ml-2">Submit</button>
+                      <Link to={`/admin-master/mlm-policy-versions/${version.id}/edit?policyId=${policy.id}`} className="font-semibold text-info-600 hover:underline">Edit routes</Link>
+                      <button onClick={() => handleAction('submit', version.id)} className="font-semibold text-brand-600 hover:underline">Submit</button>
                     </>
                   )}
                   {version.status === 'SUBMITTED' && (
-                    <button onClick={() => handleAction('approve', version.id)} className="text-purple-600 hover:underline ml-2">Approve</button>
+                    <button onClick={() => handleAction('approve', version.id)} className="font-semibold text-accent-600 hover:underline">Approve</button>
                   )}
                   {version.status === 'APPROVED' && (
-                    <button onClick={() => handleAction('activate', version.id)} className="text-green-600 hover:underline ml-2 font-bold">Activate</button>
+                    <button onClick={() => handleAction('activate', version.id)} className="font-bold text-brand-600 hover:underline">Activate</button>
                   )}
-                  <button onClick={() => setSimulatingVersionId(version.id)} className="text-orange-600 hover:underline ml-2">Simulate</button>
+                  <button onClick={() => setSimulatingVersionId(version.id)} className="font-semibold text-caution-600 hover:underline">Simulate</button>
                   {version.status === 'ACTIVE' && (
-                    <Link to={`/admin-master/mlm-policy-versions/distribution?versionId=${version.id}`} className="text-blue-600 hover:underline font-bold ml-2">Dashboard</Link>
+                    <Link to={`/admin-master/mlm-policy-versions/distribution?versionId=${version.id}`} className="font-bold text-info-600 hover:underline">Dashboard</Link>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-      
+        </TableShell>
+      </Panel>
+
       {simulatingVersionId && (
-        <MlmSimulationPanel 
-          versionId={simulatingVersionId} 
-          onClose={() => setSimulatingVersionId(null)} 
+        <MlmSimulationPanel
+          versionId={simulatingVersionId}
+          onClose={() => setSimulatingVersionId(null)}
         />
       )}
     </div>

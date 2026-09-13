@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, PageHeader, Spinner } from '../../../components/ui';
+import { Alert, Badge, EmptyState, PageHeader, Spinner, TableShell } from '../../../components/ui';
 import { getPermissions } from '../api/permissions.api';
 import { apiError } from '../../../lib/api';
 
@@ -45,7 +45,8 @@ export function PermissionsPage() {
   return (
     <div>
       <PageHeader
-        title="Permission Catalogue"
+        eyebrow="Access management"
+        title="Permission catalogue"
         description="All permissions available in the platform. This list is source-controlled and read-only."
       />
 
@@ -55,12 +56,12 @@ export function PermissionsPage() {
           placeholder="Search by code or description…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-600 sm:max-w-xs"
+          className="w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-900 shadow-sm placeholder:text-neutral-400 focus:border-brand-600 sm:max-w-xs"
         />
         <select
           value={filterModule}
           onChange={e => setFilterModule(e.target.value)}
-          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm focus:border-brand-600"
+          className="rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-900 shadow-sm focus:border-brand-600"
         >
           <option value="">All modules</option>
           {modules.map(m => (
@@ -78,36 +79,32 @@ export function PermissionsPage() {
       )}
 
       {!loading && !error && data?.items?.length === 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500">
-          No permissions found.
-        </div>
+        <EmptyState title="No permissions found" description="Try adjusting your search or module filter." />
       )}
 
       {!loading && !error && Object.entries(grouped).map(([module, perms]) => (
         <section key={module} className="mb-8">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-400">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-neutral-400">
             <Badge tone="neutral">{module}</Badge>
-            <span className="text-slate-300">·</span>
-            <span className="normal-case font-normal tracking-normal text-slate-500">{perms.length} permission{perms.length !== 1 ? 's' : ''}</span>
+            <span className="text-neutral-300">·</span>
+            <span className="normal-case font-normal tracking-normal text-neutral-500">{perms.length} permission{perms.length !== 1 ? 's' : ''}</span>
           </h2>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <table className="w-full text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50">
+          <TableShell>
+              <thead className="border-b border-neutral-200 bg-neutral-50">
                 <tr>
-                  <th className="px-5 py-3 text-left font-semibold text-slate-700">Code</th>
-                  <th className="px-5 py-3 text-left font-semibold text-slate-700">Description</th>
+                  <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Code</th>
+                  <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Description</th>
                 </tr>
               </thead>
-              <tbody>
-                {perms.map((perm, i) => (
-                  <tr key={perm.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                    <td className="px-5 py-3 font-mono text-xs text-brand-700">{perm.code}</td>
-                    <td className="px-5 py-3 text-slate-600">{perm.description || '—'}</td>
+              <tbody className="divide-y divide-neutral-100">
+                {perms.map((perm) => (
+                  <tr key={perm.id} className="hover:bg-neutral-50/70">
+                    <td className="px-5 py-3.5 font-mono text-xs text-brand-700">{perm.code}</td>
+                    <td className="px-5 py-3.5 text-neutral-600">{perm.description || '—'}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+          </TableShell>
         </section>
       ))}
     </div>

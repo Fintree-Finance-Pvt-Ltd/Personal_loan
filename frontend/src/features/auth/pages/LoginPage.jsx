@@ -46,22 +46,27 @@ export function LoginPage() {
   };
 
   return (
-    <main className="grid min-h-screen bg-slate-50 lg:grid-cols-[1.05fr_.95fr]">
-      <section className="hidden bg-ink p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-500 font-bold">PL</div><span className="text-lg font-semibold">Fintree Personal Loan Platform</span></div>
-        <div className="max-w-xl">
-          <p className="text-sm font-semibold uppercase tracking-[.22em] text-brand-100">Admin security foundation</p>
-          <h1 className="mt-5 text-4xl font-bold leading-tight">Controlled access for responsible lending operations.</h1>
-          <p className="mt-5 text-lg leading-8 text-slate-300">Short-lived access, rotating sessions, exact permissions, and integrity-protected audit records form the first layer of the platform.</p>
+    <main className="admin-app grid min-h-screen bg-neutral-50 lg:grid-cols-[1.05fr_.95fr]">
+      <section className="relative hidden overflow-hidden bg-ink p-12 text-white lg:flex lg:flex-col lg:justify-between">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 left-0 h-72 w-72 rounded-full bg-brand-500/10 blur-3xl" />
+        <div className="relative flex items-center gap-3">
+          <div className="grid h-12 w-12 place-items-center rounded-xl bg-brand-500 font-display font-extrabold">PL</div>
+          <span className="font-display text-lg font-bold">Fintree Personal Loan Platform</span>
         </div>
-        <p className="text-sm text-slate-400">Authorized administrators only · Activity is security logged</p>
+        <div className="relative max-w-xl">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-brand-300">Admin security foundation</p>
+          <h1 className="font-display mt-5 text-4xl font-extrabold leading-[1.1] tracking-tight">Controlled access for responsible lending operations.</h1>
+          <p className="mt-5 text-lg leading-8 text-neutral-300">Short-lived access, rotating sessions, exact permissions, and integrity-protected audit records form the first layer of the platform.</p>
+        </div>
+        <p className="relative text-sm text-neutral-400">Authorized administrators only · Activity is security logged</p>
       </section>
       <section className="flex items-center justify-center p-5 sm:p-10">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-panel sm:p-9">
-          <div className="mb-8 lg:hidden"><div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-700 font-bold text-white">PL</div></div>
-          <p className="text-sm font-semibold text-brand-700">ADMIN MASTER</p>
-          <h2 className="mt-2 text-3xl font-bold text-ink">Secure sign in</h2>
-          <p className="mt-2 text-slate-600">Use your assigned administrator account.</p>
+        <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-6 shadow-panel sm:p-9">
+          <div className="mb-8 lg:hidden"><div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-700 font-display font-extrabold text-white">PL</div></div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-600">Admin master</p>
+          <h2 className="font-display mt-2 text-3xl font-extrabold tracking-tight text-ink">Secure sign in</h2>
+          <p className="mt-2 text-neutral-500">Use your assigned administrator account.</p>
           <form className="mt-7 space-y-5" onSubmit={handleSubmit(submit)} noValidate>
             {error && <Alert>{error}</Alert>}
             <Input label="Email address" autoComplete="username" placeholder="name@company.com" error={errors.email?.message} {...register('email')} />
@@ -70,8 +75,8 @@ export function LoginPage() {
               {isSubmitting ? <Spinner label="Signing in" /> : 'Sign in securely'}
             </Button>
           </form>
-          <div className="mt-6 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-            <strong className="text-slate-800">Secure login:</strong> Your session is time-limited and refresh credentials remain in a protected browser cookie.
+          <div className="mt-6 rounded-lg bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">
+            <strong className="text-neutral-800">Secure login:</strong> Your session is time-limited and refresh credentials remain in a protected browser cookie.
           </div>
         </div>
       </section>

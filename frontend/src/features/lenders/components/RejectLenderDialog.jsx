@@ -34,7 +34,7 @@ export function RejectLenderDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-neutral-950/45 p-4">
       <div
         className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
         role="dialog"
@@ -44,7 +44,7 @@ export function RejectLenderDialog({
         <h2 id="reject-lender-title" className="text-lg font-bold text-ink">
           Reject lender
         </h2>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm text-neutral-600">
           Provide a clear reason for rejecting {lenderName}. The maker will see
           this reason before correcting and resubmitting the lender.
         </p>
@@ -55,21 +55,21 @@ export function RejectLenderDialog({
           </div>
         )}
 
-        <label className="mt-5 block text-sm font-medium text-slate-700">
+        <label className="mt-5 block text-sm font-medium text-neutral-700">
           Rejection reason *
           <textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             maxLength={500}
             rows={5}
-            className="mt-2 w-full resize-y rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 shadow-sm focus:border-brand-600"
+            className="mt-2 w-full resize-y rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-neutral-900 shadow-sm focus:border-brand-600"
             placeholder="Explain what must be corrected"
           />
         </label>
 
         <div className="mt-1 flex items-start justify-between gap-3 text-xs">
-          <span className="text-red-700">{validationError}</span>
-          <span className="shrink-0 text-slate-400">{reason.length}/500</span>
+          <span className="text-danger-700">{validationError}</span>
+          <span className="shrink-0 text-neutral-400">{reason.length}/500</span>
         </div>
 
         <div className="mt-6 flex justify-end gap-3">

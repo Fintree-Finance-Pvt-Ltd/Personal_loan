@@ -49,8 +49,8 @@ export function RoleForm({ initialValues, onSubmit, submitLabel = 'Save', isEdit
     <form onSubmit={handleSubmit(submit)} noValidate className="space-y-6">
       {apiErr && <Alert>{apiErr}</Alert>}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
-        <h2 className="font-semibold text-slate-800">Role Details</h2>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-5">
+        <h2 className="font-semibold text-neutral-800">Role Details</h2>
         <Input
           label="Role name"
           placeholder="e.g. Credit Risk Analyst"
@@ -66,30 +66,30 @@ export function RoleForm({ initialValues, onSubmit, submitLabel = 'Save', isEdit
             {...register('code')}
           />
           {isEdit && (
-            <p className="mt-1.5 text-xs text-slate-500">Role codes are immutable after creation.</p>
+            <p className="mt-1.5 text-xs text-neutral-500">Role codes are immutable after creation.</p>
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700">
+          <label className="block text-sm font-medium text-neutral-700">
             Description
             <textarea
               rows={2}
               placeholder="Optional description of the role's purpose…"
-              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-600"
+              className="mt-2 w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-sm text-neutral-900 shadow-sm placeholder:text-neutral-400 focus:border-brand-600"
               {...register('description')}
             />
             {errors.description?.message && (
-              <span className="mt-1.5 block text-sm text-red-700">{errors.description.message}</span>
+              <span className="mt-1.5 block text-sm text-danger-700">{errors.description.message}</span>
             )}
           </label>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <div className="rounded-2xl border border-neutral-200 bg-white p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold text-slate-800">Permissions</h2>
+          <h2 className="font-semibold text-neutral-800">Permissions</h2>
           {isSuperadmin && (
-            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
+            <span className="text-xs text-caution-700 bg-caution-50 border border-caution-200 rounded-full px-3 py-1">
               SUPERADMIN permissions cannot be modified
             </span>
           )}

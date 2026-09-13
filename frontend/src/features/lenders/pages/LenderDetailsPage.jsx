@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Pencil } from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ConfirmationDialog } from '../../../components/ConfirmationDialog';
 import { Alert, Button, Card, PageHeader, Spinner } from '../../../components/ui';
@@ -28,10 +29,10 @@ function formatDate(value) {
 function DetailItem({ label, value }) {
   return (
     <div>
-      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
         {label}
       </dt>
-      <dd className="mt-1 break-words text-sm font-medium text-slate-800">
+      <dd className="mt-1 break-words text-sm font-medium text-neutral-800">
         {value || 'Not configured'}
       </dd>
     </div>
@@ -150,24 +151,19 @@ export function LenderDetailsPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Configuration"
         title={lender.displayName}
         description={`${lender.legalName} · ${lender.code}`}
         actions={
           <div className="flex flex-wrap gap-3">
-            <Link
-              to="/admin-master/lenders"
-              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-50"
-            >
-              Back to lenders
-            </Link>
+            <Button as={Link} to="/admin-master/lenders" variant="secondary">
+              <ArrowLeft size={15} /> Back to lenders
+            </Button>
 
             {editable && auth.hasPermission('LENDER_UPDATE') && (
-              <Link
-                to={`/admin-master/lenders/${lender.id}/edit`}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-50"
-              >
-                Edit lender
-              </Link>
+              <Button as={Link} to={`/admin-master/lenders/${lender.id}/edit`} variant="secondary">
+                <Pencil size={15} /> Edit lender
+              </Button>
             )}
           </div>
         }
@@ -205,10 +201,10 @@ export function LenderDetailsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
         <Card>
-          <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-4 border-b border-neutral-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-ink">Lender profile</h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-neutral-500">
                 Core identity and support details.
               </p>
             </div>
@@ -232,7 +228,7 @@ export function LenderDetailsPage() {
 
         <Card>
           <h2 className="text-lg font-bold text-ink">Available actions</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-neutral-500">
             Actions are shown according to status and your permissions.
           </p>
 
@@ -303,7 +299,7 @@ export function LenderDetailsPage() {
                 lender.approvalStatus === 'APPROVED' &&
                 auth.hasPermission('LENDER_ACTIVATE')
               ) && (
-                <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                <p className="rounded-xl bg-neutral-50 p-4 text-sm text-neutral-500">
                   No action is currently available for your role.
                 </p>
               )}

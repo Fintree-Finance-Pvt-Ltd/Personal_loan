@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import {
   Alert,
   Button,
   Card,
   Input,
   PageHeader,
+  Textarea,
 } from '../../../components/ui';
 import { apiError } from '../../../lib/api';
 import { platformProductsApi } from '../api/platform-products.api';
@@ -41,16 +43,17 @@ export function CreatePlatformProductPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-6 flex items-center gap-4">
+      <div className="mb-4 flex items-center gap-4">
         <Link
           to="/admin-master/platform-products"
-          className="text-sm font-semibold text-slate-500 hover:text-slate-900"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-neutral-500 hover:text-neutral-900"
         >
-          &larr; Back to catalog
+          <ArrowLeft size={14} /> Back to catalog
         </Link>
       </div>
 
       <PageHeader
+        eyebrow="Configuration"
         title="Add platform product"
         description="Create a new central product for the platform."
       />
@@ -63,22 +66,22 @@ export function CreatePlatformProductPage() {
 
       <form onSubmit={handleSubmit}>
         <Card className="mb-6">
-          <h2 className="mb-6 text-lg font-bold text-slate-900">
-            Product Identity
+          <h2 className="font-display mb-6 text-lg font-bold text-ink">
+            Product identity
           </h2>
 
           <div className="space-y-6">
             <Input
-              label="Product Name"
+              label="Product name"
               name="name"
               value={formData.name}
               onChange={handleChange}
               placeholder="e.g. Premium Personal Loan"
               required
             />
-            
+
             <Input
-              label="Product Code"
+              label="Product code"
               name="code"
               value={formData.code}
               onChange={handleChange}
@@ -86,29 +89,23 @@ export function CreatePlatformProductPage() {
               required
             />
 
-            <label className="block text-sm font-medium text-slate-700">
-              Description (Optional)
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                rows={4}
-                className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-slate-900 shadow-sm focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600"
-                placeholder="Short description..."
-              />
-            </label>
+            <Textarea
+              label="Description (optional)"
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              rows={4}
+              placeholder="Short description..."
+            />
           </div>
         </Card>
 
         <div className="flex justify-end gap-3">
-          <Link
-            to="/admin-master/platform-products"
-            className="inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-100"
-          >
+          <Button as={Link} to="/admin-master/platform-products" variant="secondary">
             Cancel
-          </Link>
+          </Button>
           <Button type="submit" disabled={loading}>
-            {loading ? 'Creating...' : 'Create platform product'}
+            {loading ? 'Creating…' : 'Create platform product'}
           </Button>
         </div>
       </form>

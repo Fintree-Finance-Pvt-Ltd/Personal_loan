@@ -1,19 +1,20 @@
-const STATUS_STYLES = {
-  ACTIVE: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  APPROVED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  HEALTHY: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+import { Badge } from '../../../components/ui';
 
-  SUBMITTED: 'bg-blue-50 text-blue-700 ring-blue-600/20',
+const STATUS_TONES = {
+  ACTIVE: 'brand',
+  APPROVED: 'brand',
+  HEALTHY: 'brand',
 
-  DRAFT: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  DEGRADED: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  SUBMITTED: 'info',
 
-  REJECTED: 'bg-red-50 text-red-700 ring-red-600/20',
-  DOWN: 'bg-red-50 text-red-700 ring-red-600/20',
+  DRAFT: 'caution',
+  DEGRADED: 'caution',
 
-  INACTIVE: 'bg-slate-100 text-slate-700 ring-slate-500/20',
-  NOT_CONFIGURED:
-    'bg-slate-100 text-slate-700 ring-slate-500/20',
+  REJECTED: 'danger',
+  DOWN: 'danger',
+
+  INACTIVE: 'neutral',
+  NOT_CONFIGURED: 'neutral',
 };
 
 function formatStatus(value) {
@@ -32,15 +33,11 @@ function formatStatus(value) {
 }
 
 export function LenderStatusBadge({ value }) {
-  const className =
-    STATUS_STYLES[value] ??
-    'bg-slate-100 text-slate-700 ring-slate-500/20';
+  const tone = STATUS_TONES[value] ?? 'neutral';
 
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${className}`}
-    >
+    <Badge tone={tone} dot>
       {formatStatus(value)}
-    </span>
+    </Badge>
   );
 }

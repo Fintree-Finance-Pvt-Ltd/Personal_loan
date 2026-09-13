@@ -1,23 +1,25 @@
-const STATUS_STYLES = {
-  COMPLETED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  ACKNOWLEDGED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  APPROVED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  DISBURSED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  LENDER_APPROVED: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  PAID: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  FULLY_PAID: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+import { Badge } from '../../../components/ui';
 
-  PENDING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  PROCESSING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  RETRY_PENDING: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  PARTIAL: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+const STATUS_TONES = {
+  COMPLETED: 'brand',
+  ACKNOWLEDGED: 'brand',
+  APPROVED: 'brand',
+  DISBURSED: 'brand',
+  LENDER_APPROVED: 'brand',
+  PAID: 'brand',
+  FULLY_PAID: 'brand',
 
-  FAILED: 'bg-red-50 text-red-700 ring-red-600/20',
-  REJECTED: 'bg-red-50 text-red-700 ring-red-600/20',
-  LENDER_REJECTED: 'bg-red-50 text-red-700 ring-red-600/20',
+  PENDING: 'caution',
+  PROCESSING: 'caution',
+  RETRY_PENDING: 'caution',
+  PARTIAL: 'caution',
 
-  NOT_STARTED: 'bg-slate-100 text-slate-700 ring-slate-500/20',
-  WAIVED: 'bg-slate-100 text-slate-700 ring-slate-500/20',
+  FAILED: 'danger',
+  REJECTED: 'danger',
+  LENDER_REJECTED: 'danger',
+
+  NOT_STARTED: 'neutral',
+  WAIVED: 'neutral',
 };
 
 function formatStatus(value) {
@@ -30,10 +32,10 @@ function formatStatus(value) {
 }
 
 export function StageStatusBadge({ value }) {
-  const className = STATUS_STYLES[value] ?? 'bg-slate-100 text-slate-700 ring-slate-500/20';
+  const tone = STATUS_TONES[value] ?? 'neutral';
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${className}`}>
+    <Badge tone={tone} dot>
       {formatStatus(value)}
-    </span>
+    </Badge>
   );
 }

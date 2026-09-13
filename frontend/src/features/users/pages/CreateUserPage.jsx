@@ -44,16 +44,16 @@ export function CreateUserPage() {
       <form onSubmit={handleSubmit(submit)} noValidate className="space-y-6">
         {apiErr && <Alert>{apiErr}</Alert>}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
-          <h2 className="font-semibold text-slate-800">Account details</h2>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-5">
+          <h2 className="font-semibold text-neutral-800">Account details</h2>
           <Input label="Full name" placeholder="e.g. Configuration Maker" error={errors.name?.message} {...register('name')} />
           <Input label="Email address" type="email" autoComplete="off" placeholder="user@example.com" error={errors.email?.message} {...register('email')} />
           <PasswordInput label="Temporary password" autoComplete="new-password" error={errors.password?.message} {...register('password')} />
           <PasswordInput label="Confirm password" autoComplete="new-password" error={errors.confirmPassword?.message} {...register('confirmPassword')} />
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-slate-800">Assign roles</h2>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+          <h2 className="mb-4 font-semibold text-neutral-800">Assign roles</h2>
           {rolesLoading ? (
             <div className="flex justify-center py-8 text-brand-700"><Spinner label="Loading roles" /></div>
           ) : (
@@ -63,7 +63,7 @@ export function CreateUserPage() {
               render={({ field }) => (
                 <div className="space-y-2">
                   {roles.map(role => (
-                    <label key={role.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-100 p-3 hover:bg-slate-50">
+                    <label key={role.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-neutral-100 p-3 hover:bg-neutral-50">
                       <input
                         type="checkbox"
                         value={role.id}
@@ -74,16 +74,16 @@ export function CreateUserPage() {
                             : field.value.filter(id => id !== role.id);
                           field.onChange(next);
                         }}
-                        className="h-4 w-4 rounded border-slate-300 text-brand-600"
+                        className="h-4 w-4 rounded border-neutral-300 text-brand-600"
                       />
                       <div>
-                        <p className="font-semibold text-sm text-slate-900">{role.name}</p>
-                        <p className="font-mono text-xs text-slate-400">{role.code}</p>
+                        <p className="font-semibold text-sm text-neutral-900">{role.name}</p>
+                        <p className="font-mono text-xs text-neutral-400">{role.code}</p>
                       </div>
                     </label>
                   ))}
                   {errors.roleIds?.message && (
-                    <p className="mt-1 text-sm text-red-700">{errors.roleIds.message}</p>
+                    <p className="mt-1 text-sm text-danger-700">{errors.roleIds.message}</p>
                   )}
                 </div>
               )}

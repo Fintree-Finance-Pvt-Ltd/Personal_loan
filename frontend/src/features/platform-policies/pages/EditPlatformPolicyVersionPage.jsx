@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { platformPoliciesApi } from '../api/platform-policies.api';
-import { Button } from '../../../components/ui';
+import { Alert, Button, PageHeader, Spinner } from '../../../components/ui';
 import PolicyRulesEditor from '../components/PolicyRulesEditor';
 
 export default function EditPlatformPolicyVersionPage() {
@@ -31,11 +32,20 @@ export default function EditPlatformPolicyVersionPage() {
     }
   };
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (error || !policy) return <div className="p-8 text-red-500">{error || 'Not found'}</div>;
+  if (loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Spinner label="Loading policy…" />
+      </div>
+    );
+  }
+
+  if (error || !policy) {
+    return <Alert>{error || 'Policy not found.'}</Alert>;
+  }
 
   const version = policy.versions?.find(v => v.id === versionId);
-  if (!version) return <div className="p-8 text-red-500">Version not found</div>;
+  if (!version) return <Alert>Version not found.</Alert>;
 
   const handleSave = async (rules) => {
     try {
@@ -47,18 +57,19 @@ export default function EditPlatformPolicyVersionPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Edit Rules: {policy.name}</h1>
-          <p className="text-sm text-gray-500 font-mono mt-1">Version: {version.versionNumber}</p>
-        </div>
-        <Button variant="outline" onClick={() => navigate(`/admin-master/platform-policies/${policyId}`)}>
-          Back to Details
-        </Button>
-      </div>
+    <div>
+      <PageHeader
+        eyebrow="Configuration"
+        title={`Edit rules: ${policy.name}`}
+        description={`Version ${version.versionNumber}`}
+        actions={
+          <Button variant="secondary" onClick={() => navigate(`/admin-master/platform-policies/${policyId}`)}>
+            <ArrowLeft size={15} /> Back to details
+          </Button>
+        }
+      />
 
-      <PolicyRulesEditor 
+      <PolicyRulesEditor
         initialRules={version.rules || []}
         catalog={catalog}
         onSave={handleSave}
