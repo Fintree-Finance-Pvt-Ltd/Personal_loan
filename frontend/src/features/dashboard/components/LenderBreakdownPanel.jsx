@@ -5,7 +5,7 @@ import { formatCurrency, formatCurrencyFull, formatNumber, formatPercent } from 
 export function LenderBreakdownPanel({ lenderBreakdown, totalDisbursedAmount }) {
   return (
     <Panel
-      title="Lender-wise book"
+      title={<span className="flex items-center gap-2"><Landmark size={16} className="text-neutral-400" /> Lender-wise book</span>}
       description="Disbursal and outstanding split across lending partners."
     >
       {lenderBreakdown.length === 0 ? (
@@ -34,8 +34,18 @@ export function LenderBreakdownPanel({ lenderBreakdown, totalDisbursedAmount }) 
                 <td className="font-numeric px-4 py-3 text-neutral-700" title={formatCurrencyFull(row.outstandingAmount)}>
                   {formatCurrency(row.outstandingAmount)}
                 </td>
-                <td className="px-4 py-3 text-neutral-700">
-                  {totalDisbursedAmount > 0 ? formatPercent(row.disbursedAmount / totalDisbursedAmount) : '—'}
+                <td className="px-4 py-3">
+                  {totalDisbursedAmount > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-neutral-100">
+                        <div
+                          className="h-full rounded-full bg-info-500"
+                          style={{ width: `${Math.max((row.disbursedAmount / totalDisbursedAmount) * 100, 2)}%` }}
+                        />
+                      </div>
+                      <span className="font-numeric text-neutral-700">{formatPercent(row.disbursedAmount / totalDisbursedAmount)}</span>
+                    </div>
+                  ) : '—'}
                 </td>
               </tr>
             ))}
