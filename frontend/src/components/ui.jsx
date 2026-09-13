@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 
 // Shared primitives for the admin/internal-team side. Two radius tiers, applied
 // consistently everywhere in this file (see the Fintree admin design notes in
@@ -140,7 +141,7 @@ export const Card = ({ children, className = '', elevated = false }) => (
 // records" shape used across create/edit/detail pages, so those pages stop hand-rolling
 // their own header+border markup differently each time.
 export const Panel = ({ title, description, actions, children, className = '' }) => (
-  <section className={`overflow-hidden rounded-xl border border-neutral-200 bg-white ${className}`}>
+  <section className={`overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-[0_1px_2px_rgba(16,42,46,0.04),0_8px_20px_-12px_rgba(16,42,46,0.10)] ${className}`}>
     {(title || actions) && (
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50/60 px-5 py-4">
         <div>
@@ -249,7 +250,10 @@ export const PageHeader = ({ eyebrow, title, description, actions }) => (
 
 // KPI tile for dashboards (Distribution/Capacity dashboards, the main admin Dashboard).
 // `tone` picks the icon chip's color from the same semantic scale as Badge.
-export function StatCard({ icon: Icon, label, value, helper, tone = 'brand' }) {
+// `delta` is optional: { direction: 'up' | 'down' | 'flat', label: '+18% MoM' } — renders
+// as a small trend pill next to the headline value. Omit it for KPIs with no meaningful
+// period-over-period comparison (nothing else about the card changes).
+export function StatCard({ icon: Icon, label, value, helper, tone = 'brand', delta }) {
   const tones = {
     brand: 'bg-brand-50 text-brand-700',
     info: 'bg-info-50 text-info-700',
@@ -258,8 +262,22 @@ export function StatCard({ icon: Icon, label, value, helper, tone = 'brand' }) {
     danger: 'bg-danger-50 text-danger-700',
     neutral: 'bg-neutral-100 text-neutral-700',
   };
+  const accentBars = {
+    brand: 'bg-brand-500',
+    info: 'bg-info-500',
+    accent: 'bg-accent-500',
+    caution: 'bg-caution-500',
+    danger: 'bg-danger-500',
+    neutral: 'bg-neutral-300',
+  };
+  const deltaTones = {
+    up: 'bg-brand-50 text-brand-700',
+    down: 'bg-danger-50 text-danger-700',
+    flat: 'bg-neutral-100 text-neutral-600',
+  };
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="relative overflow-hidden rounded-xl border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(16,42,46,0.04),0_8px_20px_-12px_rgba(16,42,46,0.10)]">
+      <span className={`absolute inset-x-0 top-0 h-1 ${accentBars[tone] || accentBars.brand}`} />
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">{label}</p>
         {Icon && (
@@ -268,7 +286,16 @@ export function StatCard({ icon: Icon, label, value, helper, tone = 'brand' }) {
           </span>
         )}
       </div>
-      <p className="font-numeric font-display mt-3 text-[28px] font-extrabold leading-none text-ink">{value}</p>
+      <div className="mt-3 flex flex-wrap items-end gap-x-2 gap-y-1">
+        <p className="font-numeric font-display text-[28px] font-extrabold leading-none text-ink">{value}</p>
+        {delta && (
+          <span className={`mb-0.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold ${deltaTones[delta.direction] || deltaTones.flat}`}>
+            {delta.direction === 'up' && <ArrowUpRight size={11} strokeWidth={2.5} />}
+            {delta.direction === 'down' && <ArrowDownRight size={11} strokeWidth={2.5} />}
+            {delta.label}
+          </span>
+        )}
+      </div>
       {helper && <p className="mt-2 text-xs text-neutral-500">{helper}</p>}
     </div>
   );
