@@ -122,8 +122,8 @@ export function EditProductVersionPage() {
           </Alert>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Amount Rules</h3>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <h3 className="text-lg font-medium text-neutral-900 mb-4">Amount Rules</h3>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
             <Input label="Minimum Amount" {...register('minimumAmount')} error={errors.minimumAmount?.message} />
             <Input label="Base Amount (1st Loan)" {...register('firstLoanBaseAmount')} error={errors.firstLoanBaseAmount?.message} />
@@ -165,10 +165,10 @@ export function EditProductVersionPage() {
 
             <div className="sm:col-span-3 mt-2">
               <div className="flex gap-4 mb-4">
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <label className="flex items-center gap-2 text-sm font-medium text-neutral-700">
                   <input type="radio" value="MONTHS" {...register('tenureType')} /> Months
                 </label>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <label className="flex items-center gap-2 text-sm font-medium text-neutral-700">
                   <input type="radio" value="DAYS" {...register('tenureType')} /> Days
                 </label>
               </div>
@@ -181,9 +181,9 @@ export function EditProductVersionPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-slate-900">Offer Multipliers</h3>
+            <h3 className="text-lg font-medium text-neutral-900">Offer Multipliers</h3>
             <Button type="button" variant="secondary" size="sm" onClick={() => append({ minimumCompletedLoans: fields.length, multiplier: '1.2500' })}>
               <Plus className="mr-1 h-4 w-4" /> Add Multiplier
             </Button>
@@ -192,12 +192,12 @@ export function EditProductVersionPage() {
           
           <div className="space-y-4">
             {fields.map((field, index) => (
-              <div key={field.id} className="flex flex-wrap items-start gap-4 p-4 border border-slate-100 rounded-xl bg-slate-50 relative">
+              <div key={field.id} className="flex flex-wrap items-start gap-4 p-4 border border-neutral-100 rounded-xl bg-neutral-50 relative">
                 <Input label="Min Completed Loans" type="number" className="w-40" {...register(`multipliers.${index}.minimumCompletedLoans`)} error={errors.multipliers?.[index]?.minimumCompletedLoans?.message} />
                 <Input label="Multiplier" className="w-40" {...register(`multipliers.${index}.multiplier`)} error={errors.multipliers?.[index]?.multiplier?.message} />
                 
                 {index > 0 && (
-                  <button type="button" onClick={() => remove(index)} className="mt-8 text-slate-400 hover:text-red-600 transition-colors">
+                  <button type="button" onClick={() => remove(index)} className="mt-8 text-neutral-400 hover:text-danger-600 transition-colors">
                     <Trash2 className="h-5 w-5" />
                   </button>
                 )}

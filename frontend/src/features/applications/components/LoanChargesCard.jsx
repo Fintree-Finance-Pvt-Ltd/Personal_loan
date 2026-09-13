@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
-import { Alert, Button, Card, Input, Textarea } from '../../../components/ui';
+import { Alert, Button, Input, Panel, TableShell, Textarea } from '../../../components/ui';
 import { StageStatusBadge } from './StageStatusBadge';
 
 function formatCurrency(amount) {
@@ -36,7 +37,7 @@ function AddChargeForm({ lan, onCancel, onSaved }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
       {error && <Alert>{error}</Alert>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input label="Charge type" placeholder="e.g. Bounce Charge" value={chargeType} onChange={(e) => setChargeType(e.target.value)} required />
@@ -45,8 +46,8 @@ function AddChargeForm({ lan, onCancel, onSaved }) {
       </div>
       <Textarea label="Remarks (optional)" value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={2} />
       <div className="flex justify-end gap-3">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add Charge'}</Button>
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button type="submit" size="sm" disabled={saving}>{saving ? 'Adding…' : 'Add charge'}</Button>
       </div>
     </form>
   );
@@ -73,7 +74,7 @@ function WaiveChargeForm({ lan, charge, onCancel, onSaved }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <form onSubmit={handleSubmit} className="mt-3 space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
       {error && <Alert>{error}</Alert>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
@@ -88,10 +89,10 @@ function WaiveChargeForm({ lan, charge, onCancel, onSaved }) {
         />
       </div>
       <Textarea label="Remarks (optional)" value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={2} />
-      <p className="text-xs text-slate-500">Outstanding on this charge: {formatCurrency(charge.remainingAmount)}</p>
+      <p className="text-xs text-neutral-500">Outstanding on this charge: {formatCurrency(charge.remainingAmount)}</p>
       <div className="flex justify-end gap-3">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Waiving…' : 'Waive Charge'}</Button>
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button type="submit" size="sm" disabled={saving}>{saving ? 'Waiving…' : 'Waive charge'}</Button>
       </div>
     </form>
   );
@@ -108,86 +109,75 @@ export function LoanChargesCard({ lan, charges, canManage, onChanged }) {
   };
 
   return (
-    <Card className="mb-6 !p-0 overflow-hidden">
-      <div className="flex items-center justify-between border-b bg-gray-50 px-6 py-4">
-        <div>
-          <div className="font-bold text-gray-700">Loan Charges</div>
-          <p className="mt-1 text-sm text-gray-500">Extra charges (bounce, penal, etc.) reported to the lender.</p>
-        </div>
-        {canManage && !addingCharge && (
-          <Button type="button" onClick={() => setAddingCharge(true)} className="!px-3 !py-2 text-sm">
-            + Add Charge
+    <Panel
+      className="mb-6"
+      title="Loan charges"
+      description="Extra charges (bounce, penal, etc.) reported to the lender."
+      actions={
+        canManage && !addingCharge && (
+          <Button type="button" size="sm" onClick={() => setAddingCharge(true)}>
+            <Plus size={13} /> Add charge
           </Button>
+        )
+      }
+    >
+      {addingCharge && (
+        <AddChargeForm lan={lan} onCancel={() => setAddingCharge(false)} onSaved={handleSaved} />
+      )}
+
+      <div className={addingCharge ? 'mt-4' : ''}>
+        {charges.length === 0 ? (
+          <p className="py-8 text-center text-sm text-neutral-500">No charges on this loan.</p>
+        ) : (
+          <TableShell>
+            <thead className="border-b border-neutral-200 bg-neutral-50">
+              <tr>
+                <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Type</th>
+                <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Amount</th>
+                <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Remaining</th>
+                <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+                <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Due</th>
+                <th className="px-5 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {charges.map((charge) => (
+                <tr key={charge.chargeId} className="align-top hover:bg-neutral-50/70">
+                  <td className="px-5 py-3.5">
+                    <div className="font-semibold text-ink">{charge.chargeType}</div>
+                    {charge.description && <div className="text-xs text-neutral-500">{charge.description}</div>}
+                    {charge.waivers.length > 0 && (
+                      <div className="mt-1 text-xs text-neutral-500">
+                        Waived: {formatCurrency(charge.waivers.reduce((sum, w) => sum + w.waiverAmount, 0))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="font-numeric px-5 py-3.5">{formatCurrency(charge.amount)}</td>
+                  <td className="font-numeric px-5 py-3.5">{formatCurrency(charge.remainingAmount)}</td>
+                  <td className="px-5 py-3.5"><StageStatusBadge value={charge.status} /></td>
+                  <td className="whitespace-nowrap px-5 py-3.5 text-sm text-neutral-500">{formatDate(charge.dueDate)}</td>
+                  <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                    {canManage && ['PENDING', 'PARTIAL'].includes(charge.status) && waivingChargeId !== charge.chargeId && (
+                      <Button type="button" size="sm" onClick={() => setWaivingChargeId(charge.chargeId)}>
+                        Waive
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
         )}
       </div>
 
-      {addingCharge && (
-        <div className="px-6 pt-4">
-          <AddChargeForm lan={lan} onCancel={() => setAddingCharge(false)} onSaved={handleSaved} />
-        </div>
-      )}
-
-      <table className="w-full">
-        <thead className="bg-gray-50 border-b">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Remaining</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due</th>
-            <th className="px-6 py-3"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200">
-          {charges.length === 0 ? (
-            <tr>
-              <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
-                No charges on this loan.
-              </td>
-            </tr>
-          ) : (
-            charges.map((charge) => (
-              <tr key={charge.chargeId} className="align-top hover:bg-gray-50">
-                <td className="px-6 py-4">
-                  <div className="font-medium">{charge.chargeType}</div>
-                  {charge.description && <div className="text-xs text-gray-500">{charge.description}</div>}
-                  {charge.waivers.length > 0 && (
-                    <div className="mt-1 text-xs text-gray-500">
-                      Waived: {formatCurrency(charge.waivers.reduce((sum, w) => sum + w.waiverAmount, 0))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-6 py-4">{formatCurrency(charge.amount)}</td>
-                <td className="px-6 py-4">{formatCurrency(charge.remainingAmount)}</td>
-                <td className="px-6 py-4"><StageStatusBadge value={charge.status} /></td>
-                <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{formatDate(charge.dueDate)}</td>
-                <td className="px-6 py-4 text-right whitespace-nowrap">
-                  {canManage && ['PENDING', 'PARTIAL'].includes(charge.status) && waivingChargeId !== charge.chargeId && (
-                    <button
-                      type="button"
-                      onClick={() => setWaivingChargeId(charge.chargeId)}
-                      className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
-                    >
-                      Waive
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-
       {waivingChargeId && (
-        <div className="px-6 pb-4">
-          <WaiveChargeForm
-            lan={lan}
-            charge={charges.find((c) => c.chargeId === waivingChargeId)}
-            onCancel={() => setWaivingChargeId(null)}
-            onSaved={handleSaved}
-          />
-        </div>
+        <WaiveChargeForm
+          lan={lan}
+          charge={charges.find((c) => c.chargeId === waivingChargeId)}
+          onCancel={() => setWaivingChargeId(null)}
+          onSaved={handleSaved}
+        />
       )}
-    </Card>
+    </Panel>
   );
 }

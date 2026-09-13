@@ -56,9 +56,9 @@ export function LenderForm({
       )}
 
       <Card>
-        <div className="border-b border-slate-100 pb-4">
+        <div className="border-b border-neutral-100 pb-4">
           <h2 className="text-lg font-bold text-ink">Lender identity</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-neutral-500">
             Enter the lender&apos;s legal and platform-facing identity. The lender
             code must be unique.
           </p>
@@ -120,9 +120,9 @@ export function LenderForm({
         </div>
       </Card>
 
-      <Card className="mt-5 bg-slate-50">
+      <Card className="mt-5 bg-neutral-50">
         <h2 className="font-bold text-ink">What happens next?</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="mt-2 text-sm leading-6 text-neutral-600">
           Saving creates or updates a Draft lender. A maker must submit the
           Draft, and a different checker must approve it before activation.
         </p>

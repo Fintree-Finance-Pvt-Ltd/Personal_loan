@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Package, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { PermissionGate } from '../../../components/ProtectedRoute';
-import { Alert, Button, Card, PageHeader, Badge, Spinner } from '../../../components/ui';
+import { Alert, Button, Card, EmptyState, PageHeader, Badge, Spinner } from '../../../components/ui';
 import { apiError } from '../../../lib/api';
 import { platformProductsApi } from '../api/platform-products.api';
 
@@ -50,6 +51,7 @@ export function PlatformProductsPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Configuration"
         title="Platform Products"
         description="Manage the central catalog of platform products."
         actions={
@@ -60,15 +62,12 @@ export function PlatformProductsPage() {
               onClick={() => setReloadKey((current) => current + 1)}
               disabled={loading}
             >
-              Refresh
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
             </Button>
             <PermissionGate permission="PLATFORM_PRODUCT_CREATE">
-              <Link
-                to="/admin-master/platform-products/new"
-                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 font-semibold text-white transition hover:bg-brand-700"
-              >
-                Add product
-              </Link>
+              <Button as={Link} to="/admin-master/platform-products/new">
+                <Plus size={15} /> Add product
+              </Button>
             </PermissionGate>
           </div>
         }
@@ -85,63 +84,56 @@ export function PlatformProductsPage() {
           <Spinner />
         </div>
       ) : items.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center py-20 text-center">
-          <h3 className="mb-2 text-lg font-bold text-slate-800">
-            No platform products found
-          </h3>
-          <p className="mb-6 max-w-sm text-slate-500">
-            Get started by adding a central platform product to the catalog.
-          </p>
-          <PermissionGate permission="PLATFORM_PRODUCT_CREATE">
-            <Link
-              to="/admin-master/platform-products/new"
-              className="rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white transition hover:bg-brand-700"
-            >
-              Add platform product
-            </Link>
-          </PermissionGate>
-        </Card>
+        <EmptyState
+          icon={Package}
+          title="No platform products found"
+          description="Get started by adding a central platform product to the catalog."
+          action={
+            <PermissionGate permission="PLATFORM_PRODUCT_CREATE">
+              <Button as={Link} to="/admin-master/platform-products/new">
+                <Plus size={15} /> Add platform product
+              </Button>
+            </PermissionGate>
+          }
+        />
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {items.map((product) => (
-              <Card key={product.id} className="flex flex-col border border-slate-200">
+              <Card key={product.id} className="flex flex-col">
               <div className="flex-1">
                 <div className="mb-3 flex items-center justify-between">
-                  <Badge tone={product.status === 'ACTIVE' ? 'success' : 'neutral'}>
+                  <Badge tone={product.status === 'ACTIVE' ? 'brand' : 'neutral'}>
                     {product.status}
                   </Badge>
-                  <span className="text-xs font-semibold uppercase text-slate-400">
+                  <span className="font-numeric text-xs font-semibold uppercase text-neutral-400">
                     {product.code}
                   </span>
                 </div>
-                <h3 className="mb-2 text-lg font-bold text-slate-900">
+                <h3 className="font-display mb-2 text-lg font-bold text-ink">
                   {product.name}
                 </h3>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-neutral-600">
                   {product.description || 'No description provided.'}
                 </p>
               </div>
 
-              <div className="mt-6 flex flex-wrap gap-2 pt-4 border-t border-slate-100">
+              <div className="mt-6 flex flex-wrap gap-2 border-t border-neutral-100 pt-4">
                 <PermissionGate permission="PLATFORM_PRODUCT_UPDATE">
-                  <Link
-                    to={`/admin-master/platform-products/${product.id}/edit`}
-                    className="inline-flex h-9 items-center justify-center rounded-lg bg-slate-100 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-200"
-                  >
-                    Manage & Edit
-                  </Link>
+                  <Button as={Link} to={`/admin-master/platform-products/${product.id}/edit`} variant="secondary" className="!min-h-9 !px-3 text-sm">
+                    <Pencil size={13} /> Manage &amp; edit
+                  </Button>
                 </PermissionGate>
               </div>
             </Card>
           ))}
           </div>
           {data.pagination?.total > data.pagination?.limit && (
-            <div className="mt-6 flex items-center justify-between text-sm text-slate-600">
+            <div className="mt-6 flex items-center justify-between text-sm text-neutral-600">
               <span>{data.pagination.total} total</span>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
-                <Button variant="secondary" onClick={() => setPage(p => p + 1)} disabled={!hasMore}>Next</Button>
+                <Button variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}><ChevronLeft size={15} /> Prev</Button>
+                <Button variant="secondary" onClick={() => setPage(p => p + 1)} disabled={!hasMore}>Next <ChevronRight size={15} /></Button>
               </div>
             </div>
           )}

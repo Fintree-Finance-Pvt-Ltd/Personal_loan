@@ -135,8 +135,8 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
         </Alert>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-medium text-slate-900 mb-4">Product Identity</h3>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-medium text-neutral-900 mb-4">Product Identity</h3>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           
           <Select 
@@ -173,24 +173,24 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
           </Select>
 
           {selectedPlatformProductDetails && (
-            <div className="sm:col-span-2 mt-2 rounded-xl bg-slate-50 p-4 border border-slate-200">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Selected Platform Product Details</h4>
+            <div className="sm:col-span-2 mt-2 rounded-xl bg-neutral-50 p-4 border border-neutral-200">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-3">Selected Platform Product Details</h4>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-slate-500 block">Name</span>
-                  <span className="font-semibold text-slate-900">{selectedPlatformProductDetails.name}</span>
+                  <span className="text-neutral-500 block">Name</span>
+                  <span className="font-semibold text-neutral-900">{selectedPlatformProductDetails.name}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Code</span>
-                  <span className="font-semibold text-slate-900">{selectedPlatformProductDetails.code}</span>
+                  <span className="text-neutral-500 block">Code</span>
+                  <span className="font-semibold text-neutral-900">{selectedPlatformProductDetails.code}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Status</span>
+                  <span className="text-neutral-500 block">Status</span>
                   <Badge tone="success">{selectedPlatformProductDetails.status}</Badge>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Description</span>
-                  <span className="text-slate-700">{selectedPlatformProductDetails.description || 'N/A'}</span>
+                  <span className="text-neutral-500 block">Description</span>
+                  <span className="text-neutral-700">{selectedPlatformProductDetails.description || 'N/A'}</span>
                 </div>
               </div>
             </div>
@@ -207,8 +207,8 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-medium text-slate-900 mb-4">Initial Version Strategy</h3>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-medium text-neutral-900 mb-4">Initial Version Strategy</h3>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <Input label="Minimum Amount" placeholder="5000.00" {...register('strategy.minimumAmount')} error={errors.strategy?.minimumAmount?.message} />
           <Input label="Base Amount (1st Loan)" placeholder="10000.00" {...register('strategy.firstLoanBaseAmount')} error={errors.strategy?.firstLoanBaseAmount?.message} />
@@ -250,15 +250,15 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
 
           <div className="sm:col-span-3 mt-2">
             <div className="flex gap-4 mb-4">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <label className="flex items-center gap-2 text-sm font-medium text-neutral-700">
                 <input type="radio" value="MONTHS" {...register('strategy.tenureType')} /> Months
               </label>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <label className="flex items-center gap-2 text-sm font-medium text-neutral-700">
                 <input type="radio" value="DAYS" {...register('strategy.tenureType')} /> Days
               </label>
             </div>
             <Input label={`Supported Tenures (comma-separated ${tenureType === 'DAYS' ? 'days' : 'months'})`} placeholder={tenureType === 'DAYS' ? '15, 30, 45' : '3, 6, 12'} {...register('strategy.tenures')} error={errors.strategy?.tenures?.message} />
-            <p className="text-xs text-slate-500 mt-1">E.g., "{tenureType === 'DAYS' ? '15, 30, 45' : '3, 6, 9, 12'}". These will be the only allowed terms.</p>
+            <p className="text-xs text-neutral-500 mt-1">E.g., "{tenureType === 'DAYS' ? '15, 30, 45' : '3, 6, 9, 12'}". These will be the only allowed terms.</p>
           </div>
           
           <div className="sm:col-span-3">
@@ -268,7 +268,7 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
 
         <div className="mt-8">
           <div className="flex items-center justify-between mb-4">
-            <h4 className="text-md font-medium text-slate-900">Offer Multipliers</h4>
+            <h4 className="text-md font-medium text-neutral-900">Offer Multipliers</h4>
             <Button type="button" variant="secondary" size="sm" onClick={() => append({ minimumCompletedLoans: fields.length, multiplier: '1.2500' })}>
               <Plus className="mr-1 h-4 w-4" /> Add Multiplier
             </Button>
@@ -277,12 +277,12 @@ export function ProductForm({ busy, serverError, onSubmit, onCancel }) {
           
           <div className="space-y-4">
             {fields.map((field, index) => (
-              <div key={field.id} className="flex flex-wrap items-start gap-4 p-4 border border-slate-100 rounded-xl bg-slate-50 relative">
+              <div key={field.id} className="flex flex-wrap items-start gap-4 p-4 border border-neutral-100 rounded-xl bg-neutral-50 relative">
                 <Input label="Min Completed Loans" type="number" className="w-40" {...register(`strategy.multipliers.${index}.minimumCompletedLoans`)} error={errors.strategy?.multipliers?.[index]?.minimumCompletedLoans?.message} />
                 <Input label="Multiplier" placeholder="1.2500" className="w-40" {...register(`strategy.multipliers.${index}.multiplier`)} error={errors.strategy?.multipliers?.[index]?.multiplier?.message} />
                 
                 {index > 0 && (
-                  <button type="button" onClick={() => remove(index)} className="mt-8 text-slate-400 hover:text-red-600 transition-colors">
+                  <button type="button" onClick={() => remove(index)} className="mt-8 text-neutral-400 hover:text-danger-600 transition-colors">
                     <Trash2 className="h-5 w-5" />
                   </button>
                 )}

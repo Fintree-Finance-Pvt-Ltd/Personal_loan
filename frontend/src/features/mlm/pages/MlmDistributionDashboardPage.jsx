@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { PieChart } from 'lucide-react';
 import { mlmApi } from '../api/mlm.api';
 import { platformProductsApi } from '../../platform-products/api/platform-products.api';
+import { Alert, Badge, EmptyState, PageHeader, Spinner } from '../../../components/ui';
 import DistributionFilters from '../components/DistributionFilters';
 import DistributionSummary from '../components/DistributionSummary';
 import DistributionTable from '../components/DistributionTable';
@@ -79,43 +81,41 @@ export default function MlmDistributionDashboardPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Allocation Distribution Dashboard</h1>
-        <p className="text-gray-500 mt-1">Monitor real-time MLM allocation routing metrics, variances, and route readiness.</p>
-      </div>
+    <div className="mx-auto max-w-7xl">
+      <PageHeader
+        eyebrow="Configuration"
+        title="Distribution dashboard"
+        description="Monitor real-time MLM allocation routing metrics, variances, and route readiness."
+      />
 
-      <DistributionFilters 
-        platformProducts={platformProducts} 
-        filters={filters} 
-        onChange={handleFilterChange} 
+      <DistributionFilters
+        platformProducts={platformProducts}
+        filters={filters}
+        onChange={handleFilterChange}
         onRefresh={loadDashboard}
         isLoading={loading}
       />
 
       {error ? (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-          <p className="font-medium">Error</p>
-          <p className="text-sm">{error}</p>
-        </div>
+        <Alert>
+          <strong>Error:</strong> {error}
+        </Alert>
       ) : loading && !data ? (
         <div className="flex justify-center p-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <Spinner label="Loading dashboard…" />
         </div>
       ) : data ? (
         <>
-          <div className="mb-4 flex items-center justify-between text-sm text-gray-500">
-            <span>Viewing Policy: <span className="font-semibold text-gray-700">{data.policyContext.policyId}</span></span>
-            <span>Active Version: <span className="font-semibold text-gray-700 bg-gray-100 px-2 py-1 rounded">v{data.policyContext.versionNumber}</span></span>
+          <div className="mb-4 flex items-center justify-between text-sm text-neutral-500">
+            <span>Viewing policy: <span className="font-semibold text-ink">{data.policyContext.policyId}</span></span>
+            <Badge tone="neutral">v{data.policyContext.versionNumber}</Badge>
           </div>
-          
+
           <DistributionSummary summary={data.summary} />
           <DistributionTable distribution={data.distribution} />
         </>
       ) : (
-        <div className="bg-white rounded-lg shadow border border-gray-200 p-8 text-center">
-           <p className="text-gray-500">Select a Platform Product to view its distribution dashboard.</p>
-        </div>
+        <EmptyState icon={PieChart} title="No product selected" description="Select a platform product to view its distribution dashboard." />
       )}
     </div>
   );

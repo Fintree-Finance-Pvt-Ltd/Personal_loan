@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Card, Alert, Spinner } from '../../../components/ui';
+import { useState } from 'react';
+import { Loader2, RefreshCw, Zap } from 'lucide-react';
+import { Alert, Badge, Button, Panel, TableShell } from '../../../components/ui';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
 
@@ -20,6 +21,17 @@ function formatDate(value) {
     return String(value);
   }
 }
+
+const PAYMENT_STATUS_TONE = {
+  PAID: 'brand',
+  OVERDUE: 'danger',
+};
+
+const DEBIT_STATUS_TONE = {
+  SUCCESS: 'brand',
+  IN_PROCESS: 'info',
+  SUBMITTING: 'info',
+};
 
 export function RepaymentScheduleCard({
   lan,
@@ -83,168 +95,143 @@ export function RepaymentScheduleCard({
   };
 
   return (
-    <Card className="mb-6 !p-0 overflow-hidden">
-      <div className="border-b bg-gray-50 px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <div className="font-bold text-gray-800 flex items-center gap-2">
-            <span>Repayment Schedule & AutoCollect Mandate Presentment</span>
-            {activeMandate && (
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                activeMandate.status === 'AUTHORIZED' || activeMandate.status === 'COMPLETED'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-amber-100 text-amber-800'
-              }`}>
-                {activeMandate.mandateType} ({activeMandate.status})
-              </span>
-            )}
+    <Panel
+      className="mb-6"
+      title={
+        <span className="flex flex-wrap items-center gap-2">
+          Repayment schedule &amp; AutoCollect mandate presentment
+          {activeMandate && (
+            <Badge tone={activeMandate.status === 'AUTHORIZED' || activeMandate.status === 'COMPLETED' ? 'brand' : 'caution'}>
+              {activeMandate.mandateType} ({activeMandate.status})
+            </Badge>
+          )}
+        </span>
+      }
+      description="View EMI schedule, mandate details, and trigger manual or scheduled AutoCollect debit requests."
+      actions={
+        activeMandate && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 shadow-sm">
+            <span><strong className="text-ink">Mandate ID:</strong> {activeMandate.merchantTransactionId || activeMandate.providerMandateId || '-'}</span>
+            <span>·</span>
+            <span><strong className="text-ink">Max limit:</strong> {formatCurrency(activeMandate.amount)}</span>
           </div>
-          <p className="mt-1 text-xs text-gray-500">
-            View EMI schedule, mandate details, and trigger manual or scheduled AutoCollect debit requests.
-          </p>
-        </div>
-
-        {activeMandate && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
-            <span><strong>Mandate ID:</strong> {activeMandate.merchantTransactionId || activeMandate.providerMandateId || '-'}</span>
-            <span>•</span>
-            <span><strong>Max Limit:</strong> {formatCurrency(activeMandate.amount)}</span>
-          </div>
-        )}
-      </div>
-
+        )
+      }
+    >
       {message && (
-        <div className="p-4 bg-gray-50 border-b">
-          <Alert variant={message.type === 'success' ? 'success' : message.type === 'danger' ? 'danger' : 'info'}>
+        <div className="mb-4">
+          <Alert tone={message.type === 'success' ? 'success' : message.type === 'danger' ? 'danger' : 'info'}>
             {message.text}
           </Alert>
         </div>
       )}
 
       {(!schedules || schedules.length === 0) ? (
-        <div className="p-6 text-center text-sm text-gray-500">
+        <p className="py-6 text-center text-sm text-neutral-500">
           No repayment schedule generated for this loan yet.
-        </div>
+        </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50/80 border-b text-xs font-semibold uppercase text-gray-600">
-              <tr>
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Due Date</th>
-                <th className="px-4 py-3">EMI Amount</th>
-                <th className="px-4 py-3">Remaining</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Latest AutoCollect Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {schedules.map((schedule) => {
-                const isPaid = schedule.paymentStatus === 'PAID';
-                const isProcessing = processingRpsId === schedule.id;
-                const isReconciling = processingRpsId === `rec_${schedule.id}`;
-                const debit = schedule.latestDebitRequest;
+        <TableShell>
+          <thead className="border-b border-neutral-200 bg-neutral-50">
+            <tr>
+              <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">#</th>
+              <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Due date</th>
+              <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">EMI amount</th>
+              <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Remaining</th>
+              <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Latest AutoCollect status</th>
+              <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide text-neutral-500">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {schedules.map((schedule) => {
+              const isPaid = schedule.paymentStatus === 'PAID';
+              const isProcessing = processingRpsId === schedule.id;
+              const isReconciling = processingRpsId === `rec_${schedule.id}`;
+              const debit = schedule.latestDebitRequest;
 
-                return (
-                  <tr key={schedule.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {schedule.installmentNumber}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {formatDate(schedule.dueDate)}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-gray-900">
-                      {formatCurrency(schedule.emi)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {formatCurrency(schedule.remainingAmount)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                        isPaid
-                          ? 'bg-green-100 text-green-800'
-                          : schedule.paymentStatus === 'OVERDUE'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {schedule.paymentStatus}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {debit ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              debit.status === 'SUCCESS'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : debit.status === 'IN_PROCESS' || debit.status === 'SUBMITTING'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-rose-100 text-rose-800'
-                            }`}>
-                              {debit.status}
-                            </span>
-                            <span className="text-[11px] text-gray-500">
-                              (Attempt #{debit.attemptNumber})
-                            </span>
-                          </div>
-                          {debit.failureReason && (
-                            <p className="text-[11px] text-red-600 truncate max-w-xs" title={debit.failureReason}>
-                              {debit.failureReason}
-                            </p>
-                          )}
+              return (
+                <tr key={schedule.id} className="hover:bg-neutral-50/70">
+                  <td className="font-numeric px-4 py-3 font-semibold text-ink">{schedule.installmentNumber}</td>
+                  <td className="px-4 py-3 text-neutral-700">{formatDate(schedule.dueDate)}</td>
+                  <td className="font-numeric px-4 py-3 font-semibold text-ink">{formatCurrency(schedule.emi)}</td>
+                  <td className="font-numeric px-4 py-3 text-neutral-700">{formatCurrency(schedule.remainingAmount)}</td>
+                  <td className="px-4 py-3">
+                    <Badge tone={PAYMENT_STATUS_TONE[schedule.paymentStatus] || 'caution'}>{schedule.paymentStatus}</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    {debit ? (
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <Badge tone={DEBIT_STATUS_TONE[debit.status] || 'danger'}>{debit.status}</Badge>
+                          <span className="text-xs text-neutral-500">
+                            (Attempt #{debit.attemptNumber})
+                          </span>
                         </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">No debit attempt</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center gap-2 justify-end">
-                        {debit && canManage && (
-                          <button
-                            type="button"
-                            disabled={isProcessing || isReconciling}
-                            onClick={() => handleReconcileDebit(schedule)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors shadow-sm"
-                            title="Check live status from Easebuzz"
-                          >
-                            {isReconciling ? (
-                              <>
-                                <Spinner size="xs" />
-                                <span>Checking...</span>
-                              </>
-                            ) : (
-                              <span>Sync Status</span>
-                            )}
-                          </button>
-                        )}
-
-                        {!isPaid && canManage && (
-                          <button
-                            type="button"
-                            disabled={isProcessing || isReconciling || !activeMandate}
-                            onClick={() => handleRetryDebit(schedule)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
-                            title="Trigger AutoCollect Debit API"
-                          >
-                            {isProcessing ? (
-                              <>
-                                <Spinner size="xs" />
-                                <span>Presenting...</span>
-                              </>
-                            ) : (
-                              <span>Present / Debit Now</span>
-                            )}
-                          </button>
+                        {debit.failureReason && (
+                          <p className="max-w-xs truncate text-xs text-danger-600" title={debit.failureReason}>
+                            {debit.failureReason}
+                          </p>
                         )}
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    ) : (
+                      <span className="text-xs text-neutral-400">No debit attempt</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex items-center justify-end gap-2">
+                      {debit && canManage && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={isProcessing || isReconciling}
+                          onClick={() => handleReconcileDebit(schedule)}
+                          title="Check live status from Easebuzz"
+                        >
+                          {isReconciling ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" />
+                              Checking…
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw size={13} />
+                              Sync status
+                            </>
+                          )}
+                        </Button>
+                      )}
+
+                      {!isPaid && canManage && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={isProcessing || isReconciling || !activeMandate}
+                          onClick={() => handleRetryDebit(schedule)}
+                          title="Trigger AutoCollect Debit API"
+                        >
+                          {isProcessing ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" />
+                              Presenting…
+                            </>
+                          ) : (
+                            <>
+                              <Zap size={13} />
+                              Present / debit now
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </TableShell>
       )}
-    </Card>
+    </Panel>
   );
 }

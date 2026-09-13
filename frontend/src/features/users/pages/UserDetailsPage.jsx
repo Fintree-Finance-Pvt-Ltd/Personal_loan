@@ -109,31 +109,31 @@ export function UserDetailsPage() {
           { label: 'Active sessions', value: user.activeSessionCount ?? '—' },
           { label: 'Failed logins', value: user.failedLoginCount },
         ].map(({ label, value }) => (
-          <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-            <div className="mt-2 text-slate-900">{value}</div>
+          <div key={label} className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
+            <div className="mt-2 text-neutral-900">{value}</div>
           </div>
         ))}
       </div>
 
       {user.lockedUntil && (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="mb-6 rounded-xl border border-caution-200 bg-caution-50 p-4 text-sm text-caution-800">
           Account locked until {formatDate(user.lockedUntil)}
         </div>
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-slate-800">Assigned roles</h2>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+          <h2 className="mb-4 font-semibold text-neutral-800">Assigned roles</h2>
           {user.roles.length === 0 ? (
-            <p className="text-sm text-slate-400">No roles assigned.</p>
+            <p className="text-sm text-neutral-400">No roles assigned.</p>
           ) : (
             <div className="space-y-2">
               {user.roles.map(r => (
-                <div key={r.code} className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-3">
+                <div key={r.code} className="flex items-center justify-between rounded-xl border border-neutral-100 px-4 py-3">
                   <div>
-                    <p className="font-semibold text-sm text-slate-900">{r.name}</p>
-                    <p className="font-mono text-xs text-slate-400">{r.code}</p>
+                    <p className="font-semibold text-sm text-neutral-900">{r.name}</p>
+                    <p className="font-mono text-xs text-neutral-400">{r.code}</p>
                   </div>
                   <Badge tone={r.status === 'ACTIVE' ? 'brand' : 'neutral'}>{r.status}</Badge>
                 </div>
@@ -142,12 +142,12 @@ export function UserDetailsPage() {
           )}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-slate-800">
-            Effective permissions <span className="text-sm font-normal text-slate-500">({user.effectivePermissions?.length ?? 0})</span>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+          <h2 className="mb-4 font-semibold text-neutral-800">
+            Effective permissions <span className="text-sm font-normal text-neutral-500">({user.effectivePermissions?.length ?? 0})</span>
           </h2>
           <div className="flex flex-wrap gap-1.5 max-h-64 overflow-y-auto">
-            {user.effectivePermissions?.length === 0 && <p className="text-sm text-slate-400">No effective permissions.</p>}
+            {user.effectivePermissions?.length === 0 && <p className="text-sm text-neutral-400">No effective permissions.</p>}
             {user.effectivePermissions?.map(code => (
               <span key={code} className="rounded-full bg-brand-50 px-2.5 py-1 font-mono text-xs text-brand-700">{code}</span>
             ))}
@@ -155,9 +155,9 @@ export function UserDetailsPage() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-xs text-slate-400 grid grid-cols-2 gap-3">
-        <div><span className="font-semibold text-slate-600">Created: </span>{formatDate(user.createdAt)}</div>
-        <div><span className="font-semibold text-slate-600">Updated: </span>{formatDate(user.updatedAt)}</div>
+      <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 text-xs text-neutral-400 grid grid-cols-2 gap-3">
+        <div><span className="font-semibold text-neutral-600">Created: </span>{formatDate(user.createdAt)}</div>
+        <div><span className="font-semibold text-neutral-600">Updated: </span>{formatDate(user.updatedAt)}</div>
       </div>
 
       <ConfirmationDialog

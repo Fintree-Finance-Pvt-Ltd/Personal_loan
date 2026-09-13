@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Laptop, ShieldOff } from 'lucide-react';
 import { api, apiError } from '../../../lib/api';
 import { Alert, Badge, Button, Card, PageHeader, Spinner } from '../../../components/ui';
 import { ConfirmationDialog } from '../../../components/ConfirmationDialog';
@@ -42,26 +43,32 @@ export function SessionsPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Security"
         title="Session management"
         description="Review and revoke browser sessions tied to your account."
-        actions={<PermissionGate permission="SESSION_REVOKE_ALL"><Button variant="secondary" onClick={() => setDialog({ type: 'others' })}>Revoke other sessions</Button></PermissionGate>}
+        actions={<PermissionGate permission="SESSION_REVOKE_ALL"><Button variant="secondary" onClick={() => setDialog({ type: 'others' })}><ShieldOff size={15} /> Revoke other sessions</Button></PermissionGate>}
       />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-      {loading ? <Card><Spinner label="Loading sessions" /></Card> : sessions.length === 0 ? <Card><p className="text-slate-600">No session records are available.</p></Card> : (
+      {loading ? <Card><Spinner label="Loading sessions" /></Card> : sessions.length === 0 ? <Card><p className="text-neutral-600">No session records are available.</p></Card> : (
         <div className="space-y-4">
           {sessions.map((session) => (
             <Card key={session.id} className={session.isCurrent ? 'border-brand-500' : ''}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2"><h2 className="font-bold text-ink">{session.deviceLabel || 'Unknown device'}</h2>{session.isCurrent && <Badge>Current session</Badge>}{session.revokedAt && <Badge tone="neutral">Revoked</Badge>}</div>
-                  <p className="mt-1 text-sm text-slate-500">Network: {session.ipAddress || 'Unavailable'}</p>
+                <div className="flex items-start gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-neutral-100 text-neutral-500">
+                    <Laptop size={18} />
+                  </span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2"><h2 className="font-display font-bold text-ink">{session.deviceLabel || 'Unknown device'}</h2>{session.isCurrent && <Badge tone="brand">Current session</Badge>}{session.revokedAt && <Badge tone="neutral">Revoked</Badge>}</div>
+                    <p className="font-numeric mt-1 text-sm text-neutral-500">Network: {session.ipAddress || 'Unavailable'}</p>
+                  </div>
                 </div>
                 {!session.revokedAt && <PermissionGate permission="SESSION_REVOKE_OWN"><Button variant="danger" onClick={() => setDialog({ type: 'one', sessionId: session.id, current: session.isCurrent })}>Revoke</Button></PermissionGate>}
               </div>
-              <dl className="mt-5 grid gap-3 border-t border-slate-100 pt-4 text-sm sm:grid-cols-3">
-                <div><dt className="text-slate-500">Created</dt><dd className="mt-1 font-medium">{new Date(session.createdAt).toLocaleString()}</dd></div>
-                <div><dt className="text-slate-500">Last active</dt><dd className="mt-1 font-medium">{new Date(session.lastSeenAt).toLocaleString()}</dd></div>
-                <div><dt className="text-slate-500">Absolute expiry</dt><dd className="mt-1 font-medium">{new Date(session.absoluteExpiresAt).toLocaleString()}</dd></div>
+              <dl className="mt-5 grid gap-3 border-t border-neutral-100 pt-4 text-sm sm:grid-cols-3">
+                <div><dt className="text-neutral-500">Created</dt><dd className="mt-1 font-medium">{new Date(session.createdAt).toLocaleString()}</dd></div>
+                <div><dt className="text-neutral-500">Last active</dt><dd className="mt-1 font-medium">{new Date(session.lastSeenAt).toLocaleString()}</dd></div>
+                <div><dt className="text-neutral-500">Absolute expiry</dt><dd className="mt-1 font-medium">{new Date(session.absoluteExpiresAt).toLocaleString()}</dd></div>
               </dl>
             </Card>
           ))}

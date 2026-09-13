@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Plus, Trash2 } from 'lucide-react';
 import { mlmApi } from '../api/mlm.api';
 import { getLenders } from '../../lenders/api/lenders.api';
 import { productsApi } from '../../products/api/products.api';
+import { Button, Card, EmptyState, PageHeader, Select, Spinner } from '../../../components/ui';
 
 export default function EditMlmPolicyVersionPage() {
   const { versionId } = useParams();
@@ -114,80 +116,91 @@ export default function EditMlmPolicyVersionPage() {
     }
   };
 
-  if (loading) return <div className="p-6">Loading dependencies...</div>;
+  if (loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Spinner label="Loading dependencies…" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Edit Smooth Weighted Round Robin Routes</h1>
-        <div className="space-x-2">
-          <button onClick={handleAddRoute} className="bg-gray-200 text-gray-800 px-4 py-2 rounded shadow hover:bg-gray-300">
-            Add Route
-          </button>
-          <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700">
-            Save Routes
-          </button>
-        </div>
-      </div>
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        eyebrow="Configuration"
+        title="Edit smooth weighted round robin routes"
+        actions={
+          <div className="flex gap-2.5">
+            <Button variant="secondary" onClick={handleAddRoute}>
+              <Plus size={15} /> Add route
+            </Button>
+            <Button onClick={handleSave}>Save routes</Button>
+          </div>
+        }
+      />
 
       <div className="space-y-4">
         {routes.map((route, idx) => {
-          const availableProducts = products.filter(p => 
+          const availableProducts = products.filter(p =>
             (p.lenderId === route.lenderId || (p.lender && p.lender.id === route.lenderId)) &&
             (!policy || !policy.platformProductId || !p.platformProductId || p.platformProductId === policy.platformProductId)
           );
           return (
-            <div key={idx} className="bg-white p-4 rounded shadow border grid grid-cols-6 gap-4 items-end">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Lender</label>
-                <select value={route.lenderId} onChange={(e) => handleChange(idx, 'lenderId', e.target.value)} className="w-full border rounded p-2">
-                  <option value="">Select Lender</option>
-                  {lenders.map(l => (
-                    <option key={l.id} value={l.id}>{l.displayName || l.legalName} ({l.code})</option>
-                  ))}
-                </select>
+            <Card key={idx}>
+              <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-6">
+                <div className="sm:col-span-2">
+                  <Select label="Lender" value={route.lenderId} onChange={(e) => handleChange(idx, 'lenderId', e.target.value)}>
+                    <option value="">Select lender</option>
+                    {lenders.map(l => (
+                      <option key={l.id} value={l.id}>{l.displayName || l.legalName} ({l.code})</option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="sm:col-span-2">
+                  <Select label="Product" value={route.productId} onChange={(e) => handleChange(idx, 'productId', e.target.value)} disabled={!route.lenderId}>
+                    <option value="">Select product</option>
+                    {availableProducts.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700">
+                    Allocation (%)
+                    <input
+                      type="text"
+                      placeholder="e.g. 60.0000"
+                      value={route.allocationPercentage}
+                      onChange={(e) => handleChange(idx, 'allocationPercentage', e.target.value)}
+                      className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2.5 text-[15px] text-neutral-900 shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                    />
+                  </label>
+                </div>
+                <div>
+                  <Select label="Active" value={route.isActive} onChange={(e) => handleChange(idx, 'isActive', e.target.value)}>
+                    <option value={true}>Yes</option>
+                    <option value={false}>No</option>
+                  </Select>
+                </div>
+                <div className="flex justify-end sm:col-span-6">
+                  <button
+                    onClick={() => {
+                      const newRoutes = [...routes];
+                      newRoutes.splice(idx, 1);
+                      setRoutes(newRoutes);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-danger-600 hover:underline"
+                  >
+                    <Trash2 size={14} /> Remove route
+                  </button>
+                </div>
               </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Product</label>
-                <select value={route.productId} onChange={(e) => handleChange(idx, 'productId', e.target.value)} className="w-full border rounded p-2" disabled={!route.lenderId}>
-                  <option value="">Select Product</option>
-                  {availableProducts.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Allocation (%)</label>
-                <input type="text" placeholder="e.g. 60.0000" value={route.allocationPercentage} onChange={(e) => handleChange(idx, 'allocationPercentage', e.target.value)} className="w-full border rounded p-2" />
-              </div>
-              <div className="flex flex-col gap-1 items-end">
-                <label className="block text-sm font-medium">Active</label>
-                <select value={route.isActive} onChange={(e) => handleChange(idx, 'isActive', e.target.value)} className="border rounded p-2">
-                   <option value={true}>Yes</option>
-                   <option value={false}>No</option>
-                </select>
-              </div>
-              <div className="col-span-6 flex justify-end">
-                <button onClick={() => {
-                  const newRoutes = [...routes];
-                  newRoutes.splice(idx, 1);
-                  setRoutes(newRoutes);
-                }} className="text-red-500 hover:underline text-sm font-medium">Remove Route</button>
-              </div>
-            </div>
+            </Card>
           );
         })}
-        {routes.length === 0 && <div className="text-center p-8 bg-gray-50 border rounded text-gray-500">No routes configured yet. Add one above.</div>}
-      </div>
-      <div className="mt-8 p-4 bg-gray-100 rounded text-xs overflow-auto">
-        <pre>
-          {JSON.stringify({
-            policyPlatformProductId: policy?.platformProductId,
-            routes,
-            availableProductsRoute0: routes[0] ? products.filter(p => (p.lenderId === routes[0].lenderId || (p.lender && p.lender.id === routes[0].lenderId)) && (policy && p.platformProductId === policy.platformProductId)).map(p => p.id) : [],
-            products: products.map(p => ({ id: p.id, lenderId: p.lenderId, platformProductId: p.platformProductId }))
-          }, null, 2)}
-        </pre>
+        {routes.length === 0 && (
+          <EmptyState title="No routes configured yet" description="Add a route above to get started." />
+        )}
       </div>
     </div>
   );

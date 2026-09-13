@@ -67,8 +67,8 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-      <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+    <div className="bg-white rounded-xl shadow-sm border border-neutral-200">
+      <div className="px-6 py-4 border-b border-neutral-200 flex justify-between items-center">
         <h2 className="text-lg font-semibold">Rules Configuration</h2>
         <Button 
           variant="outline" 
@@ -98,11 +98,11 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
             const canBeDisabled = def?.canBeDisabled;
             
             return (
-              <div key={field.id} className="p-4 border border-gray-200 rounded-lg bg-gray-50 flex gap-4">
+              <div key={field.id} className="p-4 border border-neutral-200 rounded-lg bg-neutral-50 flex gap-4">
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Rule Code */}
                   <div className="col-span-1 lg:col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Rule Condition {isMandatory && '*'}</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Rule Condition {isMandatory && '*'}</label>
                     <select
                       {...register(`rules.${index}.ruleCode`, {
                         onChange: (e) => {
@@ -121,7 +121,7 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                           }
                         }
                       })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                      className="w-full px-3 py-2 border border-neutral-300 rounded text-sm"
                     >
                       {catalog.map(c => (
                         <option key={c.ruleCode} value={c.ruleCode}>{c.ruleName}</option>
@@ -131,10 +131,10 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
 
                   {/* Operator */}
                   <div className="col-span-1 lg:col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Operator</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Operator</label>
                     <select
                       {...register(`rules.${index}.operator`)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                      className="w-full px-3 py-2 border border-neutral-300 rounded text-sm"
                     >
                       {def?.supportedOperators.map(op => (
                         <option key={op} value={op}>{op}</option>
@@ -144,12 +144,12 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
 
                   {/* Expected Value */}
                   <div className="col-span-1 lg:col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Expected Value {def?.valueType === 'STRING_ARRAY' && '(comma separated)'}</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Expected Value {def?.valueType === 'STRING_ARRAY' && '(comma separated)'}</label>
                     {(!watchRules[index]?.operator?.startsWith('IS_')) ? (
                       <input
                         type="text"
                         {...register(`rules.${index}.expectedValue`)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded text-sm"
                         placeholder="Expected Value..."
                       />
                     ) : (
@@ -157,17 +157,17 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                         type="text"
                         disabled
                         value="N/A"
-                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm bg-gray-100 text-gray-500 cursor-not-allowed"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded text-sm bg-neutral-100 text-neutral-500 cursor-not-allowed"
                       />
                     )}
                   </div>
 
                   {/* Failure Outcome */}
                   <div className="col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Failure Outcome</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Failure Outcome</label>
                     <select
                       {...register(`rules.${index}.failureOutcome`)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                      className="w-full px-3 py-2 border border-neutral-300 rounded text-sm"
                     >
                       <option value="FAIL">FAIL</option>
                     </select>
@@ -175,26 +175,26 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
 
                   {/* Reason Code */}
                   <div className="col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Reason Code</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Reason Code</label>
                     <input
                       type="text"
                       {...register(`rules.${index}.reasonCode`)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                      className="w-full px-3 py-2 border border-neutral-300 rounded text-sm"
                       placeholder="e.g. AGE_FAIL"
                     />
-                    {errors.rules?.[index]?.reasonCode && <span className="text-red-500 text-xs">{errors.rules[index].reasonCode.message}</span>}
+                    {errors.rules?.[index]?.reasonCode && <span className="text-danger-500 text-xs">{errors.rules[index].reasonCode.message}</span>}
                   </div>
 
                   {/* Customer Message */}
                   <div className="col-span-1 lg:col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Customer Message</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Customer Message</label>
                     <input
                       type="text"
                       {...register(`rules.${index}.customerMessage`)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                      className="w-full px-3 py-2 border border-neutral-300 rounded text-sm"
                       placeholder="Message shown to applicant"
                     />
-                    {errors.rules?.[index]?.customerMessage && <span className="text-red-500 text-xs">{errors.rules[index].customerMessage.message}</span>}
+                    {errors.rules?.[index]?.customerMessage && <span className="text-danger-500 text-xs">{errors.rules[index].customerMessage.message}</span>}
                   </div>
 
                   {/* Active Toggle */}
@@ -203,13 +203,13 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                       <input
                         type="checkbox"
                         {...register(`rules.${index}.isActive`)}
-                        className="w-4 h-4 text-blue-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-4 h-4 text-info-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={canBeDisabled === false}
                       />
-                      <span className="text-sm font-medium text-gray-700">Active</span>
+                      <span className="text-sm font-medium text-neutral-700">Active</span>
                     </label>
                     {isMandatory && watchRules[index]?.isActive === false && (
-                      <span className="text-xs text-amber-600 mt-1 flex items-start gap-1">
+                      <span className="text-xs text-caution-600 mt-1 flex items-start gap-1">
                         ⚠️ Mandatory rule is inactive
                       </span>
                     )}
@@ -217,18 +217,18 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                 </div>
                 
                 {/* Actions */}
-                <div className="flex flex-col items-center justify-start pt-6 border-l border-gray-200 pl-4 ml-2">
+                <div className="flex flex-col items-center justify-start pt-6 border-l border-neutral-200 pl-4 ml-2">
                   {!isMandatory ? (
                     <button
                       type="button"
                       onClick={() => remove(index)}
-                      className="text-gray-400 hover:text-red-500 transition-colors"
+                      className="text-neutral-400 hover:text-danger-500 transition-colors"
                       title="Remove Rule"
                     >
                       <TrashIcon className="w-5 h-5" />
                     </button>
                   ) : (
-                    <div className="text-gray-300" title="Mandatory rules cannot be removed">
+                    <div className="text-neutral-300" title="Mandatory rules cannot be removed">
                       <TrashIcon className="w-5 h-5" />
                     </div>
                   )}
@@ -237,7 +237,7 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
             );
           })}
           {fields.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-neutral-500">
               No rules configured yet. Click "Add Rule" to begin.
             </div>
           )}

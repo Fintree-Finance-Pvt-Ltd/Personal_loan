@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
-import { Alert, Card, Input, PageHeader, Select, Spinner } from '../../../components/ui';
+import { Alert, Button, Input, PageHeader, Select, Spinner, TableShell } from '../../../components/ui';
 import { StageStatusBadge } from '../components/StageStatusBadge';
 
 // PlApplicationStatus — where LENDER_APPROVED is as far as the application record
@@ -85,8 +86,9 @@ export default function ApplicationsPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="p-6">
+    <div>
       <PageHeader
+        eyebrow="Operations"
         title="Applications"
         description="Every loan application on the platform — click through to see lender integration stages and retry failed calls."
       />
@@ -132,98 +134,95 @@ export default function ApplicationsPage() {
             </optgroup>
           </Select>
         </div>
-        <button
-          type="submit"
-          className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-brand-700"
-        >
-          Search
-        </button>
+        <Button type="submit">
+          <Search size={15} /> Search
+        </Button>
       </form>
 
-      <Card className="!p-0 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
+      <TableShell>
+        <thead className="border-b border-neutral-200 bg-neutral-50">
+          <tr>
+            <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Application</th>
+            <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Customer</th>
+            <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+            <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Lender</th>
+            <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Amount</th>
+            <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Updated</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-neutral-100">
+          {loading ? (
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Application</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lender</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Updated</th>
+              <td colSpan="6" className="px-5 py-10 text-center">
+                <Spinner />
+              </td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan="6" className="px-6 py-8 text-center">
-                  <Spinner />
+          ) : applications.length === 0 ? (
+            <tr>
+              <td colSpan="6" className="px-5 py-10 text-center text-neutral-500">
+                No applications found.
+              </td>
+            </tr>
+          ) : (
+            applications.map((application) => (
+              <tr key={application.applicationId} className="hover:bg-neutral-50/70">
+                <td className="px-5 py-3.5">
+                  <Link
+                    to={`/admin-master/applications/${application.applicationId}`}
+                    className="font-semibold text-brand-700 hover:underline"
+                  >
+                    {application.applicationNumber}
+                  </Link>
+                  {application.platformLan && (
+                    <div className="text-xs text-neutral-500">{application.platformLan}</div>
+                  )}
+                </td>
+                <td className="px-5 py-3.5">
+                  <div className="font-medium text-ink">{application.customerName}</div>
+                  <div className="font-numeric text-xs text-neutral-500">{application.customerMobile}</div>
+                </td>
+                <td className="px-5 py-3.5">
+                  <StageStatusBadge value={application.status} />
+                </td>
+                <td className="px-5 py-3.5">{application.lenderCode || '-'}</td>
+                <td className="font-numeric px-5 py-3.5 font-semibold text-ink">
+                  {formatCurrency(
+                    application.approvedAmount ?? application.selectedAmount ?? application.requestedAmount,
+                  )}
+                </td>
+                <td className="px-5 py-3.5 text-sm text-neutral-500">
+                  {new Date(application.updatedAt).toLocaleString('en-IN')}
                 </td>
               </tr>
-            ) : applications.length === 0 ? (
-              <tr>
-                <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
-                  No applications found.
-                </td>
-              </tr>
-            ) : (
-              applications.map((application) => (
-                <tr key={application.applicationId} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <Link
-                      to={`/admin-master/applications/${application.applicationId}`}
-                      className="font-medium text-brand-700 hover:underline"
-                    >
-                      {application.applicationNumber}
-                    </Link>
-                    {application.platformLan && (
-                      <div className="text-xs text-gray-500">{application.platformLan}</div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div>{application.customerName}</div>
-                    <div className="text-xs text-gray-500">{application.customerMobile}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <StageStatusBadge value={application.status} />
-                  </td>
-                  <td className="px-6 py-4">{application.lenderCode || '-'}</td>
-                  <td className="px-6 py-4">
-                    {formatCurrency(
-                      application.approvedAmount ?? application.selectedAmount ?? application.requestedAmount,
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {new Date(application.updatedAt).toLocaleString('en-IN')}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Card>
+            ))
+          )}
+        </tbody>
+      </TableShell>
 
       {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+        <div className="mt-4 flex items-center justify-between text-sm text-neutral-600">
           <span>
             Page {page} of {totalPages} ({total} total)
           </span>
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
+              variant="secondary"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 disabled:opacity-50"
+              className="!min-h-9 !px-3 text-sm"
             >
-              Previous
-            </button>
-            <button
+              <ChevronLeft size={15} /> Previous
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 disabled:opacity-50"
+              className="!min-h-9 !px-3 text-sm"
             >
-              Next
-            </button>
+              Next <ChevronRight size={15} />
+            </Button>
           </div>
         </div>
       )}

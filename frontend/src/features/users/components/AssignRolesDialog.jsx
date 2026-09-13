@@ -25,34 +25,34 @@ export function AssignRolesDialog({ open, currentRoleIds, onConfirm, onCancel, b
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-neutral-950/45 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-        <h2 className="text-lg font-bold text-slate-900">Assign roles</h2>
-        <p className="mt-1 text-sm text-slate-500">Select one or more active roles for this user.</p>
+        <h2 className="text-lg font-bold text-neutral-900">Assign roles</h2>
+        <p className="mt-1 text-sm text-neutral-500">Select one or more active roles for this user.</p>
 
         {error && <Alert className="mt-3">{error}</Alert>}
         {loading ? (
           <div className="flex justify-center py-10 text-brand-700"><Spinner label="Loading roles" /></div>
         ) : (
-          <div className="mt-4 max-h-80 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200">
+          <div className="mt-4 max-h-80 overflow-y-auto divide-y divide-neutral-100 rounded-xl border border-neutral-200">
             {allRoles.map(role => (
-              <label key={role.id} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-slate-50">
+              <label key={role.id} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-neutral-50">
                 <input
                   type="checkbox"
                   checked={selected.includes(role.id)}
                   onChange={() => toggle(role.id)}
-                  className="h-4 w-4 rounded border-slate-300 text-brand-600"
+                  className="h-4 w-4 rounded border-neutral-300 text-brand-600"
                 />
                 <div>
-                  <p className="font-semibold text-sm text-slate-900">{role.name}</p>
-                  <p className="font-mono text-xs text-slate-400">{role.code}</p>
+                  <p className="font-semibold text-sm text-neutral-900">{role.name}</p>
+                  <p className="font-mono text-xs text-neutral-400">{role.code}</p>
                 </div>
               </label>
             ))}
           </div>
         )}
 
-        <p className="mt-3 text-xs text-slate-500">{selected.length} role{selected.length !== 1 ? 's' : ''} selected</p>
+        <p className="mt-3 text-xs text-neutral-500">{selected.length} role{selected.length !== 1 ? 's' : ''} selected</p>
         <div className="mt-5 flex justify-end gap-3">
           <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>
           <Button type="button" onClick={() => onConfirm(selected)} disabled={busy || selected.length === 0}>

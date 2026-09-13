@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Pencil } from 'lucide-react';
 import { platformPoliciesApi } from '../api/platform-policies.api';
-import { Button } from '../../../components/ui';
+import { Alert, Badge, Button, Card, PageHeader, Panel, Spinner, TableShell } from '../../../components/ui';
 import PolicySimulationPanel from '../components/PolicySimulationPanel';
 
 export default function PlatformPolicyDetailsPage() {
@@ -61,63 +62,71 @@ export default function PlatformPolicyDetailsPage() {
     }
   };
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (error || !policy) return <div className="p-8 text-red-500">{error || 'Not found'}</div>;
+  if (loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Spinner label="Loading policy…" />
+      </div>
+    );
+  }
+
+  if (error || !policy) {
+    return <Alert>{error || 'Policy not found.'}</Alert>;
+  }
 
   const latestVersion = policy.versions?.[0];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-2xl font-bold text-gray-900">{policy.name}</h1>
-            <span className={`px-2 py-1 text-xs font-medium rounded-full ${policy.operationalStatus === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-              {policy.operationalStatus}
-            </span>
-          </div>
-          <p className="text-sm text-gray-500 font-mono">{policy.code}</p>
-          <p className="mt-2 text-gray-700">{policy.description}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-500 mb-2">To edit an active policy, create a new version.</p>
-          <Button onClick={handleCreateVersion}>Clone New Version</Button>
-        </div>
-      </div>
+    <div>
+      <PageHeader eyebrow="Configuration" title={policy.name} description={policy.code} />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-lg font-semibold">Version History</h2>
+      <Card className="mb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="mb-1.5 flex items-center gap-3">
+              <Badge tone={policy.operationalStatus === 'ACTIVE' ? 'brand' : 'neutral'}>
+                {policy.operationalStatus}
+              </Badge>
+            </div>
+            <p className="text-neutral-700">{policy.description}</p>
+          </div>
+          <div className="text-right">
+            <p className="mb-2 text-sm text-neutral-500">To edit an active policy, create a new version.</p>
+            <Button onClick={handleCreateVersion}>Clone new version</Button>
+          </div>
         </div>
-        <table className="w-full text-left text-sm">
-          <thead className="bg-gray-50 text-gray-500 font-medium">
+      </Card>
+
+      <Panel title="Version history" className="mb-6">
+        <TableShell>
+          <thead className="border-b border-neutral-200 bg-neutral-50">
             <tr>
-              <th className="p-4">Version</th>
-              <th className="p-4">Status</th>
-              <th className="p-4">Rules</th>
-              <th className="p-4 text-right">Actions</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Version</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Status</th>
+              <th className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-neutral-500">Rules</th>
+              <th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-neutral-500">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-neutral-100">
             {policy.versions?.map(v => (
-              <tr key={v.id} className="hover:bg-gray-50">
-                <td className="p-4 font-medium">v{v.versionNumber}</td>
-                <td className="p-4">
-                  <span className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-full">{v.status}</span>
+              <tr key={v.id} className="hover:bg-neutral-50/70">
+                <td className="font-numeric px-5 py-3.5 font-semibold text-ink">v{v.versionNumber}</td>
+                <td className="px-5 py-3.5">
+                  <Badge tone="info">{v.status}</Badge>
                 </td>
-                <td className="p-4">{v.rules?.length || 0} configured rules</td>
-                <td className="p-4 text-right space-x-2">
+                <td className="px-5 py-3.5 text-neutral-600">{v.rules?.length || 0} configured rules</td>
+                <td className="space-x-2 px-5 py-3.5 text-right">
                   {(v.status === 'DRAFT' || v.status === 'REJECTED') && (
                     <>
-                      <Link to={`/admin-master/platform-policies/${policy.id}/versions/${v.id}/edit`}>
-                        <Button variant="outline" size="sm">Edit Rules</Button>
-                      </Link>
+                      <Button as={Link} to={`/admin-master/platform-policies/${policy.id}/versions/${v.id}/edit`} variant="secondary" size="sm">
+                        <Pencil size={13} /> Edit rules
+                      </Button>
                       <Button variant="primary" size="sm" onClick={() => handleSubmitVersion(v)}>Submit</Button>
                     </>
                   )}
                   {v.status === 'SUBMITTED' && (
                     <>
-                      <Button variant="success" size="sm" onClick={() => handleApproveVersion(v)}>Approve</Button>
+                      <Button variant="primary" size="sm" onClick={() => handleApproveVersion(v)}>Approve</Button>
                       <Button variant="danger" size="sm" onClick={() => alert('Reject not yet implemented in UI')}>Reject</Button>
                     </>
                   )}
@@ -128,8 +137,8 @@ export default function PlatformPolicyDetailsPage() {
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+        </TableShell>
+      </Panel>
 
       {latestVersion && (
         <PolicySimulationPanel versionId={latestVersion.id} rules={latestVersion.rules || []} />

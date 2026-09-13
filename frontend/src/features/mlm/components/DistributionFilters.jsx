@@ -1,60 +1,57 @@
 import { Filter, RefreshCw } from 'lucide-react';
+import { Card, Button } from '../../../components/ui';
 
-export default function DistributionFilters({ 
-  platformProducts, 
-  filters, 
-  onChange, 
-  onRefresh, 
-  isLoading 
+export default function DistributionFilters({
+  platformProducts,
+  filters,
+  onChange,
+  onRefresh,
+  isLoading
 }) {
   return (
-    <div className="bg-white p-4 rounded-lg shadow mb-6 border border-gray-200">
-      <div className="flex flex-col md:flex-row items-center gap-4">
-        <div className="flex items-center text-gray-500 font-medium">
-          <Filter size={18} className="mr-2" />
+    <Card className="mb-6">
+      <div className="flex flex-col items-center gap-4 md:flex-row">
+        <div className="flex items-center gap-1.5 font-semibold text-neutral-500">
+          <Filter size={16} />
           Filters
         </div>
 
-        <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid w-full flex-1 grid-cols-1 gap-4 md:grid-cols-4">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Platform Product</label>
-            <select 
-              className="w-full text-sm border-gray-300 rounded shadow-sm focus:ring-blue-500 focus:border-blue-500 py-1.5"
+            <label className="mb-1 block text-xs font-semibold text-neutral-500">Platform product</label>
+            <select
+              className="w-full rounded-lg border border-neutral-300 bg-white py-2 text-sm shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               value={filters.platformProductId || ''}
               onChange={(e) => onChange('platformProductId', e.target.value)}
             >
-              <option value="">Select Platform Product</option>
+              <option value="">Select platform product</option>
               {platformProducts.map(p => (
                 <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
               ))}
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Readiness</label>
-            <select 
-              className="w-full text-sm border-gray-300 rounded shadow-sm focus:ring-blue-500 focus:border-blue-500 py-1.5"
+            <label className="mb-1 block text-xs font-semibold text-neutral-500">Readiness</label>
+            <select
+              className="w-full rounded-lg border border-neutral-300 bg-white py-2 text-sm shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
               value={filters.readiness || ''}
               onChange={(e) => onChange('readiness', e.target.value)}
             >
-              <option value="">All Statuses</option>
+              <option value="">All statuses</option>
               <option value="READY">Ready</option>
-              <option value="NOT_READY_LENDER">Lender Inactive</option>
-              <option value="NOT_READY_PRODUCT">Product Inactive</option>
-              <option value="NOT_READY_STRATEGY">Strategy Inactive</option>
+              <option value="NOT_READY_LENDER">Lender inactive</option>
+              <option value="NOT_READY_PRODUCT">Product inactive</option>
+              <option value="NOT_READY_STRATEGY">Strategy inactive</option>
             </select>
           </div>
         </div>
 
-        <button 
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="ml-auto flex items-center px-4 py-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors font-medium text-sm disabled:opacity-50"
-        >
-          <RefreshCw size={16} className={`mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+        <Button variant="secondary" onClick={onRefresh} disabled={isLoading} className="ml-auto shrink-0">
+          <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
           Refresh
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
