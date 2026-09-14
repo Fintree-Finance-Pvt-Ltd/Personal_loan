@@ -16,7 +16,7 @@ const schema = z
     JWT_ISSUER: z.string().min(3).max(100),
     JWT_AUDIENCE: z.string().min(3).max(100),
     CUSTOMER_JWT_ACCESS_SECRET: z.string().min(32).optional(),
-    CUSTOMER_JWT_ACCESS_EXPIRES_IN: z.string().regex(/^\d+(s|m|h|d|w)?$/).default('15m'),
+    CUSTOMER_JWT_ACCESS_EXPIRES_IN: z.string().regex(/^\d+(s|m|h|d|w)?$/).default('365d'),
     REFRESH_TOKEN_PEPPER: z.string().min(32),
     REFRESH_SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(8),
     REFRESH_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
@@ -25,7 +25,7 @@ const schema = z
     // redirects and multi-day gaps, and a stolen refresh token isn't actually blocked by
     // a short idle window anyway since reusing it just resets the clock. The real control
     // is this absolute cap, which forces a fresh OTP login regardless of activity.
-    CUSTOMER_REFRESH_SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+    CUSTOMER_REFRESH_SESSION_DAYS: z.coerce.number().int().min(1).max(3650).default(365),
     LOGIN_MAX_FAILED_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
     LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
     COOKIE_NAME: z.string().regex(/^[A-Za-z0-9_-]+$/),
