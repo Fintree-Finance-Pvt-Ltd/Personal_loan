@@ -24,6 +24,11 @@ pipeline {
   environment {
     UAT_DIR  = '/var/www/personal-loan-uat'
     PROD_DIR = '/var/www/finle-prod'
+    // Skip Puppeteer's own Chrome-for-Testing download on every `npm ci` — it was failing
+    // against this VPS's network and isn't needed anyway: the app launches a system-
+    // installed Chromium instead (see PUPPETEER_EXECUTABLE_PATH in each environment's
+    // backend/.env, read at runtime, separate from this build-time-only variable).
+    PUPPETEER_SKIP_DOWNLOAD = 'true'
   }
 
   stages {
