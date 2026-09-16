@@ -14,6 +14,8 @@
 // State is a single JSON file on disk (tokens.json) — this only ever needs to hold a
 // handful of short-lived entries, a real database would be overkill.
 
+require('dotenv').config();
+
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
