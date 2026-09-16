@@ -26,6 +26,12 @@ export class LoanAgreementService implements OnModuleDestroy {
     if (!this.browserPromise) {
       this.browserPromise = puppeteer.launch({
         headless: true,
+        // Use a system-installed Chromium when PUPPETEER_EXECUTABLE_PATH is set (CI/server
+        // deploys — see PUPPETEER_SKIP_DOWNLOAD in .env.example) instead of the copy
+        // Puppeteer would otherwise download for itself on every `npm ci`. Falls back to
+        // Puppeteer's own bundled Chrome (its default) when the variable isn't set, e.g.
+        // local dev.
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
