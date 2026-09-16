@@ -32,6 +32,38 @@ pipeline {
   }
 
   stages {
+    stage('Prepare CI env') {
+      steps {
+        // The Jenkins WORKSPACE checkout (used only for build/lint/test validation) is a
+        // separate folder from the live deploy directories and never has a real .env —
+        // but `prisma generate` and the app's own Zod-validated config (src/config/
+        // environment.ts) both require every field with no default to be present. These
+        // are throwaway placeholder values that are never used to reach a real database
+        // or external service; the real secrets live only in each deploy folder's own
+        // untouched .env (see the setup guide) and this stage never runs there.
+        dir('backend') {
+          sh '''
+            cat > .env <<'ENVEOF'
+NODE_ENV=test
+PORT=3005
+DATABASE_URL=mysql://ci:ci@localhost:3306/ci_placeholder
+FRONTEND_URL=http://localhost:5173
+JWT_ACCESS_SECRET=ci-placeholder-value-not-a-real-secret-0123456789
+JWT_ISSUER=personal-loan-platform-ci
+JWT_AUDIENCE=personal-loan-admin-ci
+REFRESH_TOKEN_PEPPER=ci-placeholder-value-not-a-real-secret-0123456789
+COOKIE_NAME=plp_admin_refresh_ci
+SECURITY_HMAC_KEY=ci-placeholder-value-not-a-real-secret-0123456789
+DOCUMENT_URL_SIGNING_KEY=ci-placeholder-value-not-a-real-secret-0123456789
+BANK_ACCOUNT_ENCRYPTION_KEY=ci-placeholder-value-not-a-real-secret-0123456789
+BANK_ACCOUNT_HMAC_KEY=ci-placeholder-value-not-a-real-secret-0123456789
+AUDIT_INTEGRITY_KEY=ci-placeholder-value-not-a-real-secret-0123456789
+ENVEOF
+          '''
+        }
+      }
+    }
+
     stage('Install backend deps') {
       steps {
         dir('backend') {
