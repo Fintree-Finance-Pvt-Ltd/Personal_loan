@@ -29,6 +29,10 @@ pipeline {
     // installed Chromium instead (see PUPPETEER_EXECUTABLE_PATH in each environment's
     // backend/.env, read at runtime, separate from this build-time-only variable).
     PUPPETEER_SKIP_DOWNLOAD = 'true'
+    // Where the ci-approval-relay service (tools/ci-approval-relay) is reachable, and who
+    // gets emailed when a prod deploy is waiting on approval. See that folder's README.
+    CI_RELAY_URL        = 'https://ci.yourdomain.com/approvals'
+    PROD_APPROVAL_EMAIL = 'you@fintreefinance.com'
   }
 
   stages {
@@ -142,10 +146,58 @@ ENVEOF
     stage('Approve production deploy') {
       when { branch 'main' }
       steps {
-        // Requires a human to click "Proceed" in the Jenkins UI. Auto-deploying prod on
-        // every push to main is exactly the kind of high-blast-radius action that should
-        // never happen unattended.
-        input message: 'Deploy this build to PRODUCTION?', ok: 'Deploy to prod'
+        // Auto-deploying prod on every push to main is exactly the kind of high-blast-
+        // radius action that should never happen unattended — this stage blocks on
+        // Jenkins' own `input` step until someone approves or rejects it. Approval can
+        // come two ways: clicking Proceed/Abort directly in the Jenkins UI (always
+        // available as a fallback), or via the email below, whose button-links open the
+        // ci-approval-relay service (tools/ci-approval-relay) instead — which calls this
+        // exact input step's REST API on the approver's behalf. Either path unblocks the
+        // same step; nothing runs twice.
+        withCredentials([string(credentialsId: 'ci-relay-shared-secret', variable: 'RELAY_SECRET')]) {
+          script {
+            def token = sh(script: 'openssl rand -hex 24', returnStdout: true).trim()
+            def pusherName = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+            def pusherEmail = sh(script: 'git log -1 --pretty=%ae', returnStdout: true).trim()
+            def commitMsg = sh(script: 'git log -1 --pretty=%s', returnStdout: true).trim()
+
+            writeFile file: 'register-payload.json', text: groovy.json.JsonOutput.toJson([
+              token: token,
+              jobName: env.JOB_NAME,
+              buildNumber: env.BUILD_NUMBER,
+              inputId: 'prod-approval',
+              pusherName: pusherName,
+              pusherEmail: pusherEmail,
+              commitMessage: commitMsg,
+              branch: 'main',
+            ])
+
+            sh """
+              set -e
+              curl -sf -X POST '${CI_RELAY_URL}/register' \
+                -H 'Content-Type: application/json' \
+                -H "x-relay-secret: \$RELAY_SECRET" \
+                --data @register-payload.json
+            """
+
+            emailext(
+              to: "${PROD_APPROVAL_EMAIL}",
+              subject: "Action needed: approve prod deploy — build #${env.BUILD_NUMBER}",
+              mimeType: 'text/html',
+              body: """
+                <p><strong>${pusherName}</strong> (${pusherEmail}) pushed to <code>main</code>:</p>
+                <p style="color:#4b5a5c">&ldquo;${commitMsg}&rdquo;</p>
+                <p>Build #${env.BUILD_NUMBER} is built, tested, and ready — review and decide:</p>
+                <p>
+                  <a href="${CI_RELAY_URL}/a/${token}" style="display:inline-block;padding:12px 24px;background:#1b7a4d;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Review &amp; Approve / Reject</a>
+                </p>
+                <p style="color:#94a3a3;font-size:12px">This link works once and expires in 3 days. Console log: ${env.BUILD_URL}console</p>
+              """,
+            )
+          }
+        }
+
+        input message: 'Waiting for approval — via the emailed link, or click Proceed here directly.', ok: 'Deploy to prod', id: 'prod-approval'
       }
     }
 

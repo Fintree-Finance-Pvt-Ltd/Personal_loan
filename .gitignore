@@ -12,6 +12,9 @@ frontend/dist/
 frontend/.env.local
 frontend/.env
 !frontend/.env.example
+tools/ci-approval-relay/.env
+!tools/ci-approval-relay/.env.example
+tools/ci-approval-relay/tokens.json
 .mcp.json
 SECURITY_AUDIT_REPORT.md
 
