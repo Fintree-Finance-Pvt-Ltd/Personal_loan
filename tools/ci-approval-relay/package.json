@@ -1,0 +1,17 @@
+{
+  "name": "ci-approval-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone approval page for the Jenkins prod-deploy email gate.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
