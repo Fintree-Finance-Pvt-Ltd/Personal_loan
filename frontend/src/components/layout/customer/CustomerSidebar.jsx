@@ -1,5 +1,6 @@
 import {
   FileText,
+  Gift,
   HelpCircle,
   Home,
   LogOut,
@@ -25,6 +26,11 @@ const menuItems = [
     label: 'Loan Details',
     path: '/customer/loan-details',
     icon: WalletCards,
+  },
+  {
+    label: 'Refer & Earn',
+    path: '/customer/referral',
+    icon: Gift,
   },
   {
     label: 'My Profile',

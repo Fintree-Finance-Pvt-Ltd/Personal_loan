@@ -15,11 +15,13 @@ import DigiLockerCallbackPage from './features/customer/pages/DigiLockerCallback
 import MandateResultPage from './features/customer/pages/MandateResultPage';
 import { CustomerLoanDetailsPage } from './features/customer/pages/CustomerLoanDetailsPage';
 import { CustomerProfilePage } from './features/customer/pages/CustomerProfilePage';
+import ReferralEarnPage from './features/customer/pages/ReferralEarnPage';
 
 // Admin auth + core
 import { LoginPage } from './features/auth/pages/LoginPage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { DebitRequestsPage } from './features/admin/pages/DebitRequestsPage';
+import { ReferralManagementPage } from './features/admin/pages/ReferralManagementPage';
 import { SessionsPage } from './features/admin/pages/SessionsPage';
 
 // Lenders
@@ -97,6 +99,7 @@ export default function App() {
         <Route path="/customer/loan/:lan/details" element={<CustomerLoanDetailsPage />} />
         <Route path="/customer/loan-details" element={<CustomerLoanDetailsPage />} />
         <Route path="/customer/profile" element={<CustomerProfilePage />} />
+        <Route path="/customer/referral" element={<ReferralEarnPage />} />
         <Route path="/customer/support" element={<CustomerSupportPage />} />
       </Route>
 
@@ -192,6 +195,16 @@ export default function App() {
             element={
               <PermissionRoute permission="APPLICATION_VIEW_MASKED">
                 <CreditReviewPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Referral Management */}
+          <Route
+            path="/admin-master/referrals"
+            element={
+              <PermissionRoute permission="ADMIN_DASHBOARD_VIEW">
+                <ReferralManagementPage />
               </PermissionRoute>
             }
           />

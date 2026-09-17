@@ -7,8 +7,10 @@ import { SmsService } from './sms/sms.service';
 import { AttributionService } from '../customer/attribution.service';
 import { JwtModule } from '@nestjs/jwt';
 
+import { ReferralModule } from '../referral/referral.module';
+
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), ReferralModule],
   controllers: [OtpController],
   providers: [
     OtpService,

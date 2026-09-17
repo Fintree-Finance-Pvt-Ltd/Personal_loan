@@ -705,6 +705,10 @@ model Customer {
   ivrCallLogs               IvrCallLog[]
   whatsappMessageLogs       PlWhatsappMessageLog[]
   attribution               CustomerAttribution?
+  referredBy                CustomerReferralMapping?  @relation("ReferredCustomer")
+  referralsMade             CustomerReferralMapping[] @relation("ReferrerCustomer")
+  benefits                  CustomerBenefit[]
+  benefitUsages             BenefitUsageHistory[]
 
 
   @@index([email], map: "idx_customers_email")
@@ -1329,6 +1333,7 @@ model PlApplication {
   lenderApplicationLink     LenderApplicationLink?
   lenderIntegrationOutbox   LenderIntegrationOutbox[]
   lenderDataSharingConsents LenderDataSharingConsent[]
+  benefitUsages             BenefitUsageHistory[]
   employmentSnapshot        ApplicationEmploymentSnapshot?
   kycSnapshot               ApplicationKycSnapshot?
   addresses                 ApplicationAddress[]
@@ -1802,6 +1807,7 @@ model PlLoan {
   allocations                PlRepaymentAllocation[]
   charges                    PlLoanCharge[]
   debitRequests              EasebuzzDebitRequest[]
+  benefitUsages              BenefitUsageHistory[]
 
   @@unique([applicationId], map: "uk_pl_loans_application_id")
   @@index([customerId], map: "idx_pl_loans_customer_id")
@@ -3279,5 +3285,128 @@ model ApplicationAttribution {
   @@index([partnerCode], map: "idx_app_attr_partner_code")
   @@index([referralCode], map: "idx_app_attr_referral_code")
   @@map("application_attributions")
+}
+
+// ── Referral Module Enums & Models ───────────────────────────────────────
+
+enum ReferralRewardType {
+  PROCESSING_FEE_DISCOUNT
+}
+
+enum ReferralDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum ReferralCampaignStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CustomerReferralStatus {
+  PENDING
+  QUALIFIED
+  EXPIRED
+  CANCELLED
+}
+
+enum CustomerBenefitStatus {
+  AVAILABLE
+  APPLIED
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+model ReferralCampaign {
+  id                      BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  campaignName            String                 @map("campaign_name") @db.VarChar(150)
+  rewardType              ReferralRewardType     @default(PROCESSING_FEE_DISCOUNT) @map("reward_type")
+  discountType            ReferralDiscountType   @default(PERCENTAGE) @map("discount_type")
+  discountValue           Decimal                @map("discount_value") @db.Decimal(10, 2)
+  maxDiscountLimit        Decimal                @map("max_discount_limit") @db.Decimal(15, 2)
+  minReferralRequirement  Int                    @default(1) @map("min_referral_requirement")
+  applicableLoanNumber    Int                    @default(2) @map("applicable_loan_number")
+  validityDays            Int                    @default(90) @map("validity_days")
+  status                  ReferralCampaignStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  benefits CustomerBenefit[]
+
+  @@index([status], map: "idx_referral_campaign_status")
+  @@map("referral_campaigns")
+}
+
+model CustomerReferralMapping {
+  id                 BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  referrerCustomerId BigInt                 @map("referrer_customer_id") @db.UnsignedBigInt
+  referrer           Customer               @relation("ReferrerCustomer", fields: [referrerCustomerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  referredCustomerId BigInt                 @unique @map("referred_customer_id") @db.UnsignedBigInt
+  referred           Customer               @relation("ReferredCustomer", fields: [referredCustomerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  referralCode       String                 @map("referral_code") @db.VarChar(30)
+  status             CustomerReferralStatus @default(PENDING)
+  disbursedAt        DateTime?              @map("disbursed_at") @db.DateTime(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  benefits CustomerBenefit[]
+
+  @@index([referrerCustomerId], map: "idx_cust_ref_referrer_id")
+  @@index([referredCustomerId], map: "idx_cust_ref_referred_id")
+  @@index([referralCode], map: "idx_cust_ref_code")
+  @@index([status], map: "idx_cust_ref_status")
+  @@map("customer_referral_mappings")
+}
+
+model CustomerBenefit {
+  id               BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  customerId       BigInt                @map("customer_id") @db.UnsignedBigInt
+  customer         Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  campaignId       BigInt?               @map("campaign_id") @db.UnsignedBigInt
+  campaign         ReferralCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sourceReferralId BigInt?               @map("source_referral_id") @db.UnsignedBigInt
+  sourceReferral   CustomerReferralMapping? @relation(fields: [sourceReferralId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  benefitType      ReferralRewardType    @default(PROCESSING_FEE_DISCOUNT) @map("benefit_type")
+  discountType     ReferralDiscountType  @default(PERCENTAGE) @map("discount_type")
+  discountValue    Decimal               @map("discount_value") @db.Decimal(10, 2)
+  maxDiscountLimit Decimal               @map("max_discount_limit") @db.Decimal(15, 2)
+  status           CustomerBenefitStatus @default(AVAILABLE)
+  expiryDate       DateTime              @map("expiry_date") @db.DateTime(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+
+  usageHistory BenefitUsageHistory[]
+
+  @@index([customerId], map: "idx_cust_benefit_customer_id")
+  @@index([status], map: "idx_cust_benefit_status")
+  @@index([expiryDate], map: "idx_cust_benefit_expiry")
+  @@map("customer_benefits")
+}
+
+model BenefitUsageHistory {
+  id                   BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  benefitId            BigInt          @map("benefit_id") @db.UnsignedBigInt
+  benefit              CustomerBenefit @relation(fields: [benefitId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  customerId           BigInt          @map("customer_id") @db.UnsignedBigInt
+  customer             Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  applicationId        BigInt?         @map("application_id") @db.UnsignedBigInt
+  application          PlApplication?  @relation(fields: [applicationId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  loanId               BigInt?         @map("loan_id") @db.UnsignedBigInt
+  loan                 PlLoan?         @relation(fields: [loanId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  originalProcessingFee Decimal         @map("original_processing_fee") @db.Decimal(15, 2)
+  discountApplied      Decimal         @map("discount_applied") @db.Decimal(15, 2)
+  finalProcessingFee   Decimal         @map("final_processing_fee") @db.Decimal(15, 2)
+
+  usedAt    DateTime @default(now()) @map("used_at") @db.DateTime(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  @@index([benefitId], map: "idx_benefit_usage_benefit_id")
+  @@index([customerId], map: "idx_benefit_usage_customer_id")
+  @@index([loanId], map: "idx_benefit_usage_loan_id")
+  @@map("benefit_usage_histories")
 }
 

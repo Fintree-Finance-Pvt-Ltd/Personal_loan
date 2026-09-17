@@ -20,6 +20,7 @@ import { SigningStorageService } from '../electronic-sign/services/signing-stora
 import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
 import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 import { WhatsAppAutomationService } from '../integrations/whatsapp/whatsapp-automation.service';
+import { ReferralService } from '../referral/referral.service';
 
 @Injectable()
 export class LoanService {
@@ -39,6 +40,7 @@ export class LoanService {
     @Optional() private readonly ivrAutomationService?: IvrAutomationService,
     @Optional() private readonly smsAutomationService?: SmsAutomationService,
     @Optional() private readonly whatsappAutomationService?: WhatsAppAutomationService,
+    @Optional() private readonly referralService?: ReferralService,
   ) { }
 
 
@@ -2640,6 +2642,15 @@ export class LoanService {
             await tx.plRepaymentSchedule.create({ data: rps });
           }
           generatedRpsCount = rpsRows.length;
+        }
+
+        // Trigger Refer & Earn benefit generation for referring customer
+        if (this.referralService) {
+          try {
+            await this.referralService.onLoanDisbursed(updatedLoan);
+          } catch (refErr: any) {
+            this.logger.warn(`Failed to process referral disbursal benefit: ${refErr?.message || refErr}`);
+          }
         }
       }
 
