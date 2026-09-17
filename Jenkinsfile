@@ -32,7 +32,7 @@ pipeline {
     // Where the ci-approval-relay service (tools/ci-approval-relay) is reachable, and who
     // gets emailed when a prod deploy is waiting on approval. See that folder's README.
     CI_RELAY_URL        = 'https://ci.fintreelms.com/approvals'
-    PROD_APPROVAL_EMAIL = 'you@fintreefinance.com'
+    PROD_APPROVAL_EMAIL = 'fintreefinance19@gmail.com'
   }
 
   stages {
