@@ -43,6 +43,7 @@ import { PartnerApiModule } from './modules/partner-api/partner-api.module';
 import { IvrModule } from './modules/integrations/ivr/ivr.module';
 import { SmsModule } from './modules/integrations/sms/sms.module';
 import { WhatsAppModule } from './modules/integrations/whatsapp/whatsapp.module';
+import { ReferralModule } from './modules/referral/referral.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { WhatsAppModule } from './modules/integrations/whatsapp/whatsapp.module'
     IvrModule,
     SmsModule,
     WhatsAppModule,
+    ReferralModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

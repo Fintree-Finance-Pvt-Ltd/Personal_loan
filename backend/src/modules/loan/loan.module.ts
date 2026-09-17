@@ -23,6 +23,8 @@ import { WhatsAppModule } from '../integrations/whatsapp/whatsapp.module';
 
 import { AttributionService } from '../customer/attribution.service';
 
+import { ReferralModule } from '../referral/referral.module';
+
 @Module({
   imports: [
     forwardRef(() => ExternalApiModule),
@@ -32,6 +34,7 @@ import { AttributionService } from '../customer/attribution.service';
     IvrModule,
     SmsModule,
     WhatsAppModule,
+    ReferralModule,
   ],
   controllers: [LoanController, AdminLoanServicingController],
   providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, SigningStorageService, AttributionService],

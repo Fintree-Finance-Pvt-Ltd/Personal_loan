@@ -59,6 +59,8 @@ export type VerifyEmailOtpInput = {
   otp?: unknown;
 };
 
+import { ReferralService } from '../referral/referral.service';
+
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
@@ -80,6 +82,7 @@ export class OtpService {
     private readonly configService: ConfigService,
     private readonly jwt: JwtService,
     private readonly attributionService: AttributionService,
+    private readonly referralService: ReferralService,
   ) {
     this.otpExpiryMinutes = this.readPositiveNumber('OTP_EXPIRY_MINUTES', 5);
     this.maxAttempts = this.readPositiveNumber('OTP_MAX_ATTEMPTS', 5);
@@ -284,6 +287,16 @@ export class OtpService {
           verifiedCustomer.id,
           input.attribution,
         );
+
+        // Capture referral code if provided
+        const refCode = (input.attribution as any)?.referralCode || (input.attribution as any)?.ref;
+        if (refCode) {
+          try {
+            await this.referralService.recordReferralRegistration(verifiedCustomer.id, String(refCode));
+          } catch (refErr: any) {
+            this.logger.warn(`Failed to record referral mapping: ${refErr?.message || refErr}`);
+          }
+        }
 
         await transaction.otpSession.update({
           where: {

@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   FileCheck2,
   ChevronRight,
+  Gift,
 } from 'lucide-react';
 import { getCustomerMe } from '../customerApi';
 
@@ -324,6 +325,29 @@ export function CustomerProfilePage() {
             <p className="mt-1 font-mono font-bold text-neutral-900">{customer?.bankIfsc || customer?.ifscMasked || '—'}</p>
           </div>
         </div>
+      </div>
+
+      {/* Refer & Earn Banner Card */}
+      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-500 via-purple-500 to-brand-600 p-6 shadow-md text-white flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/20 text-white backdrop-blur-md shrink-0">
+            <Gift size={24} />
+          </div>
+          <div>
+            <h4 className="font-bold text-white text-base">Refer & Earn Fee Benefits</h4>
+            <p className="text-xs text-indigo-100">
+              Invite friends to Fintree and earn waiver benefits on your assessment & processing fees for future loans!
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => navigate('/customer/referral')}
+          className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-bold text-indigo-700 shadow hover:bg-slate-50 transition cursor-pointer shrink-0"
+        >
+          View Referral Code & Rewards
+          <ChevronRight size={16} />
+        </button>
       </div>
 
       {/* Active Loan Account Summary */}
