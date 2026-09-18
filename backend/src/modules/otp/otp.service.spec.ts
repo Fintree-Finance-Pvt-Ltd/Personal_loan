@@ -51,8 +51,21 @@ describe('OtpService', () => {
     const attributionService = {
       recordCustomerAttribution: jest.fn().mockResolvedValue({ id: 1n }),
     };
+    // Only reached when the caller passes a referral code in `attribution`; none of the
+    // cases below do, so this exists to satisfy the constructor, not to be exercised.
+    const referralService = {
+      recordReferralRegistration: jest.fn().mockResolvedValue(null),
+    };
 
-    service = new OtpService(prisma, smsService, emailService, config, jwt, attributionService as any);
+    service = new OtpService(
+      prisma,
+      smsService,
+      emailService,
+      config,
+      jwt,
+      attributionService as any,
+      referralService as any,
+    );
   });
 
 
