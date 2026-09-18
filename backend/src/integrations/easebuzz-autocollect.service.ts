@@ -329,7 +329,7 @@ export class EasebuzzAutocollectService {
         udf1: input.udf1 || '',
         udf2: input.udf2 || '',
         udf3: input.udf3 || '',
-        udf4: input.udf4 || '',
+        udf4: input.udf4 || 'PL',
         udf5: input.udf5 || '',
         udf6: input.udf6 || '',
         udf7: input.udf7 || '',
