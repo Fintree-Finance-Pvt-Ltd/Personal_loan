@@ -88,4 +88,19 @@ describe('IvrService', () => {
       }),
     );
   });
+
+  describe('formatCustomerName', () => {
+    it('should format ALL CAPS name to proper Title Case', () => {
+      expect(service.formatCustomerName('VISHAL RAMASHANKAR YADAV')).toBe('Vishal Ramashankar Yadav');
+    });
+
+    it('should format lowercase name to proper Title Case', () => {
+      expect(service.formatCustomerName('vishal yadav')).toBe('Vishal Yadav');
+    });
+
+    it('should return Customer for empty or missing name', () => {
+      expect(service.formatCustomerName('')).toBe('Customer');
+      expect(service.formatCustomerName(null)).toBe('Customer');
+    });
+  });
 });
