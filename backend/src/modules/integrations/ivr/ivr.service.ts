@@ -85,6 +85,22 @@ export class IvrService {
   }
 
   /**
+   * Formats customer name into proper Title Case (e.g. "VISHAL RAMASHANKAR YADAV" -> "Vishal Ramashankar Yadav")
+   * to ensure Text-to-Speech (TTS) engine and LLM voice agent pronounce names naturally as words rather than
+   * spelling them out letter-by-letter as all-caps acronyms.
+   */
+  formatCustomerName(name: string | null | undefined): string {
+    if (!name) return 'Customer';
+    const trimmed = String(name).trim();
+    if (!trimmed) return 'Customer';
+    return trimmed
+      .toLowerCase()
+      .split(/\s+/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  /**
    * Masks a bank account number securely, e.g. "1234567890" -> "XXXXXX7890"
    */
   maskAccountNumber(accountNumber: string | null | undefined): string | null {
@@ -309,7 +325,8 @@ export class IvrService {
     const customerId = customer?.customerCode || (customer?.id ? `CUST-${customer.id}` : null);
     const appId = application?.applicationNumber || (application?.id ? `APP-${application.id}` : null);
     const lan = loan?.lan || application?.platformLan || null;
-    const customerName = (customer?.fullName || `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim()) || 'Customer';
+    const rawCustomerName = (customer?.fullName || `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim()) || 'Customer';
+    const customerName = this.formatCustomerName(rawCustomerName);
     const language = this.mapLanguage(customer?.kfsLanguage);
 
     // 2. Bank Information
