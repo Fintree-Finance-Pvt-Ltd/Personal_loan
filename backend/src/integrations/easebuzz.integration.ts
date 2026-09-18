@@ -117,7 +117,7 @@ export async function createPlEasyCollectLink(input: {
   const udf1 = String(input.customerId);
   const udf2 = String(customerCode);
   const udf3 = String(input.purpose || 'EMI_REPAYMENT').trim().toUpperCase();
-  const udf4 = String((input as any).lan || 'PL');
+  const udf4 = String((input as any).udf4 || 'PL');
   const udf5 = String((input as any).installmentNumber || '');
 
   const payload: any = {

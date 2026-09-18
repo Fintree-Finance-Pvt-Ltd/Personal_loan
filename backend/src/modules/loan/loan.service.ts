@@ -3593,8 +3593,9 @@ export class LoanService {
       udf1: customer.id.toString(),
       udf2: customer.customerCode,
       udf3: 'EMI_REPAYMENT',
-      udf4: lan,
+      udf4: 'PL',
       udf5: instNum.toString(),
+      udf6: lan,
     });
 
     return {

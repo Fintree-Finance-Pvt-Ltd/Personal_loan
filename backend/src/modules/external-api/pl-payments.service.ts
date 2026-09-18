@@ -1001,7 +1001,7 @@ export class PlPaymentsService {
       const easebuzzId = data?.easepayid || data?.easebuzzid || data?.payment_id || data?.transaction_id || data?.id || null;
       const source = String(data?.udf4 || '').trim().toUpperCase();
 
-      if (source && source !== 'LAP' && source !== 'PL') {
+      if (source && source !== 'LAP' && source !== 'PL' && !source.startsWith('FTPL')) {
         return { success: false, message: 'Webhook ignored. Not a Personal Loan payment.', source };
       }
 
