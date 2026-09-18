@@ -1315,6 +1315,15 @@ function MandateStep({ lan, data, onNext }) {
 
   const mandateAmount = formatCurrency(mandateData.amount || data?.kfs?.totalRepaymentAmount || data?.offer?.acceptedTotalRepayment || data?.loan?.approvedAmount);
 
+  const getMandateFrequencyDisplay = (freq) => {
+    const f = (freq || mandateData.frequency || data?.loan?.repaymentFrequency || data?.kfs?.repaymentFrequency || data?.offer?.repaymentFrequency || 'as_presented').toString().trim().toLowerCase();
+    if (f === 'as_presented' || f === 'as presented' || f === 'adhoc') return 'As & When Presented';
+    if (f === 'monthly') return 'Monthly';
+    if (f === 'one_time' || f === 'bullet' || f === 'single') return 'Single / As Presented';
+    return f.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+  const mandateFrequencyDisplay = getMandateFrequencyDisplay(mandateData.frequency);
+
   const stopPolling = () => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
@@ -1515,7 +1524,7 @@ function MandateStep({ lan, data, onNext }) {
             </div>
             <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
               <p className="text-xs font-semibold text-neutral-500">Frequency</p>
-              <p className="mt-1 text-base font-bold text-neutral-900 uppercase">{mandateData.frequency || 'Monthly'}</p>
+              <p className="mt-1 text-base font-bold text-neutral-900">{mandateFrequencyDisplay}</p>
             </div>
           </div>
 
@@ -1547,7 +1556,7 @@ function MandateStep({ lan, data, onNext }) {
               </div>
               <div>
                 <span className="text-xs text-neutral-500 block">Debit Frequency</span>
-                <strong className="text-neutral-900">Monthly</strong>
+                <strong className="text-neutral-900">{mandateFrequencyDisplay}</strong>
               </div>
             </div>
           </div>
