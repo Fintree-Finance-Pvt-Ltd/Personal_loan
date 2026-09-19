@@ -609,6 +609,20 @@ describe('LenderIntegrationService explicit requirements', () => {
       await service.processEvent('EVENT-4', 'LOCK-1');
 
       expect(adapter.requestDisbursal).toHaveBeenCalledWith(expect.objectContaining({ amount: '18000', triggerFund: true, platformLan: 'FTPL00000001' }));
+    });
+
+    // Regression test for FTPL00000035: Fintree's own DISBURSAL_AMOUNT_MISMATCH check
+    // validates against the net-of-fee figure it returned on the final decision call
+    // (application.approvedAmount), not the gross customer-accepted amount on the loan.
+    it('sends application.approvedAmount (the lender-returned net figure) over the gross loan.approvedAmount when both are present', async () => {
+      // Default loan.approvedAmount from setUpDisburseEvent is '18000' — this differing
+      // application.approvedAmount must win.
+      const { application } = setUpDisburseEvent();
+      application.approvedAmount = new Prisma.Decimal('17820.50');
+
+      await service.processEvent('EVENT-4', 'LOCK-1');
+
+      expect(adapter.requestDisbursal).toHaveBeenCalledWith(expect.objectContaining({ amount: '17820.5' }));
       expect(prisma.plLoan.updateMany).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ disbursalStatus: 'DISBURSAL_PROCESSING', disbursalProviderRef: 'DISB-1' }),
       }));

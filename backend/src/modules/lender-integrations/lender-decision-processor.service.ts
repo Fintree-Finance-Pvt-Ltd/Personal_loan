@@ -62,7 +62,13 @@ export class LenderDecisionProcessor {
         }
         if (!application.selectedAmount || !application.selectedTenure) throw new LenderIntegrationError('LENDER_APPROVAL_TERMS_MISSING', 'A customer-selected amount and tenure are required before finalizing approval.', 'PERMANENT_VALIDATION');
         await tx.lenderApplicationLink.update({ where: { id: link.id }, data: { normalizedDecision: 'APPROVED', decisionStatus: 'COMPLETED', lastSyncedStage: event.integrationStage, lastResponseStatus: result.providerStatus, lastSuccessAt: decidedAt, lastErrorCode: null, lastErrorMessage: null, rejectionReasonCode: null } });
-        await tx.plApplication.update({ where: { id: application.id }, data: { status: 'PENDING_CREDIT_REVIEW', lenderDecisionReference: result.decisionReference, lenderDecisionAt: decidedAt, lenderApprovedRoi: approvedRoi ? new Prisma.Decimal(approvedRoi) : undefined, lenderDecisionReason: null } });
+        // result.approvedAmount on this FINAL decision is the lender's own net-of-fee
+        // disbursal figure (Fintree: CREDIT_LIMIT_CHECK_RPM's derived value), distinct
+        // from selectedAmount (the gross amount the customer accepted) — persisted here
+        // so buildDisburseContext() can send it instead of the gross figure. Previously
+        // discarded entirely, which meant DISBURSE always sent the gross amount and the
+        // lender's own DISBURSAL_AMOUNT_MISMATCH check rejected it (see FTPL00000035).
+        await tx.plApplication.update({ where: { id: application.id }, data: { status: 'PENDING_CREDIT_REVIEW', lenderDecisionReference: result.decisionReference, lenderDecisionAt: decidedAt, lenderApprovedRoi: approvedRoi ? new Prisma.Decimal(approvedRoi) : undefined, approvedAmount: result.approvedAmount ? new Prisma.Decimal(result.approvedAmount) : undefined, lenderDecisionReason: null } });
         await tx.customer.update({ where: { id: application.customerId }, data: { onboardingStatus: 'PENDING_CREDIT_REVIEW', lastActivityAt: decidedAt } });
       } else if (result.decision === 'REJECTED') {
         // A rejection is terminal at either stage — no PlLoan, no bank/mandate journey.
