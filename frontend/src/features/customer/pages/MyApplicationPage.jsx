@@ -791,35 +791,12 @@ export default function MyApplicationPage() {
     if (!form.dateOfBirth) {
       validationErrors.dateOfBirth =
         'Date of birth is required.';
-    } else {
-      const birthDate = new Date(
-        form.dateOfBirth,
-      );
-
-      const today = new Date();
-
-      let age =
-        today.getFullYear() -
-        birthDate.getFullYear();
-
-      const monthDifference =
-        today.getMonth() -
-        birthDate.getMonth();
-
-      if (
-        monthDifference < 0 ||
-        (monthDifference === 0 &&
-          today.getDate() <
-          birthDate.getDate())
-      ) {
-        age -= 1;
-      }
-
-      if (age < 21 || age > 60) {
-        validationErrors.dateOfBirth =
-          'Applicant age must be between 21 and 60 years.';
-      }
     }
+    // Age-range gating intentionally removed from here — the platform BRE's
+    // MINIMUM_AGE/MAXIMUM_AGE rules are the single source of truth for the actual
+    // threshold now, evaluated when eligibility runs. Duplicating a hardcoded 21-60
+    // range here meant the two could silently drift out of sync with the configured
+    // policy (which already lives in the DB, not in this file).
 
     if (!form.gender) {
       validationErrors.gender =
