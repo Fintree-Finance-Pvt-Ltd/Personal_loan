@@ -1301,6 +1301,11 @@ function MandateStep({ lan, data, onNext }) {
   const [portalUrl, setPortalUrl] = useState(mandateData.portalUrl || '');
   const [transactionId, setTransactionId] = useState(mandateData.transactionId || '');
   const [mandateStatus, setMandateStatus] = useState(mandateData.status || (isCompleted ? 'AUTHORIZED' : 'NOT_STARTED'));
+  // Tracks whichever type (UPI/ENACH) the customer actually selected or is already mid-way
+  // through, so "Start New Authorization Session" (used to recover a session that died —
+  // SDK closed mid-flow, expired access key, etc.) resumes the SAME type instead of
+  // silently defaulting back to ENACH regardless of what was in progress.
+  const [selectedMandateType, setSelectedMandateType] = useState(mandateData.mandateType || 'ENACH');
   const [isModalOpen, setIsModalOpen] = useState(Boolean(mandateData.portalUrl && !isCompleted && isAllowedEasebuzzUrl(mandateData.portalUrl)));
   const [consent, setConsent] = useState(isCompleted);
   const [errorMsg, setErrorMsg] = useState('');
@@ -1402,6 +1407,8 @@ function MandateStep({ lan, data, onNext }) {
       const targetUrl = res?.portalUrl || res?.data?.portalUrl;
       const txId = res?.transactionId || res?.data?.transactionId || '';
       const pollSec = res?.pollAfterSeconds || res?.data?.pollAfterSeconds || 5;
+      const returnedType = res?.mandateType || res?.data?.mandateType || mandateType;
+      setSelectedMandateType(returnedType);
 
       const TERMINAL_SUCCESS = ['ACTIVE', 'SUCCESS', 'COMPLETED', 'AUTHORIZED', 'REGISTERED', 'VERIFIED'];
       if (TERMINAL_SUCCESS.includes(st)) {
@@ -1603,7 +1610,7 @@ function MandateStep({ lan, data, onNext }) {
             {portalUrl ? (
               <button
                 type="button"
-                onClick={() => handleInitiate(true)}
+                onClick={() => handleInitiate(true, selectedMandateType)}
                 disabled={isLoading || isCheckingStatus || !consent}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-xs font-bold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer disabled:opacity-50"
               >
