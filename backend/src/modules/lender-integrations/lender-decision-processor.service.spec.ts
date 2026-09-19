@@ -125,6 +125,33 @@ describe('LenderDecisionProcessor', () => {
       })).rejects.toThrow('selected amount and tenure');
     });
 
+    // Regression test for FTPL00000035: the lender's own net-of-fee disbursal figure
+    // was previously discarded here entirely, so DISBURSE always sent the gross
+    // selectedAmount and Fintree's DISBURSAL_AMOUNT_MISMATCH check rejected it.
+    it('persists the lender-returned net amount onto application.approvedAmount, distinct from the gross selectedAmount', async () => {
+      const { processor, tx } = base({ applicationStatus: 'LENDER_PRE_APPROVED', decisionPayloadVersion: 2, selectedAmount: new Prisma.Decimal('6000') });
+
+      await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
+        decision: 'APPROVED', providerStatus: 'APPROVED', decisionReference: 'DEC-2', approvedAmount: '5929.20',
+      });
+
+      expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ approvedAmount: new Prisma.Decimal('5929.20') }),
+      }));
+    });
+
+    it('leaves application.approvedAmount untouched when the lender does not return a net amount', async () => {
+      const { processor, tx } = base({ applicationStatus: 'LENDER_PRE_APPROVED', decisionPayloadVersion: 2 });
+
+      await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {
+        decision: 'APPROVED', providerStatus: 'APPROVED', decisionReference: 'DEC-2',
+      });
+
+      expect(tx.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ approvedAmount: undefined }),
+      }));
+    });
+
     it('leaves application.status untouched on a PENDING final result (customer already selected an offer)', async () => {
       const { processor, tx } = base({ applicationStatus: 'LENDER_PRE_APPROVED', decisionPayloadVersion: 2 });
       await processor.process('EVENT-1', 'LOCK-1', 'PARTNER-1', {

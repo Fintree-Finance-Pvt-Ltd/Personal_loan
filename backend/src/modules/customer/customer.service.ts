@@ -1424,6 +1424,12 @@ export class CustomerService {
     if (application.status === 'PENDING_CREDIT_REVIEW') return 'APPROVAL_PROCESSING';
     if (outbox?.status === 'FAILED') return 'INTEGRATION_SUPPORT';
     if (application.status === 'PLATFORM_REJECTED') return 'PLATFORM_REJECTED';
+    // ASSESSMENT_FEE shows the allocated lender's name and computes the fee from its
+    // product version — both require lenderId to already be set. allocateLender() can
+    // fail to assign one (no eligible route at that moment, an MLM policy mid-edit,
+    // etc.) and previously nothing stopped the customer landing here anyway, rendering
+    // a placeholder "Lending Partner" name and a ₹0.00 fee as if they were real.
+    if (!application.lenderId) return 'ALLOCATION_PENDING';
     if (!payment) return 'ASSESSMENT_FEE';
     if (application.platformDecisionOutcome !== 'PASS') return 'BASIC_DETAILS';
     if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';

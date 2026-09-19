@@ -376,6 +376,11 @@ function deriveCustomerWorkflow(customer) {
   const backendStep = customer.journey?.nextPermittedStep;
   const backendStepMap = {
     BASIC_DETAILS: 'basic_details',
+    // No lender could be allocated yet (allocateLender() didn't run, or failed — see
+    // handleBasicDetailsContinue). Land back on basic_details rather than the
+    // assessment-fee screen: its Continue button re-triggers allocateLender(), giving
+    // the customer a real retry instead of a placeholder lender name and a ₹0.00 fee.
+    ALLOCATION_PENDING: 'basic_details',
     PLATFORM_REJECTED: 'rejection_screen',
     ASSESSMENT_FEE: 'assessment_fee',
     PROFILE_DETAILS: 'profile_details',
@@ -1401,12 +1406,12 @@ export default function MyApplicationPage() {
         }
       }
 
-      // Allocate eligible lender and compute assessment fee
-      try {
-        await allocateLender(customerId);
-      } catch (err) {
-        console.warn('Lender allocation note:', err);
-      }
+      // Allocate eligible lender and compute assessment fee. Must NOT be swallowed:
+      // if no lender can be assigned right now, the customer must not be pushed onto
+      // the assessment-fee screen with a fake "Lending Partner" name and a ₹0.00 fee
+      // as if allocation had succeeded — let it throw into the outer catch below,
+      // which keeps them on this step and shows a real, retryable error instead.
+      await allocateLender(customerId);
 
       // Refresh customer profile to load allocated lender and fee snapshot
       await fetchCustomer();
@@ -1424,8 +1429,11 @@ export default function MyApplicationPage() {
       });
     } catch (error) {
       console.error('Save basic details or lender allocation failed:', error);
+      const isAllocationFailure = error?.message?.includes('No lender route available');
       showMessage(
-        'Unable to proceed. Please check your details and try again.',
+        isAllocationFailure
+          ? 'We could not assign a lending partner right now. Please try again in a moment.'
+          : 'Unable to proceed. Please check your details and try again.',
         'error',
       );
     } finally {

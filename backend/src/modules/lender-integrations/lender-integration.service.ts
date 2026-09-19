@@ -2274,8 +2274,13 @@ async markStageFailure(
       partnerApplicationId: link.partnerApplicationId,
       applicationReference: application.applicationNumber,
       platformLan: application.platformLan,
-      // The final accepted amount, never the pre-approval credit limit.
-      amount: loan.approvedAmount.toString(),
+      // application.approvedAmount is the net-of-fee figure the lender itself returned
+      // on the FINAL decision call (see lender-decision-processor.service.ts) — Fintree's
+      // own DISBURSAL_AMOUNT_MISMATCH validation checks the disbursal amount against this,
+      // not the gross accepted amount. Falls back to the gross loan.approvedAmount only
+      // for a lender/adapter that doesn't return one (never lenderApprovedAmount, which
+      // is the earlier pre-approval credit limit, not a specific loan's disbursal figure).
+      amount: (application.approvedAmount ?? loan.approvedAmount).toString(),
       triggerFund: true,
     };
   }
