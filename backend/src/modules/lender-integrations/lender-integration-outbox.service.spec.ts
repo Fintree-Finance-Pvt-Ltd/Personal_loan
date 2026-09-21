@@ -371,6 +371,25 @@ describe('LenderIntegrationOutboxService', () => {
       const service = new LenderIntegrationOutboxService(prisma, {} as any);
       await expect(service.enqueueDisbursalWhenReady(1n)).rejects.toThrow('No loan exists for this application yet.');
     });
+
+    // A lender's idempotency store can bind V1 to a request body that's since changed
+    // (e.g. a corrected disbursal amount) and reject any resend under that same key —
+    // only a new key lets the corrected request through. See FTPL00000035.
+    it('enqueues under a bumped version key when asked to retry with a corrected payload', async () => {
+      const prisma: any = {
+        plApplication: { findUnique: jest.fn().mockResolvedValue({ id: 1n, applicationNumber: 'APP-001', lenderId: 'L1' }) },
+        plLoan: { findUnique: jest.fn().mockResolvedValue({ id: 10n, applicationId: 1n }) },
+        lenderIntegrationOutbox: { upsert: jest.fn().mockImplementation(({ create }: any) => create) },
+      };
+      const service = new LenderIntegrationOutboxService(prisma, {} as any);
+      const event = await service.enqueueDisbursalWhenReady(1n, 2);
+
+      expect(prisma.lenderIntegrationOutbox.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { idempotencyKey: 'APP-001:LENDER_REQUEST_DISBURSAL:V2' },
+        create: expect.objectContaining({ payloadVersion: 2, idempotencyKey: 'APP-001:LENDER_REQUEST_DISBURSAL:V2' }),
+      }));
+      expect(event.integrationStage).toBe('DISBURSE');
+    });
   });
 
   describe('enqueueRepaymentNotification', () => {
