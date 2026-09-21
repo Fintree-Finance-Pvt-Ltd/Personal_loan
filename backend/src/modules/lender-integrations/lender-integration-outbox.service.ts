@@ -570,16 +570,22 @@ if (!platformLan) {
     return { success: true, eventId: event.id, status: 'PENDING' };
   }
 
-  async enqueueDisbursalWhenReady(applicationId: bigint) {
+  // version defaults to 1 for the normal (single) flow triggered when mandate/esign
+  // completes. A version bump is for the rare case where a lender's own idempotency
+  // store already holds V1 bound to a request body that's since changed (e.g. a
+  // corrected disbursal amount) — Fintree's IDEMPOTENCY_CONFLICT rejects any resend
+  // under the same key with different data, so replaying that same event can never
+  // succeed; only a genuinely new key lets the corrected request through.
+  async enqueueDisbursalWhenReady(applicationId: bigint, version: number = 1) {
     const application = await this.prisma.plApplication.findUnique({ where: { id: applicationId } });
     if (!application?.lenderId) throw new BadRequestException('Allocated lender is missing.');
     const loan = await this.prisma.plLoan.findUnique({ where: { applicationId } });
     if (!loan) throw new BadRequestException('No loan exists for this application yet.');
 
-    const idempotencyKey = `${application.applicationNumber}:LENDER_REQUEST_DISBURSAL:V1`;
+    const idempotencyKey = `${application.applicationNumber}:LENDER_REQUEST_DISBURSAL:V${version}`;
     return this.prisma.lenderIntegrationOutbox.upsert({
       where: { idempotencyKey },
-      create: { eventType: 'LENDER_REQUEST_DISBURSAL', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId, integrationStage: 'DISBURSE', payloadVersion: 1, idempotencyKey },
+      create: { eventType: 'LENDER_REQUEST_DISBURSAL', applicationId, applicationReference: application.applicationNumber, lenderId: application.lenderId, integrationStage: 'DISBURSE', payloadVersion: version, idempotencyKey },
       update: {},
     });
   }
