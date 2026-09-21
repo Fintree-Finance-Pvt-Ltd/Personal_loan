@@ -1306,7 +1306,13 @@ function MandateStep({ lan, data, onNext }) {
   // SDK closed mid-flow, expired access key, etc.) resumes the SAME type instead of
   // silently defaulting back to ENACH regardless of what was in progress.
   const [selectedMandateType, setSelectedMandateType] = useState(mandateData.mandateType || 'ENACH');
-  const [isModalOpen, setIsModalOpen] = useState(Boolean(mandateData.portalUrl && !isCompleted && isAllowedEasebuzzUrl(mandateData.portalUrl)));
+  // Deliberately never auto-opens from a stored portalUrl on mount: a portalUrl left over
+  // from a prior session may already have been opened once (its Easebuzz access key is
+  // then single-use and spent), and there's no reliable way to tell "never opened yet"
+  // from "opened and closed" at this point — auto-reopening the stale one would risk the
+  // same "Invalid access key" failure as the removed "Resume e-Mandate" button. The modal
+  // is instead only opened fresh, from a just-succeeded initiate call (see handleInitiate).
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [consent, setConsent] = useState(isCompleted);
   const [errorMsg, setErrorMsg] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
@@ -1620,15 +1626,13 @@ function MandateStep({ lan, data, onNext }) {
             ) : <div />}
 
             <div className="flex items-center gap-3">
-              {portalUrl && isAllowedEasebuzzUrl(portalUrl) && (
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(true)}
-                  className="rounded-xl border border-info-200 bg-info-50 px-4 py-2.5 text-xs font-bold text-info-700 hover:bg-info-100 transition cursor-pointer"
-                >
-                  Resume e-Mandate
-                </button>
-              )}
+              {/* "Resume e-Mandate" (reopening the stored portalUrl in an iframe) was
+                  removed: Easebuzz checkout access keys are single-use — the moment the
+                  SDK popup opens once (see the accessKey branch above), that specific key
+                  is consumed with Easebuzz, so reloading the same portalUrl a second time
+                  always returns "Invalid access key" once the customer has actually seen
+                  the popup and closed it. "Start New Authorization Session" is the only
+                  reliable recovery path since it always requests a genuinely fresh key. */}
 
               {!portalUrl ? (
                 <>
