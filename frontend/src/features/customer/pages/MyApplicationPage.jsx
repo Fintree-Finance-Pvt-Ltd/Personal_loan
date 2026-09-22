@@ -1065,15 +1065,7 @@ export default function MyApplicationPage() {
         .trim()
         .toUpperCase();
 
-    const enteredName =
-      normalizePersonName(form.fullName);
-
     const validationErrors = {};
-
-    if (!enteredName) {
-      validationErrors.fullName =
-        'Enter the name as per PAN.';
-    }
 
     if (
       !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(
@@ -1169,6 +1161,8 @@ export default function MyApplicationPage() {
         normalizePersonName(
           panData.fullName ||
           responsePayload?.fullName ||
+          responsePayload?.verification?.fullName ||
+          responsePayload?.name ||
           '',
         );
 
@@ -1178,16 +1172,19 @@ export default function MyApplicationPage() {
         );
       }
 
-      if (
-        !doNamesMatch(
-          enteredName,
-          providerName,
-        )
-      ) {
-        throw new Error(
-          `Entered name does not match the PAN record. PAN record name: ${providerName}`,
-        );
-      }
+      const providerFatherName = normalizePersonName(
+        panData.fatherName ||
+        panData.father_name ||
+        responsePayload?.fatherName ||
+        responsePayload?.father_name ||
+        responsePayload?.verification?.fatherName ||
+        responsePayload?.verification?.father_name ||
+        responsePayload?.data?.father_name ||
+        responsePayload?.data?.fatherName ||
+        responsePayload?.data?.response?.father_name ||
+        responsePayload?.data?.response?.fatherName ||
+        '',
+      );
 
       const normalizedDateOfBirth =
         normalizeDateForInput(
@@ -1223,6 +1220,8 @@ export default function MyApplicationPage() {
 
         fullName: providerName,
 
+        ...(providerFatherName ? { fatherName: providerFatherName } : {}),
+
         dateOfBirth:
           normalizedDateOfBirth,
 
@@ -1249,6 +1248,8 @@ export default function MyApplicationPage() {
           verifiedPan || normalizedPan,
 
         fullName: providerName,
+
+        fatherName: providerFatherName || null,
 
         firstName:
           panData.firstName ||
@@ -1319,13 +1320,14 @@ export default function MyApplicationPage() {
       setErrors((currentErrors) => ({
         ...currentErrors,
         fullName: '',
+        fatherName: '',
         panNumber: '',
         dateOfBirth: '',
         gender: '',
       }));
 
       showMessage(
-        'PAN verified successfully. Name, date of birth and gender have been populated.',
+        'PAN verified successfully. Full name, date of birth and gender have been populated.',
       );
     } catch (error) {
       console.error(
@@ -2496,7 +2498,7 @@ function AadhaarKycStep({
               </p>
               {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
                 <p className="mt-2 text-sm font-semibold text-brand-900">
-                  Verified Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
+                  Full Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
                 </p>
               )}
             </div>
@@ -3165,7 +3167,7 @@ function BasicDetailsStep({
       }
 
       setOcrSuccessMsg(
-        `Auto-populated Name: "${extractedName || '—'}", PAN: "${extractedPan || '—'}"${extractedFatherName ? `, & Father's Name: "${extractedFatherName}"` : ''}. Please review details and click "Verify PAN".`
+        `Auto-populated PAN: "${extractedPan || '—'}"${extractedName ? `, Name: "${extractedName}"` : ''}${extractedFatherName ? `, Father's Name: "${extractedFatherName}"` : ''}. Please click "Verify PAN" to proceed.`
       );
     } catch (err) {
       setOcrError(err?.message || 'PAN OCR processing failed. Please enter details manually or try uploading a clearer image.');
@@ -3241,7 +3243,7 @@ function BasicDetailsStep({
         description={
           panVerified
             ? 'Your PAN has been verified. Complete the remaining details to check your eligibility.'
-            : 'Enter your name exactly as shown on your PAN card and enter your PAN number.'
+            : 'Enter your 10-digit PAN number to verify and fetch your details.'
         }
         right={
           <StatusBadge>
@@ -3254,7 +3256,7 @@ function BasicDetailsStep({
 
       <SectionHeading
         title="PAN verification"
-        description="The entered name must match the PAN holder name."
+        description="Enter your PAN number to fetch and verify your details."
       />
 
       {!panVerified && (
@@ -3394,117 +3396,87 @@ function BasicDetailsStep({
         </div>
       )}
 
-      <div className="grid gap-5 md:grid-cols-2">
-        <FormInput
-          label="Name as per PAN"
-          name="fullName"
-          value={form.fullName}
-          error={errors.fullName}
-          onChange={onChange}
-          placeholder="Enter full name as per PAN"
-          readOnly={panVerified}
-          helperText={
-            panVerified
-              ? 'Name verified from PAN records'
-              : 'Enter the complete name shown on your PAN card'
-          }
-          required
-        />
+      <div className="max-w-xl">
+        <label className="mb-2 block text-sm font-semibold text-neutral-700">
+          PAN number
+          <span className="ml-1 text-danger-500">
+            *
+          </span>
+        </label>
 
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-neutral-700">
-            PAN number
-            <span className="ml-1 text-danger-500">
-              *
-            </span>
-          </label>
+        <div
+          className={`flex overflow-hidden rounded-xl border bg-white ${errors.panNumber
+              ? 'border-danger-400 ring-4 ring-danger-50'
+              : panVerified
+                ? 'border-brand-400 ring-4 ring-brand-50'
+                : 'border-neutral-300 focus-within:border-info-600 focus-within:ring-4 focus-within:ring-info-50'
+            }`}
+        >
+          <input
+            type="text"
+            name="panNumber"
+            value={
+              form.panNumber
+            }
+            onChange={onChange}
+            readOnly={
+              panVerified
+            }
+            placeholder="ABCDE1234F"
+            maxLength={10}
+            autoComplete="off"
+            className="min-w-0 flex-1 px-4 py-3 text-sm font-medium uppercase outline-none read-only:bg-neutral-50 read-only:text-neutral-600"
+          />
 
-          <div
-            className={`flex overflow-hidden rounded-xl border bg-white ${errors.panNumber
-                ? 'border-danger-400 ring-4 ring-danger-50'
-                : panVerified
-                  ? 'border-brand-400 ring-4 ring-brand-50'
-                  : 'border-neutral-300 focus-within:border-info-600 focus-within:ring-4 focus-within:ring-info-50'
-              }`}
+          <button
+            type="button"
+            onClick={
+              onVerifyPan
+            }
+            disabled={
+              isPanVerifying ||
+              panVerified ||
+              form.panNumber
+                .length !== 10
+            }
+            className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${panVerified
+                ? 'border-brand-200 bg-brand-50 text-brand-700'
+                : 'border-neutral-200 text-info-700 hover:bg-info-50'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
           >
-            <input
-              type="text"
-              name="panNumber"
-              value={
-                form.panNumber
-              }
-              onChange={onChange}
-              readOnly={
-                panVerified
-              }
-              placeholder="ABCDE1234F"
-              maxLength={10}
-              autoComplete="off"
-              className="min-w-0 flex-1 px-4 py-3 text-sm font-medium uppercase outline-none read-only:bg-neutral-50 read-only:text-neutral-600"
-            />
-
-            <button
-              type="button"
-              onClick={
-                onVerifyPan
-              }
-              disabled={
-                isPanVerifying ||
-                panVerified ||
-                !form.fullName.trim() ||
-                form.panNumber
-                  .length !== 10
-              }
-              className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${panVerified
-                  ? 'border-brand-200 bg-brand-50 text-brand-700'
-                  : 'border-neutral-200 text-info-700 hover:bg-info-50'
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-            >
-              {isPanVerifying ? (
-                <>
-                  <LoaderCircle
-                    size={15}
-                    className="animate-spin"
-                  />
-                  Verifying PAN
-                </>
-              ) : panVerified ? (
-                <>
-                  <CheckCircle2
-                    size={15}
-                  />
-                  PAN Verified
-                </>
-              ) : (
-                'Verify PAN'
-              )}
-            </button>
-          </div>
-
-          {errors.panNumber ? (
-            <p className="mt-1.5 text-xs text-danger-600">
-              {
-                errors.panNumber
-              }
-            </p>
-          ) : (
-            <p className="mt-1.5 text-xs text-neutral-500">
-              Format:
-              ABCDE1234F
-            </p>
-          )}
+            {isPanVerifying ? (
+              <>
+                <LoaderCircle
+                  size={15}
+                  className="animate-spin"
+                />
+                Verifying PAN
+              </>
+            ) : panVerified ? (
+              <>
+                <CheckCircle2
+                  size={15}
+                />
+                PAN Verified
+              </>
+            ) : (
+              'Verify PAN'
+            )}
+          </button>
         </div>
 
-        <FormInput
-          label="Father's name"
-          name="fatherName"
-          value={form.fatherName}
-          error={errors.fatherName}
-          onChange={onChange}
-          placeholder="Enter father's full name"
-          helperText="Auto-filled via PAN OCR or enter manually"
-          required
-        />
+        {errors.panNumber ? (
+          <p className="mt-1.5 text-xs text-danger-600">
+            {
+              errors.panNumber
+            }
+          </p>
+        ) : (
+          <p className="mt-1.5 text-xs text-neutral-500">
+            Format:
+            ABCDE1234F
+          </p>
+        )}
       </div>
 
       {!panVerified && (
@@ -3515,7 +3487,7 @@ function BasicDetailsStep({
           />
 
           <p className="text-sm leading-6 text-info-800">
-            Your verified name,
+            Your verified full name, father's name,
             date of birth and gender
             will appear automatically
             after PAN verification.
@@ -3555,7 +3527,7 @@ function BasicDetailsStep({
 
             <div className="grid gap-5 md:grid-cols-2">
               <FormInput
-                label="Verified name"
+                label="Full name"
                 value={
                   form.fullName
                 }
@@ -3612,6 +3584,11 @@ function BasicDetailsStep({
                 }
                 onChange={onChange}
                 placeholder="Enter father's full name"
+                helperText={
+                  form.fatherName
+                    ? 'Verified / populated from PAN'
+                    : "Enter father's full name if not auto-filled"
+                }
                 required
               />
 
