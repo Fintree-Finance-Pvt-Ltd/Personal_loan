@@ -2320,16 +2320,27 @@ function AadhaarKycStep({
       if (res?.verificationUrl) {
         setPendingDigilockerUrl(res.verificationUrl);
 
+        const screenWidth = window.screen.availWidth || window.innerWidth;
+        const screenHeight = window.screen.availHeight || window.innerHeight;
+
         let popup = null;
         try {
           popup = window.open(
             res.verificationUrl,
             'DigitapDigiLocker',
-            'width=520,height=760,resizable=yes,scrollbars=yes,status=yes,location=yes'
+            `width=${screenWidth},height=${screenHeight},top=0,left=0,resizable=yes,scrollbars=yes,status=yes,location=yes`
           );
         } catch (e) {
           console.warn('Popup launch blocked by browser exception:', e);
           popup = null;
+        }
+
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+          try {
+            popup = window.open(res.verificationUrl, '_blank');
+          } catch {
+            popup = null;
+          }
         }
 
         // Detect if browser blocked popup (null, closed immediately, or no access)
@@ -2363,11 +2374,13 @@ function AadhaarKycStep({
       return;
     }
     setShowPopupBlockedModal(false);
+    const screenWidth = window.screen.availWidth || window.innerWidth;
+    const screenHeight = window.screen.availHeight || window.innerHeight;
     try {
       window.open(
         pendingDigilockerUrl,
         'DigitapDigiLocker',
-        'width=520,height=760,resizable=yes,scrollbars=yes,status=yes,location=yes'
+        `width=${screenWidth},height=${screenHeight},top=0,left=0,resizable=yes,scrollbars=yes,status=yes,location=yes`
       );
     } catch {
       window.open(pendingDigilockerUrl, '_blank');

@@ -1450,8 +1450,10 @@ function MandateStep({ lan, data, onNext }) {
 
       setPortalUrl(targetUrl);
       setIsModalOpen(true);
-      window.open(targetUrl, 'EasebuzzMandatePortal', 'width=750,height=800,scrollbars=yes,resizable=yes');
-      setStatusMsg('Easebuzz e-Mandate portal opened in window. Complete authorization to finish setup.');
+      const screenWidth = window.screen.availWidth || window.innerWidth;
+      const screenHeight = window.screen.availHeight || window.innerHeight;
+      window.open(targetUrl, 'EasebuzzMandatePortal', `width=${screenWidth},height=${screenHeight},top=0,left=0,scrollbars=yes,resizable=yes`);
+      setStatusMsg('Easebuzz e-Mandate portal opened in full screen window. Complete authorization to finish setup.');
       startPolling(pollSec);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to initiate e-Mandate authorization');
@@ -1667,12 +1669,12 @@ function MandateStep({ lan, data, onNext }) {
             </div>
           </div>
 
-          {/* Secure Same-Page Modal Overlay */}
+          {/* Secure Same-Page Modal Overlay - Full Screen */}
           {isModalOpen && portalUrl && isAllowedEasebuzzUrl(portalUrl) && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="relative w-full max-w-4xl h-[90vh] sm:h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-neutral-200">
+            <div className="fixed inset-0 z-50 flex flex-col bg-white animate-in fade-in duration-200">
+              <div className="relative w-full h-full bg-white flex flex-col overflow-hidden border-0">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 bg-neutral-50">
+                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3 bg-neutral-50 shrink-0">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <div className="flex items-center gap-2">
                       <div className="h-3 w-3 rounded-full bg-brand-500 animate-pulse" />

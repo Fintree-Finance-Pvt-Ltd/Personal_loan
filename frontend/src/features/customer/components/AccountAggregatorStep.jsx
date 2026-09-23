@@ -204,16 +204,27 @@ export function AccountAggregatorStep({ lan, consentText, onComplete, isComplete
 
   const openSdkPopup = (url) => {
     setPopupBlocked(false);
-    const width = 520;
-    const height = 760;
-    const left = Math.max(0, Math.floor((window.innerWidth - width) / 2 + window.screenX));
-    const top = Math.max(0, Math.floor((window.innerHeight - height) / 2 + window.screenY));
+    const screenWidth = window.screen.availWidth || window.innerWidth;
+    const screenHeight = window.screen.availHeight || window.innerHeight;
 
-    const popup = window.open(
-      url,
-      'UnaportAccountAggregator',
-      `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes,status=yes`
-    );
+    let popup = null;
+    try {
+      popup = window.open(
+        url,
+        'UnaportAccountAggregator',
+        `width=${screenWidth},height=${screenHeight},top=0,left=0,resizable=yes,scrollbars=yes,status=yes`
+      );
+    } catch {
+      popup = null;
+    }
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      try {
+        popup = window.open(url, '_blank');
+      } catch {
+        popup = null;
+      }
+    }
 
     popupRef.current = popup;
 
