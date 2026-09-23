@@ -278,14 +278,19 @@ function deriveCustomerWorkflow(customer) {
   const hasDob = Boolean(customer.dateOfBirth);
   const hasGender = Boolean(customer.gender);
 
-  const basicDetailsCompleted =
-    mobileVerified &&
-    panVerified &&
-    emailVerified &&
-    hasFullName &&
-    hasPanNumber &&
-    hasDob &&
-    hasGender;
+  let assessmentFeePaid = Boolean(
+    customer.assessmentFeePaid ||
+    customer.latestPayment?.status === 'SUCCESS' ||
+    customer.latestPaymentStatus === 'SUCCESS' ||
+    (Array.isArray(customer.plPaymentLinks) && customer.plPaymentLinks.some((p) => p.status === 'SUCCESS')),
+  );
+
+  const hasActiveApplication = Boolean(customer.latestApplicationId);
+
+  let basicDetailsCompleted =
+    assessmentFeePaid ||
+    hasActiveApplication ||
+    (mobileVerified && panVerified && hasFullName && hasPanNumber && hasDob && hasGender);
 
   const empType = customer.employmentType;
   let profileDetailsCompleted = false;
@@ -327,13 +332,6 @@ function deriveCustomerWorkflow(customer) {
     'APPROVED',
   ].includes(normalizedStatus);
 
-  const assessmentFeePaid = Boolean(
-    customer.assessmentFeePaid ||
-    customer.latestPayment?.status === 'SUCCESS' ||
-    customer.latestPaymentStatus === 'SUCCESS' ||
-    (Array.isArray(customer.plPaymentLinks) && customer.plPaymentLinks.some((p) => p.status === 'SUCCESS')),
-  );
-
   const applicationSubmitted = Boolean(
     ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(customer.onboardingStatus)
   );
@@ -344,13 +342,13 @@ function deriveCustomerWorkflow(customer) {
     ''
   ).toUpperCase();
 
-  const aadhaarKycCompleted = Boolean(
+  let aadhaarKycCompleted = Boolean(
     customer.aadhaarVerified === true ||
     customer.digilockerVerified === true ||
     ['VERIFIED', 'COMPLETED', 'SUCCESS'].includes(aadhaarKycStatus)
   );
 
-  const aaCompleted = Boolean(customer.journey?.aaCompleted || customer.journey?.aaStatus === 'SUCCESS');
+  let aaCompleted = Boolean(customer.journey?.aaCompleted || customer.journey?.aaStatus === 'SUCCESS');
 
   let currentStep = 'basic_details';
   if (!basicDetailsCompleted) {
@@ -399,6 +397,14 @@ function deriveCustomerWorkflow(customer) {
     BANK_DETAILS: 'submit_application',
   };
   if (backendStepMap[backendStep]) currentStep = backendStepMap[backendStep];
+
+  const stepOrder = ['basic_details', 'assessment_fee', 'profile_details', 'aadhaar_kyc', 'account_aggregator', 'submit_application'];
+  const stepIdx = stepOrder.indexOf(currentStep);
+  if (stepIdx >= 1) basicDetailsCompleted = true;
+  if (stepIdx >= 2) assessmentFeePaid = true;
+  if (stepIdx >= 3) profileDetailsCompleted = true;
+  if (stepIdx >= 4) aadhaarKycCompleted = true;
+  if (stepIdx >= 5) aaCompleted = true;
 
   return {
     mobileVerified,
@@ -560,6 +566,22 @@ export default function MyApplicationPage() {
       if (customerData.latestApplicationStatus === 'LOAN_CLOSED') {
         await resumeApplication(customerId);
         customerData = await getCustomerMe();
+      }
+
+      // If customer already has an active loan account with LAN, route to post-approval or details
+      if (customerData.latestLan && customerData.latestLoanStatus !== 'FULLY_PAID') {
+        const isDisbursalRequestedOrDisbursed =
+          customerData.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
+          customerData.latestDisbursalStatus === 'DISBURSAL_PROCESSING' ||
+          customerData.latestDisbursalStatus === 'DISBURSED' ||
+          customerData.latestLoanStatus === 'DISBURSED';
+        navigate(
+          isDisbursalRequestedOrDisbursed
+            ? `/customer/loan/${customerData.latestLan}/details`
+            : `/customer/loan/${customerData.latestLan}/post-approval`,
+          { replace: true }
+        );
+        return;
       }
 
       setCustomer(customerData);
@@ -2024,6 +2046,8 @@ export default function MyApplicationPage() {
         <AccountAggregatorStep
           lan={customer?.journey?.platformLan || customer?.journey?.applicationReference || customer?.latestApplicationReference || customer?.lan || applicationNumber}
           consentText={resolveConsentText(customer, 'ACCOUNT_AGGREGATOR')}
+          customer={customer}
+          onCustomerUpdate={fetchCustomer}
           onComplete={() => {
             fetchCustomer();
           }}

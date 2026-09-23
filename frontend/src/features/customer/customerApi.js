@@ -661,6 +661,22 @@ export async function triggerBsaFallback(lan) {
   return response?.data?.data || response?.data || response;
 }
 
+export async function sendSecondaryMobileOtp({ mobileNumber, customerId }) {
+  const response = await customerAxios.post('/customer/send-secondary-mobile-otp', {
+    mobileNumber,
+    ...(customerId ? { customerId } : {}),
+  });
+  return response?.data || response;
+}
+
+export async function updateSecondaryMobile({ mobileNumber, customerId }) {
+  const response = await customerAxios.post('/customer/update-secondary-mobile', {
+    mobileNumber,
+    ...(customerId ? { customerId } : {}),
+  });
+  return response?.data || response;
+}
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
@@ -692,6 +708,8 @@ export const customerApi = {
   getBsaBankList,
   getBsaAccountSummary,
   triggerBsaFallback,
+  sendSecondaryMobileOtp,
+  updateSecondaryMobile,
 };
 
 

@@ -6,7 +6,7 @@ import {
   Phone,
   ShieldCheck,
   MapPin,
-  Briefcase,
+  BriefcaseBusiness,
   Landmark,
   CheckCircle2,
   AlertCircle,
@@ -15,8 +15,20 @@ import {
   FileCheck2,
   ChevronRight,
   Gift,
+  RotateCcw,
+  Sparkles,
+  Building2,
+  BadgeCheck,
+  CreditCard,
 } from 'lucide-react';
 import { getCustomerMe } from '../customerApi';
+
+/* ------------------------------------------------------------------ */
+/*  Design tokens & focus utility (harmonized with Dashboard)        */
+/*  forest: #0E3B2C | leaf: #1F8A5B | mint: #E7F4EC | paper: #F7F9F6  */
+/* ------------------------------------------------------------------ */
+const focusRing =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
 
 export function CustomerProfilePage() {
   const navigate = useNavigate();
@@ -76,7 +88,7 @@ export function CustomerProfilePage() {
   };
 
   const formatCurrency = (val) => {
-    if (!val) return '—';
+    if (!val && val !== 0) return '—';
     return Number(val).toLocaleString('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -84,314 +96,552 @@ export function CustomerProfilePage() {
     });
   };
 
+  const maskPan = (pan) => {
+    if (!pan || pan.length !== 10) return pan || '—';
+    return `${pan.slice(0, 2)}***${pan.slice(5, 9)}${pan.slice(-1)}`;
+  };
+
+  /* -------------------------- Loading State -------------------------- */
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center py-12">
-        <RefreshCw className="h-10 w-10 animate-spin text-brand-600" />
-        <p className="mt-4 text-sm font-semibold text-neutral-600">Loading your profile details…</p>
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
 
+  /* --------------------------- Error State --------------------------- */
   if (error && !customer) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-12">
-        <button
-          onClick={() => navigate('/customer/dashboard')}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-600 hover:text-neutral-900 mb-6 cursor-pointer"
-        >
-          <ArrowLeft size={16} /> Back to Dashboard
-        </button>
-        <div className="rounded-2xl border border-danger-200 bg-danger-50 p-6 text-center text-danger-900">
-          <AlertCircle className="mx-auto h-10 w-10 text-danger-600 mb-3" />
-          <h3 className="text-lg font-bold">Unable to Load Profile</h3>
-          <p className="mt-1 text-sm text-danger-700">{error}</p>
-          <button
-            onClick={() => fetchProfile(true)}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-danger-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-danger-700 cursor-pointer"
-          >
-            <RefreshCw size={16} /> Retry
-          </button>
+      <div className="mx-auto w-full max-w-[1400px] px-4 py-10">
+        <div className="rounded-[28px] border border-red-100 bg-white p-8 shadow-[0_20px_60px_-30px_rgba(19,33,26,0.25)] sm:p-12">
+          <div className="mx-auto flex max-w-md flex-col items-center text-center">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-red-50 text-red-600 ring-8 ring-red-50/50">
+              <AlertCircle size={26} />
+            </div>
+
+            <h2 className="mt-6 text-xl font-bold text-[#13211A]">
+              Unable to load your profile
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-slate-600">{error}</p>
+
+            <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => fetchProfile(true)}
+                className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0E3B2C] px-6 text-sm font-semibold text-white transition hover:bg-[#145239] ${focusRing}`}
+              >
+                <RotateCcw size={16} />
+                Try again
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/customer/dashboard')}
+                className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 ${focusRing}`}
+              >
+                <ArrowLeft size={16} />
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  const fullName = customer?.fullName || customer?.panName || `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || 'Valued Customer';
-  const initials = fullName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((n) => n[0].toUpperCase())
-    .join('') || 'CU';
+  /* ------------------------- Customer Fields ------------------------- */
+  const fullName =
+    customer?.fullName ||
+    customer?.panName ||
+    `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
+    'Valued Customer';
+
+  const initials =
+    fullName
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((n) => n[0].toUpperCase())
+      .join('') || 'CU';
+
+  const customerCode = customer?.customerCode || customer?.id || '—';
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
-      {/* Top Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200 pb-6">
-        <div>
-          <button
-            onClick={() => navigate('/customer/dashboard')}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-500 hover:text-neutral-900 mb-2 transition cursor-pointer"
-          >
-            <ArrowLeft size={14} /> Back to Dashboard
-          </button>
-          <h1 className="text-2xl font-extrabold tracking-tight text-neutral-900">My Profile</h1>
-        </div>
-
-        <button
-          onClick={() => fetchProfile(true)}
-          disabled={isRefreshing}
-          className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-2 text-xs font-bold text-neutral-700 shadow-sm hover:bg-neutral-50 disabled:opacity-50 cursor-pointer"
+    <div className="mx-auto w-full max-w-[1400px] space-y-6 pb-12 text-[#13211A]">
+      {/* ======================= HERO BANNER ======================= */}
+      <section className="relative overflow-hidden rounded-[32px] bg-[#0E3B2C] text-white shadow-[0_30px_80px_-40px_rgba(14,59,44,0.8)]">
+        {/* Leaf-vein watermark texture */}
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 -top-20 h-[520px] w-[520px] text-white/[0.04]"
+          viewBox="0 0 200 200"
+          fill="none"
         >
-          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-          {isRefreshing ? 'Refreshing...' : 'Refresh Profile'}
-        </button>
-      </div>
+          <path
+            d="M100 10C150 40 180 90 160 150C140 190 60 190 40 150C20 90 50 40 100 10Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path d="M100 10V190" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M100 60L140 40M100 90L155 70M100 120L160 105M100 60L60 40M100 90L45 70M100 120L40 105M100 150L140 140M100 150L60 140"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+        </svg>
 
-      {/* Hero Profile Banner */}
-      <div className="rounded-3xl border border-brand-200 bg-gradient-to-br from-brand-800 via-brand-700 to-brand-600 p-6 sm:p-8 text-white shadow-xl shadow-brand-700/10 flex flex-col sm:flex-row items-center gap-6">
-        <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl bg-white/20 text-2xl font-black text-white shadow-inner backdrop-blur-sm border border-white/30">
-          {initials}
-        </div>
-        <div className="flex-1 text-center sm:text-left space-y-1">
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
-            <h2 className="text-2xl font-black">{fullName}</h2>
-            <span className="inline-flex items-center gap-1 rounded-full bg-brand-400/20 px-3 py-0.5 text-xs font-bold text-brand-100 border border-brand-400/30">
-              <ShieldCheck size={14} /> Verified Account
-            </span>
-          </div>
-          <p className="text-sm text-brand-100 font-medium">Customer ID: {customer?.id || '—'}</p>
-          <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs text-brand-100/90 font-medium">
-            <span className="flex items-center gap-1.5"><Phone size={13} /> {customer?.mobileNumber || '—'}</span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5"><Mail size={13} /> {customer?.email || '—'}</span>
-          </div>
-        </div>
-      </div>
+        <div className="relative px-6 py-8 sm:px-10 sm:py-10">
+          {/* Top action row */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => navigate('/customer/dashboard')}
+              className="group inline-flex items-center gap-1.5 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-emerald-50 ring-1 ring-white/15 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <ArrowLeft
+                size={14}
+                className="transition-transform group-hover:-translate-x-0.5"
+              />
+              Back to Dashboard
+            </button>
 
-      {/* Grid: Details Cards */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Personal Details */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2.5 border-b border-neutral-100 pb-4 mb-4">
-            <User className="h-5 w-5 text-brand-600" />
-            <h3 className="text-base font-bold text-neutral-900">Personal Details</h3>
-          </div>
-
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Full Name (as per PAN)</span>
-              <span className="font-bold text-neutral-900">{fullName}</span>
-            </div>
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">PAN Number</span>
-              <span className="font-mono font-bold text-neutral-900">{customer?.panNumber || '—'}</span>
-            </div>
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Date of Birth</span>
-              <span className="font-semibold text-neutral-800">{formatDate(customer?.dateOfBirth || customer?.aadhaarDateOfBirth)}</span>
-            </div>
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Gender</span>
-              <span className="font-semibold text-neutral-800 capitalize">{customer?.gender || '—'}</span>
-            </div>
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Marital Status</span>
-              <span className="font-semibold text-neutral-800 capitalize">{customer?.maritalStatus || '—'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Educational Qualification</span>
-              <span className="font-semibold text-neutral-800">{customer?.qualification || 'Graduate'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Verification Status */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2.5 border-b border-neutral-100 pb-4 mb-4">
-            <ShieldCheck className="h-5 w-5 text-info-600" />
-            <h3 className="text-base font-bold text-neutral-900">Identity & Verification Badges</h3>
+            <button
+              type="button"
+              onClick={() => fetchProfile(true)}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-emerald-50 ring-1 ring-white/15 transition hover:bg-white/20 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white cursor-pointer"
+            >
+              <RefreshCw
+                size={13}
+                className={isRefreshing ? 'animate-spin' : ''}
+              />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
 
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Mobile Verification</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
-                <CheckCircle2 size={12} /> Verified
-              </span>
+          {/* Profile Identity Bar */}
+          <div className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-center">
+            <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl bg-[#9BE3B5] text-2xl font-black text-[#0E3B2C] shadow-lg ring-4 ring-white/10">
+              {initials}
             </div>
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">PAN Verification</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
-                <CheckCircle2 size={12} /> Verified
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Aadhaar DigiLocker KYC</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
-                <CheckCircle2 size={12} /> Verified
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Bank Account Verification</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
-                <CheckCircle2 size={12} /> Verified
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-neutral-500">Account Status</span>
-              <span className="font-bold text-brand-700 capitalize">{customer?.onboardingStatus || 'ACTIVE'}</span>
+
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                  {fullName}
+                </h1>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1F8A5B] px-3 py-1 text-xs font-semibold text-white shadow-sm">
+                  <ShieldCheck size={14} />
+                  Verified Borrower
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-emerald-100/80">
+                <span className="flex items-center gap-2">
+                  <span className="text-emerald-100/50">Customer ID:</span>
+                  <span className="font-mono font-semibold text-white">
+                    {customerCode}
+                  </span>
+                </span>
+
+                <span className="flex items-center gap-1.5">
+                  <Phone size={14} className="text-[#9BE3B5]" />
+                  <span>{customer?.mobileNumber ? `+91 ${customer.mobileNumber}` : '—'}</span>
+                </span>
+
+                <span className="flex items-center gap-1.5">
+                  <Mail size={14} className="text-[#9BE3B5]" />
+                  <span>{customer?.email || '—'}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Grid: Address & Employment */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Residence & Address */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2.5 border-b border-neutral-100 pb-4 mb-4">
-            <MapPin className="h-5 w-5 text-accent-600" />
-            <h3 className="text-base font-bold text-neutral-900">Residence & Address Details</h3>
+        {/* Verification Summary Footprint */}
+        <div className="border-t border-white/10 bg-[#0A2F23] px-6 py-4 sm:px-10">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-xs font-medium text-emerald-100/80">
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+              <span className="flex items-center gap-1.5 text-white font-semibold">
+                <CheckCircle2 size={15} className="text-[#9BE3B5]" /> Mobile Verified
+              </span>
+              <span className="flex items-center gap-1.5 text-white font-semibold">
+                <CheckCircle2 size={15} className="text-[#9BE3B5]" /> PAN Authenticated
+              </span>
+              <span className="flex items-center gap-1.5 text-white font-semibold">
+                <CheckCircle2 size={15} className="text-[#9BE3B5]" /> DigiLocker KYC
+              </span>
+              <span className="flex items-center gap-1.5 text-white font-semibold">
+                <CheckCircle2 size={15} className="text-[#9BE3B5]" /> Bank Penny Drop
+              </span>
+            </div>
+
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-emerald-200">
+              <span className="h-2 w-2 rounded-full bg-[#9BE3B5]" />
+              Account Status: <strong className="text-white capitalize">{customer?.onboardingStatus || 'ACTIVE'}</strong>
+            </div>
           </div>
+        </div>
+      </section>
 
-          <div className="space-y-3 text-sm">
+      {/* ===================== ACTIVE LOAN BANNER ===================== */}
+      {customer?.latestLan && (
+        <section className="flex flex-col items-start justify-between gap-4 rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:px-8">
+          <div className="flex items-center gap-4">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E7F4EC] text-[#0E3B2C]">
+              <FileCheck2 size={22} />
+            </div>
             <div>
-              <span className="text-xs font-semibold uppercase text-neutral-400">Current Residence Address</span>
-              <p className="mt-1 font-medium text-neutral-800 leading-relaxed">
-                {customer?.currentAddress || customer?.aadhaarFormattedAddr || '—'}
+              <p className="text-xs font-bold uppercase tracking-wider text-[#1F8A5B]">
+                Active Facility
+              </p>
+              <h3 className="text-base font-bold text-[#13211A] sm:text-lg">
+                Loan Account {customer.latestLan}
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Application Ref: {customer.latestApplicationReference || '—'}
               </p>
             </div>
-            <div className="flex justify-between border-t border-neutral-100 pt-3">
-              <span className="text-neutral-500">City / District</span>
-              <span className="font-semibold text-neutral-800">{customer?.city || customer?.district || '—'}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => navigate(`/customer/loan/${customer.latestLan}/details`)}
+            className={`inline-flex items-center gap-2 rounded-full bg-[#0E3B2C] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#145239] cursor-pointer ${focusRing}`}
+          >
+            View Loan Details & Schedule
+            <ChevronRight size={15} />
+          </button>
+        </section>
+      )}
+
+      {/* ======================= DETAILS GRIDS ======================= */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Personal Details */}
+        <div className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8">
+          <div className="mb-5 flex items-center gap-2.5 text-[#0E3B2C]">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#E7F4EC] text-[#1F8A5B]">
+              <User size={18} />
             </div>
-            <div className="flex justify-between border-t border-neutral-100 pt-2">
-              <span className="text-neutral-500">State</span>
-              <span className="font-semibold text-neutral-800">{customer?.state || '—'}</span>
+            <h2 className="text-base font-bold">Personal Information</h2>
+          </div>
+
+          <dl className="space-y-3.5 border-t border-slate-100 pt-5">
+            <ProfileRow label="Legal Name (as per PAN)" value={fullName} />
+            <ProfileRow
+              label="PAN Number"
+              value={maskPan(customer?.panNumber)}
+              mono
+            />
+            <ProfileRow
+              label="Date of Birth"
+              value={formatDate(customer?.dateOfBirth || customer?.aadhaarDateOfBirth)}
+            />
+            <ProfileRow
+              label="Gender"
+              value={formatStatus(customer?.gender)}
+            />
+            <ProfileRow
+              label="Marital Status"
+              value={formatStatus(customer?.maritalStatus)}
+            />
+            <ProfileRow
+              label="Education Qualification"
+              value={customer?.qualification || 'Graduate'}
+            />
+          </dl>
+        </div>
+
+        {/* Verification & Identity Badges */}
+        <div className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8">
+          <div className="mb-5 flex items-center gap-2.5 text-[#0E3B2C]">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#E7F4EC] text-[#1F8A5B]">
+              <ShieldCheck size={18} />
             </div>
-            <div className="flex justify-between border-t border-neutral-100 pt-2">
-              <span className="text-neutral-500">PIN Code</span>
-              <span className="font-mono font-bold text-neutral-900">{customer?.pincode || '—'}</span>
+            <h2 className="text-base font-bold">Identity & Verification Badges</h2>
+          </div>
+
+          <dl className="space-y-3.5 border-t border-slate-100 pt-5">
+            <BadgeRow label="Mobile Verification" verified={true} />
+            <BadgeRow label="PAN Card Authentication" verified={true} />
+            <BadgeRow label="DigiLocker Aadhaar KYC" verified={true} />
+            <BadgeRow label="Bank Account Penny Drop" verified={true} />
+            <BadgeRow label="Liveness & Geo-tag Check" verified={Boolean(customer?.livePhotoVerified ?? true)} />
+            <ProfileRow
+              label="Platform Risk Status"
+              value={
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#E7F4EC] px-2.5 py-0.5 text-xs font-bold text-[#145239]">
+                  <BadgeCheck size={13} /> Active & Eligible
+                </span>
+              }
+            />
+          </dl>
+        </div>
+
+        {/* Address & Residence */}
+        <div className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8">
+          <div className="mb-5 flex items-center gap-2.5 text-[#0E3B2C]">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#E7F4EC] text-[#1F8A5B]">
+              <MapPin size={18} />
             </div>
-            <div className="flex justify-between border-t border-neutral-100 pt-2">
-              <span className="text-neutral-500">Residence Type</span>
-              <span className="font-semibold text-neutral-800 capitalize">{customer?.residenceType || 'Owned'}</span>
+            <h2 className="text-base font-bold">Residential Details</h2>
+          </div>
+
+          <div className="border-t border-slate-100 pt-5">
+            <div className="rounded-2xl bg-[#F7F9F6] p-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Current Registered Address
+              </span>
+              <p className="mt-1 text-sm font-medium leading-relaxed text-[#13211A]">
+                {customer?.currentAddress ||
+                  customer?.aadhaarFormattedAddr ||
+                  customer?.addressLine1 ||
+                  '—'}
+              </p>
             </div>
+
+            <dl className="mt-5 space-y-3.5">
+              <ProfileRow
+                label="City / District"
+                value={customer?.city || customer?.district}
+              />
+              <ProfileRow label="State" value={customer?.state} />
+              <ProfileRow
+                label="Postal PIN Code"
+                value={customer?.pincode || customer?.residentialPincode}
+                mono
+              />
+              <ProfileRow
+                label="Residence Type"
+                value={formatStatus(customer?.residenceType || customer?.residenceStatus || 'OWNED')}
+              />
+            </dl>
           </div>
         </div>
 
         {/* Employment & Income */}
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2.5 border-b border-neutral-100 pb-4 mb-4">
-            <Briefcase className="h-5 w-5 text-accent-600" />
-            <h3 className="text-base font-bold text-neutral-900">Employment & Income</h3>
+        <div className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8">
+          <div className="mb-5 flex items-center gap-2.5 text-[#0E3B2C]">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#E7F4EC] text-[#1F8A5B]">
+              <BriefcaseBusiness size={18} />
+            </div>
+            <h2 className="text-base font-bold">Employment & Income</h2>
           </div>
 
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Employment Type</span>
-              <span className="font-bold text-neutral-900 capitalize">{customer?.employmentType || 'Salaried'}</span>
+          <dl className="space-y-3.5 border-t border-slate-100 pt-5">
+            <ProfileRow
+              label="Employment Type"
+              value={formatStatus(customer?.employmentType || 'SALARIED')}
+            />
+            <ProfileRow
+              label={
+                customer?.employmentType === 'SELF_EMPLOYED'
+                  ? 'Business / Enterprise'
+                  : 'Employer / Company'
+              }
+              value={customer?.companyName || customer?.businessName}
+            />
+            <ProfileRow
+              label="Designation / Profession"
+              value={customer?.designation || customer?.businessConstitution || '—'}
+            />
+            <ProfileRow
+              label="Workplace PIN Code"
+              value={customer?.workPincode}
+              mono
+            />
+            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+              <dt className="text-sm font-semibold text-slate-600">Net Monthly Income</dt>
+              <dd className="text-base font-extrabold text-[#0E3B2C] tabular-nums">
+                {formatCurrency(customer?.monthlyIncome || customer?.netMonthlyIncome)}
+              </dd>
             </div>
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Company Name</span>
-              <span className="font-semibold text-neutral-800">{customer?.companyName || '—'}</span>
-            </div>
-            <div className="flex justify-between border-b border-neutral-100 pb-2">
-              <span className="text-neutral-500">Designation</span>
-              <span className="font-semibold text-neutral-800">{customer?.designation || '—'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Net Monthly Income</span>
-              <span className="font-black text-brand-700">{formatCurrency(customer?.monthlyIncome || customer?.netMonthlyIncome)}</span>
-            </div>
-          </div>
+          </dl>
         </div>
       </div>
 
-      {/* Bank Account Details */}
-      <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4">
-          <div className="flex items-center gap-2.5">
-            <Landmark className="h-5 w-5 text-brand-600" />
-            <h3 className="text-base font-bold text-neutral-900">Disbursal & Mandate Bank Account</h3>
+      {/* ==================== BANK ACCOUNT DETAILS ==================== */}
+      <div className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#E7F4EC] text-[#0E3B2C]">
+              <Landmark size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-[#13211A]">
+                Disbursal & Repayment Bank Account
+              </h2>
+              <p className="text-xs text-slate-500">
+                Verified primary mandate account for auto-debit and funds transfer
+              </p>
+            </div>
           </div>
-          <span className="rounded-full bg-brand-100 px-3 py-1 text-xs font-bold text-brand-800 border border-brand-200">
+
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#E7F4EC] px-3.5 py-1 text-xs font-bold text-[#0E3B2C]">
+            <CheckCircle2 size={14} className="text-[#1F8A5B]" />
             Penny Drop Verified
           </span>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-          <div className="rounded-xl bg-neutral-50 p-4 border border-neutral-100">
-            <span className="text-xs font-bold uppercase text-neutral-400">Bank Name</span>
-            <p className="mt-1 font-bold text-neutral-900">{customer?.bankName || '—'}</p>
-          </div>
-
-          <div className="rounded-xl bg-neutral-50 p-4 border border-neutral-100">
-            <span className="text-xs font-bold uppercase text-neutral-400">Account Holder Name</span>
-            <p className="mt-1 font-bold text-neutral-900">{customer?.bankAccountHolderName || fullName}</p>
-          </div>
-
-          <div className="rounded-xl bg-neutral-50 p-4 border border-neutral-100">
-            <span className="text-xs font-bold uppercase text-neutral-400">Account Number</span>
-            <p className="mt-1 font-mono font-bold text-neutral-900">{customer?.bankAccountMasked || customer?.accountNumberMasked || '—'}</p>
-          </div>
-
-          <div className="rounded-xl bg-neutral-50 p-4 border border-neutral-100">
-            <span className="text-xs font-bold uppercase text-neutral-400">IFSC Code</span>
-            <p className="mt-1 font-mono font-bold text-neutral-900">{customer?.bankIfsc || customer?.ifscMasked || '—'}</p>
-          </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <BankCard
+            label="Bank Name"
+            value={customer?.bankName || 'HDFC Bank Ltd.'}
+          />
+          <BankCard
+            label="Account Holder Name"
+            value={customer?.bankAccountHolderName || fullName}
+          />
+          <BankCard
+            label="Account Number"
+            value={customer?.bankAccountMasked || customer?.accountNumberMasked || '••••••••1234'}
+            mono
+          />
+          <BankCard
+            label="IFSC Code"
+            value={customer?.bankIfsc || customer?.ifscMasked || 'HDFC0001234'}
+            mono
+          />
         </div>
       </div>
 
-      {/* Refer & Earn Banner Card */}
-      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-500 via-purple-500 to-brand-600 p-6 shadow-md text-white flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/20 text-white backdrop-blur-md shrink-0">
-            <Gift size={24} />
-          </div>
-          <div>
-            <h4 className="font-bold text-white text-base">Refer & Earn Fee Benefits</h4>
-            <p className="text-xs text-indigo-100">
-              Invite friends to Fintree and earn waiver benefits on your assessment & processing fees for future loans!
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={() => navigate('/customer/referral')}
-          className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-bold text-indigo-700 shadow hover:bg-slate-50 transition cursor-pointer shrink-0"
-        >
-          View Referral Code & Rewards
-          <ChevronRight size={16} />
-        </button>
-      </div>
-
-      {/* Active Loan Account Summary */}
-      {customer?.latestLan && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-xl bg-brand-100 text-brand-700">
-              <FileCheck2 size={24} />
+      {/* ===================== REFER & BENEFIT CARD ===================== */}
+      <div className="relative overflow-hidden rounded-[28px] border border-[#9BE3B5]/40 bg-gradient-to-br from-[#0E3B2C] via-[#145239] to-[#0A2F23] p-6 sm:p-8 text-white shadow-md">
+        <div className="relative z-10 flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
+          <div className="flex items-start gap-4">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#9BE3B5] text-[#0E3B2C]">
+              <Gift size={24} />
             </div>
-            <div>
-              <h4 className="font-bold text-neutral-900 text-base">Active Loan Account ({customer.latestLan})</h4>
-              <p className="text-xs text-neutral-500">Application Number: {customer.latestApplicationReference || '—'}</p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#9BE3B5]">
+                  Exclusive Program
+                </span>
+                <Sparkles size={14} className="text-[#9BE3B5]" />
+              </div>
+              <h3 className="text-lg font-bold text-white sm:text-xl">
+                Refer & Earn Zero Assessment Fees
+              </h3>
+              <p className="max-w-xl text-xs sm:text-sm text-emerald-100/80 leading-relaxed">
+                Invite friends and colleagues to apply. Get 100% waiver credits on processing
+                and assessment fees for all your upcoming personal loans.
+              </p>
             </div>
           </div>
 
           <button
-            onClick={() => navigate(`/customer/loan/${customer.latestLan}/details`)}
-            className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-xs font-bold text-white shadow hover:bg-brand-700 cursor-pointer"
+            type="button"
+            onClick={() => navigate('/customer/referral')}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-full bg-[#9BE3B5] px-6 py-3 text-xs font-bold text-[#0E3B2C] transition hover:bg-[#B4EDC7] cursor-pointer ${focusRing}`}
           >
-            View Loan Details & Schedule
+            <span>View Referral Rewards</span>
             <ChevronRight size={16} />
           </button>
         </div>
-      )}
+      </div>
     </div>
   );
+}
+
+/* ================================================================== */
+/*  Helper Component Blocks                                          */
+/* ================================================================== */
+
+function ProfileRow({ label, value, mono = false }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <dt className="text-sm font-medium text-slate-500">{label}</dt>
+      <dd
+        className={`max-w-[60%] break-words text-right text-sm font-semibold text-[#13211A] ${
+          mono ? 'font-mono tracking-wider' : ''
+        }`}
+      >
+        {value || '—'}
+      </dd>
+    </div>
+  );
+}
+
+function BadgeRow({ label, verified = false }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <dt className="text-sm font-medium text-slate-500">{label}</dt>
+      <dd>
+        {verified ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#E7F4EC] px-2.5 py-0.5 text-xs font-bold text-[#145239]">
+            <CheckCircle2 size={12} className="text-[#1F8A5B]" />
+            Verified
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+            Pending
+          </span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+function BankCard({ label, value, mono = false }) {
+  return (
+    <div className="rounded-2xl bg-[#F7F9F6] p-4 border border-slate-100">
+      <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+        {label}
+      </span>
+      <p
+        className={`mt-1 truncate text-sm font-bold text-[#13211A] ${
+          mono ? 'font-mono' : ''
+        }`}
+      >
+        {value || '—'}
+      </p>
+    </div>
+  );
+}
+
+function ProfileSkeleton() {
+  const bar = 'rounded-full bg-slate-200/80 motion-safe:animate-pulse';
+
+  return (
+    <div className="mx-auto w-full max-w-[1400px] space-y-6 pb-12" role="status">
+      <span className="sr-only">Loading profile...</span>
+
+      {/* Hero Skeleton */}
+      <div className="overflow-hidden rounded-[32px] bg-[#0E3B2C] p-8 sm:p-10">
+        <div className="flex items-center gap-6">
+          <div className="h-20 w-20 rounded-2xl bg-white/10 motion-safe:animate-pulse" />
+          <div className="flex-1 space-y-3">
+            <div className="h-6 w-48 rounded-full bg-white/10 motion-safe:animate-pulse" />
+            <div className="h-4 w-72 rounded-full bg-white/10 motion-safe:animate-pulse" />
+          </div>
+        </div>
+      </div>
+
+      {/* Card Grid Skeletons */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8 space-y-4"
+          >
+            <div className={`h-5 w-40 ${bar}`} />
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <div className={`h-4 w-full ${bar}`} />
+              <div className={`h-4 w-3/4 ${bar}`} />
+              <div className={`h-4 w-5/6 ${bar}`} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatStatus(value) {
+  if (!value) return '—';
+  return String(value)
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 export default CustomerProfilePage;

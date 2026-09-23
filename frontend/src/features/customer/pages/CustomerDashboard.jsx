@@ -162,7 +162,10 @@ export default function CustomerDashboard() {
   const mobileNumber =
     backendCustomer?.mobileNumber || storedSession?.mobileNumber || '';
 
-  const applicationSubmitted = Boolean(backendCustomer?.latestApplicationId);
+  const applicationSubmitted = Boolean(
+    ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(backendCustomer?.onboardingStatus) ||
+    ['SUBMITTED', 'LENDER_REVIEW', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(backendCustomer?.latestApplicationStatus)
+  );
 
   const applicationNumber =
     backendCustomer?.latestApplicationReference ||
@@ -193,7 +196,10 @@ export default function CustomerDashboard() {
 
   const hasLan = Boolean(backendCustomer?.latestLan);
 
-  const isApproved = backendCustomer?.onboardingStatus === 'LENDER_APPROVED';
+  const isApproved =
+    backendCustomer?.onboardingStatus === 'LENDER_APPROVED' ||
+    backendCustomer?.latestApplicationStatus === 'LENDER_APPROVED' ||
+    Boolean(backendCustomer?.latestLan);
 
   const isDisbursalRequestedOrDisbursed =
     backendCustomer?.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
@@ -214,15 +220,15 @@ export default function CustomerDashboard() {
       navigate('/customer/application');
       return;
     }
-    if (isApproved && hasLan) {
+    if (hasLan) {
       if (isDisbursalRequestedOrDisbursed) {
         navigate(`/customer/loan/${backendCustomer.latestLan}/details`);
       } else {
         navigate(`/customer/loan/${backendCustomer.latestLan}/post-approval`);
       }
-    } else {
-      navigate('/customer/application');
+      return;
     }
+    navigate('/customer/application');
   };
 
   /* ------------------------------ states ------------------------------ */
@@ -269,14 +275,14 @@ export default function CustomerDashboard() {
 
   const buttonLabel = isFullyPaidRepeatCustomer
     ? 'Apply for a New Loan'
-    : isApproved && hasLan
+    : hasLan
     ? isDisbursalRequestedOrDisbursed
       ? 'View Loan Details'
       : 'Continue Approved Loan Journey'
     : applicationSubmitted
     ? 'View Application'
     : hasBackendProgress
-    ? 'Continue Application'
+    ? 'Resume Application'
     : 'Start Application';
 
   const firstName =
@@ -286,7 +292,7 @@ export default function CustomerDashboard() {
     ? 'Your loan is fully repaid.'
     : isDisbursed
     ? 'Your loan has been disbursed.'
-    : isApproved && hasLan
+    : hasLan
     ? 'Your loan is approved.'
     : applicationSubmitted
     ? 'Your application is with the lender.'
@@ -298,10 +304,12 @@ export default function CustomerDashboard() {
     ? 'Well done on clearing your loan. You can start a new application whenever you need to borrow again.'
     : isDisbursed
     ? 'The funds are on their way to your account. View your loan details for repayment dates and EMI.'
-    : isApproved && hasLan
+    : hasLan
     ? 'Complete the remaining steps to receive your funds.'
     : applicationSubmitted
     ? "We'll show your next step here as soon as the lender updates your application."
+    : hasBackendProgress
+    ? 'Resume your application from where you left off.'
     : 'Apply online in a few steps and track every update from this page.';
 
   const journey = buildJourney({
