@@ -4,25 +4,24 @@ import {
   ArrowRight,
   BadgeCheck,
   BriefcaseBusiness,
-  CalendarDays,
+  Check,
   CheckCircle2,
   ChevronRight,
   CircleUserRound,
+  Clock3,
   FileText,
   Headphones,
   IndianRupee,
   Landmark,
-  LoaderCircle,
   Mail,
   MapPin,
   Phone,
   ReceiptText,
   RotateCcw,
   ShieldCheck,
-  Sparkles,
   WalletCards,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import {
   customerApi,
   doCustomerRefresh,
@@ -30,8 +29,23 @@ import {
   resumeApplication,
 } from '../customerApi';
 
+/* ------------------------------------------------------------------ */
+/*  Design tokens (kept as literal Tailwind classes for JIT)          */
+/*  forest  #0E3B2C  – primary surface                                */
+/*  leaf    #1F8A5B  – actions, completed states                      */
+/*  mint    #E7F4EC  – soft fills                                     */
+/*  paper   #F7F9F6  – page background accents                        */
+/*  ink     #13211A  – text                                           */
+/*  honey   #B7791F  – pending / attention                            */
+/* ------------------------------------------------------------------ */
+
+const focusRing =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
 export default function CustomerDashboard() {
   const navigate = useNavigate();
+  const outletCtx = useOutletContext();
+  const setOutletCustomer = outletCtx?.setCustomer;
 
   const [backendCustomer, setBackendCustomer] = useState(null);
   const [isLoadingCustomer, setIsLoadingCustomer] = useState(true);
@@ -40,17 +54,34 @@ export default function CustomerDashboard() {
   const storedSession = getStoredSession();
   const customerId = storedSession?.customerId || null;
 
-  const fetchCustomerData = async () => {
-    if (!customerId) {
-      return;
-    }
-
+  const loadCustomer = async (loader) => {
     setIsLoadingCustomer(true);
     setCustomerError('');
 
     try {
-      const customerData = await customerApi.getCustomerById(customerId);
+      const customerData = await loader();
       setBackendCustomer(customerData);
+      if (setOutletCustomer && customerData) {
+        setOutletCustomer((prev) => ({ ...prev, ...customerData }));
+      }
+      if (customerData?.fullName || customerData?.mobileNumber) {
+        try {
+          const stored = JSON.parse(
+            localStorage.getItem('customerSession') || '{}'
+          );
+          localStorage.setItem(
+            'customerSession',
+            JSON.stringify({
+              ...stored,
+              customerId: customerData.id || customerData.customerId || stored.customerId,
+              fullName: customerData.fullName || stored.fullName,
+              mobileNumber: customerData.mobileNumber || stored.mobileNumber,
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch customer data:', error);
       setCustomerError(
@@ -62,6 +93,17 @@ export default function CustomerDashboard() {
       setIsLoadingCustomer(false);
     }
   };
+
+  const fetchCustomerData = () => {
+    if (!customerId) return;
+    return loadCustomer(() => customerApi.getCustomerById(customerId));
+  };
+
+  // Retry works for both entry paths (stored customerId or /me)
+  const retryLoad = () =>
+    customerId
+      ? fetchCustomerData()
+      : loadCustomer(() => customerApi.getCustomerMe());
 
   useEffect(() => {
     let cancelled = false;
@@ -92,26 +134,7 @@ export default function CustomerDashboard() {
       }
 
       if (!customerId && hasAccessToken) {
-        setIsLoadingCustomer(true);
-        setCustomerError('');
-
-        customerApi
-          .getCustomerMe()
-          .then((customerData) => {
-            setBackendCustomer(customerData);
-          })
-          .catch((error) => {
-            console.error('Failed to fetch customer data:', error);
-            setCustomerError(
-              error instanceof Error
-                ? error.message
-                : 'Unable to load customer details.'
-            );
-          })
-          .finally(() => {
-            setIsLoadingCustomer(false);
-          });
-
+        loadCustomer(() => customerApi.getCustomerMe());
         return;
       }
 
@@ -123,7 +146,10 @@ export default function CustomerDashboard() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, navigate]);
+
+  /* ---------------------------- derived data ---------------------------- */
 
   const hasBackendProgress = Boolean(
     backendCustomer?.panVerified ||
@@ -138,8 +164,6 @@ export default function CustomerDashboard() {
 
   const applicationSubmitted = Boolean(backendCustomer?.latestApplicationId);
 
-  // The real application reference, not a fabricated "PL-APP-{id}" string built from
-  // the raw numeric row ID
   const applicationNumber =
     backendCustomer?.latestApplicationReference ||
     (backendCustomer?.latestApplicationId
@@ -148,7 +172,6 @@ export default function CustomerDashboard() {
 
   const applicant = backendCustomer || {};
 
-  // The actual allocated lender, not a hardcoded literal
   const lender =
     backendCustomer?.allocatedLenderName ||
     backendCustomer?.allocatedLenderCode ||
@@ -170,12 +193,15 @@ export default function CustomerDashboard() {
 
   const hasLan = Boolean(backendCustomer?.latestLan);
 
-  const isApproved =
-    backendCustomer?.onboardingStatus === 'LENDER_APPROVED';
+  const isApproved = backendCustomer?.onboardingStatus === 'LENDER_APPROVED';
 
   const isDisbursalRequestedOrDisbursed =
     backendCustomer?.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
     backendCustomer?.latestDisbursalStatus === 'DISBURSAL_PROCESSING' ||
+    backendCustomer?.latestDisbursalStatus === 'DISBURSED' ||
+    backendCustomer?.latestLoanStatus === 'DISBURSED';
+
+  const isDisbursed =
     backendCustomer?.latestDisbursalStatus === 'DISBURSED' ||
     backendCustomer?.latestLoanStatus === 'DISBURSED';
 
@@ -199,62 +225,47 @@ export default function CustomerDashboard() {
     }
   };
 
+  /* ------------------------------ states ------------------------------ */
+
   if (isLoadingCustomer) {
-    return (
-      <div className="mx-auto w-full max-w-7xl px-1">
-        <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-sm">
-          <div className="absolute inset-0 bg-gradient-to-br from-brand-50 via-white to-info-50" />
-
-          <div className="relative flex min-h-[520px] flex-col items-center justify-center p-8 text-center">
-            <div className="grid h-20 w-20 place-items-center rounded-3xl border border-brand-100 bg-white shadow-lg shadow-brand-900/5">
-              <LoaderCircle className="h-10 w-10 animate-spin text-brand-600" />
-            </div>
-
-            <h2 className="mt-6 text-xl font-bold text-neutral-900">
-              Preparing your dashboard
-            </h2>
-
-            <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
-              We are securely loading your application and loan details.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (customerError) {
     return (
-      <div className="mx-auto w-full max-w-7xl px-1">
-        <div className="relative overflow-hidden rounded-[28px] border border-red-100 bg-white p-8 text-center shadow-xl shadow-neutral-900/5 sm:p-12">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-red-100/60 blur-3xl" />
-
-          <div className="relative">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-red-50 text-red-600">
-              <AlertCircle size={30} />
+      <div className="mx-auto w-full max-w-[1400px] px-1">
+        <div className="rounded-[28px] border border-red-100 bg-white p-8 shadow-[0_20px_60px_-30px_rgba(19,33,26,0.35)] sm:p-12">
+          <div className="mx-auto flex max-w-md flex-col items-center text-center">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-red-50 text-red-600 ring-8 ring-red-50/50">
+              <AlertCircle size={26} />
             </div>
 
-            <h3 className="mt-5 text-xl font-bold text-neutral-900">
-              Unable to load your dashboard
-            </h3>
+            <h2 className="mt-6 text-xl font-bold text-[#13211A]">
+              Your dashboard didn't load
+            </h2>
 
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-600">
+            <p className="mt-2 text-sm leading-6 text-slate-600">
               {customerError}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Check your connection and try again. Your application data is safe.
             </p>
 
             <button
               type="button"
-              onClick={fetchCustomerData}
-              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:-translate-y-0.5 hover:bg-emerald-700"
+              onClick={retryLoad}
+              className={`mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0E3B2C] px-6 text-sm font-semibold text-white transition hover:bg-[#145239] ${focusRing}`}
             >
-              <RotateCcw size={17} />
-              Retry loading
+              <RotateCcw size={16} />
+              Try again
             </button>
           </div>
         </div>
       </div>
     );
   }
+
+  /* ------------------------------ content ------------------------------ */
 
   const buttonLabel = isFullyPaidRepeatCustomer
     ? 'Apply for a New Loan'
@@ -269,425 +280,291 @@ export default function CustomerDashboard() {
     : 'Start Application';
 
   const firstName =
-    applicant.fullName?.trim()?.split(/\s+/)?.[0] || 'Customer';
+    applicant.fullName?.trim()?.split(/\s+/)?.[0] || 'there';
+
+  const headline = isFullyPaidRepeatCustomer
+    ? 'Your loan is fully repaid.'
+    : isDisbursed
+    ? 'Your loan has been disbursed.'
+    : isApproved && hasLan
+    ? 'Your loan is approved.'
+    : applicationSubmitted
+    ? 'Your application is with the lender.'
+    : hasBackendProgress
+    ? 'Pick up where you left off.'
+    : 'Your personal loan starts here.';
+
+  const subline = isFullyPaidRepeatCustomer
+    ? 'Well done on clearing your loan. You can start a new application whenever you need to borrow again.'
+    : isDisbursed
+    ? 'The funds are on their way to your account. View your loan details for repayment dates and EMI.'
+    : isApproved && hasLan
+    ? 'Complete the remaining steps to receive your funds.'
+    : applicationSubmitted
+    ? "We'll show your next step here as soon as the lender updates your application."
+    : 'Apply online in a few steps and track every update from this page.';
+
+  const journey = buildJourney({
+    applicationSubmitted,
+    assessmentFeePaid,
+    approved: isApproved || hasLan,
+    disbursalStatus: backendCustomer?.latestDisbursalStatus,
+    loanStatus: backendCustomer?.latestLoanStatus,
+    isFullyPaid: isFullyPaidRepeatCustomer,
+  });
+
+  const currentStatusLabel = formatStatus(
+    backendCustomer?.onboardingStatus || applicationStatus
+  );
 
   return (
-    <div className="mx-auto w-full max-w-[1480px] space-y-5 px-0 pb-8">
-      {/* Dashboard header */}
-      <section className="relative overflow-hidden rounded-[30px] border border-slate-200 bg-[#f8fafc] shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -right-24 -top-32 h-96 w-96 rounded-full bg-emerald-200/40 blur-3xl" />
-          <div className="absolute -bottom-40 left-1/3 h-80 w-80 rounded-full bg-cyan-200/30 blur-3xl" />
-          <div className="absolute inset-y-0 right-0 w-[45%] bg-gradient-to-l from-white/90 to-transparent" />
-        </div>
+    <div className="mx-auto w-full max-w-[1400px] space-y-6 px-0 pb-10 text-[#13211A]">
+      {/* ============================ HERO ============================ */}
+      <section className="relative overflow-hidden rounded-[32px] bg-[#0E3B2C] text-white shadow-[0_30px_80px_-40px_rgba(14,59,44,0.8)]">
+        {/* leaf-vein texture */}
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-20 -top-24 h-[520px] w-[520px] text-white/[0.05]"
+          viewBox="0 0 200 200"
+          fill="none"
+        >
+          <path
+            d="M100 10C150 40 180 90 160 150C140 190 60 190 40 150C20 90 50 40 100 10Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path d="M100 10V190" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M100 60L140 40M100 90L155 70M100 120L160 105M100 60L60 40M100 90L45 70M100 120L40 105M100 150L140 140M100 150L60 140"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+        </svg>
 
-        <div className="relative grid min-h-[310px] lg:grid-cols-[minmax(0,1fr)_390px]">
-          <div className="flex flex-col justify-center px-6 py-7 sm:px-8 lg:px-11 lg:py-9">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3.5 py-2 text-[11px] font-bold text-white shadow-sm">
-                <Sparkles size={13} />
-                Welcome back, {firstName}
-              </span>
-
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-[11px] font-bold text-emerald-700">
+        <div className="relative grid lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="px-6 pb-8 pt-8 sm:px-10 sm:pt-10 lg:pb-10">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-emerald-100/80">Hello, {firstName}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-emerald-50 ring-1 ring-white/15">
                 <ShieldCheck size={13} />
-                Secure & protected
+                Secure session
               </span>
             </div>
 
-            <div className="mt-6 max-w-2xl">
-              <h1 className="mt-2 text-3xl font-black leading-[1.08] tracking-[-0.035em] text-slate-950 sm:text-4xl">
-                {isFullyPaidRepeatCustomer
-                  ? 'Your previous loan is fully repaid.'
-                  : applicationSubmitted
-                  ? 'Your loan application is moving forward.'
-                  : 'Your personal loan starts here.'}
-              </h1>
+            <h1 className="mt-5 max-w-xl text-[2rem] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[2.6rem]">
+              {headline}
+            </h1>
 
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-[15px]">
-                {isFullyPaidRepeatCustomer
-                  ? 'Congratulations on clearing your loan! Start a new application whenever you need to borrow again.'
-                  : applicationSubmitted
-                  ? 'Your application is safely with the lender. Continue whenever your next action is ready.'
-                  : 'Complete your digital application securely and keep track of every important update.'}
-              </p>
-            </div>
+            <p className="mt-4 max-w-lg text-[15px] leading-7 text-emerald-50/75">
+              {subline}
+            </p>
 
-            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:items-center">
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={handleApplicationButton}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(5,150,105,0.22)] transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_14px_28px_rgba(5,150,105,0.28)]"
+                className={`group inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#9BE3B5] px-6 text-sm font-bold text-[#0E3B2C] transition hover:bg-[#B4EDC7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0E3B2C]`}
               >
                 {buttonLabel}
-                <ArrowRight size={16} />
+                <ArrowRight
+                  size={17}
+                  className="transition-transform motion-safe:group-hover:translate-x-0.5"
+                />
               </button>
 
               <button
                 type="button"
                 onClick={() => navigate('/customer/support')}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold text-emerald-50 ring-1 ring-white/25 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
                 <Headphones size={16} />
-                Get Support
+                Talk to support
               </button>
             </div>
           </div>
 
-          <div className="relative hidden min-h-[310px] items-end justify-center overflow-hidden lg:flex">
-            <div className="absolute bottom-0 right-8 h-72 w-72 rounded-full bg-emerald-100/70 blur-3xl" />
-            <div className="absolute bottom-0 right-12 h-44 w-72 rounded-t-[100%] bg-gradient-to-t from-emerald-100/80 to-transparent" />
-
+          <div className="relative hidden items-end justify-center lg:flex">
+            <div className="absolute bottom-0 h-56 w-56 rounded-full bg-[#1F8A5B]/40 blur-3xl" />
             <img
-              src={
-                applicationSubmitted
-                  ? '/image/Img_Man.png'
-                  : '/image/Img_F.png'
-              }
-              alt="FinLeaf personal loan assistance"
-              className="relative z-10 mt-auto h-[285px] w-[330px] translate-y-4 object-contain object-bottom"
+              src={applicationSubmitted ? '/image/Img_Man.png' : '/image/Img_F.png'}
+              alt=""
+              className="relative z-10 h-[290px] w-[320px] object-contain object-bottom"
             />
           </div>
         </div>
+
+        {/* Loan journey — the one signature element */}
+        <div className="relative border-t border-white/10 bg-[#0A2F23] px-6 py-6 sm:px-10">
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 className="text-sm font-semibold text-emerald-50">
+              Your loan journey
+            </h2>
+            <span className="text-xs text-emerald-100/60">
+              {journey.completed} of {journey.steps.length} complete
+            </span>
+          </div>
+
+          <ol className="mt-5 grid gap-4 md:grid-cols-4 md:gap-0">
+            {journey.steps.map((step, index) => (
+              <JourneyStep
+                key={step.key}
+                step={step}
+                index={index}
+                isLast={index === journey.steps.length - 1}
+              />
+            ))}
+          </ol>
+        </div>
       </section>
 
-      {/* Compact status strip */}
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DashboardMetricCard
-          icon={FileText}
-          label="Application"
-          value={applicationSubmitted ? applicationNumber : 'Not submitted'}
-          helper={
-            applicationSubmitted
-              ? 'Application created'
-              : 'Start your application'
-          }
-          tone="emerald"
-        />
+      {/* ========================= KEY FACTS ========================= */}
+      
 
-        <DashboardMetricCard
-          icon={BadgeCheck}
-          label="Current Status"
-          value={formatStatus(
-            backendCustomer?.onboardingStatus || applicationStatus
-          )}
-          helper="Backend-confirmed status"
-          tone="blue"
-        />
-
-        <DashboardMetricCard
-          icon={Landmark}
-          label="Loan Account"
-          value={hasLan ? backendCustomer.latestLan : 'Not generated'}
-          helper={hasLan ? 'LAN available' : 'Generated after approval'}
-          tone="violet"
-        />
-
-        <DashboardMetricCard
-          icon={WalletCards}
-          label="Disbursal"
-          value={formatStatus(
-            backendCustomer?.latestDisbursalStatus ||
-              backendCustomer?.latestLoanStatus ||
-              'NOT_STARTED'
-          )}
-          helper="Latest disbursal stage"
-          tone="amber"
-        />
-      </section>
-
-      {/* Application overview */}
-      {applicationSubmitted && (
-        <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-emerald-600">
-                  Application
+      {/* ======================= MAIN WORKSPACE ======================= */}
+      {applicationSubmitted ? (
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_370px]">
+          {/* Application details */}
+          <div className="rounded-[28px] border border-slate-200/80 bg-white">
+            <div className="flex flex-col gap-4 px-6 pb-5 pt-6 sm:flex-row sm:items-end sm:justify-between sm:px-8 sm:pt-7">
+              <div>
+                <h2 className="text-lg font-bold tracking-tight">
+                  Application details
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  The information your lender is reviewing.
                 </p>
               </div>
 
-              <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
-                Your submitted details
-              </h2>
+              <button
+                type="button"
+                onClick={handleApplicationButton}
+                className={`inline-flex w-fit items-center gap-1.5 rounded-full bg-[#E7F4EC] px-4 py-2 text-sm font-semibold text-[#0E3B2C] transition hover:bg-[#D5EDDF] ${focusRing}`}
+              >
+                Open application
+                <ChevronRight size={16} />
+              </button>
+            </div>
 
-              <p className="mt-1 text-sm text-slate-500">
-                A clear view of the information currently associated with your application.
+            <div className="grid border-t border-slate-100 md:grid-cols-2">
+              <DetailGroup icon={FileText} title="Application">
+                <DetailRow label="Application number" value={applicationNumber} />
+                <DetailRow label="Status" value={formatStatus(applicationStatus)} />
+                <DetailRow label="Last updated" value={formatDateTime(submittedAt)} />
+                <DetailRow label="Lender" value={lender} />
+              </DetailGroup>
+
+              <DetailGroup icon={CircleUserRound} title="Personal">
+                <DetailRow label="Name" value={applicant.fullName} />
+                <DetailRow label="PAN" value={maskPan(applicant.panNumber)} mono />
+                <DetailRow label="Date of birth" value={formatDate(applicant.dateOfBirth)} />
+                <DetailRow label="Gender" value={formatStatus(applicant.gender)} />
+              </DetailGroup>
+
+              <DetailGroup icon={Phone} title="Contact">
+                <DetailRow
+                  label="Mobile"
+                  value={mobileNumber ? `+91 ${mobileNumber}` : 'Not available'}
+                  icon={Phone}
+                />
+                <DetailRow label="Email" value={applicant.email} icon={Mail} />
+                <DetailRow
+                  label="Home PIN code"
+                  value={applicant.pincode || applicant.residentialPincode}
+                  icon={MapPin}
+                />
+              </DetailGroup>
+
+              <DetailGroup icon={BriefcaseBusiness} title="Work & income">
+                <DetailRow
+                  label="Employment"
+                  value={formatStatus(applicant.employmentType)}
+                />
+                <DetailRow
+                  label={
+                    applicant.employmentType === 'SELF_EMPLOYED'
+                      ? 'Business'
+                      : 'Company'
+                  }
+                  value={
+                    applicant.employmentType === 'SELF_EMPLOYED'
+                      ? applicant.businessName
+                      : applicant.companyName
+                  }
+                />
+                <DetailRow
+                  label="Monthly income"
+                  value={formatCurrency(applicant.monthlyIncome)}
+                  icon={IndianRupee}
+                />
+                <DetailRow
+                  label="Work PIN code"
+                  value={applicant.workPincode}
+                  icon={MapPin}
+                />
+              </DetailGroup>
+            </div>
+          </div>
+
+          {/* Side column */}
+          <aside className="space-y-6">
+            <FeeReceipt feeDetails={feeDetails} paid={assessmentFeePaid} />
+
+            <div className="rounded-[24px] bg-[#E7F4EC] p-6">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0E3B2C] text-[#9BE3B5]">
+                  <Landmark size={20} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-[#0E3B2C]/60">Lending partner</p>
+                  <p className="truncate text-base font-bold text-[#0E3B2C]">
+                    {lender}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-4 flex items-start gap-2 text-sm leading-6 text-[#0E3B2C]/75">
+                <CheckCircle2 size={16} className="mt-1 shrink-0 text-[#1F8A5B]" />
+                Your application has been shared securely with this lender.
               </p>
             </div>
-
-            <button
-              type="button"
-              onClick={handleApplicationButton}
-              className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-extrabold text-slate-800 transition hover:border-slate-300 hover:bg-slate-100"
-            >
-              View application
-              <ArrowRight size={15} />
-            </button>
-          </div>
-
-          <div className="grid gap-px bg-slate-100 md:grid-cols-2 xl:grid-cols-4">
-            <ApplicationDetailCard
-              icon={FileText}
-              title="Application"
-              subtitle="Reference and status"
-            >
-              <DetailRow label="Application Number" value={applicationNumber} />
-              <DetailRow
-                label="Current Status"
-                value={formatStatus(applicationStatus)}
-              />
-              <DetailRow
-                label="Submitted On"
-                value={formatDateTime(submittedAt)}
-              />
-              <DetailRow label="Assigned Lender" value={lender} />
-            </ApplicationDetailCard>
-
-            <ApplicationDetailCard
-              icon={CircleUserRound}
-              title="Personal Details"
-              subtitle="Verified identity information"
-            >
-              <DetailRow label="Applicant Name" value={applicant.fullName} />
-              <DetailRow
-                label="PAN Number"
-                value={maskPan(applicant.panNumber)}
-              />
-              <DetailRow
-                label="Date of Birth"
-                value={formatDate(applicant.dateOfBirth)}
-              />
-              <DetailRow
-                label="Gender"
-                value={formatStatus(applicant.gender)}
-              />
-            </ApplicationDetailCard>
-
-            <ApplicationDetailCard
-              icon={Phone}
-              title="Communication"
-              subtitle="Contact information"
-            >
-              <DetailRow
-                label="Mobile Number"
-                value={
-                  mobileNumber ? `+91 ${mobileNumber}` : 'Not available'
-                }
-                icon={Phone}
-              />
-              <DetailRow
-                label="Email Address"
-                value={applicant.email}
-                icon={Mail}
-              />
-              <DetailRow
-                label="Residential PIN"
-                value={applicant.pincode || applicant.residentialPincode}
-                icon={MapPin}
-              />
-            </ApplicationDetailCard>
-
-            <ApplicationDetailCard
-              icon={BriefcaseBusiness}
-              title="Professional"
-              subtitle="Income and employment"
-            >
-              <DetailRow
-                label="Employment Type"
-                value={formatStatus(applicant.employmentType)}
-              />
-              <DetailRow
-                label={
-                  applicant.employmentType === 'SELF_EMPLOYED'
-                    ? 'Business Name'
-                    : 'Company Name'
-                }
-                value={
-                  applicant.employmentType === 'SELF_EMPLOYED'
-                    ? applicant.businessName
-                    : applicant.companyName
-                }
-              />
-              <DetailRow
-                label="Monthly Income"
-                value={formatCurrency(applicant.monthlyIncome)}
-                icon={IndianRupee}
-              />
-              <DetailRow
-                label="Work PIN Code"
-                value={applicant.workPincode}
-                icon={MapPin}
-              />
-            </ApplicationDetailCard>
-          </div>
+          </aside>
         </section>
+      ) : (
+        <GettingStarted
+          onStart={handleApplicationButton}
+          label={buttonLabel}
+        />
       )}
 
-      {/* Lender + payment workspace */}
-      {applicationSubmitted && (
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_350px]">
-          <div className="relative overflow-hidden rounded-[26px] border border-slate-200 bg-slate-950 text-white shadow-[0_15px_40px_rgba(15,23,42,0.12)]">
-            <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-emerald-500/15 blur-3xl" />
-            <div className="absolute -bottom-32 left-1/3 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-
-            <div className="relative grid min-h-[315px] sm:grid-cols-[minmax(0,1fr)_230px]">
-              <div className="p-6 sm:p-8">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/10 text-emerald-300 ring-1 ring-white/10">
-                    <Landmark size={21} />
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-300">
-                      Lending partner
-                    </p>
-                    <h3 className="mt-1 text-lg font-black text-white">
-                      {lender}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="mt-7 grid gap-3 sm:grid-cols-2">
-                  <MiniInfoCard
-                    label="Application"
-                    value={applicationNumber}
-                  />
-                  <MiniInfoCard
-                    label="Current stage"
-                    value={formatStatus(
-                      backendCustomer?.onboardingStatus || applicationStatus
-                    )}
-                  />
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="grid h-9 w-9 place-items-center rounded-full bg-emerald-400/10 text-emerald-300">
-                      <CheckCircle2 size={17} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold text-white">
-                        Application securely shared
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        Your application is with the assigned lending partner.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="relative hidden overflow-hidden sm:flex sm:items-end sm:justify-center">
-                <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 via-transparent to-transparent" />
-                <img
-                  src="/image/Img_F.png"
-                  alt="FinLeaf lending support"
-                  className="relative z-10 max-h-[285px] w-full object-contain object-bottom"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,0.06)] sm:p-7">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-600">
-                  Payment
-                </p>
-                <h3 className="mt-1 text-lg font-black text-slate-950">
-                  Assessment fee
-                </h3>
-              </div>
-
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-50 text-cyan-700">
-                <ReceiptText size={19} />
-              </div>
-            </div>
-
-            <div className="mt-7 space-y-4">
-              <DetailRow
-                label="Base Fee"
-                value={
-                  feeDetails ? formatCurrency(feeDetails.baseFee, true) : '—'
-                }
-              />
-
-              <DetailRow
-                label="GST"
-                value={
-                  feeDetails ? formatCurrency(feeDetails.gst, true) : '—'
-                }
-              />
-
-              <div className="border-t border-dashed border-slate-200 pt-4">
-                <DetailRow
-                  label={assessmentFeePaid ? 'Total Paid' : 'Total Payable'}
-                  value={
-                    feeDetails ? formatCurrency(feeDetails.total, true) : '—'
-                  }
-                  prominent
-                />
-              </div>
-
-              {assessmentFeePaid ? (
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3.5">
-                  <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-700">
-                    <CheckCircle2 size={16} />
-                    Payment completed successfully
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-amber-100 bg-amber-50 p-3.5">
-                  <div className="flex items-center gap-2 text-xs font-extrabold text-amber-700">
-                    <LoaderCircle size={16} />
-                    Payment pending
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Support */}
-      <section className="grid gap-3 md:grid-cols-2">
+      {/* ========================== SUPPORT ========================== */}
+      <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <button
           type="button"
           onClick={() => navigate('/customer/support')}
-          className="group flex min-h-[105px] items-center gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)]"
+          className={`group flex items-center gap-4 rounded-[24px] border border-slate-200/80 bg-white p-5 text-left transition hover:border-[#1F8A5B]/40 ${focusRing}`}
         >
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-950 text-white">
-            <Headphones size={21} />
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#0E3B2C] text-white">
+            <Headphones size={20} />
           </div>
-
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black text-slate-950">
-              Need assistance?
-            </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Get help from our customer support team.
+            <p className="font-semibold">Questions about your loan?</p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Contact our support team for help at any step.
             </p>
           </div>
-
           <ChevronRight
-            size={19}
-            className="shrink-0 text-slate-300 transition group-hover:translate-x-1 group-hover:text-emerald-600"
+            size={20}
+            className="shrink-0 text-slate-300 transition group-hover:text-[#1F8A5B]"
           />
         </button>
 
-        <div className="flex min-h-[105px] items-center gap-4 rounded-[22px] border border-cyan-100 bg-cyan-50/70 px-5 py-4">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-cyan-700 shadow-sm">
-            <CalendarDays size={21} />
+        <div className="flex items-center gap-4 rounded-[24px] border border-dashed border-slate-300 bg-[#F7F9F6] p-5">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-[#1F8A5B] ring-1 ring-slate-200">
+            <Clock3 size={20} />
           </div>
-
           <div>
-            <p className="text-sm font-black text-cyan-950">
-              What happens next?
-            </p>
-            <p className="mt-1 text-xs leading-5 text-cyan-900/65">
-              Your next action will appear automatically when your application is updated.
+            <p className="font-semibold">What happens next</p>
+            <p className="mt-0.5 text-sm leading-6 text-slate-500">
+              {journey.nextHint}
             </p>
           </div>
         </div>
@@ -696,75 +573,364 @@ export default function CustomerDashboard() {
   );
 }
 
-function DashboardMetricCard({ icon: Icon, label, value, helper, tone }) {
-  const tones = {
-    emerald: {
-      container:
-        'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/70',
-      icon: 'bg-emerald-100 text-emerald-700',
-    },
-    blue: {
-      container:
-        'border-blue-100 bg-gradient-to-br from-white to-blue-50/70',
-      icon: 'bg-blue-100 text-blue-700',
-    },
-    violet: {
-      container:
-        'border-purple-100 bg-gradient-to-br from-white to-purple-50/70',
-      icon: 'bg-purple-100 text-purple-700',
-    },
-    amber: {
-      container:
-        'border-amber-100 bg-gradient-to-br from-white to-amber-50/70',
-      icon: 'bg-amber-100 text-amber-700',
-    },
-  };
+/* ================================================================== */
+/*  Journey                                                           */
+/* ================================================================== */
 
-  const selectedTone = tones[tone] || tones.emerald;
+function buildJourney({
+  applicationSubmitted,
+  assessmentFeePaid,
+  approved,
+  disbursalStatus,
+  loanStatus,
+  isFullyPaid,
+}) {
+  const disbursed =
+    disbursalStatus === 'DISBURSED' || loanStatus === 'DISBURSED' || isFullyPaid;
+  const disbursing =
+    disbursalStatus === 'DISBURSAL_REQUESTED' ||
+    disbursalStatus === 'DISBURSAL_PROCESSING';
+
+  const base = [
+    {
+      key: 'apply',
+      title: 'Application',
+      done: applicationSubmitted,
+      doneText: 'Submitted',
+      currentText: 'Complete and submit',
+      hint: 'Finish your application to send it to a lending partner.',
+    },
+    {
+      key: 'fee',
+      title: 'Assessment fee',
+      done: assessmentFeePaid,
+      doneText: 'Paid',
+      currentText: 'Payment pending',
+      hint: 'Pay the assessment fee so the lender can review your application.',
+    },
+    {
+      key: 'approval',
+      title: 'Lender approval',
+      done: approved,
+      doneText: 'Approved',
+      currentText: 'Under review',
+      hint: 'The lender is reviewing your application. Your next step will appear here once they decide.',
+    },
+    {
+      key: 'disbursal',
+      title: 'Disbursal',
+      done: disbursed,
+      doneText: 'Funds sent',
+      currentText: disbursing ? 'Transfer in progress' : 'Awaiting your action',
+      hint: disbursing
+        ? 'Your disbursal is being processed. Funds usually reach your bank account shortly after.'
+        : 'Complete the post-approval steps to receive your funds.',
+    },
+  ];
+
+  // Steps are cumulative: a later completed step implies earlier ones are done.
+  let lastDone = -1;
+  base.forEach((s, i) => {
+    if (s.done) lastDone = i;
+  });
+
+  const steps = base.map((s, i) => {
+    const state =
+      i <= lastDone ? 'done' : i === lastDone + 1 ? 'current' : 'upcoming';
+    return {
+      ...s,
+      state,
+      caption:
+        state === 'done' ? s.doneText : state === 'current' ? s.currentText : 'Upcoming',
+    };
+  });
+
+  const current = steps.find((s) => s.state === 'current');
+
+  return {
+    steps,
+    completed: lastDone + 1,
+    nextHint: isFullyPaid
+      ? 'Start a new application whenever you need funds again.'
+      : current
+      ? current.hint
+      : 'Your loan is active. View loan details for repayment dates and EMI.',
+  };
+}
+
+function JourneyStep({ step, index, isLast }) {
+  const isDone = step.state === 'done';
+  const isCurrent = step.state === 'current';
 
   return (
-    <article
-      className={`group relative overflow-hidden rounded-[20px] border p-4 shadow-[0_6px_20px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)] ${selectedTone.container}`}
+    <li
+      className="relative flex gap-3 md:flex-col md:gap-3 md:pr-4"
+      aria-current={isCurrent ? 'step' : undefined}
     >
-      <div className="flex items-start justify-between gap-5 border-b border-slate-50 pb-3 last:border-0 last:pb-0">
-        <div
-          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${selectedTone.icon}`}
+      {/* connector */}
+      {!isLast && (
+        <span
+          aria-hidden="true"
+          className={`absolute left-[15px] top-9 h-[calc(100%-12px)] w-px md:left-10 md:right-0 md:top-[15px] md:h-px md:w-auto ${
+            isDone ? 'bg-[#9BE3B5]' : 'bg-white/15'
+          }`}
+        />
+      )}
+
+      <span
+        className={`relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold ${
+          isDone
+            ? 'bg-[#9BE3B5] text-[#0E3B2C]'
+            : isCurrent
+            ? 'bg-white text-[#0E3B2C] ring-4 ring-[#9BE3B5]/30'
+            : 'bg-transparent text-emerald-100/50 ring-1 ring-white/20'
+        }`}
+      >
+        {isDone ? <Check size={16} strokeWidth={3} /> : index + 1}
+      </span>
+
+      <div className="pb-1">
+        <p
+          className={`text-sm font-semibold ${
+            isDone || isCurrent ? 'text-white' : 'text-emerald-100/50'
+          }`}
         >
-          <Icon size={20} />
-        </div>
-
-        <span className="inline-flex items-center gap-1 rounded-full border border-slate-100 bg-white px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
-          Live
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        </span>
+          {step.title}
+        </p>
+        <p
+          className={`mt-0.5 text-xs ${
+            isCurrent
+              ? 'text-[#9BE3B5]'
+              : isDone
+              ? 'text-emerald-100/70'
+              : 'text-emerald-100/40'
+          }`}
+        >
+          {step.caption}
+        </p>
       </div>
-
-      <p className="mt-4 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1.5 break-words text-sm font-black leading-5 text-slate-950">
-        {value}
-      </p>
-
-      <p className="mt-1 text-[11px] leading-4 text-slate-500">{helper}</p>
-    </article>
+    </li>
   );
 }
 
-function MiniInfoCard({ label, value }) {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
-      <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
-        {label}
-      </p>
+/* ================================================================== */
+/*  Building blocks                                                   */
+/* ================================================================== */
 
-      <p className="mt-1.5 break-words text-xs font-extrabold text-slate-800">
-        {value || 'Not available'}
-      </p>
+function FactCell({ icon: Icon, label, value, muted = false }) {
+  return (
+    <div className="flex items-start gap-3.5 border-b border-slate-100 p-5 last:border-b-0 sm:[&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0">
+      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#F1F6F2] text-[#1F8A5B]">
+        <Icon size={18} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-slate-500">{label}</p>
+        <p
+          className={`mt-1 break-words text-[15px] font-semibold leading-5 tabular-nums ${
+            muted ? 'text-slate-400' : 'text-[#13211A]'
+          }`}
+        >
+          {value}
+        </p>
+      </div>
     </div>
   );
 }
+
+function DetailGroup({ icon: Icon, title, children }) {
+  return (
+    <div className="border-b border-slate-100 px-6 py-6 sm:px-8 md:[&:nth-child(odd)]:border-r md:[&:nth-last-child(-n+2)]:border-b-0">
+      <div className="mb-4 flex items-center gap-2 text-[#0E3B2C]">
+        <Icon size={16} className="text-[#1F8A5B]" />
+        <h3 className="text-sm font-bold">{title}</h3>
+      </div>
+      <dl className="space-y-3">{children}</dl>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, icon: Icon, prominent = false, mono = false }) {
+  return (
+    <div className="flex items-start justify-between gap-5">
+      <dt className="flex items-center gap-1.5 text-sm leading-6 text-slate-500">
+        {Icon && <Icon size={13} className="shrink-0 text-slate-400" />}
+        {label}
+      </dt>
+      <dd
+        className={`max-w-[60%] break-words text-right leading-6 text-[#13211A] ${
+          prominent ? 'text-lg font-bold' : 'text-sm font-semibold'
+        } ${mono ? 'tracking-wider' : ''} tabular-nums`}
+      >
+        {value || 'Not provided'}
+      </dd>
+    </div>
+  );
+}
+
+function FeeReceipt({ feeDetails, paid }) {
+  return (
+    <div className="relative rounded-[24px] border border-slate-200/80 bg-white">
+      <div className="p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold">Assessment fee</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              One-time, including GST
+            </p>
+          </div>
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#F1F6F2] text-[#1F8A5B]">
+            <ReceiptText size={18} />
+          </div>
+        </div>
+
+        <dl className="mt-6 space-y-2.5">
+          <DetailRow
+            label="Base fee"
+            value={feeDetails ? formatCurrency(feeDetails.baseFee, true) : '—'}
+          />
+          <DetailRow
+            label="GST"
+            value={feeDetails ? formatCurrency(feeDetails.gst, true) : '—'}
+          />
+        </dl>
+      </div>
+
+      {/* perforation */}
+      <div aria-hidden="true" className="relative h-5">
+        <span className="absolute -left-2.5 top-0 h-5 w-5 rounded-full border border-slate-200/80 bg-[#F7F9F6] [clip-path:inset(0_0_0_50%)]" />
+        <span className="absolute -right-2.5 top-0 h-5 w-5 rounded-full border border-slate-200/80 bg-[#F7F9F6] [clip-path:inset(0_50%_0_0)]" />
+        <span className="absolute inset-x-5 top-1/2 border-t-2 border-dotted border-slate-200" />
+      </div>
+
+      <div className="p-6 pt-3">
+        <dl>
+          <DetailRow
+            label={paid ? 'Total paid' : 'Total payable'}
+            value={feeDetails ? formatCurrency(feeDetails.total, true) : '—'}
+            prominent
+          />
+        </dl>
+
+        <div
+          className={`mt-4 flex items-center gap-2 rounded-xl px-3.5 py-3 text-sm font-semibold ${
+            paid
+              ? 'bg-[#E7F4EC] text-[#145239]'
+              : 'bg-amber-50 text-[#8A5A12]'
+          }`}
+          role="status"
+        >
+          {paid ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
+          {paid ? 'Payment received' : 'Payment pending'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GettingStarted({ onStart, label }) {
+  const items = [
+    { icon: CircleUserRound, title: 'PAN card', text: 'To verify your identity.' },
+    {
+      icon: BriefcaseBusiness,
+      title: 'Work and income details',
+      text: 'Employer or business name and monthly income.',
+    },
+    { icon: MapPin, title: 'Address PIN codes', text: 'For your home and workplace.' },
+  ];
+
+  return (
+    <section className="rounded-[28px] border border-slate-200/80 bg-white p-6 sm:p-8">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight">
+            Keep these ready before you apply
+          </h2>
+          <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+            Having these at hand makes the application quicker. You can save
+            and come back at any time.
+          </p>
+          <button
+            type="button"
+            onClick={onStart}
+            className={`mt-6 inline-flex min-h-12 items-center gap-2 rounded-full bg-[#0E3B2C] px-6 text-sm font-semibold text-white transition hover:bg-[#145239] ${focusRing}`}
+          >
+            {label}
+            <ArrowRight size={16} />
+          </button>
+        </div>
+
+        <ul className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+          {items.map(({ icon: Icon, title, text }) => (
+            <li
+              key={title}
+              className="flex items-start gap-3 rounded-2xl bg-[#F7F9F6] p-4"
+            >
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-[#1F8A5B] ring-1 ring-slate-200">
+                <Icon size={17} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{title}</p>
+                <p className="mt-0.5 text-sm text-slate-500">{text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function DashboardSkeleton() {
+  const bar = 'rounded-full bg-slate-200/80 motion-safe:animate-pulse';
+
+  return (
+    <div
+      className="mx-auto w-full max-w-[1400px] space-y-6 px-0"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">Loading your dashboard</span>
+
+      <div className="overflow-hidden rounded-[32px] bg-[#0E3B2C]">
+        <div className="space-y-4 p-8 sm:p-10">
+          <div className="h-4 w-32 rounded-full bg-white/10 motion-safe:animate-pulse" />
+          <div className="h-10 w-3/4 max-w-lg rounded-2xl bg-white/10 motion-safe:animate-pulse" />
+          <div className="h-4 w-1/2 max-w-sm rounded-full bg-white/10 motion-safe:animate-pulse" />
+          <div className="h-12 w-48 rounded-full bg-white/15 motion-safe:animate-pulse" />
+        </div>
+        <div className="grid gap-4 border-t border-white/10 bg-[#0A2F23] p-8 md:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-white/10" />
+              <div className="h-3 w-24 rounded-full bg-white/10 motion-safe:animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 rounded-[24px] border border-slate-200/80 bg-white p-5 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-slate-100" />
+            <div className="flex-1 space-y-2">
+              <div className={`h-3 w-20 ${bar}`} />
+              <div className={`h-4 w-32 ${bar}`} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_370px]">
+        <div className="h-80 rounded-[28px] border border-slate-200/80 bg-white" />
+        <div className="h-80 rounded-[24px] border border-slate-200/80 bg-white" />
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Helpers (unchanged behaviour)                                     */
+/* ================================================================== */
 
 function getStoredSession() {
   try {
@@ -772,49 +938,6 @@ function getStoredSession() {
   } catch {
     return null;
   }
-}
-
-function ApplicationDetailCard({ icon: Icon, title, subtitle, children }) {
-  return (
-    <article className="bg-white p-5 transition hover:bg-slate-50/60 sm:p-6">
-      <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700">
-          <Icon size={19} />
-        </div>
-
-        <div>
-          <h3 className="text-sm font-black text-slate-950">{title}</h3>
-
-          {subtitle && (
-            <p className="mt-0.5 text-[10px] text-slate-400">{subtitle}</p>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-5 space-y-3.5">{children}</div>
-    </article>
-  );
-}
-
-function DetailRow({ label, value, icon: Icon, prominent = false }) {
-  return (
-    <div className="flex items-start justify-between gap-5 border-b border-slate-50 pb-3 last:border-0 last:pb-0">
-      <span className="flex items-center gap-1.5 text-[11px] leading-5 text-slate-400">
-        {Icon && <Icon size={13} className="shrink-0" />}
-        {label}
-      </span>
-
-      <span
-        className={`max-w-[62%] break-words text-right leading-5 text-neutral-950 ${
-          prominent
-            ? 'text-base font-bold'
-            : 'text-xs font-bold sm:text-sm'
-        }`}
-      >
-        {value || 'Not provided'}
-      </span>
-    </div>
-  );
 }
 
 function maskPan(panNumber) {

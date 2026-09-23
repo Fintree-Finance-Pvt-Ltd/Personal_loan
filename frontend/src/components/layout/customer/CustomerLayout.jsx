@@ -1,53 +1,102 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { getCustomerAccessToken, doCustomerRefresh, shouldClearCustomerSession } from '../../../features/customer/customerApi';
+import {
+  getCustomerAccessToken,
+  doCustomerRefresh,
+  shouldClearCustomerSession,
+  getCustomerMe,
+} from '../../../features/customer/customerApi';
 import CustomerHeader from './CustomerHeader';
 import CustomerSidebar from './CustomerSidebar';
+
+function getStoredCustomer() {
+  try {
+    const raw =
+      localStorage.getItem('customerSession') ||
+      sessionStorage.getItem('customerSession');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function CustomerLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [customer, setCustomer] = useState(getStoredCustomer);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (getCustomerAccessToken()) {
-      setIsInitializing(false);
-      return;
-    }
+    let isCancelled = false;
 
-    const hasStoredSession = Boolean(localStorage.getItem('customerSession') || sessionStorage.getItem('customerSession'));
+    const initAuth = async () => {
+      let token = getCustomerAccessToken();
 
-    if (!hasStoredSession) {
-      navigate(`/customer/login${location.search}`, { replace: true });
-      return;
-    }
+      if (!token) {
+        const hasStoredSession = Boolean(
+          localStorage.getItem('customerSession') ||
+            sessionStorage.getItem('customerSession')
+        );
 
-    doCustomerRefresh()
-      .then(() => setIsInitializing(false))
-      .catch((error) => {
-        setIsInitializing(false);
-        // A network blip or a transient backend error (a dropped DB connection,
-        // a 500, a timeout) is not proof the session is invalid — it just means
-        // this one attempt to confirm it failed. Only wipe the stored session
-        // and force a re-login when the backend has explicitly said the
-        // refresh token/session is dead. Same rule the axios interceptor below
-        // already applies to reactive refreshes; this is the same check for the
-        // proactive one that runs on every full page reload.
-        if (shouldClearCustomerSession(error)) {
-          localStorage.removeItem('customerSession');
-          sessionStorage.removeItem('customerSession');
+        if (!hasStoredSession) {
           navigate(`/customer/login${location.search}`, { replace: true });
+          return;
         }
-      });
+
+        try {
+          await doCustomerRefresh();
+          token = getCustomerAccessToken();
+        } catch (error) {
+          if (!isCancelled) setIsInitializing(false);
+          if (shouldClearCustomerSession(error)) {
+            localStorage.removeItem('customerSession');
+            sessionStorage.removeItem('customerSession');
+            navigate(`/customer/login${location.search}`, { replace: true });
+          }
+          return;
+        }
+      }
+
+      if (isCancelled) return;
+      setIsInitializing(false);
+
+      // Fetch latest profile to keep customer name & phone in sync across navbar & sidebar
+      try {
+        const profile = await getCustomerMe();
+        if (profile && !isCancelled) {
+          setCustomer((prev) => ({ ...prev, ...profile }));
+          try {
+            const stored = JSON.parse(
+              localStorage.getItem('customerSession') || '{}'
+            );
+            localStorage.setItem(
+              'customerSession',
+              JSON.stringify({
+                ...stored,
+                customerId: profile.id || profile.customerId || stored.customerId,
+                customerCode: profile.customerCode || stored.customerCode,
+                mobileNumber: profile.mobileNumber || stored.mobileNumber,
+                fullName: profile.fullName || stored.fullName,
+              })
+            );
+          } catch {
+            // Ignore storage write issues
+          }
+        }
+      } catch {
+        // Non-blocking: profile fetch failure shouldn't prevent layout from rendering
+      }
+    };
+
+    initAuth();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [navigate, location.search]);
 
-  // Customer sessions have no idle timeout (only a 30-day absolute cap — see
-  // otp.service.ts), so this heartbeat isn't preventing a logout. It's here so
-  // the access token (15-minute JWT) is proactively renewed while a tab sits
-  // open, rather than expiring silently and making the customer's next click
-  // eat an invisible 401-then-retry round trip. A single missed beat (network
-  // blip) is harmless — the next real request's 401 handling covers it.
+  // Keep access token proactive refresh alive
   useEffect(() => {
     if (isInitializing) return undefined;
     const HEARTBEAT_MS = 10 * 60 * 1000;
@@ -58,23 +107,32 @@ export default function CustomerLayout() {
   }, [isInitializing]);
 
   if (isInitializing) {
-    return <div className="min-h-screen flex items-center justify-center bg-neutral-50">Loading...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-3 border-emerald-600 border-t-transparent" />
+          <p className="text-sm font-medium text-slate-500">Loading your account…</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-[#F7F9F6]">
       <CustomerSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        customer={customer}
       />
 
-      <div className="min-h-screen lg:pl-72">
+      <div className="min-h-screen lg:pl-[260px]">
         <CustomerHeader
           onMenuClick={() => setSidebarOpen(true)}
+          customer={customer}
         />
 
         <main className="p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          <Outlet context={{ customer, setCustomer }} />
         </main>
       </div>
     </div>

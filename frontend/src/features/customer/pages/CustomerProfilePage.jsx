@@ -30,6 +30,24 @@ export function CustomerProfilePage() {
     try {
       const data = await getCustomerMe();
       setCustomer(data);
+      if (data?.fullName || data?.mobileNumber) {
+        try {
+          const stored = JSON.parse(
+            localStorage.getItem('customerSession') || '{}'
+          );
+          localStorage.setItem(
+            'customerSession',
+            JSON.stringify({
+              ...stored,
+              customerId: data.id || data.customerId || stored.customerId,
+              fullName: data.fullName || stored.fullName,
+              mobileNumber: data.mobileNumber || stored.mobileNumber,
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
       setError('');
     } catch (err) {
       console.error('Failed to load profile:', err);
