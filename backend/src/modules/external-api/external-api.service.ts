@@ -672,6 +672,16 @@ export class ExternalApiService {
       firstName: this.cleanOptionalText(panDetails?.firstName),
       middleName: this.cleanOptionalText(panDetails?.middleName),
       lastName: this.cleanOptionalText(panDetails?.lastName),
+      fatherName: this.cleanOptionalText(
+        panDetails?.father_name ||
+        panDetails?.fatherName ||
+        (panDetails as any)?.careOf ||
+        (panDetails as any)?.father ||
+        (providerData as any)?.father_name ||
+        (providerData as any)?.fatherName ||
+        (response as any)?.data?.response?.father_name ||
+        (response as any)?.data?.response?.fatherName,
+      ),
       gender: this.mapGender(panDetails?.gender),
       dateOfBirth: this.convertDateToIso(panDetails?.dob),
       maskedAadhaar: this.cleanOptionalText(panDetails?.maskedAadhaar),

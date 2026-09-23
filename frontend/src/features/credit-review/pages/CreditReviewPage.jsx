@@ -128,12 +128,8 @@ export default function CreditReviewPage() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState('');
 
-  // Action Modals State
+  // Action State
   const [actioningId, setActioningId] = useState(null);
-  const [approvalModalApp, setApprovalModalApp] = useState(null);
-  const [rejectionModalApp, setRejectionModalApp] = useState(null);
-  const [rejectReasonType, setRejectReasonType] = useState('Name mismatch across KYC documents');
-  const [rejectCustomRemarks, setRejectCustomRemarks] = useState('');
 
   // Image Zoom Modal
   const [zoomedImage, setZoomedImage] = useState(null);
@@ -195,42 +191,36 @@ export default function CreditReviewPage() {
     }
   };
 
-  const handleApproveConfirm = async () => {
-    if (!approvalModalApp) return;
-    const appId = approvalModalApp.applicationId;
+  const handleApprove = async (appId) => {
+    if (!appId) return;
     setActioningId(appId);
     setError('');
     try {
       await creditReviewApi.approve(appId);
-      setApprovalModalApp(null);
       if (selectedApplicationId === appId) {
         closeApplicationReview();
       }
       loadPendingApplications();
     } catch (err) {
       setError(apiError(err, 'Failed to approve application.'));
+    } finally {
       setActioningId(null);
     }
   };
 
-  const handleRejectConfirm = async () => {
-    if (!rejectionModalApp) return;
-    const appId = rejectionModalApp.applicationId;
+  const handleReject = async (appId, reason = 'Rejected during credit underwriting review') => {
+    if (!appId) return;
     setActioningId(appId);
     setError('');
-    const fullReason = rejectCustomRemarks.trim()
-      ? `${rejectReasonType}: ${rejectCustomRemarks.trim()}`
-      : rejectReasonType;
     try {
-      await creditReviewApi.reject(appId, fullReason);
-      setRejectionModalApp(null);
-      setRejectCustomRemarks('');
+      await creditReviewApi.reject(appId, reason);
       if (selectedApplicationId === appId) {
         closeApplicationReview();
       }
       loadPendingApplications();
     } catch (err) {
       setError(apiError(err, 'Failed to reject application.'));
+    } finally {
       setActioningId(null);
     }
   };
@@ -397,9 +387,13 @@ export default function CreditReviewPage() {
                             type="button"
                             size="sm"
                             disabled={actioningId === app.applicationId}
-                            onClick={() => setApprovalModalApp(app)}
+                            onClick={() => handleApprove(app.applicationId)}
                           >
-                            <ThumbsUp className="h-3.5 w-3.5" />
+                            {actioningId === app.applicationId ? (
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <ThumbsUp className="h-3.5 w-3.5" />
+                            )}
                             Approve
                           </Button>
                           <Button
@@ -407,9 +401,13 @@ export default function CreditReviewPage() {
                             variant="dangerGhost"
                             size="sm"
                             disabled={actioningId === app.applicationId}
-                            onClick={() => setRejectionModalApp(app)}
+                            onClick={() => handleReject(app.applicationId)}
                           >
-                            <ThumbsDown className="h-3.5 w-3.5" />
+                            {actioningId === app.applicationId ? (
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                            )}
                             Reject
                           </Button>
                         </div>
@@ -451,9 +449,13 @@ export default function CreditReviewPage() {
                       type="button"
                       size="sm"
                       disabled={actioningId === selectedApplicationId}
-                      onClick={() => setApprovalModalApp(details.application)}
+                      onClick={() => handleApprove(selectedApplicationId)}
                     >
-                      <ThumbsUp className="h-4 w-4" />
+                      {actioningId === selectedApplicationId ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ThumbsUp className="h-4 w-4" />
+                      )}
                       Approve loan
                     </Button>
                     <Button
@@ -461,9 +463,13 @@ export default function CreditReviewPage() {
                       variant="dangerGhost"
                       size="sm"
                       disabled={actioningId === selectedApplicationId}
-                      onClick={() => setRejectionModalApp(details.application)}
+                      onClick={() => handleReject(selectedApplicationId)}
                     >
-                      <ThumbsDown className="h-4 w-4" />
+                      {actioningId === selectedApplicationId ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ThumbsDown className="h-4 w-4" />
+                      )}
                       Reject loan
                     </Button>
                   </>
@@ -1278,16 +1284,26 @@ export default function CreditReviewPage() {
                       variant="danger"
                       size="sm"
                       disabled={actioningId === selectedApplicationId}
-                      onClick={() => setRejectionModalApp(details.application)}
+                      onClick={() => handleReject(selectedApplicationId)}
                     >
+                      {actioningId === selectedApplicationId ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                      )}
                       Reject application
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       disabled={actioningId === selectedApplicationId}
-                      onClick={() => setApprovalModalApp(details.application)}
+                      onClick={() => handleApprove(selectedApplicationId)}
                     >
+                      {actioningId === selectedApplicationId ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                      )}
                       Approve application
                     </Button>
                   </>
@@ -1298,127 +1314,7 @@ export default function CreditReviewPage() {
         </div>
       )}
 
-      {/* Approve Confirmation Modal */}
-      {approvalModalApp && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-neutral-900/60 backdrop-blur-sm p-4">
-          <Card elevated className="w-full max-w-md">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-100 text-brand-600">
-                <ThumbsUp className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-display text-lg font-bold text-ink">Confirm credit approval</h3>
-                <p className="text-xs text-neutral-500">Final manual underwriting sign-off</p>
-              </div>
-            </div>
 
-            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3.5 mb-4 text-sm space-y-2">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Customer:</span>
-                <span className="font-bold text-neutral-900">{approvalModalApp.customerName || details?.customer?.fullName || '-'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">LAN:</span>
-                <span className="font-mono font-bold text-neutral-900">{approvalModalApp.platformLan || details?.application?.platformLan}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Disbursal Amount:</span>
-                <span className="font-bold text-brand-600">{formatCurrency(approvalModalApp.selectedAmount || details?.application?.selectedAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Approved Tenure:</span>
-                <span className="font-bold text-neutral-900">{approvalModalApp.selectedTenure || details?.application?.selectedTenure} days</span>
-              </div>
-            </div>
-
-            <p className="text-xs text-neutral-600 mb-5">
-              Approving this application will immediately generate the loan record, carry forward DigiLocker verification and address confirmation, and prepare the customer for agreement signing & disbursal.
-            </p>
-
-            <div className="flex items-center justify-end gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={() => setApprovalModalApp(null)} disabled={actioningId !== null}>
-                Cancel
-              </Button>
-              <Button type="button" size="sm" disabled={actioningId !== null} onClick={handleApproveConfirm}>
-                {actioningId ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                Confirm &amp; approve
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Reject Confirmation Modal */}
-      {rejectionModalApp && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-neutral-900/60 backdrop-blur-sm p-4">
-          <Card elevated className="w-full max-w-md">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-danger-100 text-danger-600">
-                <ThumbsDown className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-display text-lg font-bold text-ink">Reject application</h3>
-                <p className="text-xs text-neutral-500">Provide the credit underwriting rejection reason</p>
-              </div>
-            </div>
-
-            <div className="mb-5 space-y-4">
-              <Select
-                label="Rejection reason category"
-                value={rejectReasonType}
-                onChange={(e) => setRejectReasonType(e.target.value)}
-              >
-                <option value="Name mismatch across KYC documents (PAN vs Aadhaar)">
-                  Name mismatch across KYC documents (PAN vs Aadhaar)
-                </option>
-                <option value="Customer live photo face mismatch or poor quality">
-                  Customer live photo face mismatch or poor quality
-                </option>
-                <option value="Bank account beneficiary name mismatch / penny drop failed">
-                  Bank account beneficiary name mismatch / penny drop failed
-                </option>
-                <option value="Incomplete or forged documentation">Incomplete or forged documentation</option>
-                <option value="Income insufficient for selected loan amount">
-                  Income insufficient for selected loan amount
-                </option>
-                <option value="Address verification negative / unserviceable">
-                  Address verification negative / unserviceable
-                </option>
-                <option value="Adverse credit bureau findings">Adverse credit bureau findings</option>
-                <option value="Customer requested cancellation">Customer requested cancellation</option>
-                <option value="Other Underwriting Reason">Other Underwriting Reason</option>
-              </Select>
-
-              <Textarea
-                label="Additional underwriting remarks (optional)"
-                rows={3}
-                placeholder="Specify details or notes for audit trail..."
-                value={rejectCustomRemarks}
-                onChange={(e) => setRejectCustomRemarks(e.target.value)}
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setRejectionModalApp(null);
-                  setRejectCustomRemarks('');
-                }}
-                disabled={actioningId !== null}
-              >
-                Cancel
-              </Button>
-              <Button type="button" variant="danger" size="sm" disabled={actioningId !== null} onClick={handleRejectConfirm}>
-                {actioningId ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-                Confirm rejection
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
 
       {/* Image Zoom Modal */}
       {zoomedImage && (

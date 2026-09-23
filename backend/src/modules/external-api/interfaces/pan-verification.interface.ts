@@ -14,6 +14,8 @@ export interface FinanalyzPanResponse {
       firstName?: string;
       middleName?: string;
       lastName?: string;
+      father_name?: string;
+      fatherName?: string;
       gender?: string;
       dob?: string;
       address?: string;

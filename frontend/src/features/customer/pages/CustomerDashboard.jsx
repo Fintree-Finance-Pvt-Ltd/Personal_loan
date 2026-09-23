@@ -1,7 +1,4 @@
-import {
-  useEffect,
-  useState,
-} from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -25,9 +22,7 @@ import {
   Sparkles,
   WalletCards,
 } from 'lucide-react';
-import {
-  useNavigate,
-} from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   customerApi,
   doCustomerRefresh,
@@ -36,78 +31,43 @@ import {
 } from '../customerApi';
 
 export default function CustomerDashboard() {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
-  const [
-    backendCustomer,
-    setBackendCustomer,
-  ] = useState(null);
+  const [backendCustomer, setBackendCustomer] = useState(null);
+  const [isLoadingCustomer, setIsLoadingCustomer] = useState(true);
+  const [customerError, setCustomerError] = useState('');
 
-  const [
-    isLoadingCustomer,
-    setIsLoadingCustomer,
-  ] = useState(true);
+  const storedSession = getStoredSession();
+  const customerId = storedSession?.customerId || null;
 
-  const [
-    customerError,
-    setCustomerError,
-  ] = useState('');
+  const fetchCustomerData = async () => {
+    if (!customerId) {
+      return;
+    }
 
-  const storedSession =
-    getStoredSession();
+    setIsLoadingCustomer(true);
+    setCustomerError('');
 
-  const customerId =
-    storedSession?.customerId ||
-    null;
-
-  const fetchCustomerData =
-    async () => {
-      if (!customerId) {
-        return;
-      }
-
-      setIsLoadingCustomer(
-        true,
+    try {
+      const customerData = await customerApi.getCustomerById(customerId);
+      setBackendCustomer(customerData);
+    } catch (error) {
+      console.error('Failed to fetch customer data:', error);
+      setCustomerError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load customer details.'
       );
-
-      setCustomerError('');
-
-      try {
-        const customerData =
-          await customerApi.getCustomerById(
-            customerId,
-          );
-
-        setBackendCustomer(
-          customerData,
-        );
-      } catch (error) {
-        console.error(
-          'Failed to fetch customer data:',
-          error,
-        );
-
-        setCustomerError(
-          error instanceof Error
-            ? error.message
-            : 'Unable to load customer details.',
-        );
-      } finally {
-        setIsLoadingCustomer(
-          false,
-        );
-      }
-    };
+    } finally {
+      setIsLoadingCustomer(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
 
     const bootstrap = async () => {
-      let hasAccessToken =
-        Boolean(
-          getCustomerAccessToken(),
-        );
+      let hasAccessToken = Boolean(getCustomerAccessToken());
 
       // A hard page refresh always wipes the in-memory access token.
       // Before treating that as "logged out", try a silent refresh
@@ -116,10 +76,7 @@ export default function CustomerDashboard() {
       if (!hasAccessToken) {
         try {
           await doCustomerRefresh();
-          hasAccessToken =
-            Boolean(
-              getCustomerAccessToken(),
-            );
+          hasAccessToken = Boolean(getCustomerAccessToken());
         } catch {
           hasAccessToken = false;
         }
@@ -128,67 +85,34 @@ export default function CustomerDashboard() {
       if (cancelled) return;
 
       if (!hasAccessToken) {
-        localStorage.removeItem(
-          'customerSession',
-        );
-
-        sessionStorage.removeItem(
-          'customerSession',
-        );
-
-        navigate(
-          '/customer/login',
-          {
-            replace: true,
-          },
-        );
-
+        localStorage.removeItem('customerSession');
+        sessionStorage.removeItem('customerSession');
+        navigate('/customer/login', { replace: true });
         return;
       }
 
-      if (
-        !customerId &&
-        hasAccessToken
-      ) {
-      setIsLoadingCustomer(
-        true,
-      );
+      if (!customerId && hasAccessToken) {
+        setIsLoadingCustomer(true);
+        setCustomerError('');
 
-      setCustomerError('');
-
-      customerApi
-        .getCustomerMe()
-        .then(
-          (
-            customerData,
-          ) => {
-            setBackendCustomer(
-              customerData,
-            );
-          },
-        )
-        .catch(
-          (error) => {
-            console.error(
-              'Failed to fetch customer data:',
-              error,
-            );
-
+        customerApi
+          .getCustomerMe()
+          .then((customerData) => {
+            setBackendCustomer(customerData);
+          })
+          .catch((error) => {
+            console.error('Failed to fetch customer data:', error);
             setCustomerError(
-              error instanceof
-                Error
+              error instanceof Error
                 ? error.message
-                : 'Unable to load customer details.',
+                : 'Unable to load customer details.'
             );
-          },
-        )
-        .finally(() => {
-          setIsLoadingCustomer(
-            false,
-          );
-        });
+          })
+          .finally(() => {
+            setIsLoadingCustomer(false);
+          });
 
-      return;
+        return;
       }
 
       fetchCustomerData();
@@ -199,137 +123,81 @@ export default function CustomerDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [
-    customerId,
-    navigate,
-  ]);
+  }, [customerId, navigate]);
 
-  const hasBackendProgress =
-    Boolean(
-      backendCustomer?.panVerified ||
+  const hasBackendProgress = Boolean(
+    backendCustomer?.panVerified ||
       backendCustomer?.emailVerified ||
       backendCustomer?.fullName ||
-      (
-        backendCustomer?.onboardingStatus &&
-        backendCustomer.onboardingStatus !==
-        'MOBILE_VERIFIED'
-      ),
-    );
+      (backendCustomer?.onboardingStatus &&
+        backendCustomer.onboardingStatus !== 'MOBILE_VERIFIED')
+  );
 
   const mobileNumber =
-    backendCustomer?.mobileNumber ||
-    storedSession?.mobileNumber ||
-    '';
+    backendCustomer?.mobileNumber || storedSession?.mobileNumber || '';
 
-  const applicationSubmitted =
-    Boolean(
-      backendCustomer?.latestApplicationId,
-    );
+  const applicationSubmitted = Boolean(backendCustomer?.latestApplicationId);
 
   // The real application reference, not a fabricated "PL-APP-{id}" string built from
-  // the raw numeric row ID — that display string never matched the actual
-  // applicationNumber shown anywhere else (admin panels, KFS documents, support
-  // records), which would have confused customers referencing it to support.
+  // the raw numeric row ID
   const applicationNumber =
     backendCustomer?.latestApplicationReference ||
     (backendCustomer?.latestApplicationId
       ? `PL-APP-${backendCustomer.latestApplicationId}`
       : '');
 
-  const applicant =
-    backendCustomer || {};
+  const applicant = backendCustomer || {};
 
-  // The actual allocated lender, not a hardcoded literal — this platform allocates
-  // across multiple lenders (see the MLM allocation engine), so a customer allocated
-  // to a different lender would have seen the wrong name here.
+  // The actual allocated lender, not a hardcoded literal
   const lender =
     backendCustomer?.allocatedLenderName ||
     backendCustomer?.allocatedLenderCode ||
     'Lending Partner';
 
   const applicationStatus =
-    backendCustomer?.eligibilityStatus ||
-    'SUBMITTED_TO_LENDER';
+    backendCustomer?.eligibilityStatus || 'SUBMITTED_TO_LENDER';
 
-  const submittedAt =
-    backendCustomer?.updatedAt ||
-    '';
+  const submittedAt = backendCustomer?.updatedAt || '';
 
-  // Was hardcoded to null, so the render below always fell through to hardcoded
-  // fallback figures ("₹199.00" etc.) for every customer regardless of their actual
-  // assessment fee — getMe() already returns the real per-application amounts here.
-  const feeDetails =
-    backendCustomer?.assessmentFee
-      ? {
+  const feeDetails = backendCustomer?.assessmentFee
+    ? {
         baseFee: backendCustomer.assessmentFee.baseAmount,
         gst: backendCustomer.assessmentFee.gstAmount,
         total: backendCustomer.assessmentFee.totalAmount,
       }
-      : null;
+    : null;
   const assessmentFeePaid = Boolean(backendCustomer?.assessmentFeePaid);
 
-  const hasLan =
-    Boolean(
-      backendCustomer?.latestLan,
-    );
+  const hasLan = Boolean(backendCustomer?.latestLan);
 
   const isApproved =
-    backendCustomer?.onboardingStatus ===
-    'LENDER_APPROVED';
+    backendCustomer?.onboardingStatus === 'LENDER_APPROVED';
 
   const isDisbursalRequestedOrDisbursed =
-    backendCustomer?.latestDisbursalStatus ===
-    'DISBURSAL_REQUESTED' ||
-    backendCustomer?.latestDisbursalStatus ===
-    'DISBURSAL_PROCESSING' ||
-    backendCustomer?.latestDisbursalStatus ===
-    'DISBURSED' ||
-    backendCustomer?.latestLoanStatus ===
-    'DISBURSED';
+    backendCustomer?.latestDisbursalStatus === 'DISBURSAL_REQUESTED' ||
+    backendCustomer?.latestDisbursalStatus === 'DISBURSAL_PROCESSING' ||
+    backendCustomer?.latestDisbursalStatus === 'DISBURSED' ||
+    backendCustomer?.latestLoanStatus === 'DISBURSED';
 
-  // onboardingStatus never advances past 'LENDER_APPROVED' in production (nothing sets
-  // it to 'DISBURSED'), so isApproved stays true forever even after the loan is fully
-  // repaid — this flag catches that case explicitly before the stale isApproved branch
-  // would otherwise send a repeat customer back into their old, closed loan's
-  // post-approval journey.
   const isFullyPaidRepeatCustomer =
-    backendCustomer?.latestLoanStatus ===
-    'FULLY_PAID';
+    backendCustomer?.latestLoanStatus === 'FULLY_PAID';
 
-  const handleApplicationButton =
-    async () => {
-      if (
-        isFullyPaidRepeatCustomer
-      ) {
-        await resumeApplication(
-          customerId,
-        );
-        navigate(
-          '/customer/application',
-        );
-        return;
-      }
-      if (
-        isApproved &&
-        hasLan
-      ) {
-        if (
-          isDisbursalRequestedOrDisbursed
-        ) {
-          navigate(
-            `/customer/loan/${backendCustomer.latestLan}/details`,
-          );
-        } else {
-          navigate(
-            `/customer/loan/${backendCustomer.latestLan}/post-approval`,
-          );
-        }
+  const handleApplicationButton = async () => {
+    if (isFullyPaidRepeatCustomer) {
+      await resumeApplication(customerId);
+      navigate('/customer/application');
+      return;
+    }
+    if (isApproved && hasLan) {
+      if (isDisbursalRequestedOrDisbursed) {
+        navigate(`/customer/loan/${backendCustomer.latestLan}/details`);
       } else {
-        navigate(
-          '/customer/application',
-        );
+        navigate(`/customer/loan/${backendCustomer.latestLan}/post-approval`);
       }
-    };
+    } else {
+      navigate('/customer/application');
+    }
+  };
 
   if (isLoadingCustomer) {
     return (
@@ -358,11 +226,11 @@ export default function CustomerDashboard() {
   if (customerError) {
     return (
       <div className="mx-auto w-full max-w-7xl px-1">
-        <div className="relative overflow-hidden rounded-[28px] border border-danger-100 bg-white p-8 text-center shadow-xl shadow-neutral-900/5 sm:p-12">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-danger-100/60 blur-3xl" />
+        <div className="relative overflow-hidden rounded-[28px] border border-red-100 bg-white p-8 text-center shadow-xl shadow-neutral-900/5 sm:p-12">
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-red-100/60 blur-3xl" />
 
           <div className="relative">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-danger-50 text-danger-600">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-red-50 text-red-600">
               <AlertCircle size={30} />
             </div>
 
@@ -376,14 +244,10 @@ export default function CustomerDashboard() {
 
             <button
               type="button"
-              onClick={
-                fetchCustomerData
-              }
-              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/20 transition hover:-tranneutral-y-0.5 hover:bg-brand-700"
+              onClick={fetchCustomerData}
+              className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:-translate-y-0.5 hover:bg-emerald-700"
             >
-              <RotateCcw
-                size={17}
-              />
+              <RotateCcw size={17} />
               Retry loading
             </button>
           </div>
@@ -392,29 +256,24 @@ export default function CustomerDashboard() {
     );
   }
 
-  const buttonLabel =
-    isFullyPaidRepeatCustomer
-      ? 'Apply for a New Loan'
-      : isApproved &&
-        hasLan
-        ? isDisbursalRequestedOrDisbursed
-          ? 'View Loan Details'
-          : 'Continue Approved Loan Journey'
-        : applicationSubmitted
-          ? 'View Application'
-          : hasBackendProgress
-            ? 'Continue Application'
-            : 'Start Application';
+  const buttonLabel = isFullyPaidRepeatCustomer
+    ? 'Apply for a New Loan'
+    : isApproved && hasLan
+    ? isDisbursalRequestedOrDisbursed
+      ? 'View Loan Details'
+      : 'Continue Approved Loan Journey'
+    : applicationSubmitted
+    ? 'View Application'
+    : hasBackendProgress
+    ? 'Continue Application'
+    : 'Start Application';
 
   const firstName =
-    applicant.fullName
-      ?.trim()
-      ?.split(/\s+/)?.[0] ||
-    'Customer';
+    applicant.fullName?.trim()?.split(/\s+/)?.[0] || 'Customer';
 
   return (
     <div className="mx-auto w-full max-w-[1480px] space-y-5 px-0 pb-8">
-      {/* Premium dashboard header */}
+      {/* Dashboard header */}
       <section className="relative overflow-hidden rounded-[30px] border border-slate-200 bg-[#f8fafc] shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute -right-24 -top-32 h-96 w-96 rounded-full bg-emerald-200/40 blur-3xl" />
@@ -437,24 +296,20 @@ export default function CustomerDashboard() {
             </div>
 
             <div className="mt-6 max-w-2xl">
-              {/* <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-600">
-                FinLeaf Personal Finance
-              </p> */}
-
               <h1 className="mt-2 text-3xl font-black leading-[1.08] tracking-[-0.035em] text-slate-950 sm:text-4xl">
                 {isFullyPaidRepeatCustomer
                   ? 'Your previous loan is fully repaid.'
                   : applicationSubmitted
-                    ? 'Your loan application is moving forward.'
-                    : 'Your personal loan starts here.'}
+                  ? 'Your loan application is moving forward.'
+                  : 'Your personal loan starts here.'}
               </h1>
 
               <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-[15px]">
                 {isFullyPaidRepeatCustomer
                   ? 'Congratulations on clearing your loan! Start a new application whenever you need to borrow again.'
                   : applicationSubmitted
-                    ? 'Your application is safely with the lender. Continue whenever your next action is ready.'
-                    : 'Complete your digital application securely and keep track of every important update.'}
+                  ? 'Your application is safely with the lender. Continue whenever your next action is ready.'
+                  : 'Complete your digital application securely and keep track of every important update.'}
               </p>
             </div>
 
@@ -492,7 +347,6 @@ export default function CustomerDashboard() {
               alt="FinLeaf personal loan assistance"
               className="relative z-10 mt-auto h-[285px] w-[330px] translate-y-4 object-contain object-bottom"
             />
-
           </div>
         </div>
       </section>
@@ -503,14 +357,20 @@ export default function CustomerDashboard() {
           icon={FileText}
           label="Application"
           value={applicationSubmitted ? applicationNumber : 'Not submitted'}
-          helper={applicationSubmitted ? 'Application created' : 'Start your application'}
+          helper={
+            applicationSubmitted
+              ? 'Application created'
+              : 'Start your application'
+          }
           tone="emerald"
         />
 
         <DashboardMetricCard
           icon={BadgeCheck}
           label="Current Status"
-          value={formatStatus(backendCustomer?.onboardingStatus || applicationStatus)}
+          value={formatStatus(
+            backendCustomer?.onboardingStatus || applicationStatus
+          )}
           helper="Backend-confirmed status"
           tone="blue"
         />
@@ -526,7 +386,11 @@ export default function CustomerDashboard() {
         <DashboardMetricCard
           icon={WalletCards}
           label="Disbursal"
-          value={formatStatus(backendCustomer?.latestDisbursalStatus || backendCustomer?.latestLoanStatus || 'NOT_STARTED')}
+          value={formatStatus(
+            backendCustomer?.latestDisbursalStatus ||
+              backendCustomer?.latestLoanStatus ||
+              'NOT_STARTED'
+          )}
           helper="Latest disbursal stage"
           tone="amber"
         />
@@ -570,8 +434,14 @@ export default function CustomerDashboard() {
               subtitle="Reference and status"
             >
               <DetailRow label="Application Number" value={applicationNumber} />
-              <DetailRow label="Current Status" value={formatStatus(applicationStatus)} />
-              <DetailRow label="Submitted On" value={formatDateTime(submittedAt)} />
+              <DetailRow
+                label="Current Status"
+                value={formatStatus(applicationStatus)}
+              />
+              <DetailRow
+                label="Submitted On"
+                value={formatDateTime(submittedAt)}
+              />
               <DetailRow label="Assigned Lender" value={lender} />
             </ApplicationDetailCard>
 
@@ -581,9 +451,18 @@ export default function CustomerDashboard() {
               subtitle="Verified identity information"
             >
               <DetailRow label="Applicant Name" value={applicant.fullName} />
-              <DetailRow label="PAN Number" value={maskPan(applicant.panNumber)} />
-              <DetailRow label="Date of Birth" value={formatDate(applicant.dateOfBirth)} />
-              <DetailRow label="Gender" value={formatStatus(applicant.gender)} />
+              <DetailRow
+                label="PAN Number"
+                value={maskPan(applicant.panNumber)}
+              />
+              <DetailRow
+                label="Date of Birth"
+                value={formatDate(applicant.dateOfBirth)}
+              />
+              <DetailRow
+                label="Gender"
+                value={formatStatus(applicant.gender)}
+              />
             </ApplicationDetailCard>
 
             <ApplicationDetailCard
@@ -593,10 +472,16 @@ export default function CustomerDashboard() {
             >
               <DetailRow
                 label="Mobile Number"
-                value={mobileNumber ? `+91 ${mobileNumber}` : 'Not available'}
+                value={
+                  mobileNumber ? `+91 ${mobileNumber}` : 'Not available'
+                }
                 icon={Phone}
               />
-              <DetailRow label="Email Address" value={applicant.email} icon={Mail} />
+              <DetailRow
+                label="Email Address"
+                value={applicant.email}
+                icon={Mail}
+              />
               <DetailRow
                 label="Residential PIN"
                 value={applicant.pincode || applicant.residentialPincode}
@@ -614,7 +499,11 @@ export default function CustomerDashboard() {
                 value={formatStatus(applicant.employmentType)}
               />
               <DetailRow
-                label={applicant.employmentType === 'SELF_EMPLOYED' ? 'Business Name' : 'Company Name'}
+                label={
+                  applicant.employmentType === 'SELF_EMPLOYED'
+                    ? 'Business Name'
+                    : 'Company Name'
+                }
                 value={
                   applicant.employmentType === 'SELF_EMPLOYED'
                     ? applicant.businessName
@@ -626,7 +515,11 @@ export default function CustomerDashboard() {
                 value={formatCurrency(applicant.monthlyIncome)}
                 icon={IndianRupee}
               />
-              <DetailRow label="Work PIN Code" value={applicant.workPincode} icon={MapPin} />
+              <DetailRow
+                label="Work PIN Code"
+                value={applicant.workPincode}
+                icon={MapPin}
+              />
             </ApplicationDetailCard>
           </div>
         </section>
@@ -657,10 +550,15 @@ export default function CustomerDashboard() {
                 </div>
 
                 <div className="mt-7 grid gap-3 sm:grid-cols-2">
-                  <MiniInfoCard label="Application" value={applicationNumber} />
+                  <MiniInfoCard
+                    label="Application"
+                    value={applicationNumber}
+                  />
                   <MiniInfoCard
                     label="Current stage"
-                    value={formatStatus(backendCustomer?.onboardingStatus || applicationStatus)}
+                    value={formatStatus(
+                      backendCustomer?.onboardingStatus || applicationStatus
+                    )}
                   />
                 </div>
 
@@ -670,7 +568,9 @@ export default function CustomerDashboard() {
                       <CheckCircle2 size={17} />
                     </span>
                     <div>
-                      <p className="text-sm font-bold text-white">Application securely shared</p>
+                      <p className="text-sm font-bold text-white">
+                        Application securely shared
+                      </p>
                       <p className="mt-0.5 text-xs text-slate-400">
                         Your application is with the assigned lending partner.
                       </p>
@@ -709,18 +609,24 @@ export default function CustomerDashboard() {
             <div className="mt-7 space-y-4">
               <DetailRow
                 label="Base Fee"
-                value={feeDetails ? formatCurrency(feeDetails.baseFee, true) : '—'}
+                value={
+                  feeDetails ? formatCurrency(feeDetails.baseFee, true) : '—'
+                }
               />
 
               <DetailRow
                 label="GST"
-                value={feeDetails ? formatCurrency(feeDetails.gst, true) : '—'}
+                value={
+                  feeDetails ? formatCurrency(feeDetails.gst, true) : '—'
+                }
               />
 
               <div className="border-t border-dashed border-slate-200 pt-4">
                 <DetailRow
                   label={assessmentFeePaid ? 'Total Paid' : 'Total Payable'}
-                  value={feeDetails ? formatCurrency(feeDetails.total, true) : '—'}
+                  value={
+                    feeDetails ? formatCurrency(feeDetails.total, true) : '—'
+                  }
                   prominent
                 />
               </div>
@@ -757,7 +663,9 @@ export default function CustomerDashboard() {
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black text-slate-950">Need assistance?</p>
+            <p className="text-sm font-black text-slate-950">
+              Need assistance?
+            </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Get help from our customer support team.
             </p>
@@ -775,7 +683,9 @@ export default function CustomerDashboard() {
           </div>
 
           <div>
-            <p className="text-sm font-black text-cyan-950">What happens next?</p>
+            <p className="text-sm font-black text-cyan-950">
+              What happens next?
+            </p>
             <p className="mt-1 text-xs leading-5 text-cyan-900/65">
               Your next action will appear automatically when your application is updated.
             </p>
@@ -786,51 +696,31 @@ export default function CustomerDashboard() {
   );
 }
 
-
-function DashboardMetricCard({
-  icon: Icon,
-  label,
-  value,
-  helper,
-  tone,
-}) {
+function DashboardMetricCard({ icon: Icon, label, value, helper, tone }) {
   const tones = {
     emerald: {
       container:
-        'border-brand-100 bg-gradient-to-br from-white to-brand-50/70',
-
-      icon:
-        'bg-brand-100 text-brand-700',
+        'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/70',
+      icon: 'bg-emerald-100 text-emerald-700',
     },
-
     blue: {
       container:
-        'border-info-100 bg-gradient-to-br from-white to-info-50/70',
-
-      icon:
-        'bg-info-100 text-info-700',
+        'border-blue-100 bg-gradient-to-br from-white to-blue-50/70',
+      icon: 'bg-blue-100 text-blue-700',
     },
-
     violet: {
       container:
-        'border-accent-100 bg-gradient-to-br from-white to-accent-50/70',
-
-      icon:
-        'bg-accent-100 text-accent-700',
+        'border-purple-100 bg-gradient-to-br from-white to-purple-50/70',
+      icon: 'bg-purple-100 text-purple-700',
     },
-
     amber: {
       container:
-        'border-caution-100 bg-gradient-to-br from-white to-caution-50/70',
-
-      icon:
-        'bg-caution-100 text-caution-700',
+        'border-amber-100 bg-gradient-to-br from-white to-amber-50/70',
+      icon: 'bg-amber-100 text-amber-700',
     },
   };
 
-  const selectedTone =
-    tones[tone] ||
-    tones.emerald;
+  const selectedTone = tones[tone] || tones.emerald;
 
   return (
     <article
@@ -845,7 +735,7 @@ function DashboardMetricCard({
 
         <span className="inline-flex items-center gap-1 rounded-full border border-slate-100 bg-white px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
           Live
-          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
         </span>
       </div>
 
@@ -857,17 +747,12 @@ function DashboardMetricCard({
         {value}
       </p>
 
-      <p className="mt-1 text-[11px] leading-4 text-slate-500">
-        {helper}
-      </p>
+      <p className="mt-1 text-[11px] leading-4 text-slate-500">{helper}</p>
     </article>
   );
 }
 
-function MiniInfoCard({
-  label,
-  value,
-}) {
+function MiniInfoCard({ label, value }) {
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
       <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
@@ -875,8 +760,7 @@ function MiniInfoCard({
       </p>
 
       <p className="mt-1.5 break-words text-xs font-extrabold text-slate-800">
-        {value ||
-          'Not available'}
+        {value || 'Not available'}
       </p>
     </div>
   );
@@ -884,22 +768,13 @@ function MiniInfoCard({
 
 function getStoredSession() {
   try {
-    return JSON.parse(
-      localStorage.getItem(
-        'customerSession',
-      ) || 'null',
-    );
+    return JSON.parse(localStorage.getItem('customerSession') || 'null');
   } catch {
     return null;
   }
 }
 
-function ApplicationDetailCard({
-  icon: Icon,
-  title,
-  subtitle,
-  children,
-}) {
+function ApplicationDetailCard({ icon: Icon, title, subtitle, children }) {
   return (
     <article className="bg-white p-5 transition hover:bg-slate-50/60 sm:p-6">
       <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
@@ -908,78 +783,46 @@ function ApplicationDetailCard({
         </div>
 
         <div>
-          <h3 className="text-sm font-black text-slate-950">
-            {title}
-          </h3>
+          <h3 className="text-sm font-black text-slate-950">{title}</h3>
 
           {subtitle && (
-            <p className="mt-0.5 text-[10px] text-slate-400">
-              {subtitle}
-            </p>
+            <p className="mt-0.5 text-[10px] text-slate-400">{subtitle}</p>
           )}
         </div>
       </div>
 
-      <div className="mt-5 space-y-3.5">
-        {children}
-      </div>
+      <div className="mt-5 space-y-3.5">{children}</div>
     </article>
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  icon: Icon,
-  prominent = false,
-}) {
+function DetailRow({ label, value, icon: Icon, prominent = false }) {
   return (
     <div className="flex items-start justify-between gap-5 border-b border-slate-50 pb-3 last:border-0 last:pb-0">
       <span className="flex items-center gap-1.5 text-[11px] leading-5 text-slate-400">
-        {Icon && (
-          <Icon
-            size={13}
-            className="shrink-0"
-          />
-        )}
-
+        {Icon && <Icon size={13} className="shrink-0" />}
         {label}
       </span>
 
       <span
-        className={`max-w-[62%] break-words text-right leading-5 text-neutral-950 ${prominent
-          ? 'text-base font-bold'
-          : 'text-xs font-bold sm:text-sm'
-          }`}
+        className={`max-w-[62%] break-words text-right leading-5 text-neutral-950 ${
+          prominent
+            ? 'text-base font-bold'
+            : 'text-xs font-bold sm:text-sm'
+        }`}
       >
-        {value ||
-          'Not provided'}
+        {value || 'Not provided'}
       </span>
     </div>
   );
 }
 
 function maskPan(panNumber) {
-  if (
-    !panNumber ||
-    panNumber.length !==
-    10
-  ) {
-    return (
-      panNumber ||
-      'Not provided'
-    );
+  if (!panNumber || panNumber.length !== 10) {
+    return panNumber || 'Not provided';
   }
 
-  return `${panNumber.slice(
-    0,
-    2,
-  )}***${panNumber.slice(
-    5,
-    9,
-  )}${panNumber.slice(
-    -1,
-  )}`;
+  return `${panNumber.slice(0, 2)}***${panNumber.slice(5, 9)}${panNumber.slice(-1)}`;
 }
 
 function formatStatus(value) {
@@ -990,13 +833,7 @@ function formatStatus(value) {
   return String(value)
     .toLowerCase()
     .split('_')
-    .map(
-      (word) =>
-        word
-          .charAt(0)
-          .toUpperCase() +
-        word.slice(1),
-    )
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 }
 
@@ -1005,86 +842,48 @@ function formatDate(dateValue) {
     return 'Not provided';
   }
 
-  const date =
-    new Date(dateValue);
+  const date = new Date(dateValue);
 
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return dateValue;
   }
 
-  return new Intl.DateTimeFormat(
-    'en-IN',
-    {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    },
-  ).format(date);
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
 }
 
-function formatDateTime(
-  dateValue,
-) {
+function formatDateTime(dateValue) {
   if (!dateValue) {
     return 'Not available';
   }
 
-  const date =
-    new Date(dateValue);
+  const date = new Date(dateValue);
 
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return dateValue;
   }
 
-  return new Intl.DateTimeFormat(
-    'en-IN',
-    {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    },
-  ).format(date);
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
-function formatCurrency(
-  value,
-  showDecimal = false,
-) {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ''
-  ) {
+function formatCurrency(value, showDecimal = false) {
+  if (value === undefined || value === null || value === '') {
     return 'Not provided';
   }
 
-  return new Intl.NumberFormat(
-    'en-IN',
-    {
-      style: 'currency',
-      currency: 'INR',
-
-      minimumFractionDigits:
-        showDecimal
-          ? 2
-          : 0,
-
-      maximumFractionDigits:
-        showDecimal
-          ? 2
-          : 0,
-    },
-  ).format(
-    Number(value),
-  );
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: showDecimal ? 2 : 0,
+    maximumFractionDigits: showDecimal ? 2 : 0,
+  }).format(Number(value));
 }
