@@ -31,6 +31,7 @@ const menuItems = [
     label: 'Refer & Earn',
     path: '/customer/referral',
     icon: Gift,
+   
   },
   {
     label: 'My Profile',
@@ -44,164 +45,94 @@ const menuItems = [
   },
 ];
 
-function getStoredSession() {
-  try {
-    return JSON.parse(
-      sessionStorage.getItem('customerSession') || 'null',
-    );
-  } catch {
-    return null;
-  }
-}
-
-export default function CustomerSidebar({ isOpen, onClose }) {
+export default function CustomerSidebar({ isOpen, onClose, customer }) {
   const navigate = useNavigate();
 
-  const session = getStoredSession();
-  const mobileNumber = session?.mobileNumber || '';
+  const rawMobile = customer?.mobileNumber || '';
+  const fullName = customer?.fullName?.trim() || '';
 
-  const maskedMobile = mobileNumber
-    ? `+91 ${mobileNumber.slice(0, 2)}XXXX${mobileNumber.slice(-4)}`
+  const displayName = fullName
+    ? fullName
+        .split(' ')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ')
     : 'Customer';
+
+  const maskedMobile = rawMobile
+    ? `+91 ${rawMobile.slice(0, 2)}••••${rawMobile.slice(-4)}`
+    : 'Verified Account';
+
+  const initials = fullName
+    ? fullName
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w.charAt(0))
+        .join('')
+        .toUpperCase()
+    : 'CU';
 
   const handleLogout = async () => {
     await doCustomerLogout();
-
-    navigate('/customer/login', {
-      replace: true,
-    });
+    navigate('/customer/login', { replace: true });
   };
 
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Mobile Backdrop Overlay */}
       {isOpen && (
         <button
           type="button"
-          aria-label="Close sidebar"
+          aria-label="Close sidebar overlay"
           onClick={onClose}
-          className="
-            fixed
-            inset-0
-            z-40
-            bg-slate-950/40
-            backdrop-blur-[2px]
-            lg:hidden
-          "
+          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px] transition-opacity lg:hidden"
         />
       )}
 
       <aside
-        className={`
-          fixed
-          inset-y-0
-          left-0
-          z-50
-          flex
-          w-[260px]
-          flex-col
-          border-r
-          border-slate-200
-          bg-white
-          transition-transform
-          duration-300
-          ease-out
-          lg:translate-x-0
-          ${
-            isOpen
-              ? 'translate-x-0'
-              : '-translate-x-full'
-          }
-        `}
+        className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-slate-200/90 bg-white transition-transform duration-300 ease-out lg:translate-x-0 ${
+          isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        }`}
       >
-
         {/* =========================================
-            LOGO
+            LOGO SECTION (Aligned with Header height)
         ========================================= */}
-        <div className="
-          flex
-          h-[76px]
-          shrink-0
-          items-center
-          justify-between
-          border-b
-          border-slate-100
-          px-5
-        ">
-
+        <div className="flex h-[70px] shrink-0 items-center justify-between border-b border-slate-100 px-5">
           <button
             type="button"
-            onClick={() =>
-              navigate('/customer/dashboard')
-            }
-            className="
-              flex
-              h-full
-              items-center
-              outline-none
-            "
+            onClick={() => {
+              onClose?.();
+              navigate('/customer/dashboard');
+            }}
+            className="flex items-center gap-2.5 outline-none transition hover:opacity-90"
           >
             <img
               src="/image/IMG_0007-removebg-preview.png"
               alt="FinLeaf"
-              className="
-                h-[58px]
-                w-auto
-                max-w-[145px]
-                object-contain
-              "
+              className="h-[46px] w-auto max-w-[140px] object-contain"
             />
           </button>
 
-          {/* Mobile Close */}
+          {/* Mobile Close Button */}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="
-              flex
-              h-9
-              w-9
-              items-center
-              justify-center
-              rounded-lg
-              text-slate-400
-              transition
-              hover:bg-slate-100
-              hover:text-slate-700
-              lg:hidden
-            "
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 lg:hidden"
           >
-            <X size={19} />
+            <X size={18} />
           </button>
         </div>
 
-
         {/* =========================================
-            NAVIGATION
+            NAVIGATION MENU
         ========================================= */}
-        <nav className="
-          flex-1
-          overflow-y-auto
-          px-3
-          py-6
-        ">
-
-          {/* Section label */}
-          <div className="
-            mb-3
-            px-3
-            text-[10px]
-            font-bold
-            uppercase
-            tracking-[0.16em]
-            text-slate-400
-          ">
+        <nav className="flex-1 overflow-y-auto px-3 py-5">
+          {/* Section header */}
+          <div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
             Menu
           </div>
 
           <div className="space-y-1">
-
             {menuItems.map((item) => {
               const Icon = item.icon;
 
@@ -211,214 +142,101 @@ export default function CustomerSidebar({ isOpen, onClose }) {
                   to={item.path}
                   onClick={onClose}
                   className={({ isActive }) => `
-                    group
-                    relative
-                    flex
-                    h-[48px]
-                    items-center
-                    gap-3
-                    rounded-xl
-                    px-3
-                    text-[13px]
-                    font-semibold
-                    transition-all
-                    duration-200
-
+                    group relative flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition-all duration-150
                     ${
                       isActive
-                        ? `
-                          bg-emerald-50
-                          text-emerald-700
-                        `
-                        : `
-                          text-slate-600
-                          hover:bg-slate-50
-                          hover:text-slate-900
-                        `
+                        ? 'bg-emerald-50 text-[#0E3B2C] ring-1 ring-emerald-200/60 shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }
                   `}
                 >
                   {({ isActive }) => (
                     <>
-                      {/* Active indicator */}
+                      {/* Active Left Pill Accent */}
                       {isActive && (
-                        <span className="
-                          absolute
-                          left-0
-                          top-1/2
-                          h-6
-                          w-[3px]
-                          -translate-y-1/2
-                          rounded-r-full
-                          bg-emerald-600
-                        " />
+                        <span className="absolute left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-[#1F8A5B]" />
                       )}
 
                       {/* Icon */}
                       <span
-                        className={`
-                          flex
-                          h-9
-                          w-9
-                          shrink-0
-                          items-center
-                          justify-center
-                          rounded-lg
-                          transition-all
-                          duration-200
-
-                          ${
-                            isActive
-                              ? `
-                                bg-white
-                                text-emerald-600
-                                shadow-sm
-                                ring-1
-                                ring-emerald-100
-                              `
-                              : `
-                                bg-slate-50
-                                text-slate-400
-                                group-hover:bg-white
-                                group-hover:text-slate-600
-                              `
-                          }
-                        `}
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-150 ${
+                          isActive
+                            ? 'bg-[#0E3B2C] text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200/70 group-hover:text-slate-800'
+                        }`}
                       >
-                        <Icon size={17} strokeWidth={2} />
+                        <Icon size={16} strokeWidth={isActive ? 2.2 : 2} />
                       </span>
 
                       {/* Label */}
-                      <span className="truncate">
-                        {item.label}
-                      </span>
+                      <span className="truncate flex-1">{item.label}</span>
+
+                      {/* Optional Badge */}
+                      {item.badge && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide ${
+                            isActive
+                              ? 'bg-emerald-200/70 text-emerald-900'
+                              : 'bg-emerald-100/80 text-emerald-800'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
                     </>
                   )}
                 </NavLink>
               );
             })}
-
           </div>
         </nav>
 
-
         {/* =========================================
-            BOTTOM ACCOUNT AREA
+            BOTTOM ACCOUNT & LOGOUT
         ========================================= */}
-        <div className="
-          shrink-0
-          border-t
-          border-slate-100
-          p-3
-        ">
-
-          {/* Customer information */}
-          <div className="
-            mb-2
-            flex
-            items-center
-            gap-3
-            rounded-xl
-            px-3
-            py-3
-          ">
-
+        <div className="shrink-0 border-t border-slate-100 p-3">
+          {/* Customer info tile -> links to Profile */}
+          <button
+            type="button"
+            onClick={() => {
+              onClose?.();
+              navigate('/customer/profile');
+            }}
+            className="group mb-2 flex w-full items-center gap-3 rounded-xl border border-slate-200/60 bg-slate-50/70 p-2.5 text-left transition hover:border-slate-300 hover:bg-slate-100/80"
+          >
             {/* Avatar */}
-            <div className="
-              flex
-              h-9
-              w-9
-              shrink-0
-              items-center
-              justify-center
-              rounded-full
-              bg-emerald-50
-              text-emerald-600
-            ">
-              <User size={16} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-600 to-[#0E3B2C] text-xs font-bold text-white shadow-xs">
+              {initials}
             </div>
 
-            {/* Customer */}
-            <div className="min-w-0">
-              <p className="
-                truncate
-                text-[12px]
-                font-bold
-                text-slate-800
-              ">
-                Customer
+            {/* Customer Details */}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-bold text-slate-800 group-hover:text-slate-900">
+                {displayName}
               </p>
-
-              <p className="
-                mt-0.5
-                truncate
-                text-[10px]
-                font-medium
-                text-slate-400
-              ">
+              <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400">
                 {maskedMobile}
               </p>
             </div>
 
-            {/* Online indicator */}
-            <span className="
-              ml-auto
-              h-2
-              w-2
-              shrink-0
-              rounded-full
-              bg-emerald-500
-              ring-2
-              ring-emerald-100
-            " />
-          </div>
+            {/* Online Status Dot */}
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+          </button>
 
-
-          {/* Logout */}
+          {/* Logout Button */}
           <button
             type="button"
             onClick={handleLogout}
-            className="
-              group
-              flex
-              h-[44px]
-              w-full
-              items-center
-              gap-3
-              rounded-xl
-              px-3
-              text-[13px]
-              font-semibold
-              text-slate-500
-              transition-all
-              duration-200
-              hover:bg-red-50
-              hover:text-red-600
-            "
+            className="group flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-[13px] font-semibold text-slate-500 transition-all duration-150 hover:bg-red-50 hover:text-red-600"
           >
-
-            <span className="
-              flex
-              h-8
-              w-8
-              items-center
-              justify-center
-              rounded-lg
-              bg-slate-50
-              text-slate-400
-              transition
-              group-hover:bg-white
-              group-hover:text-red-500
-            ">
-              <LogOut size={16} />
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-400 transition group-hover:bg-red-100 group-hover:text-red-600">
+              <LogOut size={15} />
             </span>
-
-            <span>
-              Logout
-            </span>
-
+            <span>Logout</span>
           </button>
-
         </div>
       </aside>
     </>

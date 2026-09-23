@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   CustomerEligibilityStatus,
@@ -40,6 +41,50 @@ export class CustomerService {
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
     private readonly productCalculationService: ProductCalculationService,
   ) {}
+
+  async saveSecondaryMobile(customerId: bigint, mobileNumber: string) {
+    const digits = String(mobileNumber || '').replace(/\D/g, '');
+    const normalized = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+
+    if (!/^[6-9][0-9]{9}$/.test(normalized)) {
+      throw new BadRequestException('Enter a valid 10-digit Indian mobile number.');
+    }
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, mobileNumber: true, accountStatus: true },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found.');
+    }
+
+    if (customer.accountStatus === 'BLOCKED') {
+      throw new UnauthorizedException('This customer account is blocked.');
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        secondaryMobileNumber: normalized,
+        secondaryMobileVerified: true,
+        secondaryMobileVerifiedAt: now,
+        lastActivityAt: now,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Bank registered mobile number saved successfully',
+      data: {
+        id: updated.id.toString(),
+        secondaryMobileNumber: updated.secondaryMobileNumber,
+        secondaryMobileVerified: updated.secondaryMobileVerified,
+        secondaryMobileVerifiedAt: updated.secondaryMobileVerifiedAt,
+      },
+    };
+  }
 
   async findOrCreateAfterOtpVerification(
     mobileNumber: string,
@@ -1358,6 +1403,7 @@ export class CustomerService {
             where: { id: application.id },
             data: {
               status: PlApplicationStatus.LENDER_ALLOCATED,
+              platformDecisionOutcome: 'PASS',
               mlmAllocationDecisionId: decision.id,
               mlmPolicyId: decision.policyId,
               mlmPolicyVersionId: decision.policyVersionId,
@@ -1431,7 +1477,6 @@ export class CustomerService {
     // a placeholder "Lending Partner" name and a ₹0.00 fee as if they were real.
     if (!application.lenderId) return 'ALLOCATION_PENDING';
     if (!payment) return 'ASSESSMENT_FEE';
-    if (application.platformDecisionOutcome !== 'PASS') return 'BASIC_DETAILS';
     if (updateReadiness.reasons.some((reason) => ['EMPLOYMENT_SNAPSHOT_MISSING', 'MONTHLY_INCOME_MISSING', 'SALARIED_DETAILS_INCOMPLETE', 'BUSINESS_DETAILS_INCOMPLETE', 'LIVENESS_NOT_VERIFIED'].includes(reason))) return 'PROFILE_DETAILS';
     if (updateReadiness.reasons.some((reason) => ['DIGILOCKER_KYC_NOT_VERIFIED', 'AADHAAR_VERIFIED_NAME_MISSING'].includes(reason))) return 'AADHAAR_KYC';
     if (updateReadiness.reasons.some((reason) => ['PERMANENT_ADDRESS_MISSING', 'CURRENT_ADDRESS_MISSING', 'SAME_ADDRESS_DECISION_MISSING'].includes(reason))) return 'ADDRESS_DETAILS';

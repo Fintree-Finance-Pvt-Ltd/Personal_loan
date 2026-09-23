@@ -135,7 +135,16 @@ export class UnaportService {
       cleanLan,
     );
 
-    const mobileNumber = String(customer.mobileNumber || '').trim();
+    // Mobile Number Selection Priority:
+    // 1. Verified secondary bank mobile number
+    // 2. Existing customer login mobile number
+    const hasVerifiedSecondary = Boolean(
+      (customer as any).secondaryMobileVerified && (customer as any).secondaryMobileNumber,
+    );
+    const mobileNumber = hasVerifiedSecondary
+      ? String((customer as any).secondaryMobileNumber).trim()
+      : String(customer.mobileNumber || '').trim();
+
     if (!/^[6-9]\d{9}$/.test(mobileNumber)) {
       throw new BadRequestException(
         'Customer does not have a valid 10-digit Indian mobile number on file.',
@@ -155,9 +164,21 @@ export class UnaportService {
     let trackingId: string;
 
     if (existingReq) {
-      // Check if initiated within last 30 minutes
+      // Check if initiated within last 30 minutes AND using the same mobile number
       const ageMs = Date.now() - (existingReq.initiatedAt?.getTime() || 0);
-      if (ageMs < 30 * 60 * 1000) {
+      let sameMobile = true;
+      if (existingReq.providerRequestEncrypted) {
+        try {
+          const parsed = JSON.parse(existingReq.providerRequestEncrypted);
+          if (parsed?.phoneNumber && parsed.phoneNumber !== mobileNumber) {
+            sameMobile = false;
+          }
+        } catch {
+          // ignore json parse error
+        }
+      }
+
+      if (sameMobile && ageMs < 30 * 60 * 1000) {
         trackingId = existingReq.trackingId;
         this.logger.log({
           event: 'unaport_initiate_reusing_request',
@@ -166,6 +187,7 @@ export class UnaportService {
           trackingId,
           provider: 'UNAPORT',
           status: existingReq.status,
+          mobileNumber,
           durationMs: Date.now() - startTime,
         });
       } else {
@@ -244,10 +266,12 @@ export class UnaportService {
         trackingId,
         status: 'INITIATED',
         initiatedAt: now,
+        providerRequestEncrypted: JSON.stringify({ phoneNumber: mobileNumber }),
       },
       update: {
         status: 'INITIATED',
         initiatedAt: now,
+        providerRequestEncrypted: JSON.stringify({ phoneNumber: mobileNumber }),
       },
     });
 

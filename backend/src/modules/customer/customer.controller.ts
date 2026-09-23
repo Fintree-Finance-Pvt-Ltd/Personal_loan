@@ -26,6 +26,22 @@ export class CustomerController {
     return this.customerService.findById(BigInt(customer.customerId));
   }
 
+  @Post('update-secondary-mobile')
+  async updateSecondaryMobile(
+    @CurrentCustomer() customer: any,
+    @Body() body: { customerId?: string | number; mobileNumber: string },
+  ) {
+    const customerId = BigInt(customer.customerId);
+    if (body.customerId && String(body.customerId) !== customer.customerId) {
+      throw new UnauthorizedException('Access denied.');
+    }
+
+    return this.customerService.saveSecondaryMobile(
+      customerId,
+      body.mobileNumber,
+    );
+  }
+
   @Get(':id')
   async getCustomer(
     @CurrentCustomer() customer: any,
