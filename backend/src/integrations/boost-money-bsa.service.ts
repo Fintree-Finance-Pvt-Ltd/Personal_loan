@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
 
 export interface BsaAccountPayload {
@@ -30,6 +31,7 @@ export interface BsaParseTransactionsInput {
 
 export interface BsaStatementUploadItem {
   bank: string;
+  bankCode?: string;
   accountType: string;
   bankStmt: {
     buffer: Buffer;
@@ -119,11 +121,10 @@ export class BoostMoneyBsaService {
 
     const loginEndpoint = `${this.getBaseUrl()}/api/v1/client/login`;
     try {
-      this.logger.log({
-        event: 'bsa_client_login_initiated',
-        clientId,
-        endpoint: loginEndpoint,
-      });
+      this.logger.log(`\n==================== [BSA CLIENT LOGIN REQUEST] ====================`);
+      this.logger.log(`POST Endpoint: ${loginEndpoint}`);
+      this.logger.log(`Payload: ${JSON.stringify({ clientId, clientSecret: clientSecret ? '******' : '(missing)' }, null, 2)}`);
+      this.logger.log(`===================================================================\n`);
 
       const res = await this.httpClient.post(
         loginEndpoint,
@@ -162,20 +163,22 @@ export class BoostMoneyBsaService {
         this.tokenExpiresAt = now + 50 * 60 * 1000;
       }
 
-      this.logger.log({
-        event: 'bsa_client_login_success',
-        clientId,
-        expiresInSec: Math.round((this.tokenExpiresAt - now) / 1000),
-      });
+      this.logger.log(`\n==================== [BSA CLIENT LOGIN SUCCESS] ====================`);
+      this.logger.log(`HTTP Status: ${res.status}`);
+      this.logger.log(`Client ID: ${clientId}`);
+      this.logger.log(`Token received: ${accessToken.slice(0, 15)}... (valid for ${Math.round((this.tokenExpiresAt - now) / 1000)}s)`);
+      this.logger.log(`Response Data: ${JSON.stringify(resData, null, 2)}`);
+      this.logger.log(`====================================================================\n`);
 
       return accessToken;
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'BSA login failed';
-      this.logger.error({
-        event: 'bsa_client_login_failed',
-        clientId,
-        error: errMsg,
-      });
+      this.logger.error(`\n==================== [BSA CLIENT LOGIN FAILED] ====================`);
+      this.logger.error(`HTTP Status: ${err?.response?.status || 'N/A'}`);
+      this.logger.error(`Client ID: ${clientId}`);
+      this.logger.error(`Error: ${errMsg}`);
+      this.logger.error(`Response Data: ${JSON.stringify(err?.response?.data || {}, null, 2)}`);
+      this.logger.error(`===================================================================\n`);
       throw new UnauthorizedException(`Failed to authenticate with Boost Money BSA API: ${errMsg}`);
     }
   }
@@ -870,12 +873,24 @@ export class BoostMoneyBsaService {
     input: BsaUploadStatementsInput,
   ): Promise<BsaParseResponse> {
     const startTime = Date.now();
-    this.logger.log({
-      event: 'bsa_upload_statements_initiated',
-      lan: input.lan,
-      customerId: String(input.customerId),
-      statementsCount: input.statements?.length || 0,
-    });
+    const sanitizedStatements = (input.statements || []).map((stmt, idx) => ({
+      index: idx,
+      bank: stmt.bank,
+      accountType: stmt.accountType,
+      employerDetails: stmt.employerDetails,
+      password: stmt.password ? '******' : '(none)',
+      accNo: stmt.accNo,
+      fileName: stmt.bankStmt?.originalname,
+      mimeType: stmt.bankStmt?.mimetype,
+      fileSizeBytes: stmt.bankStmt?.buffer ? stmt.bankStmt.buffer.length : 0,
+    }));
+
+    this.logger.log(`\n==================== [BSA UPLOAD STATEMENTS INITIATED] ====================`);
+    this.logger.log(`LAN: ${input.lan} | CustomerId: ${input.customerId} | ApplicationId: ${input.applicationId}`);
+    this.logger.log(`Callback URL: ${input.callbackUrl || '(none)'}`);
+    this.logger.log(`Statements count: ${input.statements?.length || 0}`);
+    this.logger.log(`Input Statements:\n${JSON.stringify(sanitizedStatements, null, 2)}`);
+    this.logger.log(`=========================================================================\n`);
 
     let token = '';
     try {
@@ -906,26 +921,70 @@ export class BoostMoneyBsaService {
       };
     }
 
-    const clientId = (this.configService.get<string>('BSA_CLIENT_ID') || 'fintree_finance_s7sw').trim();
     const endpoint = `${this.getBaseUrl()}/api/v1/uploadMultipleStatements`;
     let responseData: any = null;
     let lastError: any = null;
 
+    const BANK_NAME_TO_CODE: Record<string, string> = {
+      'KOTAK MAHINDRA BANK': 'KKBK',
+      'KOTAK': 'KKBK',
+      'STATE BANK OF INDIA': 'SBIN',
+      'SBI': 'SBIN',
+      'HDFC BANK': 'HDFC',
+      'HDFC': 'HDFC',
+      'ICICI BANK': 'ICIC',
+      'ICICI': 'ICIC',
+      'AXIS BANK': 'UTIB',
+      'AXIS': 'UTIB',
+      'PUNJAB NATIONAL BANK': 'PUNB',
+      'PNB': 'PUNB',
+      'BANK OF BARODA': 'BARB',
+      'BANK_OF_BARODA': 'BARB',
+      'BOB': 'BARB',
+      'INDUSIND BANK': 'INDB',
+      'INDUSIND': 'INDB',
+      'YES BANK': 'YESB',
+      'YES': 'YESB',
+      'CANARA BANK': 'CNRB',
+      'CANARA': 'CNRB',
+      'UNION BANK OF INDIA': 'UBIN',
+      'UNION_BANK': 'UBIN',
+      'IDFC FIRST BANK': 'IDFB',
+      'IDFC': 'IDFB',
+    };
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const formData = new FormData();
+        const loggedFormData: Record<string, any> = {};
 
         input.statements.forEach((stmt, idx) => {
-          formData.append(`statement[${idx}].bank`, stmt.bank || 'Bank');
-          formData.append(`statement[${idx}].accountType`, stmt.accountType || 'SAVINGS');
+          const rawBank = String(stmt.bankCode || stmt.bank || 'OTHER_BANK').trim();
+          const normalizedBank = rawBank.toUpperCase();
+          const bankCode = BANK_NAME_TO_CODE[normalizedBank] || rawBank;
+
+          let accountType = String(stmt.accountType || 'SAVING').trim().toUpperCase();
+          if (accountType === 'SAVINGS') {
+            accountType = 'SAVING';
+          }
+
+          formData.append(`statement[${idx}].bank`, bankCode);
+          loggedFormData[`statement[${idx}].bank`] = bankCode;
+
+          formData.append(`statement[${idx}].accountType`, accountType);
+          loggedFormData[`statement[${idx}].accountType`] = accountType;
+
           if (stmt.employerDetails) {
             formData.append(`statement[${idx}].employerDetails`, stmt.employerDetails);
+            loggedFormData[`statement[${idx}].employerDetails`] = stmt.employerDetails;
           }
           if (stmt.password) {
             formData.append(`statement[${idx}].password`, stmt.password);
+            loggedFormData[`statement[${idx}].password`] = '******';
           }
           if (stmt.accNo) {
             formData.append(`statement[${idx}].accNo`, stmt.accNo);
+            loggedFormData[`statement[${idx}].accNo`] = stmt.accNo;
           }
           if (stmt.bankStmt) {
             const blob = new Blob([new Uint8Array(stmt.bankStmt.buffer)], {
@@ -936,23 +995,51 @@ export class BoostMoneyBsaService {
               blob,
               stmt.bankStmt.originalname || `statement_${idx + 1}.pdf`,
             );
+            loggedFormData[`statement[${idx}].bankStmt`] = {
+              fileName: stmt.bankStmt.originalname || `statement_${idx + 1}.pdf`,
+              mimeType: stmt.bankStmt.mimetype || 'application/pdf',
+              sizeBytes: stmt.bankStmt.buffer ? stmt.bankStmt.buffer.length : 0,
+            };
           }
         });
 
-        if (input.callbackUrl) {
-          formData.append('callbackurl', input.callbackUrl);
-        }
+        const callbackUrl =
+          input.callbackUrl ||
+          this.configService.get<string>('BSA_CALLBACK_URL') ||
+          `${this.configService.get<string>('FRONTEND_URL') || 'https://finle-prod.fintreelms.com'}/api/webhooks/bsa`;
+        formData.append('callbackurl', callbackUrl);
+        loggedFormData['callbackurl'] = callbackUrl;
+
+        const referenceId = uuidv4();
+        const formHeaders =
+          typeof (formData as any).getHeaders === 'function'
+            ? (formData as any).getHeaders()
+            : {};
+
+        const requestHeaders = {
+          Authorization: `Bearer ${token}`,
+          'x-business-user-id': input.lan,
+          'x-reference-id': referenceId,
+          ...formHeaders,
+        };
+
+        this.logger.log(`\n==================== [BSA UPLOAD HTTP REQUEST (Attempt ${attempt})] ====================`);
+        this.logger.log(`POST Endpoint: ${endpoint}`);
+        this.logger.log(`Request Headers:\n${JSON.stringify({ ...requestHeaders, Authorization: `Bearer ${token ? `${token.slice(0, 15)}... (len: ${token.length})` : '(empty)'}` }, null, 2)}`);
+        this.logger.log(`FormData Payload Appended:\n${JSON.stringify(loggedFormData, null, 2)}`);
+        this.logger.log(`=========================================================================\n`);
 
         const res = await this.httpClient.post(endpoint, formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            businessUserId: clientId,
-            referenceId: input.lan,
-            'x-business-user-id': clientId,
-            'x-reference-id': input.lan,
-          },
+          headers: requestHeaders,
         });
+
         responseData = res.data;
+
+        this.logger.log(`\n==================== [BSA UPLOAD HTTP RESPONSE SUCCESS (Attempt ${attempt})] ====================`);
+        this.logger.log(`HTTP Status: ${res.status} ${res.statusText || ''}`);
+        this.logger.log(`Response Data:\n${JSON.stringify(res.data, null, 2)}`);
+        this.logger.log(`================================================================================\n`);
+
         break;
       } catch (err: any) {
         lastError = err;
@@ -963,13 +1050,12 @@ export class BoostMoneyBsaService {
           err?.message ||
           'BSA uploadMultipleStatements failed';
 
-        this.logger.warn({
-          event: 'bsa_upload_statements_attempt_failed',
-          attempt,
-          status,
-          error: errMsg,
-          lan: input.lan,
-        });
+        this.logger.error(`\n==================== [BSA UPLOAD HTTP REQUEST FAILED (Attempt ${attempt})] ====================`);
+        this.logger.error(`HTTP Status: ${status || 'N/A'}`);
+        this.logger.error(`Error Message: ${errMsg}`);
+        this.logger.error(`Response Headers:\n${JSON.stringify(err?.response?.headers || {}, null, 2)}`);
+        this.logger.error(`Response Data:\n${JSON.stringify(err?.response?.data || {}, null, 2)}`);
+        this.logger.error(`================================================================================\n`);
 
         if (status === 401 && attempt === 1) {
           try {

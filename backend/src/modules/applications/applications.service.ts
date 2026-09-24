@@ -149,6 +149,7 @@ export class ApplicationsService {
       bankVerification,
       liveness,
       faceMatch,
+      bankAccountDataRecords,
     ] = await Promise.all([
       this.prisma.customer.findUnique({ where: { id: application.customerId } }),
       this.prisma.plCustomerDocument.findMany({
@@ -206,6 +207,17 @@ export class ApplicationsService {
       this.prisma.applicationFaceMatch.findUnique({
         where: { applicationId: application.id },
       }),
+      // Bank account data from AA or manual bank statement upload (customerBankAccountData)
+      this.prisma.customerBankAccountData.findMany({
+        where: {
+          OR: [
+            { customerId: application.customerId, applicationId: application.id },
+            { customerId: application.customerId },
+          ],
+        },
+        orderBy: { id: 'desc' },
+        take: 5,
+      }),
     ]);
     const link = application.lenderApplicationLink;
     const charges = loan
@@ -242,8 +254,8 @@ export class ApplicationsService {
     const aadhaarVerifiedName = kycStatus?.aadhaarName || kycSnapshot?.verifiedName || null;
     const aadhaarMaskedNumber =
       kycStatus?.aadhaarMaskedNumber || kycSnapshot?.maskedAadhaar || customer?.maskedAadhaar || null;
-    const bankBeneficiaryName = bankVerification?.providerBeneficiaryName || null;
-    const bankAccountHolderName = bankVerification?.accountHolderName || null;
+    const bankBeneficiaryName = bankVerification?.providerBeneficiaryName || bankAccountDataRecords?.[0]?.accountHolderName || null;
+    const bankAccountHolderName = bankVerification?.accountHolderName || bankAccountDataRecords?.[0]?.accountHolderName || null;
 
     const livePhotoDoc = documents.find((doc) => doc.documentType === 'CUSTOMER_LIVE_PHOTO') || null;
 
@@ -642,6 +654,23 @@ export class ApplicationsService {
         capturedAt: document.capturedAt,
         faceLivenessStatus: document.faceLivenessStatus,
         faceLivenessScore: document.faceLivenessScore ? Number(document.faceLivenessScore) : null,
+      })),
+      // Bank account data from AA or manual statement upload — surfaces the account holder
+      // name and bank details that the credit reviewer needs for name cross-check.
+      bankAccounts: bankAccountDataRecords.map((ba) => ({
+        id: ba.id.toString(),
+        provider: ba.provider,
+        fipId: ba.fipId,
+        fipName: ba.fipName,
+        accountType: ba.accountType,
+        accountNumberMasked: ba.accountNumberMasked,
+        accountHolderName: ba.accountHolderName,
+        ifscCode: ba.ifscCode,
+        branchName: ba.branchName,
+        currentBalance: ba.currentBalance ? Number(ba.currentBalance) : null,
+        availableBalance: ba.availableBalance ? Number(ba.availableBalance) : null,
+        averageBalance: ba.averageBalance ? Number(ba.averageBalance) : null,
+        createdAt: ba.createdAt,
       })),
     };
   }

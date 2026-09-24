@@ -25,6 +25,7 @@
     "@nestjs/schedule": "^5.0.1",
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "6.19.3",
+    "@types/uuid": "^9.0.8",
     "argon2": "^0.44.0",
     "axios": "^1.18.1",
     "class-transformer": "^0.5.1",
@@ -39,6 +40,7 @@
     "puppeteer": "^25.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "uuid": "^9.0.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

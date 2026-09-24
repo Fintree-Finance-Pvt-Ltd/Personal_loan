@@ -1852,15 +1852,64 @@ export class UnaportService {
     writeFileSync(filePath, file.buffer);
 
     const bankName = String(body?.bankName || body?.bankCode || 'Bank Account').trim();
-    const bankCode = String(body?.bankCode || 'OTHER_BANK').trim().toUpperCase();
-    const accountType = String(body?.accountType || 'SAVINGS').trim().toUpperCase();
+    let bankCode = String(body?.bankCode || 'OTHER_BANK').trim().toUpperCase();
+    if ((!bankCode || bankCode === 'OTHER_BANK') && body?.bankName) {
+      const normalized = body.bankName.toUpperCase();
+      if (normalized.includes('KOTAK')) bankCode = 'KKBK';
+      else if (normalized.includes('HDFC')) bankCode = 'HDFC';
+      else if (normalized.includes('STATE BANK') || normalized.includes('SBI')) bankCode = 'SBIN';
+      else if (normalized.includes('ICICI')) bankCode = 'ICIC';
+      else if (normalized.includes('AXIS')) bankCode = 'UTIB';
+      else if (normalized.includes('BARODA')) bankCode = 'BARB';
+      else if (normalized.includes('PUNJAB') || normalized.includes('PNB')) bankCode = 'PUNB';
+      else if (normalized.includes('INDUSIND')) bankCode = 'INDB';
+      else if (normalized.includes('YES')) bankCode = 'YESB';
+      else if (normalized.includes('CANARA')) bankCode = 'CNRB';
+      else if (normalized.includes('UNION')) bankCode = 'UBIN';
+    }
+    if (bankCode === 'OTHER_BANK') {
+      const bankData = await this.prisma.customerBankAccountData.findFirst({
+        where: { customerId },
+        orderBy: { id: 'desc' },
+      });
+      if (bankData?.ifscCode) {
+        bankCode = bankData.ifscCode.slice(0, 4).toUpperCase();
+      } else if (bankData?.fipId) {
+        bankCode = bankData.fipId.toUpperCase();
+      }
+    }
+
+    const accountType = String(body?.accountType || 'SAVING').trim().toUpperCase();
+    const bsaAccountType = accountType === 'SAVINGS' ? 'SAVING' : accountType;
+
+    // Create a plCustomerDocument record so the uploaded statement appears in credit review
+    // (the AA flow does this at the end of processStatementPdf(); manual uploads were missing it).
+    const relativeFilePath = `uploads/customer-documents/bank-statements/${safeFilename}`;
+    const fileUrl = `/uploads/customer-documents/bank-statements/${safeFilename}`;
+    await this.prisma.plCustomerDocument.create({
+      data: {
+        customerId,
+        applicationId: application?.id || null,
+        documentType: 'BANK_STATEMENT',
+        applicantType: 'BORROWER',
+        status: 'VERIFIED',
+        fileName: safeFilename,
+        originalFileName: file.originalname || `bank_statement_${cleanLan}.pdf`,
+        filePath: relativeFilePath,
+        fileUrl,
+        mimeType: 'application/pdf',
+        fileSize: file.buffer.length,
+        source: 'MANUAL_UPLOAD',
+      },
+    });
 
     // Call Boost Money BSA uploadMultipleStatements endpoint
     const parseResult = await this.bsaService.uploadMultipleStatements({
       statements: [
         {
-          bank: bankName,
-          accountType: accountType,
+          bank: bankCode,
+          bankCode: bankCode,
+          accountType: bsaAccountType,
           bankStmt: {
             buffer: file.buffer,
             originalname: file.originalname || safeFilename,
@@ -1871,6 +1920,7 @@ export class UnaportService {
           accNo: 'XXXX' + (customer.mobileNumber?.slice(-4) || '1234'),
         },
       ],
+      callbackUrl: 'https://finle-prod.fintreelms.com/api/webhooks/bsa',
       customerId,
       applicationId: application?.id || null,
       lan: cleanLan,

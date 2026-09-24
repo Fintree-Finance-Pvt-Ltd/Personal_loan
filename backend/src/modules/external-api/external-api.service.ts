@@ -1100,32 +1100,38 @@ export class ExternalApiService {
     const accountNumberMasked = maskBankAccountNumber(accountNumber);
 
     // Call Digio Penny Drop API
+    const customerFullName = loan.customer?.fullName || accountHolderName;
     const digioRes = await this.digioBankService.verifyBankAccount({
       accountNo: accountNumber,
       ifsc: ifscCode,
       name: accountHolderName,
+      customerName: customerFullName,
     });
 
     // Compute Name Matching Score
-    let fuzzyMatchScore = digioRes.fuzzyMatchScore;
-    if (fuzzyMatchScore === null || fuzzyMatchScore === undefined) {
-      const customerFullName = loan.customer?.fullName || accountHolderName;
-      const providerName = digioRes.beneficiaryNameWithBank || accountHolderName;
+    let fuzzyMatchScore = digioRes.fuzzyMatchScore ?? 0;
+    const fuzzyMatchSource = digioRes.fuzzyMatchSource ?? 'NONE';
+    const fuzzyMatchReason = digioRes.fuzzyMatchReason ?? 'NO_MATCH';
 
-      fuzzyMatchScore = await this.digioBankService.fuzzyMatch({
-        sourceText: customerFullName,
-        targetText: providerName,
-      });
-    }
-
-    const nameMatchThreshold = Number(this.configService.get('DIGIO_BANK_NAME_MATCH_THRESHOLD') || '75');
+    const nameMatchThreshold = Number(this.configService.get('DIGIO_BANK_NAME_MATCH_THRESHOLD') || '85');
     const nameMatched = Boolean(digioRes.verified && (fuzzyMatchScore >= nameMatchThreshold));
 
     let status: PlBankVerificationStatus;
+    let failureCode: string | null = null;
+    let failureReason: string | null = null;
+
     if (digioRes.verified) {
-      status = nameMatched ? PlBankVerificationStatus.VERIFIED : PlBankVerificationStatus.NAME_MISMATCH;
+      if (nameMatched) {
+        status = PlBankVerificationStatus.VERIFIED;
+      } else {
+        status = PlBankVerificationStatus.NAME_MISMATCH;
+        failureCode = 'NAME_MISMATCH';
+        failureReason = 'Bank account holder name does not match customer name';
+      }
     } else {
       status = PlBankVerificationStatus.FAILED;
+      failureCode = 'BANK_VERIFICATION_FAILED';
+      failureReason = digioRes.rawResponse?.message || 'Bank verification failed with provider';
     }
 
     const providerVerified = digioRes.verified;
@@ -1176,6 +1182,9 @@ export class ExternalApiService {
           status,
           verifiedAt,
 
+          failureCode,
+          failureReason,
+
           rawResponse: rawResponseStr,
           ipAddress,
           userAgent,
@@ -1206,6 +1215,9 @@ export class ExternalApiService {
           verificationAmount: 1.00,
           status,
           verifiedAt,
+
+          failureCode,
+          failureReason,
 
           rawResponse: rawResponseStr,
           ipAddress,
@@ -1272,8 +1284,12 @@ export class ExternalApiService {
             maskedAccountNumber: accountNumberMasked,
             ifsc: maskIfscForAudit(ifscCode),
             fuzzyMatchScore,
+            fuzzyMatchSource,
+            fuzzyMatchReason,
             nameMatchThreshold,
             status,
+            nameMatched,
+            failureReason: failureReason || null,
             ...(aadhaarBankMatch ? { aadhaarBankNameScore: aadhaarBankMatch.score, aadhaarBankNameMatched: aadhaarBankMatch.matched } : {}),
           },
 

@@ -608,31 +608,41 @@ export default function CreditReviewPage() {
                       </div>
 
                       {/* Card 4: Bank Account Name */}
-                      <div className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-xs">
-                        <div className="flex items-center justify-between text-xs text-neutral-500 font-semibold uppercase">
-                          <span>4. Name in Bank Account</span>
-                          <Landmark className="h-3.5 w-3.5 text-neutral-400" />
-                        </div>
-                        <div className="mt-2 text-sm font-bold text-neutral-900 break-words">
-                          {details.bankVerification?.providerBeneficiaryName || details.bankVerification?.accountHolderName || '-'}
-                        </div>
-                        <div className="mt-1 flex items-center gap-1.5 text-xs">
-                          <span className="font-mono text-neutral-600">
-                            {details.bankVerification?.accountNumberMasked || '-'}
-                          </span>
-                          {details.bankVerification?.nameMatched ? (
-                            <span className="inline-flex items-center text-brand-600 font-semibold">
-                              <CheckCircle2 className="h-3 w-3 mr-0.5" /> Match
-                            </span>
-                          ) : details.bankVerification ? (
-                            <span className="text-caution-600 font-semibold">
-                              {details.bankVerification.status || 'Pending'}
-                            </span>
-                          ) : (
-                            <span className="text-neutral-400">Not Done</span>
-                          )}
-                        </div>
-                      </div>
+                      {(() => {
+                        // Prefer bankVerification, fall back to bankAccounts from AA/manual upload
+                        const bv = details.bankVerification;
+                        const ba = details.bankAccounts?.[0];
+                        const bankHolderName = bv?.providerBeneficiaryName || bv?.accountHolderName || ba?.accountHolderName || '-';
+                        const bankAcctMasked = bv?.accountNumberMasked || ba?.accountNumberMasked || '-';
+                        const bankSource = bv ? (bv.nameMatched ? 'VERIFIED' : (bv.status || 'Pending')) : ba ? (ba.provider === 'BOOST_MONEY_BSA' ? 'Manual Upload' : ba.provider || 'AA') : null;
+                        return (
+                          <div className="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-xs">
+                            <div className="flex items-center justify-between text-xs text-neutral-500 font-semibold uppercase">
+                              <span>4. Name in Bank Account</span>
+                              <Landmark className="h-3.5 w-3.5 text-neutral-400" />
+                            </div>
+                            <div className="mt-2 text-sm font-bold text-neutral-900 break-words">
+                              {bankHolderName}
+                            </div>
+                            <div className="mt-1 flex items-center gap-1.5 text-xs">
+                              <span className="font-mono text-neutral-600">
+                                {bankAcctMasked}
+                              </span>
+                              {bv?.nameMatched ? (
+                                <span className="inline-flex items-center text-brand-600 font-semibold">
+                                  <CheckCircle2 className="h-3 w-3 mr-0.5" /> Match
+                                </span>
+                              ) : bankSource ? (
+                                <span className="text-caution-600 font-semibold">
+                                  {bankSource}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400">Not Done</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -1099,49 +1109,67 @@ export default function CreditReviewPage() {
                         <Landmark className="h-4 w-4 text-brand-600" />
                         <h4 className="text-sm font-bold text-neutral-900">Bank Account & Disbursal</h4>
                       </div>
-                      {details.bankVerification ? (
-                        <dl className="space-y-2.5 text-sm">
-                          <div className="flex justify-between">
-                            <dt className="text-neutral-500">Bank Name</dt>
-                            <dd className="font-semibold text-neutral-900">{details.bankVerification.bankName || '-'}</dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt className="text-neutral-500">Account Number</dt>
-                            <dd className="font-mono font-bold text-neutral-900">
-                              {details.bankVerification.accountNumberMasked || '-'}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt className="text-neutral-500">IFSC Code</dt>
-                            <dd className="font-mono font-semibold text-neutral-900">{details.bankVerification.ifscCode || '-'}</dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt className="text-neutral-500">Beneficiary Name</dt>
-                            <dd className="font-semibold text-neutral-900">
-                              {details.bankVerification.providerBeneficiaryName || details.bankVerification.accountHolderName || '-'}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt className="text-neutral-500">Penny-Drop Match</dt>
-                            <dd>
-                              {details.bankVerification.nameMatched ? (
-                                <span className="inline-flex items-center rounded bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-800">
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Matched ({details.bankVerification.fuzzyMatchScore ?? 100}%)
-                                </span>
-                              ) : (
-                                <span className="rounded bg-caution-100 px-2 py-0.5 text-xs font-bold text-caution-800">
-                                  {details.bankVerification.status || 'Verified'}
-                                </span>
-                              )}
-                            </dd>
-                          </div>
-                        </dl>
-                      ) : (
-                        <p className="py-8 text-center text-xs text-neutral-400">
-                          Bank verification record not available yet.
-                        </p>
-                      )}
+                      {(() => {
+                        const bv = details.bankVerification;
+                        const ba = details.bankAccounts?.[0];
+                        const hasBankInfo = bv || ba;
+                        if (!hasBankInfo) {
+                          return (
+                            <p className="py-8 text-center text-xs text-neutral-400">
+                              Bank verification record not available yet.
+                            </p>
+                          );
+                        }
+                        return (
+                          <dl className="space-y-2.5 text-sm">
+                            <div className="flex justify-between">
+                              <dt className="text-neutral-500">Bank Name</dt>
+                              <dd className="font-semibold text-neutral-900">{bv?.bankName || ba?.fipName || '-'}</dd>
+                            </div>
+                            <div className="flex justify-between">
+                              <dt className="text-neutral-500">Account Number</dt>
+                              <dd className="font-mono font-bold text-neutral-900">
+                                {bv?.accountNumberMasked || ba?.accountNumberMasked || '-'}
+                              </dd>
+                            </div>
+                            <div className="flex justify-between">
+                              <dt className="text-neutral-500">IFSC Code</dt>
+                              <dd className="font-mono font-semibold text-neutral-900">{bv?.ifscCode || ba?.ifscCode || '-'}</dd>
+                            </div>
+                            <div className="flex justify-between">
+                              <dt className="text-neutral-500">Beneficiary Name</dt>
+                              <dd className="font-semibold text-neutral-900">
+                                {bv?.providerBeneficiaryName || bv?.accountHolderName || ba?.accountHolderName || '-'}
+                              </dd>
+                            </div>
+                            <div className="flex justify-between">
+                              <dt className="text-neutral-500">{bv ? 'Penny-Drop Match' : 'Source'}</dt>
+                              <dd>
+                                {bv?.nameMatched ? (
+                                  <span className="inline-flex items-center rounded bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-800">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Matched ({bv.fuzzyMatchScore ?? 100}%)
+                                  </span>
+                                ) : bv ? (
+                                  <span className="rounded bg-caution-100 px-2 py-0.5 text-xs font-bold text-caution-800">
+                                    {bv.status || 'Verified'}
+                                  </span>
+                                ) : ba ? (
+                                  <span className="rounded bg-info-100 px-2 py-0.5 text-xs font-bold text-info-800">
+                                    {ba.provider === 'BOOST_MONEY_BSA' ? 'Manual Statement Upload' : ba.provider || 'Account Aggregator'}
+                                  </span>
+                                ) : null}
+                              </dd>
+                            </div>
+                            {!bv && ba?.accountType && (
+                              <div className="flex justify-between">
+                                <dt className="text-neutral-500">Account Type</dt>
+                                <dd className="font-semibold text-neutral-900">{formatLabel(ba.accountType)}</dd>
+                              </div>
+                            )}
+                          </dl>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -1197,6 +1225,61 @@ export default function CreditReviewPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* SECTION 6b: BANK STATEMENT ANALYSIS — from AA or Manual Upload */}
+                  {details.bankAccounts && details.bankAccounts.length > 0 && (
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                      <div className="flex items-center justify-between mb-3 border-b border-neutral-100 pb-2">
+                        <div className="flex items-center gap-2">
+                          <FileCheck className="h-4 w-4 text-brand-600" />
+                          <h4 className="text-sm font-bold text-neutral-900">Bank Statement Analysis ({details.bankAccounts.length} account{details.bankAccounts.length > 1 ? 's' : ''})</h4>
+                        </div>
+                        <Badge tone="info">{details.bankAccounts[0].provider === 'BOOST_MONEY_BSA' ? 'Manual Upload' : details.bankAccounts[0].provider || 'AA'}</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {details.bankAccounts.map((ba, idx) => (
+                          <div key={ba.id || idx} className="rounded-xl border border-neutral-100 bg-neutral-50 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold uppercase text-neutral-500">
+                                {ba.fipName || 'Bank Account'}
+                              </span>
+                              <span className="rounded bg-brand-100 px-2 py-0.5 text-2xs font-semibold text-brand-800">
+                                {formatLabel(ba.accountType || 'SAVINGS')}
+                              </span>
+                            </div>
+                            <dl className="space-y-1.5 text-sm">
+                              <div className="flex justify-between">
+                                <dt className="text-xs text-neutral-500">Account Holder</dt>
+                                <dd className="text-xs font-bold text-neutral-900">{ba.accountHolderName || '-'}</dd>
+                              </div>
+                              <div className="flex justify-between">
+                                <dt className="text-xs text-neutral-500">Account No.</dt>
+                                <dd className="text-xs font-mono font-semibold text-neutral-700">{ba.accountNumberMasked || '-'}</dd>
+                              </div>
+                              {ba.ifscCode && (
+                                <div className="flex justify-between">
+                                  <dt className="text-xs text-neutral-500">IFSC</dt>
+                                  <dd className="text-xs font-mono font-semibold text-neutral-700">{ba.ifscCode}</dd>
+                                </div>
+                              )}
+                              {ba.currentBalance !== null && ba.currentBalance !== undefined && (
+                                <div className="flex justify-between">
+                                  <dt className="text-xs text-neutral-500">Current Balance</dt>
+                                  <dd className="text-xs font-bold text-brand-600">{formatCurrency(ba.currentBalance)}</dd>
+                                </div>
+                              )}
+                              {ba.averageBalance !== null && ba.averageBalance !== undefined && (
+                                <div className="flex justify-between">
+                                  <dt className="text-xs text-neutral-500">Avg. Balance (ABB)</dt>
+                                  <dd className="text-xs font-bold text-neutral-800">{formatCurrency(ba.averageBalance)}</dd>
+                                </div>
+                              )}
+                            </dl>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* SECTION 7: UPLOADED DOCUMENTS GALLERY */}
                   <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">

@@ -204,7 +204,7 @@ button, input { font: inherit; }
 .stagger-children > *:nth-child(5) { animation-delay: 240ms; }
 .stagger-children > *:nth-child(6) { animation-delay: 300ms; }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) { 
   .stagger-children > * {
     animation: none;
   }
