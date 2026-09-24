@@ -75,6 +75,26 @@ describe('LenderDocumentFileService', () => {
     expect(result.fileSize).toBeGreaterThan(0);
   });
 
+  it('normalizes relative filePath starting with uploads/ when root directory is named uploads', async () => {
+    const parentDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-root-'));
+    const uploadsDir = path.join(parentDir, 'uploads');
+    await fs.mkdir(uploadsDir);
+    try {
+      await fs.writeFile(path.join(uploadsDir, 'doc.pdf'), Buffer.from('%PDF-1.4\ncontent'));
+      const testService = new LenderDocumentFileService({
+        get: (key: string) => (key === 'PL_DOCUMENT_UPLOAD_ROOT' ? uploadsDir : undefined),
+      } as any);
+
+      const result = await testService.loadDocument({
+        filePath: 'uploads/doc.pdf',
+        declaredMimeType: 'application/pdf',
+      });
+      expect(result.fileSize).toBeGreaterThan(0);
+    } finally {
+      await fs.rm(parentDir, { recursive: true, force: true });
+    }
+  });
+
   it('throws LENDER_DOCUMENT_FILE_NOT_FOUND when the file does not exist', async () => {
     await expect(
       service.loadDocument({ filePath: 'does-not-exist.pdf', declaredMimeType: 'application/pdf' }),

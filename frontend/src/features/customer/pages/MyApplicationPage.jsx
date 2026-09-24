@@ -2079,33 +2079,13 @@ export default function MyApplicationPage() {
         </StepCard>
       )}
       {currentStep === 'integration_support' && (
-        <StepCard>
-          <div className="p-8 text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-caution-600" />
-            <h2 className="mt-4 text-xl font-bold text-neutral-900">We need to retry this application securely</h2>
-            <p className="mt-2 text-sm text-neutral-600">Your data and payment remain recorded. Please contact support and quote error code {customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW'}.</p>
-
-            {retryLenderSubmissionError && (
-              <p className="mt-4 rounded-lg border border-danger-100 bg-danger-50 p-3 text-sm font-medium text-danger-700">
-                {retryLenderSubmissionError}
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={handleRetryLenderSubmission}
-              disabled={isRetryingLenderSubmission}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-info-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-info-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isRetryingLenderSubmission ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : (
-                <RotateCcw className="h-4 w-4" />
-              )}
-              {isRetryingLenderSubmission ? 'Retrying…' : 'Retry Now'}
-            </button>
-          </div>
-        </StepCard>
+        <IntegrationSupportCard
+          customer={customer}
+          isRetrying={isRetryingLenderSubmission}
+          retryError={retryLenderSubmissionError}
+          onRetry={handleRetryLenderSubmission}
+          onClearError={() => setRetryLenderSubmissionError('')}
+        />
       )}
 
       {/* Auto Eligibility Check Result Modal */}
@@ -6022,4 +6002,180 @@ function formatEnum(value) {
         word.slice(1),
     )
     .join(' ');
+}
+
+/**
+ * IntegrationSupportCard
+ * ---------------------
+ * A polished retry-support card shown when the lender integration hits a recoverable
+ * failure. Handles the backend's cooldown timer gracefully by parsing "Please wait N
+ * seconds" from the error response and showing an auto-decrementing countdown.
+ */
+function IntegrationSupportCard({ customer, isRetrying, retryError, onRetry, onClearError }) {
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const cooldownTimerRef = useRef(null);
+
+  const errorCode = customer?.journey?.integration?.safeErrorCode || 'INTEGRATION_REVIEW';
+  const integrationStage = customer?.journey?.integration?.stage || null;
+
+  // Parse cooldown seconds from backend error message like "Please wait 57 seconds before retrying again."
+  useEffect(() => {
+    if (!retryError) return;
+    const match = retryError.match(/wait\s+(\d+)\s+seconds?/i);
+    if (match) {
+      const secs = parseInt(match[1], 10);
+      if (secs > 0 && secs <= 120) {
+        setCooldownSeconds(secs);
+        onClearError?.();
+      }
+    }
+  }, [retryError]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (cooldownSeconds <= 0) {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+      return;
+    }
+
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    };
+  }, [cooldownSeconds > 0]);
+
+  const isCoolingDown = cooldownSeconds > 0;
+  const isDisabled = isRetrying || isCoolingDown;
+
+  const handleRetryClick = () => {
+    if (isDisabled) return;
+    onRetry?.();
+  };
+
+  return (
+    <StepCard>
+      <div className="p-6 sm:p-8">
+        {/* Top status indicator */}
+        <div className="flex items-center justify-center">
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-caution-50 text-caution-600">
+            <AlertCircle className="h-8 w-8" />
+            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-caution-500 text-[10px] font-bold text-white shadow-sm">!</span>
+          </div>
+        </div>
+
+        <h2 className="mt-5 text-center text-xl font-bold text-neutral-900 tracking-tight">
+          Application Needs a Retry
+        </h2>
+        <p className="mt-2 text-center text-sm text-neutral-600 leading-relaxed max-w-md mx-auto">
+          A temporary issue occurred during lender processing. Your data and payment are safe — you can retry now or contact support if the issue persists.
+        </p>
+
+        {/* Error Details Card */}
+        <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/80 overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-neutral-200 bg-white px-4 py-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-caution-100 text-caution-600">
+              <Info className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-neutral-900">Error Details</p>
+              <p className="text-[11px] text-neutral-500">Reference information for support</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200">
+            <div className="px-4 py-3">
+              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Error Code</p>
+              <p className="mt-1 font-mono text-xs font-bold text-neutral-900 break-all">{errorCode}</p>
+            </div>
+            {integrationStage && (
+              <div className="px-4 py-3">
+                <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Stage</p>
+                <p className="mt-1 text-xs font-bold text-neutral-900 capitalize">
+                  {integrationStage.toLowerCase().replace(/_/g, ' ')}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-neutral-200 px-4 py-3 flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-brand-600" />
+            <p className="text-[11px] text-neutral-600">
+              Your data, documents and payment are securely recorded. Nothing has been lost.
+            </p>
+          </div>
+        </div>
+
+        {/* Non-cooldown error message */}
+        {retryError && !isCoolingDown && (
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-danger-200 bg-danger-50 p-3.5">
+            <AlertCircle className="h-4 w-4 shrink-0 text-danger-600 mt-0.5" />
+            <p className="text-xs font-medium text-danger-800 leading-relaxed">{retryError}</p>
+          </div>
+        )}
+
+        {/* Cooldown countdown */}
+        {isCoolingDown && (
+          <div className="mt-4 flex items-center justify-center gap-3 rounded-xl border border-info-200 bg-info-50 p-3.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-info-100 text-info-700">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-info-900">
+                Retry available in <span className="tabular-nums font-bold">{cooldownSeconds}s</span>
+              </p>
+              <p className="text-[11px] text-info-700">Please wait before retrying to avoid duplicate submissions.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <button
+            type="button"
+            onClick={handleRetryClick}
+            disabled={isDisabled}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-7 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-brand-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+          >
+            {isRetrying ? (
+              <>
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                Retrying…
+              </>
+            ) : isCoolingDown ? (
+              <>
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                Wait {cooldownSeconds}s
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-4 w-4" />
+                Retry Submission
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Support Contact Footer */}
+        <div className="mt-6 border-t border-neutral-100 pt-4 text-center">
+          <p className="text-[11px] text-neutral-500">
+            If this issue persists, please contact support and quote error code{' '}
+            <span className="font-mono font-bold text-neutral-700">{errorCode}</span>
+          </p>
+        </div>
+      </div>
+    </StepCard>
+  );
 }
