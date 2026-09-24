@@ -14,12 +14,15 @@ import {
   EyeOff,
   X,
   Sparkles,
+  Smartphone,
+  Phone,
 } from 'lucide-react';
 import {
   initiateAccountAggregator,
   getAccountAggregatorStatus,
   uploadBankStatement,
   getBsaBankList,
+  updateSecondaryMobile,
 } from '../customerApi';
 
 const DEFAULT_POPULAR_BANKS = [
@@ -37,7 +40,7 @@ const DEFAULT_POPULAR_BANKS = [
   { code: 'OTHER_BANK', name: 'Other Bank' },
 ];
 
-export function AccountAggregatorStep({ lan, consentText, onComplete, isCompleted: _isCompleted }) {
+export function AccountAggregatorStep({ lan, consentText, onComplete, isCompleted: _isCompleted, customer, onCustomerUpdate }) {
   const [loading, setLoading] = useState(false);
   const [sdkUrl, setSdkUrl] = useState(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
@@ -47,6 +50,20 @@ export function AccountAggregatorStep({ lan, consentText, onComplete, isComplete
   const [failureReason, setFailureReason] = useState(null);
   const [bankSummary, setBankSummary] = useState(null);
   const [, setIsPolling] = useState(false);
+
+  // Secondary mobile number states
+  const [showSecondaryMobile, setShowSecondaryMobile] = useState(false);
+  const [secondaryMobile, setSecondaryMobile] = useState('');
+  const [secondaryMobileError, setSecondaryMobileError] = useState(null);
+  const [savingSecondaryMobile, setSavingSecondaryMobile] = useState(false);
+  const [secondaryMobileSaved, setSecondaryMobileSaved] = useState(false);
+
+  // Pre-populate secondary mobile from customer data if already saved
+  useEffect(() => {
+    if (customer?.secondaryMobileNumber && !secondaryMobile) {
+      setSecondaryMobile(String(customer.secondaryMobileNumber));
+    }
+  }, [customer?.secondaryMobileNumber]);
 
   // Dynamic Bank List from BSA
   const [availableBanks, setAvailableBanks] = useState(DEFAULT_POPULAR_BANKS);
@@ -583,6 +600,126 @@ export function AccountAggregatorStep({ lan, consentText, onComplete, isComplete
                   <RefreshCw className="h-3.5 w-3.5" /> Check Status
                 </button>
               </div>
+            </div>
+
+            {/* Secondary / Bank-Registered Mobile Number Section */}
+            <div className="mt-4 border-t border-accent-100 pt-4">
+              {!showSecondaryMobile ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSecondaryMobile(true)}
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-accent-700 hover:text-accent-900 transition-colors cursor-pointer"
+                >
+                  <Smartphone className="h-3.5 w-3.5" />
+                  {customer?.secondaryMobileNumber
+                    ? `Bank Mobile: ${customer.secondaryMobileNumber.replace(/^(\d{2})(\d+)(\d{2})$/, '$1****$3')} — Change`
+                    : 'My bank is registered with a different mobile number'}
+                </button>
+              ) : (
+                <div className="rounded-xl border border-accent-200 bg-white p-4 shadow-2xs">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-accent-700">
+                      <Phone className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h5 className="text-xs font-bold text-neutral-900">
+                        Bank-Registered Mobile Number
+                      </h5>
+                      <p className="mt-0.5 text-[11px] text-neutral-500 leading-relaxed">
+                        If your bank account is linked to a different mobile number than your login number
+                        ({customer?.mobileNumber ? `${String(customer.mobileNumber).slice(0,2)}****${String(customer.mobileNumber).slice(-2)}` : 'N/A'}),
+                        enter it below. The Account Aggregator OTP will be sent to this number.
+                      </p>
+
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
+                        <div className="flex-1">
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-neutral-400">+91</span>
+                            <input
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={10}
+                              placeholder="10-digit mobile number"
+                              value={secondaryMobile}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                setSecondaryMobile(val);
+                                setSecondaryMobileError(null);
+                                setSecondaryMobileSaved(false);
+                              }}
+                              disabled={savingSecondaryMobile}
+                              className="w-full rounded-lg border border-neutral-300 bg-white py-2 pl-11 pr-3 text-xs font-medium text-neutral-900 shadow-2xs focus:border-accent-600 focus:outline-none focus:ring-1 focus:ring-accent-600 disabled:opacity-50"
+                            />
+                          </div>
+                          {secondaryMobileError && (
+                            <p className="mt-1 text-[11px] text-danger-600 flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              {secondaryMobileError}
+                            </p>
+                          )}
+                          {secondaryMobileSaved && (
+                            <p className="mt-1 text-[11px] text-brand-600 flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3 shrink-0" />
+                              Saved! Click "Re-open Bank Consent Window" to retry with this number.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!/^[6-9]\d{9}$/.test(secondaryMobile)) {
+                                setSecondaryMobileError('Enter a valid 10-digit Indian mobile number.');
+                                return;
+                              }
+                              if (customer?.mobileNumber && secondaryMobile === String(customer.mobileNumber)) {
+                                setSecondaryMobileError('This is the same as your login mobile number.');
+                                return;
+                              }
+                              setSavingSecondaryMobile(true);
+                              setSecondaryMobileError(null);
+                              try {
+                                await updateSecondaryMobile(secondaryMobile);
+                                setSecondaryMobileSaved(true);
+                                if (onCustomerUpdate) onCustomerUpdate();
+                              } catch (err) {
+                                setSecondaryMobileError(
+                                  err?.response?.data?.message || err?.message || 'Failed to save mobile number. Please try again.'
+                                );
+                              } finally {
+                                setSavingSecondaryMobile(false);
+                              }
+                            }}
+                            disabled={savingSecondaryMobile || secondaryMobile.length < 10}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {savingSecondaryMobile ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save & Use'
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowSecondaryMobile(false);
+                              setSecondaryMobileError(null);
+                              setSecondaryMobileSaved(false);
+                            }}
+                            className="inline-flex items-center justify-center rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
