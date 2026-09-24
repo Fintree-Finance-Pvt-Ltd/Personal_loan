@@ -10,6 +10,11 @@ export function loadEasebuzzCheckout() {
   }
 
   easebuzzPromise = new Promise((resolve, reject) => {
+    if (window.EasebuzzCheckout) {
+      resolve(window.EasebuzzCheckout);
+      return;
+    }
+
     const existingScript = document.querySelector('script[src*="easebuzz-checkout"]');
     if (existingScript) {
       existingScript.addEventListener('load', () => {
@@ -17,6 +22,14 @@ export function loadEasebuzzCheckout() {
         else reject(new Error('EasebuzzCheckout script loaded but window.EasebuzzCheckout is undefined'));
       });
       existingScript.addEventListener('error', () => reject(new Error('Failed loading existing EasebuzzCheckout script')));
+      // Backup polling in case load event already fired
+      const checkInterval = setInterval(() => {
+        if (window.EasebuzzCheckout) {
+          clearInterval(checkInterval);
+          resolve(window.EasebuzzCheckout);
+        }
+      }, 100);
+      setTimeout(() => clearInterval(checkInterval), 3000);
       return;
     }
 

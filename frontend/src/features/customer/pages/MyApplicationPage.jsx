@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePincodeLookup } from '../hooks/usePincodeLookup';
+import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 import { OtpInput } from '../../../components/ui/OtpInput';
 import {
   customerApi,
@@ -1453,14 +1454,6 @@ export default function MyApplicationPage() {
       return;
     }
 
-    if (typeof window.EasebuzzCheckout !== 'function') {
-      showMessage(
-        'Easebuzz checkout could not be loaded. Please refresh the page.',
-        'error',
-      );
-      return;
-    }
-
     setIsFeeProcessing(true);
     setShowPaymentRetryHint(false);
     clearMessage();
@@ -1473,6 +1466,8 @@ export default function MyApplicationPage() {
     }, 8000);
 
     try {
+      const EasebuzzCheckoutConstructor = await loadEasebuzzCheckout();
+
       const result = await initiateAssessmentPayment({
         purpose: 'ASSESSMENT_FEE',
         consentTemplateId: 'LENDER_DATA_SHARING_V1',
@@ -1510,7 +1505,7 @@ export default function MyApplicationPage() {
       setPaymentId(pId);
       setTransactionId(txId);
 
-      const easebuzzCheckout = new window.EasebuzzCheckout(
+      const easebuzzCheckout = new EasebuzzCheckoutConstructor(
         merchantKey,
         env === 'prod' ? 'prod' : 'test',
       );
