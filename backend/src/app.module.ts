@@ -94,7 +94,7 @@ import { ReferralModule } from './modules/referral/referral.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
-    // { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })
