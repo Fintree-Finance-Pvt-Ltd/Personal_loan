@@ -636,6 +636,9 @@ export class CustomerService {
         lastLoginAt: customer.lastLoginAt,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
+        // Secondary bank mobile number
+        secondaryMobileNumber: customer.secondaryMobileNumber || null,
+        secondaryMobileVerified: Boolean(customer.secondaryMobileVerified),
         // Aadhaar DigiLocker KYC
         aadhaarVerified: Boolean(customer.aadhaarVerified || customer.digilockerStatus === 'VERIFIED'),
         aadhaarKycStatus: customer.aadhaarKycStatus || customer.digilockerStatus || null,

@@ -661,6 +661,14 @@ export async function triggerBsaFallback(lan) {
   return response?.data?.data || response?.data || response;
 }
 
+export async function updateSecondaryMobile(mobileNumber) {
+  const response = await customerAxios.post(
+    '/customer/update-secondary-mobile',
+    { mobileNumber }
+  );
+  return response?.data?.data || response?.data || response;
+}
+
 export const customerApi = {
   getCustomer(customerId) {
     return getCustomerById(customerId);
@@ -692,6 +700,7 @@ export const customerApi = {
   getBsaBankList,
   getBsaAccountSummary,
   triggerBsaFallback,
+  updateSecondaryMobile,
 };
 
 
