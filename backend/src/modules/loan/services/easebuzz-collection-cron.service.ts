@@ -35,7 +35,7 @@ export class EasebuzzCollectionCronService {
     const cleanLan = String(lan || '').replace(/[^a-zA-Z0-9]/g, '');
     const candidate = `EB_${cleanLan}_${rpsId}_${attempt}`;
     if (candidate.length <= 40) return candidate;
-    
+
     // Truncate LAN if needed to fit 40 chars
     const maxLanLen = 40 - (3 + 1 + String(rpsId).length + 1 + String(attempt).length);
     const truncLan = cleanLan.slice(-Math.max(1, maxLanLen));
@@ -149,6 +149,12 @@ export class EasebuzzCollectionCronService {
 
         const merchantReqNumber = this.generateMerchantRequestNumber(rps.lan, rps.id, attemptNumber);
 
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = this.getIstDateString(tomorrow);
+        const rpsDueDateStr = rps.dueDate ? this.getIstDateString(new Date(rps.dueDate)) : tomorrowStr;
+        const effectivePresentmentDateStr = rpsDueDateStr > todayStr ? rpsDueDateStr : tomorrowStr;
+
         // Idempotent creation & atomic claim (CREATED -> SUBMITTING)
         const debitReq = await this.prisma.$transaction(async (tx) => {
           const existingMerchant = await tx.easebuzzDebitRequest.findUnique({
@@ -168,7 +174,7 @@ export class EasebuzzCollectionCronService {
               mandateType: PlMandateType.ENACH,
               merchantRequestNumber: merchantReqNumber,
               amount: new Prisma.Decimal(debitAmount),
-              presentmentDate: new Date(todayStr),
+              presentmentDate: new Date(effectivePresentmentDateStr),
               status: 'SUBMITTING',
               attemptNumber,
               source: 'CRON',
@@ -189,7 +195,7 @@ export class EasebuzzCollectionCronService {
           transactionId: mandateTxId,
           amount: debitAmount,
           merchantRequestNumber: merchantReqNumber,
-          presentmentDate: todayStr,
+          presentmentDate: effectivePresentmentDateStr,
           udf1: rps.lan,
           udf2: rps.id.toString(),
           udf3: rps.installmentNumber.toString(),
@@ -439,8 +445,8 @@ export class EasebuzzCollectionCronService {
         const reqDate = debitReq.presentmentDate
           ? new Date(debitReq.presentmentDate).toISOString().slice(0, 10)
           : debitReq.createdAt
-          ? new Date(debitReq.createdAt).toISOString().slice(0, 10)
-          : undefined;
+            ? new Date(debitReq.createdAt).toISOString().slice(0, 10)
+            : undefined;
 
         const res = await this.easebuzzAutocollectService.getDebitRequests({
           merchantRequestNumber: debitReq.merchantRequestNumber,
@@ -540,8 +546,8 @@ export class EasebuzzCollectionCronService {
     const reqDate = debitReq.presentmentDate
       ? new Date(debitReq.presentmentDate).toISOString().slice(0, 10)
       : debitReq.createdAt
-      ? new Date(debitReq.createdAt).toISOString().slice(0, 10)
-      : undefined;
+        ? new Date(debitReq.createdAt).toISOString().slice(0, 10)
+        : undefined;
 
     // 1. Query Presentments from Easebuzz
     const res = await this.easebuzzAutocollectService.getDebitRequests({
@@ -737,6 +743,14 @@ export class EasebuzzCollectionCronService {
     const debitAmount = Math.min(Number(rps.remainingAmount), Number(mandate.amount));
     const todayStr = this.getIstDateString();
 
+    // Easebuzz eNACH presentment requires a strictly FUTURE date (> today in IST).
+    // Use the installment's dueDate if it is in the future (> today), otherwise use tomorrow.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = this.getIstDateString(tomorrow);
+    const rpsDueDateStr = rps.dueDate ? this.getIstDateString(new Date(rps.dueDate)) : tomorrowStr;
+    const effectivePresentmentDateStr = rpsDueDateStr > todayStr ? rpsDueDateStr : tomorrowStr;
+
     // Verify mandate status
     const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(mandateTxId);
     if (!mandateCheck.isActive) {
@@ -767,7 +781,7 @@ export class EasebuzzCollectionCronService {
           merchantRequestNumber: merchantReqNumber,
           notificationRequestNumber: notifRequestNum,
           amount: new Prisma.Decimal(debitAmount),
-          presentmentDate: new Date(todayStr),
+          presentmentDate: new Date(effectivePresentmentDateStr),
           status: 'SUBMITTING',
           attemptNumber,
           source,
@@ -783,7 +797,7 @@ export class EasebuzzCollectionCronService {
         transactionId: mandateTxId,
         amount: debitAmount,
         merchantRequestNumber: merchantReqNumber,
-        presentmentDate: todayStr,
+        presentmentDate: effectivePresentmentDateStr,
         udf1: rps.lan,
         udf2: rps.id.toString(),
         udf3: rps.installmentNumber.toString(),
