@@ -107,3 +107,53 @@ export function namesLikelyMatch(
   const score = matchNames(nameA, nameB);
   return { score, matched: score >= threshold };
 }
+
+export interface BankNameMatchResult {
+  matched: boolean;
+  score: number;
+  reason: string;
+}
+
+/**
+ * Custom local fuzzy name matching engine for bank account verification.
+ * Compares customer name and bank beneficiary name token-by-token with initial-handling.
+ *
+ * @param customerName e.g. "Vishal Ramashankar Yadav"
+ * @param beneficiaryNameWithBank e.g. "Vishal R Yadav"
+ * @returns { matched: boolean, score: number, reason: string }
+ */
+export function calculateBankNameMatchScore(
+  customerName: string | null | undefined,
+  beneficiaryNameWithBank: string | null | undefined,
+  threshold = 70,
+): BankNameMatchResult {
+  const nameA = String(customerName || '').trim();
+  const nameB = String(beneficiaryNameWithBank || '').trim();
+
+  if (!nameA || !nameB) {
+    return {
+      matched: false,
+      score: 0,
+      reason: 'NO_MATCH',
+    };
+  }
+
+  const score = matchNames(nameA, nameB);
+
+  if (score <= 0) {
+    return {
+      matched: false,
+      score: 0,
+      reason: 'NO_MATCH',
+    };
+  }
+
+  const isMatched = score >= threshold;
+  const reason = score === 100 ? 'EXACT_MATCH' : (isMatched ? 'SEQUENCE_MATCH' : 'PARTIAL_MATCH');
+
+  return {
+    matched: isMatched,
+    score,
+    reason,
+  };
+}

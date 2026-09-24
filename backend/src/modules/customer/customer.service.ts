@@ -744,6 +744,172 @@ export class CustomerService {
     };
   }
 
+  async getCustomerNotifications(customerId: bigint) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        applications: {
+          orderBy: { id: 'desc' },
+          take: 3,
+          include: {
+            loans: { orderBy: { id: 'desc' }, take: 1 },
+          },
+        },
+        loans: {
+          orderBy: { id: 'desc' },
+          take: 3,
+        },
+        plPaymentLinks: {
+          where: { status: 'SUCCESS' },
+          orderBy: { paidAt: 'desc' },
+          take: 5,
+        },
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found.');
+    }
+
+    const latestAa = await this.prisma.customerAccountAggregatorRequest.findFirst({
+      where: { customerId },
+      orderBy: { id: 'desc' },
+    });
+
+    const notifications: Array<{
+      id: string;
+      title: string;
+      message: string;
+      timestamp: string;
+      type: string;
+      actionUrl?: string;
+    }> = [];
+
+    const latestApp = customer.applications[0] ?? null;
+    const latestLoan = customer.loans[0] ?? null;
+    const rawMobile = customer.mobileNumber || '';
+    const maskedMobile = rawMobile.length >= 10
+      ? `${rawMobile.slice(0, 2)}••••${rawMobile.slice(-4)}`
+      : 'registered mobile';
+
+    // 1. Loan Disbursal Notification
+    if (latestLoan) {
+      const isDisbursed =
+        latestLoan.disbursalStatus === 'SUCCESS' ||
+        latestLoan.disbursalStatus === 'COMPLETED' ||
+        latestLoan.disbursalStatus === 'DISBURSED' ||
+        String(latestLoan.status) === 'DISBURSED';
+
+      if (isDisbursed) {
+        const amt = latestLoan.disbursalAmount || latestLoan.approvedAmount;
+        const amtStr = amt ? ` of ₹${Number(amt).toLocaleString('en-IN')}` : '';
+        notifications.push({
+          id: `loan-disbursed-${latestLoan.id.toString()}`,
+          title: 'Loan Disbursed',
+          message: `Your loan funds${amtStr} have been successfully disbursed to your bank account.`,
+          timestamp: (latestLoan.disbursalCompletedAt || latestLoan.disbursalDate || latestLoan.updatedAt || latestLoan.createdAt).toISOString(),
+          type: 'DISBURSAL',
+          actionUrl: '/customer/loan-details',
+        });
+      } else if (latestLoan.status === 'LENDER_APPROVED' || latestLoan.status === 'OFFER_ACCEPTED') {
+        notifications.push({
+          id: `loan-approved-${latestLoan.id.toString()}`,
+          title: 'Loan Approved',
+          message: 'Your loan offer has been approved. Review your terms and complete e-Sign to receive funds.',
+          timestamp: (latestLoan.lenderApprovedAt || latestLoan.updatedAt || latestLoan.createdAt).toISOString(),
+          type: 'APPROVAL',
+          actionUrl: '/customer/loan-details',
+        });
+      }
+    }
+
+    // 2. Assessment Fee Payments
+    if (customer.plPaymentLinks && customer.plPaymentLinks.length > 0) {
+      for (const payment of customer.plPaymentLinks) {
+        notifications.push({
+          id: `payment-${payment.id.toString()}`,
+          title: 'Assessment Fee',
+          message: `Assessment fee receipt for ₹${Number(payment.amount).toFixed(2)} is now available to download.`,
+          timestamp: (payment.paidAt || payment.updatedAt || payment.createdAt).toISOString(),
+          type: 'PAYMENT',
+          actionUrl: '/customer/dashboard',
+        });
+      }
+    }
+
+    // 3. Bank Statement / Account Aggregator Consent
+    if (latestAa && latestAa.status === 'SUCCESS') {
+      notifications.push({
+        id: `aa-consent-${latestAa.id.toString()}`,
+        title: 'Bank Statement Verified',
+        message: 'Account Aggregator bank consent verified successfully.',
+        timestamp: (latestAa.updatedAt || latestAa.createdAt).toISOString(),
+        type: 'ACCOUNT_AGGREGATOR',
+        actionUrl: '/customer/application',
+      });
+    }
+
+    // 4. Application Progress
+    if (latestApp) {
+      let title = 'Application Update';
+      let message = 'Your personal loan application is actively being processed.';
+      if (latestApp.status === 'LENDER_ALLOCATED' || latestApp.status === 'LENDER_REVIEW') {
+        message = 'Your personal loan application has been submitted and is under verification.';
+      } else if (latestApp.status === 'LENDER_PRE_APPROVED' || latestApp.status === 'LENDER_APPROVED') {
+        message = 'Your application has received lender approval.';
+      } else if (latestApp.status === 'ASSESSMENT_FEE_PAID') {
+        message = 'Assessment fee received. Application proceeding to lender review.';
+      }
+
+      notifications.push({
+        id: `app-update-${latestApp.id.toString()}`,
+        title,
+        message,
+        timestamp: (latestApp.submittedAt || latestApp.updatedAt || latestApp.createdAt).toISOString(),
+        type: 'APPLICATION',
+        actionUrl: '/customer/application',
+      });
+    }
+
+    // 5. KYC / Aadhaar Verification
+    if (customer.aadhaarVerified && customer.aadhaarVerifiedAt) {
+      notifications.push({
+        id: `aadhaar-${customer.id.toString()}`,
+        title: 'Aadhaar KYC Verified',
+        message: 'Your identity verification was successfully verified via DigiLocker.',
+        timestamp: customer.aadhaarVerifiedAt.toISOString(),
+        type: 'KYC',
+        actionUrl: '/customer/profile',
+      });
+    }
+
+    // 6. Security Notice
+    const secDate = customer.lastLoginAt || customer.mobileVerifiedAt || customer.createdAt;
+    notifications.push({
+      id: `security-${customer.id.toString()}`,
+      title: 'Security Notice',
+      message: `2FA verified session initiated successfully on +91 ${maskedMobile}.`,
+      timestamp: secDate.toISOString(),
+      type: 'SECURITY',
+      actionUrl: '/customer/profile',
+    });
+
+    // Deduplicate and sort by newest first
+    const seen = new Set<string>();
+    const unique = notifications.filter((n) => {
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    });
+
+    unique.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return {
+      success: true,
+      data: unique,
+    };
+  }
+
   async findByMobile(mobileNumber: string) {
     const customer =
       await this.prisma.customer.findUnique({

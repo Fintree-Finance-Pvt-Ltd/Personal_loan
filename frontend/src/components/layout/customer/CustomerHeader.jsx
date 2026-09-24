@@ -12,9 +12,9 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { doCustomerLogout } from '../../../features/customer/customerApi';
+import { doCustomerLogout, getCustomerNotifications } from '../../../features/customer/customerApi';
 
 const pageTitles = {
   '/customer/dashboard': {
@@ -43,29 +43,137 @@ const pageTitles = {
   },
 };
 
-const mockNotifications = [
-  {
-    id: 1,
-    title: 'Application Update',
-    message: 'Your personal loan application is actively being processed.',
-    time: '10m ago',
-    unread: true,
-  },
-  {
-    id: 2,
-    title: 'Assessment Fee',
-    message: 'Assessment fee receipt is now available to download.',
-    time: '2h ago',
-    unread: false,
-  },
-  {
-    id: 3,
+function formatRelativeTime(dateInput, now = new Date()) {
+  if (!dateInput) return 'Recently';
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return 'Recently';
+
+  const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 0) return 'Just now';
+
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSec < 60) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+function formatFullDateTime(dateInput) {
+  if (!dateInput) return '';
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function deriveCustomerNotifications(customer) {
+  if (!customer) return [];
+  const list = [];
+  const rawMobile = customer.mobileNumber || '';
+  const maskedMobile = rawMobile.length >= 10
+    ? `${rawMobile.slice(0, 2)}••••${rawMobile.slice(-4)}`
+    : 'registered mobile';
+
+  // 1. Loan Disbursal / Status
+  if (
+    customer.latestDisbursalStatus === 'SUCCESS' ||
+    customer.latestDisbursalStatus === 'COMPLETED' ||
+    customer.latestLoanStatus === 'ACTIVE' ||
+    customer.latestLoanStatus === 'DISBURSED'
+  ) {
+    list.push({
+      id: `loan-disbursed-${customer.latestLoanId || 'current'}`,
+      title: 'Loan Disbursed',
+      message: 'Your loan funds have been successfully disbursed to your bank account.',
+      timestamp: customer.updatedAt || customer.createdAt || new Date().toISOString(),
+      actionUrl: '/customer/loan-details',
+      type: 'DISBURSAL',
+    });
+  }
+
+  // 2. Assessment Fee
+  if (customer.assessmentFeePaid || customer.latestPayment?.status === 'SUCCESS') {
+    list.push({
+      id: `fee-payment-${customer.latestPayment?.txnid || 'paid'}`,
+      title: 'Assessment Fee',
+      message: 'Assessment fee receipt is now available to download.',
+      timestamp: customer.latestPayment?.paidAt || customer.updatedAt || customer.createdAt || new Date().toISOString(),
+      actionUrl: '/customer/dashboard',
+      type: 'PAYMENT',
+    });
+  }
+
+  // 3. Bank Statement / AA
+  if (customer.journey?.aaCompleted) {
+    list.push({
+      id: `aa-completed-${customer.id}`,
+      title: 'Bank Statement Verified',
+      message: 'Account Aggregator bank consent verified successfully.',
+      timestamp: customer.updatedAt || customer.createdAt || new Date().toISOString(),
+      actionUrl: '/customer/application',
+      type: 'ACCOUNT_AGGREGATOR',
+    });
+  }
+
+  // 4. Application
+  if (customer.latestApplicationStatus || customer.latestApplicationReference) {
+    let msg = 'Your personal loan application is actively being processed.';
+    if (customer.latestApplicationStatus === 'LENDER_ALLOCATED' || customer.latestApplicationStatus === 'LENDER_REVIEW') {
+      msg = 'Your personal loan application has been submitted and is under verification.';
+    } else if (customer.latestApplicationStatus === 'LENDER_APPROVED' || customer.latestApplicationStatus === 'LENDER_PRE_APPROVED') {
+      msg = 'Your application has received lender approval.';
+    }
+    list.push({
+      id: `app-update-${customer.latestApplicationReference || customer.id}`,
+      title: 'Application Update',
+      message: msg,
+      timestamp: customer.updatedAt || customer.createdAt || new Date().toISOString(),
+      actionUrl: '/customer/application',
+      type: 'APPLICATION',
+    });
+  }
+
+  // 5. Aadhaar KYC
+  if (customer.aadhaarVerified) {
+    list.push({
+      id: `aadhaar-${customer.id}`,
+      title: 'Aadhaar KYC Verified',
+      message: 'Your identity was successfully verified via DigiLocker.',
+      timestamp: customer.aadhaarVerifiedAt || customer.createdAt || new Date().toISOString(),
+      actionUrl: '/customer/profile',
+      type: 'KYC',
+    });
+  }
+
+  // 6. Security Notice
+  const secTime = customer.lastLoginAt || customer.mobileVerifiedAt || customer.createdAt || new Date().toISOString();
+  list.push({
+    id: `security-${customer.id}`,
     title: 'Security Notice',
-    message: '2FA verified session initiated successfully.',
-    time: '1d ago',
-    unread: false,
-  },
-];
+    message: `2FA verified session initiated successfully on +91 ${maskedMobile}.`,
+    timestamp: secTime,
+    actionUrl: '/customer/profile',
+    type: 'SECURITY',
+  });
+
+  return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
 
 export default function CustomerHeader({ onMenuClick, customer }) {
   const navigate = useNavigate();
@@ -73,10 +181,77 @@ export default function CustomerHeader({ onMenuClick, customer }) {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const [notifications, setNotifications] = useState(() => deriveCustomerNotifications(customer));
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  const customerId = customer?.id || customer?.customerId;
+  const [readIds, setReadIds] = useState(() => {
+    try {
+      const key = customerId ? `customer_read_notifs_${customerId}` : 'customer_read_notifs';
+      const stored = localStorage.getItem(key);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
+
+  // Live timer tick every 30 seconds to recalculate dynamic relative times in real time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Update read IDs when customerId changes
+  useEffect(() => {
+    if (!customerId) return;
+    try {
+      const key = `customer_read_notifs_${customerId}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        setReadIds(new Set(JSON.parse(stored)));
+      }
+    } catch {
+      // ignore storage error
+    }
+  }, [customerId]);
+
+  // Fetch real-time dynamic notifications from backend, fallback to derived customer events
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadNotifications = async () => {
+      try {
+        const data = await getCustomerNotifications();
+        if (!isCancelled && Array.isArray(data) && data.length > 0) {
+          setNotifications(data);
+          return;
+        }
+      } catch (err) {
+        // Non-blocking fallback
+      }
+
+      if (!isCancelled) {
+        const fallback = deriveCustomerNotifications(customer);
+        if (fallback.length > 0) {
+          setNotifications(fallback);
+        }
+      }
+    };
+
+    loadNotifications();
+
+    // Re-check for new notifications every 60s
+    const pollTimer = setInterval(loadNotifications, 60000);
+    return () => {
+      isCancelled = true;
+      clearInterval(pollTimer);
+    };
+  }, [customer]);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -146,11 +321,45 @@ export default function CustomerHeader({ onMenuClick, customer }) {
     return pageTitles['/customer/dashboard'];
   })();
 
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  const unreadCount = useMemo(() => {
+    return notifications.filter((n) => !readIds.has(n.id)).length;
+  }, [notifications, readIds]);
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
-  };
+  const markAllAsRead = useCallback(() => {
+    const allIds = new Set([...readIds, ...notifications.map((n) => n.id)]);
+    setReadIds(allIds);
+    if (customerId) {
+      try {
+        localStorage.setItem(
+          `customer_read_notifs_${customerId}`,
+          JSON.stringify([...allIds])
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }, [readIds, notifications, customerId]);
+
+  const handleNotificationClick = useCallback((item) => {
+    if (!readIds.has(item.id)) {
+      const updated = new Set([...readIds, item.id]);
+      setReadIds(updated);
+      if (customerId) {
+        try {
+          localStorage.setItem(
+            `customer_read_notifs_${customerId}`,
+            JSON.stringify([...updated])
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
+    setNotificationsOpen(false);
+    if (item.actionUrl) {
+      navigate(item.actionUrl);
+    }
+  }, [readIds, customerId, navigate]);
 
   const handleLogout = async () => {
     await doCustomerLogout();
@@ -231,31 +440,57 @@ export default function CustomerHeader({ onMenuClick, customer }) {
                 </div>
 
                 <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
-                  {notifications.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`flex items-start gap-3 p-3.5 transition hover:bg-slate-50 ${
-                        item.unread ? 'bg-emerald-50/40' : ''
-                      }`}
-                    >
-                      <div
-                        className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
-                          item.unread ? 'bg-emerald-500' : 'bg-transparent'
-                        }`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-800">
-                          {item.title}
-                        </p>
-                        <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                          {item.message}
-                        </p>
-                        <p className="mt-1 text-[10px] font-medium text-slate-400">
-                          {item.time}
-                        </p>
+                  {notifications.length === 0 ? (
+                    <div className="p-6 text-center">
+                      <div className="mx-auto grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-400">
+                        <Bell size={18} />
                       </div>
+                      <p className="mt-2 text-xs font-bold text-slate-700">No notifications yet</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        We'll alert you as your loan journey updates.
+                      </p>
                     </div>
-                  ))}
+                  ) : (
+                    notifications.map((item) => {
+                      const isUnread = !readIds.has(item.id);
+                      const relativeTime = formatRelativeTime(item.timestamp, new Date(currentTime));
+                      const fullDateTime = formatFullDateTime(item.timestamp);
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleNotificationClick(item)}
+                          className={`group flex cursor-pointer items-start gap-3 p-3.5 transition hover:bg-slate-50 ${
+                            isUnread ? 'bg-emerald-50/40' : ''
+                          }`}
+                        >
+                          <div
+                            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full transition-colors ${
+                              isUnread ? 'bg-emerald-500' : 'bg-transparent'
+                            }`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <p className={`text-xs font-bold transition group-hover:text-emerald-700 ${
+                                isUnread ? 'text-slate-900' : 'text-slate-700'
+                              }`}>
+                                {item.title}
+                              </p>
+                              <span
+                                className="shrink-0 text-[10px] font-medium text-slate-400"
+                                title={fullDateTime}
+                              >
+                                {relativeTime}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                              {item.message}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}

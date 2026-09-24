@@ -26,6 +26,11 @@ export class CustomerController {
     return this.customerService.findById(BigInt(customer.customerId));
   }
 
+  @Get('notifications')
+  async getNotifications(@CurrentCustomer() customer: any) {
+    return this.customerService.getCustomerNotifications(BigInt(customer.customerId));
+  }
+
   @Post('update-secondary-mobile')
   async updateSecondaryMobile(
     @CurrentCustomer() customer: any,
