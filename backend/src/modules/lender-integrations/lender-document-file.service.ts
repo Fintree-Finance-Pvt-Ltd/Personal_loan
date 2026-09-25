@@ -58,16 +58,41 @@ export class LenderDocumentFileService {
         ),
       );
 
+    let normalizedFilePath =
+      input.filePath;
+    if (
+      !path.isAbsolute(
+        normalizedFilePath,
+      ) &&
+      (normalizedFilePath.startsWith(
+        'uploads/',
+      ) ||
+        normalizedFilePath.startsWith(
+          'uploads\\',
+        )) &&
+      (path.basename(
+        rootPath,
+      ) === 'uploads' ||
+        rootPath.endsWith(
+          `${path.sep}uploads`,
+        ))
+    ) {
+      normalizedFilePath =
+        normalizedFilePath.substring(
+          8,
+        );
+    }
+
     const requestedPath =
       path.isAbsolute(
-        input.filePath,
+        normalizedFilePath,
       )
         ? path.resolve(
-            input.filePath,
+            normalizedFilePath,
           )
         : path.resolve(
             rootPath,
-            input.filePath,
+            normalizedFilePath,
           );
 
     let actualPath: string;
