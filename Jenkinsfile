@@ -211,7 +211,7 @@ ENVEOF
           git reset --hard origin/main
 
           cd backend
-          npm ci --omit=dev
+          npm ci
           npx prisma generate
           npm run build
           npx prisma migrate deploy
