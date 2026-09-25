@@ -442,11 +442,13 @@ export class EasebuzzCollectionCronService {
       checked = pendingDebits.length;
 
       for (const debitReq of pendingDebits) {
-        const reqDate = debitReq.presentmentDate
-          ? new Date(debitReq.presentmentDate).toISOString().slice(0, 10)
-          : debitReq.createdAt
-            ? new Date(debitReq.createdAt).toISOString().slice(0, 10)
-            : undefined;
+        const todayStr = new Date().toISOString().slice(0, 10);
+        let reqDate = debitReq.createdAt
+          ? new Date(debitReq.createdAt).toISOString().slice(0, 10)
+          : todayStr;
+        if (reqDate > todayStr) {
+          reqDate = todayStr;
+        }
 
         const res = await this.easebuzzAutocollectService.getDebitRequests({
           merchantRequestNumber: debitReq.merchantRequestNumber,
