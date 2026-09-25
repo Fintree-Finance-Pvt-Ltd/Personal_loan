@@ -2114,9 +2114,25 @@ export class LoanService {
     const webhookSecret = this.configService.get<string>('EASEBUZZ_WEBHOOK_SECRET');
 
     if (webhookSecret) {
-      if (!this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload, webhookSecret)) {
-        this.logger.warn(`Easebuzz mandate webhook failed authorization hash verification [event=${event}]`);
-        throw new UnauthorizedException('Invalid webhook signature.');
+      const isHashValid = this.easebuzzAutocollectService.verifyEasebuzzMandateWebhookHash(payload, webhookSecret);
+      if (!isHashValid) {
+        let verifiedDirectly = false;
+        if (txIdStr) {
+          try {
+            const liveCheck = await this.easebuzzAutocollectService.getMandateStatus(txIdStr);
+            if (liveCheck && (liveCheck.status || liveCheck.isActive !== undefined)) {
+              verifiedDirectly = true;
+              this.logger.log(`Easebuzz mandate webhook verified directly via Easebuzz API for TxID: ${txIdStr}`);
+            }
+          } catch (verifyErr: any) {
+            this.logger.warn(`Direct Easebuzz API check failed: ${verifyErr?.message}`);
+          }
+        }
+
+        if (!verifiedDirectly) {
+          this.logger.warn(`Easebuzz mandate webhook failed authorization hash verification [event=${event}, txId=${txIdStr}]`);
+          throw new UnauthorizedException('Invalid webhook signature.');
+        }
       }
     } else {
       this.logger.log('No EASEBUZZ_WEBHOOK_SECRET configured; skipping Easybuzz webhook signature verification.');

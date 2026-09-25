@@ -236,16 +236,26 @@ export class WhatsAppService {
     } catch (err: any) {
       status = WhatsAppMessageStatus.FAILED;
       const rawData = err?.response?.data;
-      errorCode =
-        rawData?.error?.code?.toString() ||
-        rawData?.error_data?.code?.toString() ||
-        (err?.response?.status ? `HTTP_${err.response.status}` : 'NETWORK_ERROR');
-      errorMessage =
+      const providerItem = Array.isArray(rawData?.response) ? rawData.response[0] : null;
+      const extractedMessage =
+        providerItem?.status ||
+        providerItem?.message ||
         rawData?.error?.message ||
         rawData?.error?.details ||
         rawData?.message ||
-        (typeof rawData === 'string' ? rawData : err?.message) ||
+        (typeof rawData === 'string' ? rawData : (rawData ? JSON.stringify(rawData) : err?.message)) ||
         'Unknown WhatsApp API error.';
+
+      if (extractedMessage && /insufficient credits/i.test(extractedMessage)) {
+        errorCode = 'INSUFFICIENT_CREDITS';
+      } else {
+        errorCode =
+          rawData?.error?.code?.toString() ||
+          rawData?.error_data?.code?.toString() ||
+          providerItem?.statusCode?.toString() ||
+          (err?.response?.status ? `HTTP_${err.response.status}` : 'NETWORK_ERROR');
+      }
+      errorMessage = extractedMessage;
 
       this.logger.error({
         event: 'whatsapp_dispatch_failure',

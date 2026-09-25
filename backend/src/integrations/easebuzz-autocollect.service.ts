@@ -577,7 +577,7 @@ export class EasebuzzAutocollectService {
   public verifyEasebuzzMandateWebhookHash(payload: any, webhookSecret?: string): boolean {
     try {
       const data = payload?.data || {};
-      const auth = String(
+      const rawAuth = String(
         data.authorization ||
         payload?.authorization ||
         data.auth ||
@@ -586,10 +586,11 @@ export class EasebuzzAutocollectService {
         payload?.hash ||
         ''
       ).trim();
+      const auth = rawAuth.replace(/^Bearer\s+/i, '').trim();
 
       // If a webhook secret is configured and matches directly
-      if (webhookSecret && auth) {
-        if (this.secretsMatch(auth, webhookSecret)) {
+      if (webhookSecret && (auth || rawAuth)) {
+        if (this.secretsMatch(auth, webhookSecret) || this.secretsMatch(rawAuth, webhookSecret)) {
           return true;
         }
 
@@ -598,7 +599,7 @@ export class EasebuzzAutocollectService {
           const rawDataString = typeof payload === 'string' ? payload : JSON.stringify(payload);
           const hmac256 = createHmac('sha256', webhookSecret).update(rawDataString, 'utf8').digest('hex');
           const hmac512 = createHmac('sha512', webhookSecret).update(rawDataString, 'utf8').digest('hex');
-          if (this.secretsMatch(auth, hmac256) || this.secretsMatch(auth, hmac512)) {
+          if (this.secretsMatch(auth, hmac256) || this.secretsMatch(auth, hmac512) || this.secretsMatch(rawAuth, hmac256) || this.secretsMatch(rawAuth, hmac512)) {
             return true;
           }
         } catch {
