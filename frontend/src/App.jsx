@@ -26,6 +26,7 @@ const LoginPage = lazyWithRetry(() => import('./features/auth/pages/LoginPage'),
 const DashboardPage = lazyWithRetry(() => import('./features/dashboard/pages/DashboardPage'), 'DashboardPage');
 const DebitRequestsPage = lazyWithRetry(() => import('./features/admin/pages/DebitRequestsPage'), 'DebitRequestsPage');
 const ReferralManagementPage = lazyWithRetry(() => import('./features/admin/pages/ReferralManagementPage'), 'ReferralManagementPage');
+const MarketingPartnersPage = lazyWithRetry(() => import('./features/admin/pages/MarketingPartnersPage'), 'MarketingPartnersPage');
 const SessionsPage = lazyWithRetry(() => import('./features/admin/pages/SessionsPage'), 'SessionsPage');
 const LendersPage = lazyWithRetry(() => import('./features/lenders/pages/LendersPage'), 'LendersPage');
 const CreateLenderPage = lazyWithRetry(() => import('./features/lenders/pages/CreateLenderPage'), 'CreateLenderPage');
