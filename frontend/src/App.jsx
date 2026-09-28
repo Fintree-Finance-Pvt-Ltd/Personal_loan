@@ -1,7 +1,9 @@
+import { Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
-import { AdminLayout } from './components/AdminLayout';
 import { PermissionRoute, ProtectedRoute } from './components/ProtectedRoute';
+import { Spinner } from './components/ui';
+import { lazyWithRetry } from './lib/lazyWithRetry';
 
 
 // Customer
@@ -17,65 +19,46 @@ import { CustomerLoanDetailsPage } from './features/customer/pages/CustomerLoanD
 import { CustomerProfilePage } from './features/customer/pages/CustomerProfilePage';
 import ReferralEarnPage from './features/customer/pages/ReferralEarnPage';
 
-// Admin auth + core
-import { LoginPage } from './features/auth/pages/LoginPage';
-import { DashboardPage } from './features/dashboard/pages/DashboardPage';
-import { DebitRequestsPage } from './features/admin/pages/DebitRequestsPage';
-import { ReferralManagementPage } from './features/admin/pages/ReferralManagementPage';
-import { SessionsPage } from './features/admin/pages/SessionsPage';
-
-// Lenders
-import { LendersPage } from './features/lenders/pages/LendersPage';
-import { CreateLenderPage } from './features/lenders/pages/CreateLenderPage';
-import { LenderDetailsPage } from './features/lenders/pages/LenderDetailsPage';
-import { EditLenderPage } from './features/lenders/pages/EditLenderPage';
-
-import PlatformPoliciesPage from './features/platform-policies/pages/PlatformPoliciesPage';
-import CreatePlatformPolicyPage from './features/platform-policies/pages/CreatePlatformPolicyPage';
-import PlatformPolicyDetailsPage from './features/platform-policies/pages/PlatformPolicyDetailsPage';
-import EditPlatformPolicyVersionPage from './features/platform-policies/pages/EditPlatformPolicyVersionPage';
-
-// Credit Review
-import CreditReviewPage from './features/credit-review/pages/CreditReviewPage';
-
-// Applications
-import ApplicationsPage from './features/applications/pages/ApplicationsPage';
-import ApplicationDetailsPage from './features/applications/pages/ApplicationDetailsPage';
-
-// MLM
-import MlmPoliciesPage from './features/mlm/pages/MlmPoliciesPage';
-import CreateMlmPolicyPage from './features/mlm/pages/CreateMlmPolicyPage';
-import MlmPolicyDetailsPage from './features/mlm/pages/MlmPolicyDetailsPage';
-import EditMlmPolicyVersionPage from './features/mlm/pages/EditMlmPolicyVersionPage';
-import MlmDistributionDashboardPage from './features/mlm/pages/MlmDistributionDashboardPage';
-
-// Products
-import { ProductsPage } from './features/products/pages/ProductsPage';
-import { CreateProductPage } from './features/products/pages/CreateProductPage';
-import { ProductDetailsPage } from './features/products/pages/ProductDetailsPage';
-import { EditProductVersionPage } from './features/products/pages/EditProductVersionPage';
-
-// Permissions
-import { PermissionsPage } from './features/permissions/pages/PermissionsPage';
-
-// Platform Products
-import { PlatformProductsPage } from './features/platform-products/pages/PlatformProductsPage';
-import { CreatePlatformProductPage } from './features/platform-products/pages/CreatePlatformProductPage';
-import { EditPlatformProductPage } from './features/platform-products/pages/EditPlatformProductPage';
-
-// Roles
-import { RolesPage } from './features/roles/pages/RolesPage';
-import { CreateRolePage } from './features/roles/pages/CreateRolePage';
-import { RoleDetailsPage } from './features/roles/pages/RoleDetailsPage';
-import { EditRolePage } from './features/roles/pages/EditRolePage';
-
-// Users
-import { UsersPage } from './features/users/pages/UsersPage';
-import { CreateUserPage } from './features/users/pages/CreateUserPage';
-import { UserDetailsPage } from './features/users/pages/UserDetailsPage';
-import { EditUserPage } from './features/users/pages/EditUserPage';
-
-
+// Admin screens are lazy-loaded: customers never open them, so they should not download
+// them. (The customer journey pages stay eagerly loaded - no flash between steps.)
+const AdminLayout = lazyWithRetry(() => import('./components/AdminLayout'), 'AdminLayout');
+const LoginPage = lazyWithRetry(() => import('./features/auth/pages/LoginPage'), 'LoginPage');
+const DashboardPage = lazyWithRetry(() => import('./features/dashboard/pages/DashboardPage'), 'DashboardPage');
+const DebitRequestsPage = lazyWithRetry(() => import('./features/admin/pages/DebitRequestsPage'), 'DebitRequestsPage');
+const ReferralManagementPage = lazyWithRetry(() => import('./features/admin/pages/ReferralManagementPage'), 'ReferralManagementPage');
+const SessionsPage = lazyWithRetry(() => import('./features/admin/pages/SessionsPage'), 'SessionsPage');
+const LendersPage = lazyWithRetry(() => import('./features/lenders/pages/LendersPage'), 'LendersPage');
+const CreateLenderPage = lazyWithRetry(() => import('./features/lenders/pages/CreateLenderPage'), 'CreateLenderPage');
+const LenderDetailsPage = lazyWithRetry(() => import('./features/lenders/pages/LenderDetailsPage'), 'LenderDetailsPage');
+const EditLenderPage = lazyWithRetry(() => import('./features/lenders/pages/EditLenderPage'), 'EditLenderPage');
+const PlatformPoliciesPage = lazyWithRetry(() => import('./features/platform-policies/pages/PlatformPoliciesPage'));
+const CreatePlatformPolicyPage = lazyWithRetry(() => import('./features/platform-policies/pages/CreatePlatformPolicyPage'));
+const PlatformPolicyDetailsPage = lazyWithRetry(() => import('./features/platform-policies/pages/PlatformPolicyDetailsPage'));
+const EditPlatformPolicyVersionPage = lazyWithRetry(() => import('./features/platform-policies/pages/EditPlatformPolicyVersionPage'));
+const CreditReviewPage = lazyWithRetry(() => import('./features/credit-review/pages/CreditReviewPage'));
+const ApplicationsPage = lazyWithRetry(() => import('./features/applications/pages/ApplicationsPage'));
+const ApplicationDetailsPage = lazyWithRetry(() => import('./features/applications/pages/ApplicationDetailsPage'));
+const MlmPoliciesPage = lazyWithRetry(() => import('./features/mlm/pages/MlmPoliciesPage'));
+const CreateMlmPolicyPage = lazyWithRetry(() => import('./features/mlm/pages/CreateMlmPolicyPage'));
+const MlmPolicyDetailsPage = lazyWithRetry(() => import('./features/mlm/pages/MlmPolicyDetailsPage'));
+const EditMlmPolicyVersionPage = lazyWithRetry(() => import('./features/mlm/pages/EditMlmPolicyVersionPage'));
+const MlmDistributionDashboardPage = lazyWithRetry(() => import('./features/mlm/pages/MlmDistributionDashboardPage'));
+const ProductsPage = lazyWithRetry(() => import('./features/products/pages/ProductsPage'), 'ProductsPage');
+const CreateProductPage = lazyWithRetry(() => import('./features/products/pages/CreateProductPage'), 'CreateProductPage');
+const ProductDetailsPage = lazyWithRetry(() => import('./features/products/pages/ProductDetailsPage'), 'ProductDetailsPage');
+const EditProductVersionPage = lazyWithRetry(() => import('./features/products/pages/EditProductVersionPage'), 'EditProductVersionPage');
+const PermissionsPage = lazyWithRetry(() => import('./features/permissions/pages/PermissionsPage'), 'PermissionsPage');
+const PlatformProductsPage = lazyWithRetry(() => import('./features/platform-products/pages/PlatformProductsPage'), 'PlatformProductsPage');
+const CreatePlatformProductPage = lazyWithRetry(() => import('./features/platform-products/pages/CreatePlatformProductPage'), 'CreatePlatformProductPage');
+const EditPlatformProductPage = lazyWithRetry(() => import('./features/platform-products/pages/EditPlatformProductPage'), 'EditPlatformProductPage');
+const RolesPage = lazyWithRetry(() => import('./features/roles/pages/RolesPage'), 'RolesPage');
+const CreateRolePage = lazyWithRetry(() => import('./features/roles/pages/CreateRolePage'), 'CreateRolePage');
+const RoleDetailsPage = lazyWithRetry(() => import('./features/roles/pages/RoleDetailsPage'), 'RoleDetailsPage');
+const EditRolePage = lazyWithRetry(() => import('./features/roles/pages/EditRolePage'), 'EditRolePage');
+const UsersPage = lazyWithRetry(() => import('./features/users/pages/UsersPage'), 'UsersPage');
+const CreateUserPage = lazyWithRetry(() => import('./features/users/pages/CreateUserPage'), 'CreateUserPage');
+const UserDetailsPage = lazyWithRetry(() => import('./features/users/pages/UserDetailsPage'), 'UserDetailsPage');
+const EditUserPage = lazyWithRetry(() => import('./features/users/pages/EditUserPage'), 'EditUserPage');
 
 
 function RedirectToCustomerLogin() {
@@ -85,6 +68,7 @@ function RedirectToCustomerLogin() {
 
 export default function App() {
   return (
+    <Suspense fallback={<Spinner label="Loading" />}>
     <Routes>
       {/* Public customer login & DigiLocker callback */}
       <Route path="/customer/login" element={<CustomerSignIn />} />
@@ -419,5 +403,6 @@ export default function App() {
       <Route path="/" element={<RedirectToCustomerLogin />} />
       <Route path="*" element={<RedirectToCustomerLogin />} />
     </Routes>
+    </Suspense>
   );
 }

@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { ACTIVE_APPLICATION_STATUSES } from '../../../common/constants/application.constants';
 
 import { AttributionService } from '../../customer/attribution.service';
+import { evaluateReapplyCooldown, getReapplyCoolingOffDays } from '../../../common/utils/reapply-cooldown';
 
 @Injectable()
 export class ApplicationTransitionService {
@@ -49,6 +50,34 @@ export class ApplicationTransitionService {
         // If it's the same product, resume it (idempotent return)
         this.logger.log(`Resuming existing application ${activeApplication.applicationNumber} for customer ${customerId}`);
         return activeApplication;
+      }
+
+      // 1b. A customer whose latest application was rejected must wait out the cooling-off
+      // period (REAPPLY_COOLING_OFF_DAYS) before a new application is created.
+      const latestApplication = await tx.plApplication.findFirst({
+        where: { customerId },
+        orderBy: { id: 'desc' },
+      });
+      if (latestApplication) {
+        const cooldown = evaluateReapplyCooldown({
+          status: latestApplication.status,
+          rejectedAt:
+            latestApplication.status === 'PLATFORM_REJECTED'
+              ? latestApplication.platformDecisionAt ?? latestApplication.updatedAt
+              : latestApplication.lenderDecisionAt ?? latestApplication.updatedAt,
+          lenderCoolingOffUntil: latestApplication.lenderCoolingOffUntil,
+          coolingOffDays: getReapplyCoolingOffDays(),
+        });
+        if (cooldown.active) {
+          throw new ConflictException({
+            error: {
+              code: 'REAPPLY_COOLING_OFF',
+              message: `You can apply again after ${cooldown.eligibleAt!.toISOString().slice(0, 10)}.`,
+              eligibleAt: cooldown.eligibleAt,
+              daysRemaining: cooldown.daysRemaining,
+            },
+          });
+        }
       }
 
       // 2. No active application exists; create a new one safely

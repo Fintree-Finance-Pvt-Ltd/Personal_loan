@@ -13,6 +13,21 @@ import {
 
 type TransactionClient = Prisma.TransactionClient;
 
+/** Everything the update-readiness rules look at - see evaluateUpdateReadiness(). */
+type UpdateReadinessInput = Pick<
+  Prisma.PlApplicationGetPayload<{
+    include: {
+      lenderApplicationLink: true;
+      employmentSnapshot: true;
+      kycSnapshot: true;
+      addresses: true;
+      liveness: { include: { photoDocument: true } };
+      stageConsents: true;
+    };
+  }>,
+  'platformLan' | 'lenderApplicationLink' | 'employmentSnapshot' | 'kycSnapshot' | 'addresses' | 'liveness' | 'stageConsents'
+>;
+
 import { LenderAdapterRegistry } from './lender-adapter.registry';
 
 @Injectable()
@@ -362,6 +377,19 @@ if (!platformLan) {
       },
     });
     if (!application) throw new BadRequestException('Canonical application was not found.');
+    return { ...this.evaluateUpdateReadiness(application), application };
+  }
+
+  /**
+   * The readiness rules themselves, applied to an application that has ALREADY been loaded
+   * (with its lender link, employment/KYC snapshots, addresses, liveness + photo and stage
+   * consents). Pure: no database access.
+   *
+   * getUpdateReadiness() loads and then delegates here. The customer journey endpoint has
+   * already loaded all of that data for the same application, so it calls this directly and
+   * skips a second, redundant multi-query fetch on every request.
+   */
+  evaluateUpdateReadiness(application: UpdateReadinessInput) {
     const reasons: string[] = [];
     const link = application.lenderApplicationLink;
     if (!application.platformLan) reasons.push('PLATFORM_LAN_MISSING');
@@ -383,7 +411,7 @@ if (!platformLan) {
     if (current && current.sameAsPermanent == null) reasons.push('SAME_ADDRESS_DECISION_MISSING');
     const consent = application.stageConsents.find((item) => item.consentType === 'DATA_SHARING' && !item.revokedAt);
     if (!consent || createHash('sha256').update(consent.consentText, 'utf8').digest('hex') !== consent.consentTextHash) reasons.push('UPDATE_CONSENT_MISSING');
-    return { ready: reasons.length === 0, reasons, application, permanent, current };
+    return { ready: reasons.length === 0, reasons, permanent, current };
   }
 
   async enqueueUpdateWhenReady(applicationId: bigint, version: number = 1) {

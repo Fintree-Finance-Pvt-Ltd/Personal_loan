@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JsonLoggerService } from '../../infrastructure/logging/json-logger.service';
+import { reportException } from '../observability/error-reporter';
 
 const STATUS_CODES: Record<number, string> = {
   400: 'INVALID_REQUEST',
@@ -53,6 +54,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
         { event: 'unhandled_exception', requestId: request.requestId, status, errorMessage },
         stack,
       );
+      reportException(exception, { requestId: request.requestId, method: request.method, route: request.route?.path ?? request.path });
+    } else if (status === HttpStatus.TOO_MANY_REQUESTS) {
+      // Worth seeing at launch: a burst of these means real users are being throttled.
+      this.logger.warn({
+        event: 'rate_limited',
+        requestId: request.requestId,
+        method: request.method,
+        route: request.route?.path ?? request.path,
+      });
     }
     response.status(status).json({
       success: false,
