@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
-import * as puppeteer from 'puppeteer';
+import { sharedPdfRenderer } from '../../../common/pdf/pdf-renderer';
 import { LoanAgreementDataBuilder } from '../builders/loan-agreement-data.builder';
 import { registerHandlebarsHelpers } from '../helpers/handlebars-helpers';
 
@@ -11,50 +11,14 @@ export class LoanAgreementService implements OnModuleDestroy {
   private readonly logger = new Logger(LoanAgreementService.name);
   private compiledTemplate: Handlebars.TemplateDelegate | null = null;
 
-  // A fresh puppeteer.launch() per PDF (full Chromium cold-start) was the cause of the
-  // very first "View Agreement" click failing/timing out per loan — every distinct loan
-  // paid that cost once, before prepareDocument()'s disk cache made subsequent views
-  // fast. Keeping one browser alive for the process's lifetime and only opening/closing
-  // a page per request removes that cold-start from the customer-facing path.
-  private browserPromise: Promise<puppeteer.Browser> | null = null;
+  // PDF rendering (one shared, bounded Chromium) lives in common/pdf/pdf-renderer.ts.
 
   constructor(private readonly dataBuilder: LoanAgreementDataBuilder) {
     registerHandlebarsHelpers();
   }
 
-  private async getBrowser(): Promise<puppeteer.Browser> {
-    if (!this.browserPromise) {
-      this.browserPromise = puppeteer.launch({
-        headless: true,
-        // Use a system-installed Chromium when PUPPETEER_EXECUTABLE_PATH is set (CI/server
-        // deploys — see PUPPETEER_SKIP_DOWNLOAD in .env.example) instead of the copy
-        // Puppeteer would otherwise download for itself on every `npm ci`. Falls back to
-        // Puppeteer's own bundled Chrome (its default) when the variable isn't set, e.g.
-        // local dev.
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
-      });
-    }
-
-    const browser = await this.browserPromise;
-    if (!browser.connected) {
-      this.logger.warn('Shared Puppeteer browser was disconnected; relaunching.');
-      this.browserPromise = null;
-      return this.getBrowser();
-    }
-
-    return browser;
-  }
-
   async onModuleDestroy() {
-    if (!this.browserPromise) return;
-    const browser = await this.browserPromise.catch(() => null);
-    await browser?.close();
+    await sharedPdfRenderer.close();
   }
 
   private getTemplate(): Handlebars.TemplateDelegate {
@@ -90,27 +54,16 @@ export class LoanAgreementService implements OnModuleDestroy {
 
   async generateAgreementPdf(lan: string, customerId?: bigint): Promise<Buffer> {
     const html = await this.generateAgreementHtml(lan, customerId);
-    const browser = await this.getBrowser();
-
-    const page = await browser.newPage();
-    try {
-      await page.setContent(html, { waitUntil: 'domcontentloaded' });
-
-      const pdfBufferBytes = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        preferCSSPageSize: true,
-        margin: {
-          top: '14mm',
-          right: '13mm',
-          bottom: '16mm',
-          left: '13mm',
-        },
-      });
-
-      return Buffer.from(pdfBufferBytes);
-    } finally {
-      await page.close();
-    }
+    return sharedPdfRenderer.render(html, {
+      format: 'A4',
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: {
+        top: '14mm',
+        right: '13mm',
+        bottom: '16mm',
+        left: '13mm',
+      },
+    });
   }
 }

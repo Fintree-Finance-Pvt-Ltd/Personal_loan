@@ -7,6 +7,7 @@ import { HttpService } from '@nestjs/axios';
 import { createHmac, randomUUID } from 'crypto';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { runsBackgroundWork } from '../../common/utils/app-role.helper';
 import {
   PARTNER_WEBHOOK_MAX_ATTEMPTS,
   PARTNER_WEBHOOK_RETRY_SCHEDULE_SECONDS,
@@ -28,7 +29,8 @@ export class PartnerWebhookService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (
       !this.config.get<boolean>('PARTNER_WEBHOOK_WORKER_ENABLED') ||
-      this.config.get<string>('NODE_ENV') === 'test'
+      this.config.get<string>('NODE_ENV') === 'test' ||
+      !runsBackgroundWork(this.config)
     ) {
       return;
     }
