@@ -19,66 +19,6 @@ import { CustomerLoanDetailsPage } from './features/customer/pages/CustomerLoanD
 import { CustomerProfilePage } from './features/customer/pages/CustomerProfilePage';
 import ReferralEarnPage from './features/customer/pages/ReferralEarnPage';
 
-// Admin auth + core
-import { LoginPage } from './features/auth/pages/LoginPage';
-import { DashboardPage } from './features/dashboard/pages/DashboardPage';
-import { DebitRequestsPage } from './features/admin/pages/DebitRequestsPage';
-import { ReferralManagementPage } from './features/admin/pages/ReferralManagementPage';
-import { MarketingPartnersPage } from './features/admin/pages/MarketingPartnersPage';
-import { SessionsPage } from './features/admin/pages/SessionsPage';
-
-// Lenders
-import { LendersPage } from './features/lenders/pages/LendersPage';
-import { CreateLenderPage } from './features/lenders/pages/CreateLenderPage';
-import { LenderDetailsPage } from './features/lenders/pages/LenderDetailsPage';
-import { EditLenderPage } from './features/lenders/pages/EditLenderPage';
-
-import PlatformPoliciesPage from './features/platform-policies/pages/PlatformPoliciesPage';
-import CreatePlatformPolicyPage from './features/platform-policies/pages/CreatePlatformPolicyPage';
-import PlatformPolicyDetailsPage from './features/platform-policies/pages/PlatformPolicyDetailsPage';
-import EditPlatformPolicyVersionPage from './features/platform-policies/pages/EditPlatformPolicyVersionPage';
-
-// Credit Review
-import CreditReviewPage from './features/credit-review/pages/CreditReviewPage';
-
-// Applications
-import ApplicationsPage from './features/applications/pages/ApplicationsPage';
-import ApplicationDetailsPage from './features/applications/pages/ApplicationDetailsPage';
-
-// MLM
-import MlmPoliciesPage from './features/mlm/pages/MlmPoliciesPage';
-import CreateMlmPolicyPage from './features/mlm/pages/CreateMlmPolicyPage';
-import MlmPolicyDetailsPage from './features/mlm/pages/MlmPolicyDetailsPage';
-import EditMlmPolicyVersionPage from './features/mlm/pages/EditMlmPolicyVersionPage';
-import MlmDistributionDashboardPage from './features/mlm/pages/MlmDistributionDashboardPage';
-
-// Products
-import { ProductsPage } from './features/products/pages/ProductsPage';
-import { CreateProductPage } from './features/products/pages/CreateProductPage';
-import { ProductDetailsPage } from './features/products/pages/ProductDetailsPage';
-import { EditProductVersionPage } from './features/products/pages/EditProductVersionPage';
-
-// Permissions
-import { PermissionsPage } from './features/permissions/pages/PermissionsPage';
-
-// Platform Products
-import { PlatformProductsPage } from './features/platform-products/pages/PlatformProductsPage';
-import { CreatePlatformProductPage } from './features/platform-products/pages/CreatePlatformProductPage';
-import { EditPlatformProductPage } from './features/platform-products/pages/EditPlatformProductPage';
-
-// Roles
-import { RolesPage } from './features/roles/pages/RolesPage';
-import { CreateRolePage } from './features/roles/pages/CreateRolePage';
-import { RoleDetailsPage } from './features/roles/pages/RoleDetailsPage';
-import { EditRolePage } from './features/roles/pages/EditRolePage';
-
-// Users
-import { UsersPage } from './features/users/pages/UsersPage';
-import { CreateUserPage } from './features/users/pages/CreateUserPage';
-import { UserDetailsPage } from './features/users/pages/UserDetailsPage';
-import { EditUserPage } from './features/users/pages/EditUserPage';
-
-
 // Admin screens are lazy-loaded: customers never open them, so they should not download
 // them. (The customer journey pages stay eagerly loaded - no flash between steps.)
 const AdminLayout = lazyWithRetry(() => import('./components/AdminLayout'), 'AdminLayout');
