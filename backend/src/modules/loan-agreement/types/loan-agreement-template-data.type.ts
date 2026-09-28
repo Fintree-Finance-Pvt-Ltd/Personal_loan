@@ -69,6 +69,8 @@ export interface BorrowerDetails {
   maskedMobile: string;
   email: string;
   address: BorrowerAddressDetails;
+  addressFormatted?: string;
+  addressString?: string;
   annualHouseholdIncome?: number;
   loanPurpose?: string;
 }
@@ -120,6 +122,14 @@ export interface LoanDetails {
   disbursementScheduleText: string;
 
   bulletRepayment: boolean;
+
+  tenureDays?: number;
+  totalInterest?: number;
+  totalRepayment?: number;
+  netDisbursed?: number;
+  interestRate?: number;
+  processingFee?: number;
+  apr?: number;
 }
 
 export interface PricingDetails {
@@ -150,6 +160,7 @@ export interface BankDetails {
   bankName: string;
   branchName?: string;
   accountHolderName: string;
+  accountNumber?: string;
   maskedAccountNumber: string;
   ifscCode: string;
   accountType: string;

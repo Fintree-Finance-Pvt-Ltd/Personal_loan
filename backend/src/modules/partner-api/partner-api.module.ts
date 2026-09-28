@@ -8,16 +8,19 @@ import { PartnerApplicationService } from './partner-application.service';
 import { PartnerAuthGuard } from './partner-auth.guard';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { PartnerWebhookService } from './partner-webhook.service';
+import { PartnerAdminController } from './partner-admin.controller';
+import { PartnerAdminService } from './partner-admin.service';
 
 @Module({
   imports: [HttpModule.register({ maxRedirects: 0 })],
-  controllers: [PartnerApplicationController],
+  controllers: [PartnerApplicationController, PartnerAdminController],
   providers: [
     PartnerAuthGuard,
     IdempotencyInterceptor,
     PartnerApplicationService,
     PartnerWebhookService,
+    PartnerAdminService,
   ],
-  exports: [PartnerApplicationService],
+  exports: [PartnerApplicationService, PartnerAdminService],
 })
 export class PartnerApiModule {}

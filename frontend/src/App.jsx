@@ -22,6 +22,7 @@ import { LoginPage } from './features/auth/pages/LoginPage';
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
 import { DebitRequestsPage } from './features/admin/pages/DebitRequestsPage';
 import { ReferralManagementPage } from './features/admin/pages/ReferralManagementPage';
+import { MarketingPartnersPage } from './features/admin/pages/MarketingPartnersPage';
 import { SessionsPage } from './features/admin/pages/SessionsPage';
 
 // Lenders
@@ -205,6 +206,16 @@ export default function App() {
             element={
               <PermissionRoute permission="ADMIN_DASHBOARD_VIEW">
                 <ReferralManagementPage />
+              </PermissionRoute>
+            }
+          />
+
+          {/* Marketing & Partner Management */}
+          <Route
+            path="/admin-master/marketing-partners"
+            element={
+              <PermissionRoute permission="ADMIN_DASHBOARD_VIEW">
+                <MarketingPartnersPage />
               </PermissionRoute>
             }
           />

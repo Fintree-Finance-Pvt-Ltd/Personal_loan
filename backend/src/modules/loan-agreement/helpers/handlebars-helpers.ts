@@ -138,6 +138,10 @@ export function registerHandlebarsHelpers(): void {
     return numberToWords(val);
   });
 
+  Handlebars.registerHelper('words', (val: any) => {
+    return numberToWords(val);
+  });
+
   Handlebars.registerHelper('uppercase', (val: any) => {
     return String(val || '').toUpperCase();
   });
@@ -168,5 +172,18 @@ export function registerHandlebarsHelpers(): void {
 
   Handlebars.registerHelper('increment', (val: any) => {
     return Number(val || 0) + 1;
+  });
+
+  Handlebars.registerHelper('renderAddress', (addr: any) => {
+    if (!addr) return '—';
+    if (typeof addr === 'string') return addr;
+    if (addr.formatted) return addr.formatted;
+    const parts = [addr.line1, addr.line2, addr.city, addr.state, addr.pincode ? `- ${addr.pincode}` : ''].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : '—';
+  });
+
+  Handlebars.registerHelper('safeWords', (val: any) => {
+    if (!val || isNaN(Number(val))) return '';
+    return numberToWords(val);
   });
 }

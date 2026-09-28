@@ -150,6 +150,8 @@ export class ApplicationsService {
       liveness,
       faceMatch,
       bankAccountDataRecords,
+      applicationAttribution,
+      customerAttribution,
     ] = await Promise.all([
       this.prisma.customer.findUnique({ where: { id: application.customerId } }),
       this.prisma.plCustomerDocument.findMany({
@@ -217,6 +219,12 @@ export class ApplicationsService {
         },
         orderBy: { id: 'desc' },
         take: 5,
+      }),
+      this.prisma.applicationAttribution.findUnique({
+        where: { applicationId: application.id },
+      }),
+      this.prisma.customerAttribution.findUnique({
+        where: { customerId: application.customerId },
       }),
     ]);
     const link = application.lenderApplicationLink;
@@ -672,6 +680,43 @@ export class ApplicationsService {
         averageBalance: ba.averageBalance ? Number(ba.averageBalance) : null,
         createdAt: ba.createdAt,
       })),
+      attribution: applicationAttribution
+        ? {
+            acquisitionSource: applicationAttribution.acquisitionSource,
+            utmSource: applicationAttribution.utmSource,
+            utmMedium: applicationAttribution.utmMedium,
+            utmCampaign: applicationAttribution.utmCampaign,
+            utmTerm: applicationAttribution.utmTerm,
+            utmContent: applicationAttribution.utmContent,
+            partnerCode: applicationAttribution.partnerCode,
+            partnerName: applicationAttribution.partnerName,
+            rmId: applicationAttribution.rmId,
+            rmName: applicationAttribution.rmName,
+            referralCode: applicationAttribution.referralCode,
+            clickId: applicationAttribution.clickId,
+            landingPage: applicationAttribution.landingPage,
+            referrer: applicationAttribution.referrer,
+            capturedAt: applicationAttribution.capturedAt,
+          }
+        : customerAttribution
+        ? {
+            acquisitionSource: customerAttribution.firstSource,
+            utmSource: customerAttribution.firstUtmSource,
+            utmMedium: customerAttribution.firstUtmMedium,
+            utmCampaign: customerAttribution.firstUtmCampaign,
+            utmTerm: customerAttribution.firstUtmTerm,
+            utmContent: customerAttribution.firstUtmContent,
+            partnerCode: customerAttribution.firstPartnerCode,
+            partnerName: customerAttribution.firstPartnerName,
+            rmId: customerAttribution.firstRmId,
+            rmName: customerAttribution.firstRmName,
+            referralCode: customerAttribution.firstReferralCode,
+            clickId: customerAttribution.firstClickId,
+            landingPage: customerAttribution.firstLandingPage,
+            referrer: customerAttribution.firstReferrer,
+            capturedAt: customerAttribution.firstTouchAt,
+          }
+        : null,
     };
   }
 }
