@@ -323,19 +323,26 @@ function deriveCustomerWorkflow(customer) {
     );
   }
 
-  const eligibilityCompleted =
-    customer.eligibilityStatus !== null &&
-    customer.eligibilityStatus !== undefined &&
-    customer.eligibilityStatus !== 'NOT_CHECKED';
-
+  // The authoritative "did BRE pass" signal is per-application (journey.platformBreResult,
+  // sourced from pl_applications.platform_decision_outcome) — it's what actually gates lender
+  // allocation and step routing everywhere else. customer.eligibilityStatus is an older,
+  // customer-level field that is meant to track the same result but isn't always written by
+  // every code path that sets platform_decision_outcome (e.g. a lender-allocation retry that
+  // assumes eligibility already passed and only re-stamps the application). Trusting only the
+  // stale field here let a customer reach the final Submit step and then get bounced back to
+  // basic_details for an "incomplete eligibility check" that had, in fact, already passed
+  // (FTPL00000047) — so the per-application result takes priority, with the legacy field kept
+  // as a fallback for any older data that never got a platformBreResult at all.
+  const platformBreResult = customer.journey?.platformBreResult || null;
   const normalizedStatus = String(
     customer.eligibilityStatus || '',
   ).toUpperCase();
-  const eligibilityPassed = [
-    'ELIGIBLE',
-    'PASSED',
-    'APPROVED',
-  ].includes(normalizedStatus);
+  const legacyEligibilityPassed = normalizedStatus === 'ELIGIBLE';
+  const legacyEligibilityCompleted = normalizedStatus !== '' && normalizedStatus !== 'NOT_CHECKED';
+
+  const eligibilityPassed = platformBreResult === 'PASS' || (!platformBreResult && legacyEligibilityPassed);
+  const eligibilityCompleted =
+    platformBreResult === 'PASS' || platformBreResult === 'FAIL' || legacyEligibilityCompleted;
 
   const applicationSubmitted = Boolean(
     ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(customer.onboardingStatus)
@@ -889,10 +896,19 @@ export default function MyApplicationPage() {
 
     setErrors(validationErrors);
 
-    return (
-      Object.keys(validationErrors)
-        .length === 0
-    );
+    return validationErrors;
+  };
+
+  // Human labels for validateBasicDetails()'s field keys, used to tell the customer
+  // exactly what's missing instead of a generic "incomplete" message.
+  const BASIC_DETAILS_FIELD_LABELS = {
+    fullName: 'Full name',
+    panNumber: 'PAN verification',
+    fatherName: "Father's name",
+    dateOfBirth: 'Date of birth',
+    gender: 'Gender',
+    pincode: 'PIN code',
+    email: 'Email',
   };
 
   const validateProfileDetails = () => {
@@ -1418,7 +1434,7 @@ export default function MyApplicationPage() {
   };
 
   const handleBasicDetailsContinue = async () => {
-    if (!validateBasicDetails()) {
+    if (Object.keys(validateBasicDetails()).length > 0) {
       showMessage(
         'Please complete and verify all required details.',
         'error',
@@ -1797,9 +1813,17 @@ export default function MyApplicationPage() {
   };
 
   const handleSubmitApplication = async ({ sameAsPermanent, decisionConsentAccepted } = {}) => {
-    if (!validateBasicDetails()) {
-      showMessage('Basic details are incomplete.', 'error');
+    const basicDetailsErrors = validateBasicDetails();
+    if (Object.keys(basicDetailsErrors).length > 0) {
+      // goToStep() clears the error map as part of resetting the screen — re-apply it
+      // right after so the customer actually sees which field sent them back here,
+      // instead of landing on a blank basic-details page with no explanation.
       goToStep('basic_details');
+      setErrors(basicDetailsErrors);
+      const missing = Object.keys(basicDetailsErrors)
+        .map((key) => BASIC_DETAILS_FIELD_LABELS[key] || key)
+        .join(', ');
+      showMessage('Please complete: ' + missing + '.', 'error');
       return;
     }
 
