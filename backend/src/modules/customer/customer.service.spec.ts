@@ -64,6 +64,7 @@ describe('CustomerService Integration', () => {
             enqueueUpdateWhenReady: jest.fn(),
             recordDecisionConsents: jest.fn(),
             getUpdateReadiness: jest.fn().mockResolvedValue({ ready: false, reasons: ['CREATE_NOT_ACKNOWLEDGED'] }),
+            evaluateUpdateReadiness: jest.fn().mockReturnValue({ ready: false, reasons: ['CREATE_NOT_ACKNOWLEDGED'] }),
           },
         },
         {
@@ -295,7 +296,7 @@ describe('CustomerService Integration', () => {
     const application: any = {
       id: 20n, applicationNumber: 'APP-20', status: 'LENDER_ALLOCATED', platformDecisionOutcome: 'PASS',
       lenderId: null, loans: [], lenderApplicationLink: null, lenderIntegrationOutbox: [],
-      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null,
+      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null, stageConsents: [],
     };
     jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, applications: [application] } as any);
     (prisma as any).plPaymentLink.findFirst.mockResolvedValue(null);
@@ -313,7 +314,7 @@ describe('CustomerService Integration', () => {
     const application: any = {
       id: 20n, applicationNumber: 'APP-20', status: 'LENDER_ALLOCATED', platformDecisionOutcome: 'PASS',
       lenderId: null, loans: [], lenderApplicationLink: null, lenderIntegrationOutbox: [],
-      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null,
+      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null, stageConsents: [],
     };
     jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, applications: [application] } as any);
     (prisma as any).plPaymentLink.findFirst.mockResolvedValue(null);
@@ -334,7 +335,7 @@ describe('CustomerService Integration', () => {
     const buildApplication = (overrides: any = {}) => ({
       id: 20n, applicationNumber: 'APP-20', status: 'LENDER_ALLOCATED', platformDecisionOutcome: 'PASS',
       lenderId: null, loans: [], lenderApplicationLink: null, lenderIntegrationOutbox: [],
-      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null,
+      employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null, stageConsents: [],
       ...overrides,
     });
 
@@ -352,6 +353,11 @@ describe('CustomerService Integration', () => {
       }));
       expect((prisma as any).applicationKycSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ applicationId: 20n, verifiedName: 'Test Customer', verificationStatus: 'VERIFIED' }),
+      }));
+      // The readiness rules must see the snapshot that was just created, not the empty one
+      // the application was loaded with - otherwise the customer loops back to Aadhaar KYC.
+      expect(outboxService.evaluateUpdateReadiness).toHaveBeenCalledWith(expect.objectContaining({
+        kycSnapshot: expect.objectContaining({ id: 'snap-new' }),
       }));
     });
 
@@ -491,5 +497,87 @@ describe('CustomerService Integration', () => {
       expect((prisma as any).applicationAddress.findFirst).not.toHaveBeenCalled();
       expect((prisma as any).applicationAddress.create).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CustomerService.findById query behaviour', () => {
+  const baseApplication = () => ({
+    id: 20n, applicationNumber: 'APP-20', status: 'LENDER_ALLOCATED', platformDecisionOutcome: 'PASS',
+    lenderId: 'L1', loans: [], lenderApplicationLink: null, lenderIntegrationOutbox: [],
+    employmentSnapshot: null, kycSnapshot: null, addresses: [], liveness: null, stageConsents: [] as any[],
+  });
+
+  const build = (options: { customerRead?: jest.Mock; application?: any } = {}) => {
+    const application = options.application ?? baseApplication();
+    const prisma: any = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      customer: { findUnique: options.customerRead ?? jest.fn().mockResolvedValue({ id: 1n, applications: [application] }) },
+      plPaymentLink: { findFirst: jest.fn().mockResolvedValue({ txnid: 'T1', amount: 11.8, purpose: 'ASSESSMENT_FEE', status: 'SUCCESS', paidAt: new Date('2026-09-01') }) },
+      plLoan: { findFirst: jest.fn().mockResolvedValue(null) },
+      lender: { findUnique: jest.fn().mockResolvedValue({ displayName: 'Fintree Finance', legalName: 'Fintree Finance PRIVATE LIMITED' }) },
+      customerAccountAggregatorRequest: { findFirst: jest.fn().mockResolvedValue({ status: 'SUCCESS' }) },
+      applicationStageConsent: { findMany: jest.fn() },
+    };
+    const outbox: any = {
+      evaluateUpdateReadiness: jest.fn().mockReturnValue({ ready: true, reasons: [] }),
+      getUpdateReadiness: jest.fn(),
+    };
+    const none: any = {};
+    const service = new CustomerService(prisma, none, none, none, none, none, outbox, none);
+    return { service, prisma, outbox };
+  };
+
+  const decisionConsents = () =>
+    ['BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'].map((consentType) => ({ consentType, revokedAt: null as Date | null }));
+
+  it('does not issue a write on a normal read (the heal used to run before every request)', async () => {
+    const { service, prisma } = build();
+    await service.findById(1n);
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('heals a legacy row and retries once only when the read fails on an unreadable stored value', async () => {
+    const unreadable = Object.assign(new Error("Value '' not found in enum 'CustomerEligibilityStatus'"), { code: 'P2023' });
+    const read = jest.fn().mockRejectedValueOnce(unreadable).mockResolvedValueOnce({ id: 1n, applications: [] });
+    const { service, prisma } = build({ customerRead: read });
+
+    const result: any = await service.findById(1n);
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(result.success).toBe(true);
+  });
+
+  it('does not mask an unrelated read failure by "healing" it', async () => {
+    const read = jest.fn().mockRejectedValue(new Error('connection lost'));
+    const { service, prisma } = build({ customerRead: read });
+
+    await expect(service.findById(1n)).rejects.toThrow('connection lost');
+
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses already-loaded data instead of re-querying it', async () => {
+    const application = { ...baseApplication(), stageConsents: decisionConsents() };
+    const { service, prisma, outbox } = build({ application });
+
+    const result: any = await service.findById(1n);
+
+    expect(outbox.getUpdateReadiness).not.toHaveBeenCalled();
+    expect(outbox.evaluateUpdateReadiness).toHaveBeenCalledWith(expect.objectContaining({ id: 20n }));
+    expect(prisma.applicationStageConsent.findMany).not.toHaveBeenCalled();
+    expect(prisma.lender.findUnique).toHaveBeenCalledTimes(1);
+    expect(result.data.allocatedLenderName).toBe('Fintree Finance');
+  });
+
+  it('derives "decision consents given" from the loaded consents, ignoring revoked ones', async () => {
+    const given = await build({ application: { ...baseApplication(), stageConsents: decisionConsents() } }).service.findById(1n);
+    expect((given as any).data.journey.nextPermittedStep).toBe('LENDER_CREATE_PROCESSING');
+
+    const consents = decisionConsents();
+    consents[1].revokedAt = new Date();
+    const revoked = await build({ application: { ...baseApplication(), stageConsents: consents } }).service.findById(1n);
+    expect((revoked as any).data.journey.nextPermittedStep).toBe('SUBMIT_APPLICATION');
   });
 });

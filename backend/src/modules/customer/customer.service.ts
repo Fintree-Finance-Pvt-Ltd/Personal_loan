@@ -18,6 +18,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LoanService } from '../loan/loan.service';
 import { PlApplicationStatus, PolicyDecisionOutcome } from '@prisma/client';
 import { ACTIVE_APPLICATION_STATUSES } from '../../common/constants/application.constants';
+import { evaluateReapplyCooldown, getReapplyCoolingOffDays } from '../../common/utils/reapply-cooldown';
 import { PlatformPoliciesService } from '../platform-policies/platform-policies.service';
 import { PolicyEvaluationService } from '../platform-policies/policy-evaluation.service';
 import { MlmAllocationEngineService } from '../mlm/services/mlm-allocation-engine/mlm-allocation-engine.service';
@@ -433,32 +434,62 @@ export class CustomerService {
     };
   }
 
-  async findById(customerId: bigint) {
-    // Auto-heal: fix any empty-string enum values that can't be read by Prisma
-    await this.prisma.$executeRaw`UPDATE customers SET eligibility_status = 'NOT_CHECKED' WHERE id = ${customerId} AND (eligibility_status = '' OR eligibility_status IS NULL)`.catch(() => { /* ignore if heal fails */ });
+  /**
+   * Runs the customer read, healing a legacy row only if the read actually fails on it.
+   *
+   * An empty-string enum value (a legacy row) cannot be read back by Prisma and makes the
+   * read throw. The heal used to be an UPDATE issued before EVERY read of this endpoint -
+   * the hottest one in the system, polled every few seconds by every open journey screen -
+   * to guard against a row that is almost never there. Now it runs only when a read fails
+   * on such a value, once, and the read is then retried.
+   */
+  private async readCustomerWithHeal<T>(customerId: bigint, read: () => PromiseLike<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (error) {
+      if (!this.isUnreadableStoredValue(error)) throw error;
+      await this.prisma.$executeRaw`UPDATE customers SET eligibility_status = 'NOT_CHECKED' WHERE id = ${customerId} AND (eligibility_status = '' OR eligibility_status IS NULL)`.catch(() => { /* ignore if heal fails */ });
+      return await read();
+    }
+  }
 
-    const customer = await this.prisma.customer.findUnique({
+  private isUnreadableStoredValue(error: unknown): boolean {
+    const candidate = error as { code?: string; message?: string } | null;
+    return candidate?.code === 'P2023' || candidate?.code === 'P2032' || /not found in enum|Inconsistent (column data|query result)/i.test(candidate?.message ?? '');
+  }
+
+  async findById(customerId: bigint) {
+    const readCustomer = () => this.prisma.customer.findUnique({
       where: { id: customerId },
       include: {
         applications: {
           orderBy: { id: 'desc' },
           take: 1,
           include: {
-            loans: { orderBy: { id: 'desc' }, take: 1 },
+            loans: { orderBy: { id: 'desc' }, take: 1, select: { id: true } },
             lenderApplicationLink: true,
             // More than one, because the newest event is not necessarily the one that
             // decides whether the customer is blocked — see blockingOutbox below.
-            lenderIntegrationOutbox: { orderBy: { createdAt: 'desc' }, take: 20 },
+            lenderIntegrationOutbox: {
+              orderBy: { createdAt: 'desc' },
+              take: 20,
+              select: { integrationStage: true, status: true, consentType: true, attemptCount: true, lastErrorCode: true },
+            },
             employmentSnapshot: true,
             kycSnapshot: true,
             addresses: true,
-            liveness: true,
+            // liveness + its photo and the stage consents are what the update-readiness
+            // rules and the decision-consent check need; loading them here (with the rest
+            // of the application) replaces two separate follow-up fetches.
+            liveness: { include: { photoDocument: true } },
+            stageConsents: true,
             attribution: true,
           },
         },
         attribution: true,
       },
     });
+    const customer = await this.readCustomerWithHeal(customerId, readCustomer);
 
     if (!customer) {
       throw new NotFoundException('Customer not found.');
@@ -497,39 +528,42 @@ export class CustomerService {
       }
     }
 
-    const latestSuccessPayment = latestApp
-      ? await this.prisma.plPaymentLink.findFirst({
-        where: {
-          customerId,
-          applicationId: latestApp.id,
-          purpose: 'ASSESSMENT_FEE',
-          status: 'SUCCESS',
-        },
-        orderBy: { paidAt: 'desc' },
-      })
-      : null;
+    // These four reads depend only on customerId / latestApp, so they run together instead
+    // of one after another. Only the columns actually used are selected: the payment and
+    // loan rows are wide (raw provider JSON, Aadhaar fields).
+    const [latestSuccessPayment, mostRecentLoan, lender, aaRequest] = await Promise.all([
+      latestApp
+        ? this.prisma.plPaymentLink.findFirst({
+            where: { customerId, applicationId: latestApp.id, purpose: 'ASSESSMENT_FEE', status: 'SUCCESS' },
+            orderBy: { paidAt: 'desc' },
+            select: { txnid: true, amount: true, purpose: true, status: true, paidAt: true },
+          })
+        : null,
+      // Deliberately NOT scoped to latestApp: the Dashboard's "you have a fully repaid loan"
+      // signal must survive a repeat customer's fresh, loan-less application existing.
+      this.prisma.plLoan.findFirst({
+        where: { customerId },
+        orderBy: { id: 'desc' },
+        select: { id: true, lan: true, status: true, disbursalStatus: true },
+      }),
+      latestApp?.lenderId
+        ? this.prisma.lender.findUnique({ where: { id: latestApp.lenderId }, select: { displayName: true, legalName: true } })
+        : null,
+      // Scoped to the current application - see the note on aaCompleted below.
+      latestApp
+        ? this.prisma.customerAccountAggregatorRequest.findFirst({
+            where: { customerId: customer.id, applicationId: latestApp.id, status: 'SUCCESS' },
+            select: { status: true },
+          })
+        : null,
+    ]);
     const latestLoan = latestApp?.loans[0] ?? null;
-    // Deliberately NOT scoped to latestApp — once a repeat customer's fresh (loan-less)
-    // application exists, latestApp.loans is empty and latestLoan above correctly becomes
-    // null for nextPermittedStep()'s purposes. But the Dashboard's "you have a fully repaid
-    // loan" signal must survive that: it needs the customer's most recent loan across ALL
-    // their applications, not just whichever application happens to be "latest".
-    const mostRecentLoan = await this.prisma.plLoan.findFirst({
-      where: { customerId },
-      orderBy: { id: 'desc' },
-    });
-
-    let allocatedLenderName: string | null = null;
-    if (latestApp?.lenderId) {
-      const lender = await this.prisma.lender.findUnique({
-        where: { id: latestApp.lenderId },
-      });
-      allocatedLenderName = lender?.displayName ?? lender?.legalName ?? null;
-    }
+    const allocatedLenderName: string | null = lender?.displayName ?? lender?.legalName ?? null;
     let updateReadiness = { ready: false, reasons: ['APPLICATION_MISSING'] as string[] };
     if (latestApp) {
       try {
-        const readiness = await this.lenderIntegrationOutbox.getUpdateReadiness(latestApp.id);
+        // Evaluated on the application already loaded above - no second fetch of it.
+        const readiness = this.lenderIntegrationOutbox.evaluateUpdateReadiness(latestApp);
         updateReadiness = { ready: readiness.ready, reasons: readiness.reasons };
       } catch {
         updateReadiness = { ready: false, reasons: ['READINESS_UNAVAILABLE'] };
@@ -551,20 +585,14 @@ export class CustomerService {
     let hasDecisionConsents = false;
     if (latestApp) {
       const requiredConsentTypes = ['BUREAU_ENQUIRY', 'LENDER_CREDIT_ASSESSMENT', 'LENDER_DECISION_REQUEST'];
-      const decisionConsents = await this.prisma.applicationStageConsent.findMany({
-        where: { applicationId: latestApp.id, consentType: { in: requiredConsentTypes as any }, revokedAt: null },
-      });
+      // Already loaded with the application above - no separate query.
+      const decisionConsents = latestApp.stageConsents.filter((consent) => consent.revokedAt === null);
       hasDecisionConsents = requiredConsentTypes.every((type) => decisionConsents.some((c) => c.consentType === type));
     }
     // Scoped to the customer's current application, not just their customerId — an
     // Account Aggregator success from a PREVIOUS (now closed) loan must not silently
     // satisfy this step for a fresh application; the customer must reconnect their bank
     // statement again for every new loan.
-    const aaRequest = latestApp
-      ? await this.prisma.customerAccountAggregatorRequest.findFirst({
-          where: { customerId: customer.id, applicationId: latestApp.id, status: 'SUCCESS' },
-        })
-      : null;
     const aaCompleted = Boolean(aaRequest);
     const aaStatus = aaRequest?.status || 'NOT_STARTED';
 
@@ -572,10 +600,7 @@ export class CustomerService {
 
     // Resolve every consent's wording once, against the allocated lender's display name.
     // Falls back to a neutral label before allocation so the screens still render.
-    const allocatedLender = latestApp?.lenderId
-      ? await this.prisma.lender.findUnique({ where: { id: latestApp.lenderId }, select: { displayName: true } })
-      : null;
-    const lenderDisplayName = allocatedLender?.displayName || 'the allocated lending partner';
+    const lenderDisplayName = lender?.displayName || 'the allocated lending partner';
     const consentTexts = Object.fromEntries(
       ALL_CONSENT_TYPES.map((type) => [
         type,
@@ -691,6 +716,7 @@ export class CustomerService {
           normalizedDecision: link?.normalizedDecision ?? null,
           partnerReference: link?.partnerReference ?? null,
           coolingOffUntil: latestApp.lenderCoolingOffUntil,
+          reapply: this.buildReapplyState(latestApp),
           nextStatusCheckAt: latestApp.lenderNextStatusCheckAt,
           integration: currentOutbox ? { stage: currentOutbox.integrationStage, status: currentOutbox.status, attemptCount: currentOutbox.attemptCount, safeErrorCode: currentOutbox.lastErrorCode } : null,
           aaCompleted,
@@ -1622,6 +1648,25 @@ export class CustomerService {
   }
 
   /** `outbox` is the most recent FAILED event that genuinely blocks progression, or null. */
+  /** Tells the rejection screen whether, and from when, the customer may apply again. */
+  private buildReapplyState(application: any) {
+    const cooldown = evaluateReapplyCooldown({
+      status: application?.status,
+      rejectedAt:
+        application?.status === 'PLATFORM_REJECTED'
+          ? application?.platformDecisionAt ?? application?.updatedAt
+          : application?.lenderDecisionAt ?? application?.updatedAt,
+      lenderCoolingOffUntil: application?.lenderCoolingOffUntil,
+      coolingOffDays: getReapplyCoolingOffDays(),
+    });
+    return {
+      canReapply: !cooldown.active,
+      eligibleAt: cooldown.eligibleAt,
+      daysRemaining: cooldown.daysRemaining,
+      coolingOffDays: getReapplyCoolingOffDays(),
+    };
+  }
+
   private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean; aaCompleted?: boolean }): string {
     const { application, payment, link, outbox, updateReadiness, loan, hasDecisionConsents, aaCompleted } = input;
     if (!application) return 'BASIC_DETAILS';

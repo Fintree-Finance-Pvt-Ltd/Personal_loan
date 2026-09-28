@@ -56,7 +56,15 @@ const schema = z
     ELECTRONIC_SIGN_TIMEZONE: z.string().default('Asia/Kolkata'),
     PL_WEBHOOK_SECRET: z.string().min(16).optional(),
     LENDER_INTEGRATION_WORKER_ENABLED: booleanString.default('true'),
-    LENDER_INTEGRATION_WORKER_POLL_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
+    LENDER_INTEGRATION_WORKER_POLL_MS: z.coerce.number().int().min(1000).max(60000).default(2000),
+    // How many lender events may be in flight at once (never two for the same application).
+    LENDER_INTEGRATION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+    // 'all' (default) = one process does everything, exactly as before. For scaling out:
+    // run N copies with APP_ROLE=api and exactly ONE with APP_ROLE=worker (see
+    // ecosystem.config.js and app-role.helper.ts).
+    APP_ROLE: z.enum(['all', 'api', 'worker']).default('all'),
+    // Days a customer must wait to apply again after a rejection (0 = no wait).
+    REAPPLY_COOLING_OFF_DAYS: z.coerce.number().int().min(0).max(365).default(30),
     LENDER_INTEGRATION_WORKER_LOCK_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
     LENDER_DATA_SHARING_CONSENT_VERSION: z.string().min(1).max(50).default('1.0'),
     LENDER_DATA_SHARING_CONSENT_REFERENCE: z.string().min(1).max(150).default('CUSTOMER_LENDER_DATA_SHARING'),

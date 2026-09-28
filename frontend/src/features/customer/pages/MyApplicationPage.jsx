@@ -29,8 +29,12 @@ import {
   Sparkles,
   UserCheck,
   X,
+  Clock,
+  CalendarDays,
+  Lightbulb,
 } from 'lucide-react';
 import { usePincodeLookup } from '../hooks/usePincodeLookup';
+import { startAdaptivePolling } from '../../../lib/adaptivePoller';
 import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 import { OtpInput } from '../../../components/ui/OtpInput';
 import {
@@ -319,19 +323,26 @@ function deriveCustomerWorkflow(customer) {
     );
   }
 
-  const eligibilityCompleted =
-    customer.eligibilityStatus !== null &&
-    customer.eligibilityStatus !== undefined &&
-    customer.eligibilityStatus !== 'NOT_CHECKED';
-
+  // The authoritative "did BRE pass" signal is per-application (journey.platformBreResult,
+  // sourced from pl_applications.platform_decision_outcome) — it's what actually gates lender
+  // allocation and step routing everywhere else. customer.eligibilityStatus is an older,
+  // customer-level field that is meant to track the same result but isn't always written by
+  // every code path that sets platform_decision_outcome (e.g. a lender-allocation retry that
+  // assumes eligibility already passed and only re-stamps the application). Trusting only the
+  // stale field here let a customer reach the final Submit step and then get bounced back to
+  // basic_details for an "incomplete eligibility check" that had, in fact, already passed
+  // (FTPL00000047) — so the per-application result takes priority, with the legacy field kept
+  // as a fallback for any older data that never got a platformBreResult at all.
+  const platformBreResult = customer.journey?.platformBreResult || null;
   const normalizedStatus = String(
     customer.eligibilityStatus || '',
   ).toUpperCase();
-  const eligibilityPassed = [
-    'ELIGIBLE',
-    'PASSED',
-    'APPROVED',
-  ].includes(normalizedStatus);
+  const legacyEligibilityPassed = normalizedStatus === 'ELIGIBLE';
+  const legacyEligibilityCompleted = normalizedStatus !== '' && normalizedStatus !== 'NOT_CHECKED';
+
+  const eligibilityPassed = platformBreResult === 'PASS' || (!platformBreResult && legacyEligibilityPassed);
+  const eligibilityCompleted =
+    platformBreResult === 'PASS' || platformBreResult === 'FAIL' || legacyEligibilityCompleted;
 
   const applicationSubmitted = Boolean(
     ['APPLICATION_SUBMITTED', 'LENDER_APPROVED', 'LENDER_REJECTED', 'DISBURSED'].includes(customer.onboardingStatus)
@@ -551,9 +562,14 @@ export default function MyApplicationPage() {
     storedSession?.mobileNumber ||
     '';
 
-  const fetchCustomer = async () => {
-    setIsCustomerLoading(true);
-    setCustomerLoadError('');
+  // `silent` is for background polling: it refreshes the data without swapping the whole
+  // page for the full-screen loader (which made the screen flash every few seconds) and
+  // without turning a momentary network blip into an error screen.
+  const fetchCustomer = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setIsCustomerLoading(true);
+      setCustomerLoadError('');
+    }
 
     try {
       let customerData = await getCustomerMe();
@@ -625,18 +641,22 @@ export default function MyApplicationPage() {
       } else {
         setPanVerification(null);
       }
-      try {
-        const livePhotoDoc = await getCustomerLivePhoto(customerData?.id);
-        if (livePhotoDoc && livePhotoDoc.status === 'VERIFIED') {
-          setSavedPhotoDocument(livePhotoDoc);
+      if (!silent) {
+        try {
+          const livePhotoDoc = await getCustomerLivePhoto(customerData?.id);
+          if (livePhotoDoc && livePhotoDoc.status === 'VERIFIED') {
+            setSavedPhotoDocument(livePhotoDoc);
+          }
+        } catch (photoErr) {
+          console.error('Failed to load saved live photo document:', photoErr);
         }
-      } catch (photoErr) {
-        console.error('Failed to load saved live photo document:', photoErr);
       }
     } catch (err) {
-      setCustomerLoadError(
-        err?.message || 'Unable to load your details.',
-      );
+      if (!silent) {
+        setCustomerLoadError(
+          err?.message || 'Unable to load your details.',
+        );
+      }
       if (err?.message?.includes('Customer authentication is required') || err?.message?.includes('Access denied') || err?.message?.includes('Customer details were not found')) {
         navigate('/customer/login', {
           replace: true,
@@ -666,11 +686,35 @@ export default function MyApplicationPage() {
     // without the customer ever clicking anything here — without this, they'd be stuck
     // looking at a stale "retry" screen for an error that's already been fixed.
     if (currentStep !== 'integration_processing' && currentStep !== 'integration_support') return undefined;
-    const timer = setInterval(() => {
-      fetchCustomer();
-    }, 5000);
-    return () => clearInterval(timer);
+    // Quick at first (lender stages usually finish in seconds), gentler once it is clearly
+    // waiting on something slow, silent while the tab is hidden, and never overlapping
+    // requests - see lib/adaptivePoller.js. A fixed 5s timer used to hit the server forever,
+    // even from a forgotten background tab, and could stack requests on a slow network.
+    return startAdaptivePolling(() => fetchCustomer({ silent: true }));
   }, [currentStep]);
+
+  const [isApplyingAgain, setIsApplyingAgain] = useState(false);
+  const [applyAgainError, setApplyAgainError] = useState('');
+
+  // Starts a fresh application after a rejection. The server enforces the cooling-off
+  // period, so this can only succeed once it has passed.
+  const handleApplyAgain = async () => {
+    setIsApplyingAgain(true);
+    setApplyAgainError('');
+    try {
+      await resumeApplication(customerId);
+      await fetchCustomer();
+    } catch (error) {
+      setApplyAgainError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'You cannot apply again just yet. Please try after the date shown.',
+      );
+      await fetchCustomer({ silent: true });
+    } finally {
+      setIsApplyingAgain(false);
+    }
+  };
 
   const handleRetryLenderSubmission = async () => {
     setIsRetryingLenderSubmission(true);
@@ -852,10 +896,19 @@ export default function MyApplicationPage() {
 
     setErrors(validationErrors);
 
-    return (
-      Object.keys(validationErrors)
-        .length === 0
-    );
+    return validationErrors;
+  };
+
+  // Human labels for validateBasicDetails()'s field keys, used to tell the customer
+  // exactly what's missing instead of a generic "incomplete" message.
+  const BASIC_DETAILS_FIELD_LABELS = {
+    fullName: 'Full name',
+    panNumber: 'PAN verification',
+    fatherName: "Father's name",
+    dateOfBirth: 'Date of birth',
+    gender: 'Gender',
+    pincode: 'PIN code',
+    email: 'Email',
   };
 
   const validateProfileDetails = () => {
@@ -1381,7 +1434,7 @@ export default function MyApplicationPage() {
   };
 
   const handleBasicDetailsContinue = async () => {
-    if (!validateBasicDetails()) {
+    if (Object.keys(validateBasicDetails()).length > 0) {
       showMessage(
         'Please complete and verify all required details.',
         'error',
@@ -1760,9 +1813,17 @@ export default function MyApplicationPage() {
   };
 
   const handleSubmitApplication = async ({ sameAsPermanent, decisionConsentAccepted } = {}) => {
-    if (!validateBasicDetails()) {
-      showMessage('Basic details are incomplete.', 'error');
+    const basicDetailsErrors = validateBasicDetails();
+    if (Object.keys(basicDetailsErrors).length > 0) {
+      // goToStep() clears the error map as part of resetting the screen — re-apply it
+      // right after so the customer actually sees which field sent them back here,
+      // instead of landing on a blank basic-details page with no explanation.
       goToStep('basic_details');
+      setErrors(basicDetailsErrors);
+      const missing = Object.keys(basicDetailsErrors)
+        .map((key) => BASIC_DETAILS_FIELD_LABELS[key] || key)
+        .join(', ');
+      showMessage('Please complete: ' + missing + '.', 'error');
       return;
     }
 
@@ -1986,24 +2047,13 @@ export default function MyApplicationPage() {
       )}
 
       {currentStep === 'rejection_screen' && (
-        <StepCard>
-          <div className="flex flex-col items-center justify-center p-8 sm:p-12 text-center max-w-xl mx-auto">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-danger-50 text-danger-600 mb-6 shadow-sm ring-8 ring-danger-50/50">
-              <AlertCircle size={34} className="stroke-[2.2]" />
-            </div>
-            <h2 className="text-2xl font-bold text-neutral-900 mb-3 tracking-tight">Application Unsuccessful</h2>
-            <p className="text-base font-bold text-neutral-800 leading-relaxed mb-8 max-w-md">
-              Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
-            </p>
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="rounded-2xl bg-brand-600 px-8 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 active:scale-[0.98] transition cursor-pointer"
-            >
-              Return to Home
-            </button>
-          </div>
-        </StepCard>
+        <RejectionPanel
+          reapply={customer?.journey?.reapply}
+          isApplyingAgain={isApplyingAgain}
+          applyAgainError={applyAgainError}
+          onApplyAgain={handleApplyAgain}
+          onHome={() => navigate('/')}
+        />
       )}
 
       {currentStep === 'profile_details' && (
@@ -2059,6 +2109,9 @@ export default function MyApplicationPage() {
           applicationSubmitted={applicationSubmitted}
           applicationNumber={applicationNumber}
           isSubmitting={isSubmitting}
+          isApplyingAgain={isApplyingAgain}
+          applyAgainError={applyAgainError}
+          onApplyAgain={handleApplyAgain}
           onBack={() => goToStep('aadhaar_kyc')}
           onSubmit={handleSubmitApplication}
         />
@@ -2069,15 +2122,7 @@ export default function MyApplicationPage() {
           onSelected={() => fetchCustomer()}
         />
       )}
-      {currentStep === 'integration_processing' && (
-        <StepCard>
-          <div className="p-8 text-center">
-            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-brand-600" />
-            <h2 className="mt-4 text-xl font-bold text-neutral-900">Your lender application is processing</h2>
-            <p className="mt-2 text-sm text-neutral-600">We are securely completing the current lender integration stage. This page will resume from the backend-confirmed state.</p>
-          </div>
-        </StepCard>
-      )}
+      {currentStep === 'integration_processing' && <ProcessingPanel />}
       {currentStep === 'integration_support' && (
         <IntegrationSupportCard
           customer={customer}
@@ -5054,6 +5099,9 @@ function SubmitApplicationStep({
   applicationSubmitted,
   applicationNumber: _applicationNumber,
   isSubmitting,
+  isApplyingAgain,
+  applyAgainError,
+  onApplyAgain,
   onBack,
   onSubmit,
 }) {
@@ -5121,6 +5169,17 @@ function SubmitApplicationStep({
             </div>
           );
         })()}
+
+        {isRejected && (
+          <RejectionPanel
+            embedded
+            reapply={customer?.journey?.reapply}
+            isApplyingAgain={isApplyingAgain}
+            applyAgainError={applyAgainError}
+            onApplyAgain={onApplyAgain}
+            onHome={() => navigate('/')}
+          />
+        )}
 
         {isApproved && !hasLan && (
           <div className="rounded-3xl border border-brand-200 bg-white p-6 text-center shadow-sm">
@@ -6174,6 +6233,170 @@ function IntegrationSupportCard({ customer, isRetrying, retryError, onRetry, onC
             If this issue persists, please contact support and quote error code{' '}
             <span className="font-mono font-bold text-neutral-700">{errorCode}</span>
           </p>
+        </div>
+      </div>
+    </StepCard>
+  );
+}
+
+const formatLongDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+/**
+ * Shown while the lender is working on the application. The page refreshes itself in the
+ * background (see fetchCustomer's silent mode), so this screen never flashes or reloads.
+ */
+function ProcessingPanel() {
+  const steps = [
+    { label: 'Details received', hint: 'Your application is safely with us', state: 'done' },
+    { label: 'Checking with our lending partner', hint: 'This usually takes less than a minute', state: 'active' },
+    { label: 'Decision ready', hint: 'You will move ahead automatically', state: 'todo' },
+  ];
+
+  return (
+    <StepCard>
+      <div className="mx-auto max-w-xl p-6 sm:p-10 text-center" role="status" aria-live="polite">
+        <div className="relative mx-auto grid h-20 w-20 place-items-center">
+          <span className="absolute inset-0 animate-ping rounded-full bg-brand-100" />
+          <span className="relative grid h-16 w-16 place-items-center rounded-full bg-brand-50 text-brand-600 ring-8 ring-brand-50/60">
+            <LoaderCircle className="h-8 w-8 animate-spin" />
+          </span>
+        </div>
+        <h2 className="mt-6 text-2xl font-black tracking-tight text-neutral-900">Reviewing your application</h2>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-600">
+          Please keep this page open. It moves ahead on its own — there is no need to refresh.
+        </p>
+
+        <ol className="mx-auto mt-8 max-w-sm space-y-4 text-left">
+          {steps.map((step) => (
+            <li key={step.label} className="flex items-start gap-3">
+              <span
+                className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                  step.state === 'done'
+                    ? 'bg-brand-600 text-white'
+                    : step.state === 'active'
+                      ? 'bg-brand-50 text-brand-600 ring-2 ring-brand-500'
+                      : 'bg-neutral-100 text-neutral-400'
+                }`}
+              >
+                {step.state === 'done' ? '✓' : step.state === 'active' ? <span className="h-2 w-2 animate-pulse rounded-full bg-brand-600" /> : '•'}
+              </span>
+              <span>
+                <span className={`block text-sm font-bold ${step.state === 'todo' ? 'text-neutral-400' : 'text-neutral-900'}`}>{step.label}</span>
+                <span className="block text-xs text-neutral-500">{step.hint}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+
+        <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-neutral-400">
+          <ShieldCheck size={14} /> Your information is encrypted and handled securely
+        </p>
+      </div>
+    </StepCard>
+  );
+}
+
+/**
+ * Shown when an application is declined. `reapply` comes from the backend
+ * (journey.reapply) and reflects REAPPLY_COOLING_OFF_DAYS, so the wait is never hard-coded here.
+ */
+function RejectionPanel({ reapply, embedded = false, isApplyingAgain = false, applyAgainError = '', onApplyAgain, onHome }) {
+  const known = Boolean(reapply);
+  const canReapply = known && reapply.canReapply;
+  const daysRemaining = known ? Number(reapply.daysRemaining) || 0 : 0;
+  const totalDays = known ? Number(reapply.coolingOffDays) || 0 : 0;
+  const eligibleOn = known ? formatLongDate(reapply.eligibleAt) : '';
+  const elapsedPct = totalDays > 0 ? Math.min(100, Math.max(0, Math.round(((totalDays - daysRemaining) / totalDays) * 100))) : 100;
+
+  const tips = [
+    'Keep your PAN, Aadhaar and bank details consistent with each other',
+    'Use a bank account in your own name with regular salary or income credits',
+    'Clear any overdue EMIs or credit card dues before applying again',
+    'Avoid applying with several lenders at the same time',
+  ];
+
+  return (
+    <StepCard>
+      <div className={`mx-auto max-w-2xl ${embedded ? 'p-4 sm:p-6' : 'p-6 sm:p-10'}`}>
+        {!embedded && (
+          <div className="text-center">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-danger-50 text-danger-600 ring-8 ring-danger-50/50">
+              <AlertCircle size={32} className="stroke-[2.2]" />
+            </div>
+            <h2 className="mt-5 text-2xl font-black tracking-tight text-neutral-900">We couldn't approve your application this time</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-600">
+              Based on the information available, your application doesn't meet our current lending criteria. This is not permanent — you can apply again.
+            </p>
+          </div>
+        )}
+
+        {known && !canReapply && (
+          <div className="mt-6 rounded-2xl border border-caution-200 bg-caution-50/60 p-5">
+            <div className="flex items-center gap-4">
+              <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white text-center shadow-sm">
+                <span className="text-2xl font-black leading-none text-neutral-900">{daysRemaining}</span>
+                <span className="-mt-3 text-[10px] font-bold uppercase text-neutral-500">{daysRemaining === 1 ? 'day' : 'days'}</span>
+              </div>
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-sm font-bold text-neutral-900"><Clock size={15} /> Waiting period in progress</p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-sm text-neutral-600">
+                  <CalendarDays size={15} /> You can apply again on <strong className="text-neutral-900">{eligibleOn}</strong>
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-full rounded-full bg-caution-400 transition-all duration-700" style={{ width: `${elapsedPct}%` }} />
+            </div>
+          </div>
+        )}
+
+        {known && canReapply && (
+          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50/60 p-5 text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-brand-800"><Sparkles size={16} /> You can apply again now</p>
+            <p className="mt-1 text-sm text-neutral-600">Your waiting period is over. Start a fresh application whenever you're ready.</p>
+          </div>
+        )}
+
+        <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-neutral-900"><Lightbulb size={15} className="text-caution-500" /> Ways to improve your chances</p>
+          <ul className="mt-3 space-y-2">
+            {tips.map((tip) => (
+              <li key={tip} className="flex items-start gap-2 text-sm text-neutral-600">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                {tip}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {applyAgainError && (
+          <p className="mt-4 rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700" role="alert">{applyAgainError}</p>
+        )}
+
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-center">
+          <button
+            type="button"
+            onClick={onHome}
+            className="rounded-2xl border border-neutral-200 bg-white px-6 py-3 text-sm font-bold text-neutral-700 transition hover:bg-neutral-50 cursor-pointer"
+          >
+            Back to home
+          </button>
+          {known && (
+            <button
+              type="button"
+              onClick={onApplyAgain}
+              disabled={!canReapply || isApplyingAgain}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 disabled:shadow-none cursor-pointer"
+            >
+              {isApplyingAgain ? <LoaderCircle size={16} className="animate-spin" /> : null}
+              {canReapply ? 'Apply again' : `Available in ${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'}`}
+            </button>
+          )}
         </div>
       </div>
     </StepCard>

@@ -2,12 +2,14 @@ import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { json, urlencoded, Request, Response, NextFunction } from 'express';
 import * as express from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { Logger } from "@nestjs/common";
 import { verifyDocumentUrlSignature } from './common/utils/document-url-signer.helper';
+import { getAppRole, runsBackgroundWork } from './common/utils/app-role.helper';
 
 // Enable JSON.stringify serialization for BigInt values returned by Prisma
 (BigInt.prototype as any).toJSON = function () {
@@ -88,7 +90,17 @@ async function bootstrap(): Promise<void> {
   );
   app.enableShutdownHooks();
   await app.listen(config.getOrThrow<number>('PORT'), '0.0.0.0');
-  logger.log({ event: 'application_started', port: config.getOrThrow<number>('PORT') });
+  // Scaling out: a pure API process (APP_ROLE=api) must not run the scheduled jobs. They
+  // have no distributed lock, so N API copies would each fire every one of them (duplicate
+  // SMS/IVR/WhatsApp reminders and debit presentments). Roles 'all' (the default, i.e. how
+  // the app has always run) and 'worker' keep every job exactly as before.
+  if (!runsBackgroundWork(config)) {
+    app.get(SchedulerRegistry).getCronJobs().forEach((job, name) => {
+      job.stop();
+      logger.log({ event: 'cron_job_disabled_for_api_role', job: name });
+    });
+  }
+  logger.log({ event: 'application_started', port: config.getOrThrow<number>('PORT'), role: getAppRole(config) });
 }
 
 void bootstrap();

@@ -16,6 +16,7 @@ import { decryptPayload, encryptPayload } from '../../../common/utils/bank-secur
 import { UnaportTokenService } from './unaport-token.service';
 import { LenderIntegrationOutboxService } from '../../lender-integrations/lender-integration-outbox.service';
 import { BoostMoneyBsaService } from '../../../integrations/boost-money-bsa.service';
+import { sharedPdfRenderer } from '../../../common/pdf/pdf-renderer';
 import {
   UnaportConsentNotificationPayload,
   UnaportDataNotificationPayload,
@@ -1465,20 +1466,15 @@ export class UnaportService {
 
       let pdfBuffer: Buffer;
       try {
-        const puppeteer = await import('puppeteer');
-        const browser = await puppeteer.launch({
-          headless: true,
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-        });
-        const page = await browser.newPage();
-        await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-        const pdfBytes = await page.pdf({
+        // Shared, bounded Chromium (common/pdf/pdf-renderer.ts) instead of launching a whole
+        // new browser per statement - and it honours PUPPETEER_EXECUTABLE_PATH, which the
+        // per-call launch ignored (on servers that skip Puppeteer's own Chrome download that
+        // launch fails and this used to fall through to saving raw HTML as the "PDF").
+        pdfBuffer = await sharedPdfRenderer.render(htmlContent, {
           format: 'A4',
           printBackground: true,
           margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
         });
-        await browser.close();
-        pdfBuffer = Buffer.from(pdfBytes);
       } catch (pdfErr: any) {
         this.logger.warn(`[PUPPETEER PDF RENDER WARNING] ${pdfErr?.message}, writing raw content fallback.`);
         pdfBuffer = Buffer.from(htmlContent, 'utf8');

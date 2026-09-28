@@ -1,6 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { backendEnvPath, validateEnvironment } from './config/environment';
@@ -18,6 +18,7 @@ import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.
 import { ExternalApiModule } from './modules/external-api/external-api.module';
 import { LoanModule } from './modules/loan/loan.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { createThrottlerOptions } from './common/throttling/throttler.config';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
@@ -54,7 +55,15 @@ import { ReferralModule } from './modules/referral/referral.module';
       cache: true,
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const secrets = [config.get<string>('CUSTOMER_JWT_ACCESS_SECRET'), config.get<string>('JWT_ACCESS_SECRET')].filter(
+          (secret): secret is string => Boolean(secret),
+        );
+        return createThrottlerOptions(secrets);
+      },
+    }),
     PrismaModule,
     LoggingModule,
     AuditLogsModule,
