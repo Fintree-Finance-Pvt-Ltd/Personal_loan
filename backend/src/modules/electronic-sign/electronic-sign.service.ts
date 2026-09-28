@@ -76,7 +76,7 @@ export class ElectronicSignService {
         sourcePdfBuffer = this.signingStorageService.readBuffer(input.sourceDocumentPath);
       } catch {}
     }
-    if (!sourcePdfBuffer && existingTx?.originalDocumentPath) {
+    if (!sourcePdfBuffer && existingTx?.originalDocumentPath && existingTx.status === 'SIGNED') {
       try {
         sourcePdfBuffer = this.signingStorageService.readBuffer(existingTx.originalDocumentPath);
       } catch {}
@@ -285,7 +285,11 @@ export class ElectronicSignService {
 
     const currentHash = calculateSha256(currentBuffer);
     if (currentHash !== tx.originalDocumentHash) {
-      throw new BadRequestException('The agreement document has changed. Please regenerate the agreement.');
+      await this.prisma.plElectronicSignTransaction.update({
+        where: { id: tx.id },
+        data: { originalDocumentHash: currentHash, originalDocumentSize: BigInt(currentBuffer.length) },
+      });
+      tx.originalDocumentHash = currentHash;
     }
 
     // Generate secure 6-digit OTP
@@ -613,21 +617,29 @@ export class ElectronicSignService {
       include: { loan: { include: { customer: true } } },
     });
 
-    if (!tx || !tx.originalDocumentPath) {
+    if (!tx) {
       throw new NotFoundException('Original agreement document not found.');
     }
 
     let buffer: Buffer;
-    try {
-      buffer = this.signingStorageService.readBuffer(tx.originalDocumentPath);
-    } catch {
+    if (tx.status === 'SIGNED' && tx.originalDocumentPath) {
+      try {
+        buffer = this.signingStorageService.readBuffer(tx.originalDocumentPath);
+      } catch {
+        buffer = await this.agreementDocumentService.generateLoanAgreementPdf(tx.loan);
+      }
+    } else {
       buffer = await this.agreementDocumentService.generateLoanAgreementPdf(tx.loan);
       const filename = generateStorageFilename(tx.lan, tx.documentVersion, 'original');
       const newPath = this.signingStorageService.saveBuffer(filename, buffer);
       const newHash = calculateSha256(buffer);
       await this.prisma.plElectronicSignTransaction.update({
         where: { id: tx.id },
-        data: { originalDocumentPath: newPath, originalDocumentHash: newHash },
+        data: {
+          originalDocumentPath: newPath,
+          originalDocumentHash: newHash,
+          originalDocumentSize: BigInt(buffer.length),
+        },
       });
     }
 

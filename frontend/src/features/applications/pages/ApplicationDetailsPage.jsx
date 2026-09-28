@@ -360,6 +360,96 @@ export default function ApplicationDetailsPage() {
         </Card>
       </div>
 
+      {/* Marketing Attribution & Campaign Snapshot */}
+      {details.attribution && (
+        <Panel
+          title="Marketing Campaign & Lead Attribution"
+          className="mb-6 border-brand-500/20 bg-brand-500/[0.02]"
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs font-semibold text-neutral-500">Acquisition Channel</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="rounded-md bg-brand-500/10 px-2.5 py-1 text-xs font-bold text-brand-700">
+                  {details.attribution.acquisitionSource || 'WEBSITE'}
+                </span>
+                {details.attribution.utmMedium && (
+                  <span className="rounded-md bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
+                    {details.attribution.utmMedium}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-neutral-500">Campaign (utm_campaign)</p>
+              <p className="mt-1 font-mono text-sm font-bold text-neutral-800">
+                {details.attribution.utmCampaign || '(Direct / None)'}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-neutral-500">Traffic Source (utm_source)</p>
+              <p className="mt-1 font-mono text-sm text-neutral-700">
+                {details.attribution.utmSource || '-'}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-neutral-500">Marketing Partner / Agency</p>
+              <p className="mt-1 text-sm font-semibold text-neutral-800">
+                {details.attribution.partnerCode ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 font-mono text-xs font-bold text-sky-700">
+                    {details.attribution.partnerName || details.attribution.partnerCode}
+                  </span>
+                ) : details.attribution.rmId ? (
+                  <span className="text-xs text-neutral-600">
+                    RM: {details.attribution.rmName || details.attribution.rmId}
+                  </span>
+                ) : details.attribution.referralCode ? (
+                  <span className="text-xs text-purple-700">
+                    Ref: {details.attribution.referralCode}
+                  </span>
+                ) : (
+                  <span className="text-xs text-neutral-400">Direct Organic</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {(details.attribution.clickId || details.attribution.landingPage || details.attribution.utmContent || details.attribution.utmTerm) && (
+            <div className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {details.attribution.utmContent && (
+                  <div>
+                    <span className="font-medium text-neutral-400">Ad Creative: </span>
+                    <span className="font-mono text-neutral-700">{details.attribution.utmContent}</span>
+                  </div>
+                )}
+                {details.attribution.utmTerm && (
+                  <div>
+                    <span className="font-medium text-neutral-400">Keyword: </span>
+                    <span className="text-neutral-700">{details.attribution.utmTerm}</span>
+                  </div>
+                )}
+                {details.attribution.clickId && (
+                  <div>
+                    <span className="font-medium text-neutral-400">Click ID: </span>
+                    <span className="font-mono text-neutral-700">{details.attribution.clickId}</span>
+                  </div>
+                )}
+                {details.attribution.capturedAt && (
+                  <div>
+                    <span className="font-medium text-neutral-400">Captured: </span>
+                    <span>{formatDate(details.attribution.capturedAt)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </Panel>
+      )}
+
       {link && (
         <Panel title="Current stage status" className="mb-6">
           <div className="flex flex-wrap gap-6">

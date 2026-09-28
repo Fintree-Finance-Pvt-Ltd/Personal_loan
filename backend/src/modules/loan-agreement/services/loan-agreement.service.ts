@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { sharedPdfRenderer } from '../../../common/pdf/pdf-renderer';
 import { LoanAgreementDataBuilder } from '../builders/loan-agreement-data.builder';
 import { registerHandlebarsHelpers } from '../helpers/handlebars-helpers';
@@ -54,16 +55,54 @@ export class LoanAgreementService implements OnModuleDestroy {
 
   async generateAgreementPdf(lan: string, customerId?: bigint): Promise<Buffer> {
     const html = await this.generateAgreementHtml(lan, customerId);
-    return sharedPdfRenderer.render(html, {
+
+    const pdfBufferBytes = await sharedPdfRenderer.render(html, {
       format: 'A4',
       printBackground: true,
       preferCSSPageSize: true,
       margin: {
-        top: '14mm',
-        right: '13mm',
-        bottom: '16mm',
-        left: '13mm',
+        top: '0mm',
+        right: '0mm',
+        bottom: '0mm',
+        left: '0mm',
       },
     });
+
+    // Stamp bottom footer: Borrower (left) and For Fintree Finance Pvt Ltd (right)
+    const pdfDoc = await PDFDocument.load(pdfBufferBytes);
+    const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    const pages = pdfDoc.getPages();
+
+    for (const p of pages) {
+      const { width } = p.getSize();
+      // Thin horizontal rule above footer text
+      p.drawLine({
+        start: { x: 38, y: 26 },
+        end: { x: width - 38, y: 26 },
+        thickness: 0.5,
+        color: rgb(0.65, 0.65, 0.65),
+      });
+      // Left footer: Borrower
+      p.drawText('Borrower', {
+        x: 38,
+        y: 14,
+        size: 8,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      // Right footer: For Fintree Finance Pvt Ltd
+      const rightText = 'For Fintree Finance Pvt Ltd';
+      const textWidth = font.widthOfTextAtSize(rightText, 8);
+      p.drawText(rightText, {
+        x: width - 38 - textWidth,
+        y: 14,
+        size: 8,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+    }
+
+    const stampedBytes = await pdfDoc.save();
+    return Buffer.from(stampedBytes);
   }
 }
