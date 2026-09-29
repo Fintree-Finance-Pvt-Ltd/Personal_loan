@@ -296,6 +296,7 @@ export class LoanAgreementDataBuilder {
         repaymentCommencementText: 'Post sanction / expiry of tenure',
         disbursementScheduleText: '100% Upfront',
         bulletRepayment: true,
+        dueDateFormatted: repayments[0]?.dueDateFormatted || formattedDate,
       },
       pricing: {
         annualInterestRate: interestRate,

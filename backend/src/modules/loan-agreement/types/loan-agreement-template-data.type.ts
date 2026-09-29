@@ -130,6 +130,7 @@ export interface LoanDetails {
   interestRate?: number;
   processingFee?: number;
   apr?: number;
+  dueDateFormatted?: string;
 }
 
 export interface PricingDetails {
