@@ -1516,10 +1516,16 @@ export class LoanService {
   }
 
   private resolveMandateConfiguration(loan: any, requestedMandateType?: string) {
+    const latestMandate = loan.mandates?.[0];
+    const explicitMandateAmount = latestMandate?.amount ? Number(latestMandate.amount) : null;
+
     const approvedAmount = loan.approvedAmount ? Number(loan.approvedAmount) : 0;
     const acceptedTotalRepayment = loan.acceptedTotalRepayment ? Number(loan.acceptedTotalRepayment) : approvedAmount;
 
-    const amount = Math.max(acceptedTotalRepayment, approvedAmount, 1);
+    let amount = Math.max(acceptedTotalRepayment, approvedAmount, 1);
+    if (explicitMandateAmount && explicitMandateAmount > 0) {
+      amount = explicitMandateAmount;
+    }
     const amountRule = this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX';
     const frequency = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_FREQUENCY') || 'as_presented';
     const configMandateType = this.configService.get<string>('EASEBUZZ_MANDATE_DEFAULT_TYPE') || 'ENACH';
@@ -1533,9 +1539,18 @@ export class LoanService {
     startDateObj.setDate(startDateObj.getDate() + 1);
     const startDate = startDateObj.toISOString().split('T')[0];
 
+    // Mandate validity: at least 6 months (or configured months), or tenure + 30 days if tenure is longer
+    const validityMonths = Number(this.configService.get('EASEBUZZ_MANDATE_VALIDITY_MONTHS') || 6);
     const endDateObj = new Date(startDateObj);
-    const tenureDays = loan.acceptedTenureDays || 365;
-    endDateObj.setDate(endDateObj.getDate() + tenureDays + 30);
+    endDateObj.setMonth(endDateObj.getMonth() + validityMonths);
+
+    const tenureDays = loan.acceptedTenureDays || 30;
+    const minEndDate = new Date(startDateObj);
+    minEndDate.setDate(minEndDate.getDate() + tenureDays + 30);
+    if (minEndDate > endDateObj) {
+      endDateObj.setTime(minEndDate.getTime());
+    }
+
     const endDate = endDateObj.toISOString().split('T')[0];
 
     return {
