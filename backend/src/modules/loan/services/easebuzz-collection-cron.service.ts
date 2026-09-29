@@ -56,6 +56,14 @@ export class EasebuzzCollectionCronService {
     if (Array.isArray(checkDetails) && checkDetails.length > 0 && checkDetails[0]?.txn_id) {
       return checkDetails[0].txn_id;
     }
+    const checkTxnId =
+      mandateCheck?.data?.transaction_id ||
+      mandateCheck?.data?.id ||
+      mandateCheck?.raw?.transaction_id ||
+      mandateCheck?.raw?.id;
+    if (checkTxnId) {
+      return String(checkTxnId);
+    }
     for (const jsonStr of [mandate?.providerResponseJson, mandate?.webhookResponseJson]) {
       if (jsonStr) {
         try {
@@ -64,10 +72,18 @@ export class EasebuzzCollectionCronService {
           if (Array.isArray(details) && details.length > 0 && details[0]?.txn_id) {
             return details[0].txn_id;
           }
+          const parsedTxId =
+            parsed?.data?.transaction_id ||
+            parsed?.transaction_id ||
+            parsed?.data?.id ||
+            parsed?.id;
+          if (parsedTxId) {
+            return String(parsedTxId);
+          }
         } catch {}
       }
     }
-    return null;
+    return mandate?.merchantTransactionId || mandate?.providerMandateId || null;
   }
 
   /**

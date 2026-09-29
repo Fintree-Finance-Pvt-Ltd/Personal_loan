@@ -115,4 +115,51 @@ describe('EasebuzzAutocollectService - Webhook Hash Verification', () => {
       expect(isValid).toBe(true);
     });
   });
+
+  describe('getMandateStatus - Transaction ID Resolution', () => {
+    it('resolves autocollectTxnId from real production response where autocollect_details is absent', async () => {
+      const prodResponse = {
+        success: true,
+        data: {
+          id: 'MR260820E94EAA',
+          submerchant_id: '',
+          transaction_id: 'PLM_000011_635473_308EFA',
+          status: 'authorized',
+          sub_status: 'SUCCESS',
+          mandate_type: 'UPI',
+          umrn: 'ca4a339e80e840758d671c082246b97f@okicici',
+        },
+      };
+
+      jest.spyOn(service, 'retrieveMandate').mockResolvedValue(prodResponse as any);
+
+      const result = await service.getMandateStatus('PLM_000011_635473_308EFA');
+
+      expect(result.isActive).toBe(true);
+      expect(result.status).toBe('AUTHORIZED');
+      expect(result.autocollectTxnId).toBe('PLM_000011_635473_308EFA');
+    });
+
+    it('resolves autocollectTxnId from autocollect_details array when present', async () => {
+      const arrayResponse = {
+        success: true,
+        data: {
+          status: 'authorized',
+          autocollect_details: [
+            {
+              txn_id: '5bffd7cf6a8a459fa7f031aa51318c1e',
+            },
+          ],
+        },
+      };
+
+      jest.spyOn(service, 'retrieveMandate').mockResolvedValue(arrayResponse as any);
+
+      const result = await service.getMandateStatus('PLM_000011_635473_308EFA');
+
+      expect(result.isActive).toBe(true);
+      expect(result.status).toBe('AUTHORIZED');
+      expect(result.autocollectTxnId).toBe('5bffd7cf6a8a459fa7f031aa51318c1e');
+    });
+  });
 });
