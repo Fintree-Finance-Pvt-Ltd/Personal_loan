@@ -15,6 +15,7 @@ function fakeBrowser() {
     state.maxOpen = Math.max(state.maxOpen, state.open);
     return {
       setContent: jest.fn().mockResolvedValue(undefined),
+      evaluateHandle: jest.fn().mockResolvedValue(undefined),
       pdf: jest.fn(() => new Promise<Uint8Array>((resolve) => state.releases.push(() => resolve(new Uint8Array([37, 80, 68, 70]))))),
       close: jest.fn(async () => {
         state.open -= 1;
