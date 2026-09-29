@@ -1000,6 +1000,7 @@ export class EasebuzzAutocollectService {
       amount: Number(Number(input.amount).toFixed(2)),
       merchant_request_number: input.merchantRequestNumber,
       notification_request_number: input.merchantRequestNumber,
+      schedule_presentment: true,
       debit_date: input.debitDate,
       udf1: input.udf1 || '',
       udf2: input.udf2 || '',
@@ -1024,17 +1025,17 @@ export class EasebuzzAutocollectService {
         const status = resData?.status ?? resData?.success;
         const isSuccess = status === true || status === 1 || String(status).toLowerCase() === 'success';
 
-        const notifNumber =
+        const returnedNotifNum =
           resData?.notification_request_number ||
           resData?.data?.notification_request_number ||
           resData?.data?.id ||
           resData?.id ||
           resData?.request_id ||
-          resData?.data?.request_id ||
-          input.merchantRequestNumber;
+          resData?.data?.request_id;
+        const notifNumber = returnedNotifNum ? String(returnedNotifNum) : undefined;
 
         if (isSuccess) {
-          this.logger.log(`[sendUpiPreDebitNotification] Successfully created notification "${notifNumber}" on ${baseUrl}`);
+          this.logger.log(`[sendUpiPreDebitNotification] Successfully created notification "${notifNumber || 'N/A'}" on ${baseUrl}`);
           return {
             success: true,
             notificationRequestNumber: notifNumber,
@@ -1494,6 +1495,8 @@ export class EasebuzzAutocollectService {
     isActive: boolean;
     status: string;
     raw?: any;
+    data?: any;
+    autocollectTxnId?: string;
   }> {
     try {
       this.logger.log(`[getMandateStatus] Checking status for Mandate TxID: "${transactionId}"`);
@@ -1503,22 +1506,37 @@ export class EasebuzzAutocollectService {
         return { isActive: false, status: 'UNKNOWN' };
       }
 
+      const resData = res.data;
       const rawStatus = String(
-        res.data.status ||
-        res.data.mandate_status ||
-        res.data.state ||
-        res.data.provider_status ||
-        res.data.model?.status ||
+        resData?.status ||
+        resData?.mandate_status ||
+        resData?.state ||
+        resData?.provider_status ||
+        resData?.model?.status ||
         ''
       ).toUpperCase();
 
       const isActive = ['AUTHORIZED', 'ACTIVE', 'COMPLETED', 'SUCCESS'].includes(rawStatus);
-      this.logger.log(`[getMandateStatus] Resolved for TxID "${transactionId}": rawStatus="${rawStatus}", isActive=${isActive}`);
+
+      // Extract AutoCollect transaction ID from autocollect_details if present
+      const autocollectList =
+        resData?.autocollect_details ||
+        resData?.data?.autocollect_details ||
+        res.sanitizedResponse?.autocollect_details ||
+        res.sanitizedResponse?.data?.autocollect_details;
+      const autocollectTxnId =
+        Array.isArray(autocollectList) && autocollectList.length > 0
+          ? (autocollectList[0]?.txn_id || autocollectList[0]?.txnid || autocollectList[0]?.transaction_id)
+          : undefined;
+
+      this.logger.log(`[getMandateStatus] Resolved for TxID "${transactionId}": rawStatus="${rawStatus}", isActive=${isActive}, autocollectTxnId="${autocollectTxnId || 'N/A'}"`);
 
       return {
         isActive,
         status: rawStatus || 'UNKNOWN',
         raw: res.sanitizedResponse,
+        data: resData,
+        autocollectTxnId,
       };
     } catch (err: any) {
       this.logger.error(`[getMandateStatus] Failed for TxID "${transactionId}": ${err?.message || err}`, err?.stack);
