@@ -43,6 +43,7 @@ export class PdfRenderer {
       const page = await browser.newPage();
       try {
         await page.setContent(html, { waitUntil: 'domcontentloaded' });
+        await page.evaluateHandle('document.fonts.ready').catch(() => undefined);
         return Buffer.from(await page.pdf(options));
       } finally {
         await page.close().catch(() => undefined);
