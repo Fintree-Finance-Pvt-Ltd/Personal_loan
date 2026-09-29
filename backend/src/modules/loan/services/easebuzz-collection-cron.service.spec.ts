@@ -370,4 +370,132 @@ describe('EasebuzzCollectionCronService', () => {
       expect(loanService.processRepayment).not.toHaveBeenCalled();
     });
   });
+
+  describe('UPI Mandate Presentment Flow', () => {
+    it('sends pre-debit notification with AutoCollect txn_id, marks IN_PROCESS, and does NOT execute immediately', async () => {
+      const mockUpiRps = {
+        id: 201n,
+        loanId: 10n,
+        lan: 'FTPL11001',
+        installmentNumber: 1,
+        dueDate: new Date('2026-10-01'),
+        remainingAmount: '4500.00',
+        paymentStatus: 'PENDING',
+        loan: {
+          id: 10n,
+          applicationId: 100n,
+          mandates: [
+            {
+              id: 77n,
+              merchantTransactionId: 'MTXN1779888991318695',
+              mandateType: PlMandateType.UPI,
+              amount: '10000.00',
+              status: PlMandateStatus.AUTHORIZED,
+            },
+          ],
+        },
+      };
+
+      prismaService.plRepaymentSchedule.findUnique.mockResolvedValue(mockUpiRps);
+      prismaService.easebuzzDebitRequest.findMany.mockResolvedValue([]);
+      easebuzzAutocollectService.getMandateStatus.mockResolvedValue({
+        isActive: true,
+        status: 'AUTHORIZED',
+        autocollectTxnId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+      });
+      easebuzzAutocollectService.sendUpiPreDebitNotification.mockResolvedValue({
+        success: true,
+        notificationRequestNumber: 'EB_NOTIF_REQ_999',
+        data: { notification_request_number: 'EB_NOTIF_REQ_999' },
+      });
+      prismaService.easebuzzDebitRequest.create.mockResolvedValue({
+        id: 501n,
+        status: 'SUBMITTING',
+        attemptNumber: 1,
+        merchantRequestNumber: 'EB_FTPL11001_201_1',
+      });
+      prismaService.easebuzzDebitRequest.update.mockResolvedValue({
+        id: 501n,
+        status: 'IN_PROCESS',
+        notificationRequestNumber: 'EB_NOTIF_REQ_999',
+      });
+
+      const res = await cronService.retryDebit(201n, 'MANUAL');
+
+      expect(res.success).toBe(true);
+      expect(res.status).toBe('IN_PROCESS');
+      expect(res.notificationRequestNumber).toBe('EB_NOTIF_REQ_999');
+
+      // Verify correct Easebuzz AutoCollect transaction ID was passed to notification
+      expect(easebuzzAutocollectService.sendUpiPreDebitNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactionId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+          amount: 4500,
+        }),
+      );
+
+      // Verify executeUpiOrSiDebit was NOT called immediately after newly created notification
+      expect(easebuzzAutocollectService.executeUpiOrSiDebit).not.toHaveBeenCalled();
+    });
+
+    it('skips sending duplicate notification and does not immediately execute if active notification exists', async () => {
+      const mockUpiRps = {
+        id: 202n,
+        loanId: 10n,
+        lan: 'FTPL11001',
+        installmentNumber: 1,
+        dueDate: new Date('2026-10-01'),
+        remainingAmount: '4500.00',
+        paymentStatus: 'PENDING',
+        loan: {
+          id: 10n,
+          applicationId: 100n,
+          mandates: [
+            {
+              id: 77n,
+              merchantTransactionId: 'MTXN1779888991318695',
+              mandateType: PlMandateType.UPI,
+              amount: '10000.00',
+              status: PlMandateStatus.AUTHORIZED,
+            },
+          ],
+        },
+      };
+
+      const existingScheduledDebit = {
+        id: 502n,
+        rpsId: 202n,
+        status: 'IN_PROCESS',
+        mandateTransactionId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+        merchantRequestNumber: 'EB_FTPL11001_202_1',
+        notificationRequestNumber: 'EB_NOTIF_REQ_EXISTING',
+        attemptNumber: 1,
+      };
+
+      prismaService.plRepaymentSchedule.findUnique.mockResolvedValue(mockUpiRps);
+      prismaService.easebuzzDebitRequest.findMany.mockResolvedValue([existingScheduledDebit]);
+      easebuzzAutocollectService.getMandateStatus.mockResolvedValue({
+        isActive: true,
+        status: 'AUTHORIZED',
+        autocollectTxnId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+      });
+      easebuzzAutocollectService.getDebitRequests.mockResolvedValue({ success: true, data: [] });
+      easebuzzAutocollectService.retrieveNotification = jest.fn().mockResolvedValue({ success: true, status: 'notified' });
+      prismaService.easebuzzDebitRequest.update.mockResolvedValue({
+        id: 502n,
+        status: 'IN_PROCESS',
+        notificationRequestNumber: 'EB_NOTIF_REQ_EXISTING',
+      });
+
+      const res = await cronService.retryDebit(202n, 'MANUAL');
+
+      expect(res.success).toBe(true);
+      expect(res.status).toBe('IN_PROCESS');
+      expect(res.notificationRequestNumber).toBe('EB_NOTIF_REQ_EXISTING');
+
+      // Verify neither notification nor execution is called again
+      expect(easebuzzAutocollectService.sendUpiPreDebitNotification).not.toHaveBeenCalled();
+      expect(easebuzzAutocollectService.executeUpiOrSiDebit).not.toHaveBeenCalled();
+    });
+  });
 });
