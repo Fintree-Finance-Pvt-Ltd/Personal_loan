@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
 
 export interface BsaAccountPayload {
@@ -1010,7 +1010,7 @@ export class BoostMoneyBsaService {
         formData.append('callbackurl', callbackUrl);
         loggedFormData['callbackurl'] = callbackUrl;
 
-        const referenceId = uuidv4();
+        const referenceId = randomUUID();
         const formHeaders =
           typeof (formData as any).getHeaders === 'function'
             ? (formData as any).getHeaders()
