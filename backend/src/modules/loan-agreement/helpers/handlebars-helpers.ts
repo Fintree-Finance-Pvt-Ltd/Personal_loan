@@ -186,4 +186,11 @@ export function registerHandlebarsHelpers(): void {
     if (!val || isNaN(Number(val))) return '';
     return numberToWords(val);
   });
+
+  Handlebars.registerHelper('firstDueDate', (repayments: any) => {
+    if (Array.isArray(repayments) && repayments.length > 0) {
+      return repayments[0].dueDateFormatted || repayments[0].dueDate || '—';
+    }
+    return '—';
+  });
 }
