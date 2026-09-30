@@ -3,6 +3,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service';
 import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 import { WhatsAppAutomationService } from '../integrations/whatsapp/whatsapp-automation.service';
+import { LosRejectionWebhookService } from '../lender-integrations/los-rejection-webhook.service';
 
 @Injectable()
 export class CreditReviewService {
@@ -13,6 +14,7 @@ export class CreditReviewService {
     @Optional() private readonly ivrAutomationService?: IvrAutomationService,
     @Optional() private readonly smsAutomationService?: SmsAutomationService,
     @Optional() private readonly whatsappAutomationService?: WhatsAppAutomationService,
+    @Optional() private readonly losRejectionWebhookService?: LosRejectionWebhookService,
   ) {}
 
   async listPending() {
@@ -200,7 +202,7 @@ export class CreditReviewService {
   }
 
   async reject(applicationId: bigint, decidedByUserId: string, reason?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const application = await tx.plApplication.findUnique({ where: { id: applicationId } });
       if (!application) throw new NotFoundException('Application not found.');
       if (application.status !== 'PENDING_CREDIT_REVIEW') {
@@ -225,5 +227,33 @@ export class CreditReviewService {
 
       return { application: updatedApplication, decidedByUserId };
     });
+
+    if (this.losRejectionWebhookService) {
+      let lan = result.application.platformLan;
+      if (!lan) {
+        const loan = await this.prisma.plLoan.findFirst({
+          where: { applicationId },
+          select: { lan: true },
+        });
+        lan = loan?.lan || result.application.applicationNumber;
+      }
+      const rejectReason =
+        result.application.lenderDecisionReason ||
+        reason?.trim() ||
+        'Application did not meet lender criteria.';
+
+      this.losRejectionWebhookService
+        .sendRejectionWebhook({
+          lan,
+          reason: rejectReason,
+          lenderId: result.application.lenderId || undefined,
+          applicationId: result.application.id,
+        })
+        .catch((err) => {
+          this.logger.warn(`Failed to dispatch rejection webhook for app #${applicationId}: ${err?.message}`);
+        });
+    }
+
+    return result;
   }
 }

@@ -24,6 +24,9 @@ import {
 import {
   LenderDecisionProcessor,
 } from './lender-decision-processor.service';
+import {
+  LosRejectionWebhookService,
+} from './los-rejection-webhook.service';
 
 import {
   LenderDocumentFileService,
@@ -93,6 +96,7 @@ import {
     LenderIntegrationService,
     LenderIntegrationWorker,
     LenderDecisionProcessor,
+    LosRejectionWebhookService,
   ],
 
   exports: [
@@ -101,6 +105,7 @@ import {
     LenderIntegrationOutboxService,
     LenderIntegrationService,
     LenderIntegrationWorker,
+    LosRejectionWebhookService,
   ],
 })
 export class LenderIntegrationModule {}

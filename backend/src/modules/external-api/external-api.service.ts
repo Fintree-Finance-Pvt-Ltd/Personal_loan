@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
@@ -24,6 +25,7 @@ import { join } from 'path';
 import { AxiosError, AxiosResponse } from 'axios';
 import * as FormData from 'form-data';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
+import { LosRejectionWebhookService } from '../lender-integrations/los-rejection-webhook.service';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { DigioBankService } from './integrations/digio-bank.service';
@@ -69,6 +71,7 @@ export class ExternalApiService {
     private readonly prisma: PrismaService,
     private readonly digioBankService: DigioBankService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
+    @Optional() private readonly losRejectionWebhookService?: LosRejectionWebhookService,
   ) {
     // PAN API Setup
     this.panApiUrl = this.configService.getOrThrow<string>('PAN_API_URL');
@@ -1243,6 +1246,39 @@ export class ExternalApiService {
             currentStep: 'KFS_ACCEPTANCE',
           },
         });
+      } else if (status === PlBankVerificationStatus.NAME_MISMATCH) {
+        const decidedAt = new Date();
+        const rejectReason = `Bank verification rejected: Bank account holder name does not match customer name (Fuzzy match score: ${fuzzyMatchScore}, threshold: ${nameMatchThreshold})`;
+
+        if (loan.applicationId) {
+          await tx.plApplication.update({
+            where: { id: loan.applicationId },
+            data: {
+              status: 'LENDER_REJECTED',
+              lenderDecisionReason: rejectReason,
+              lenderDecisionAt: decidedAt,
+            },
+          });
+        }
+
+        if (loan.customerId) {
+          await tx.customer.update({
+            where: { id: loan.customerId },
+            data: {
+              onboardingStatus: 'LENDER_REJECTED',
+              lastActivityAt: decidedAt,
+            },
+          });
+        }
+
+        await tx.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            bankVerified: false,
+            currentStep: 'BANK_VERIFICATION',
+            status: PlLoanStatus.CANCELLED,
+          },
+        });
       } else {
         await tx.plLoan.update({
           where: { id: loan.id },
@@ -1309,6 +1345,20 @@ export class ExternalApiService {
       });
     }
 
+    if (status === PlBankVerificationStatus.NAME_MISMATCH && this.losRejectionWebhookService) {
+      const rejectReason = `Bank verification rejected: Bank account holder name does not match customer name (Fuzzy match score: ${fuzzyMatchScore}, threshold: ${nameMatchThreshold})`;
+      await this.losRejectionWebhookService
+        .sendRejectionWebhook({
+          lan: loan.lan,
+          reason: rejectReason,
+          lenderId: loan.application?.lenderId || undefined,
+          applicationId: loan.applicationId,
+        })
+        .catch((err) => {
+          this.logger.warn(`Failed to dispatch rejection webhook for LAN ${loan.lan}: ${err?.message || err}`);
+        });
+    }
+
     if (status === PlBankVerificationStatus.VERIFIED) {
       return {
         success: true,
@@ -1330,9 +1380,9 @@ export class ExternalApiService {
     } else if (status === PlBankVerificationStatus.NAME_MISMATCH) {
       return {
         success: false,
-        message: 'The bank account holder name does not sufficiently match your verified identity.',
+        message: 'The bank account holder name does not sufficiently match your verified identity. Application has been rejected.',
         data: {
-          status: 'NAME_MISMATCH',
+          status: 'REJECTED',
           maskedAccountNumber: accountNumberMasked,
           fuzzyMatchScore,
         },
