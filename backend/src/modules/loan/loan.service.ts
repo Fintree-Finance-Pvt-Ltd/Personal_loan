@@ -1811,6 +1811,7 @@ export class LoanService {
       autoDebitType: config.mandateType === 'UPI' ? 'UPI' : undefined,
       mandateType: config.mandateType,
       paymentModes: config.paymentModes,
+      ...(config.mandateType === 'UPI' ? { upfrontPresentmentAmount: 1 } : {}),
       accountNumber: decryptedAccountNumber,
       ifscCode: bankIfsc,
       accountHolderName: bankAccHolder,

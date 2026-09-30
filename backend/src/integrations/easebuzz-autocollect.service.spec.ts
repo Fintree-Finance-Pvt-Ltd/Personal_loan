@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
+import axios from 'axios';
 import { EasebuzzAutocollectService } from './easebuzz-autocollect.service';
 
 describe('EasebuzzAutocollectService - Webhook Hash Verification', () => {
@@ -162,4 +163,76 @@ describe('EasebuzzAutocollectService - Webhook Hash Verification', () => {
       expect(result.autocollectTxnId).toBe('5bffd7cf6a8a459fa7f031aa51318c1e');
     });
   });
+
+  describe('generateAccessKey - Mandate Creation Payload', () => {
+    it('should include upfront_presentment_amount: 1 and set start_date to today for UPI mandate', async () => {
+      let capturedPayload: any = null;
+      jest.spyOn(axios, 'post').mockImplementation((_url: string, payload: any) => {
+        capturedPayload = payload;
+        return Promise.resolve({
+          data: {
+            status: true,
+            access_key: 'test_upi_access_key_123',
+          },
+        }) as any;
+      });
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const res = await service.generateAccessKey({
+        transactionId: 'PLM_TEST_UPI_001',
+        amount: 5000,
+        successUrl: 'https://example.com/success',
+        failureUrl: 'https://example.com/failure',
+        email: 'customer@example.com',
+        phone: '9876543210',
+        startDate: '2099-01-01',
+        endDate: '2099-12-31',
+        mandateType: 'UPI',
+        paymentModes: ['UPIAD'],
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.accessKey).toBe('test_upi_access_key_123');
+      expect(capturedPayload).toBeDefined();
+      expect(capturedPayload.upfront_presentment_amount).toBe(1);
+      expect(capturedPayload.payment_modes).toEqual(['UPIAD']);
+      expect(capturedPayload.auto_debit_type).toBe('UPI');
+      expect(capturedPayload.start_date).toBe(todayStr);
+    });
+
+    it('should not include upfront_presentment_amount for eNACH mandate and preserve future start_date', async () => {
+      let capturedPayload: any = null;
+      jest.spyOn(axios, 'post').mockImplementation((_url: string, payload: any) => {
+        capturedPayload = payload;
+        return Promise.resolve({
+          data: {
+            status: true,
+            access_key: 'test_enach_access_key_456',
+          },
+        }) as any;
+      });
+
+      const res = await service.generateAccessKey({
+        transactionId: 'PLM_TEST_ENACH_002',
+        amount: 5000,
+        successUrl: 'https://example.com/success',
+        failureUrl: 'https://example.com/failure',
+        email: 'customer@example.com',
+        phone: '9876543210',
+        startDate: '2099-01-01',
+        endDate: '2099-12-31',
+        mandateType: 'ENACH',
+        paymentModes: ['EN'],
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.accessKey).toBe('test_enach_access_key_456');
+      expect(capturedPayload).toBeDefined();
+      expect(capturedPayload.upfront_presentment_amount).toBeUndefined();
+      expect(capturedPayload.auto_debit_type).toBeUndefined();
+      expect(capturedPayload.payment_modes).toEqual(['EN']);
+      expect(capturedPayload.start_date).toBe('2099-01-01');
+    });
+  });
 });
+
