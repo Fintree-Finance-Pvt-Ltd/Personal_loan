@@ -1518,16 +1518,24 @@ export class EasebuzzAutocollectService {
 
       const isActive = ['AUTHORIZED', 'ACTIVE', 'COMPLETED', 'SUCCESS'].includes(rawStatus);
 
-      // Extract AutoCollect transaction ID from autocollect_details if present
+      // Extract AutoCollect transaction ID from autocollect_details if present, or fallback to transaction_id / id
       const autocollectList =
         resData?.autocollect_details ||
         resData?.data?.autocollect_details ||
         res.sanitizedResponse?.autocollect_details ||
         res.sanitizedResponse?.data?.autocollect_details;
-      const autocollectTxnId =
+      const autocollectTxnFromList =
         Array.isArray(autocollectList) && autocollectList.length > 0
           ? (autocollectList[0]?.txn_id || autocollectList[0]?.txnid || autocollectList[0]?.transaction_id)
           : undefined;
+
+      const autocollectTxnId =
+        autocollectTxnFromList ||
+        resData?.data?.transaction_id ||
+        resData?.transaction_id ||
+        resData?.data?.id ||
+        resData?.id ||
+        transactionId;
 
       this.logger.log(`[getMandateStatus] Resolved for TxID "${transactionId}": rawStatus="${rawStatus}", isActive=${isActive}, autocollectTxnId="${autocollectTxnId || 'N/A'}"`);
 
