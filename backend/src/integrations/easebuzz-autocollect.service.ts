@@ -24,6 +24,7 @@ export interface EasebuzzGenerateAccessKeyInput {
   autoDebitType?: string;
   mandateType?: string;
   subMerchantId?: string;
+  upfrontPresentmentAmount?: number;
   udf1?: string;
   udf2?: string;
   udf3?: string;
@@ -276,7 +277,18 @@ export class EasebuzzAutocollectService {
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const startDate = input.startDate && input.startDate >= todayStr ? input.startDate : todayStr;
+    const isUpi =
+      input.autoDebitType === 'UPI' ||
+      input.mandateType === 'UPI' ||
+      (Array.isArray(input.paymentModes) && input.paymentModes.includes('UPIAD'));
+
+    const upfrontPresentmentAmount = isUpi
+      ? (input.upfrontPresentmentAmount ?? 1)
+      : input.upfrontPresentmentAmount;
+
+    const startDate = (isUpi && upfrontPresentmentAmount !== undefined)
+      ? todayStr
+      : (input.startDate && input.startDate >= todayStr ? input.startDate : todayStr);
 
     const maskedTxId = `...${String(input.transactionId).slice(-8)}`;
     this.logger.log(`Initiating Easebuzz Autocollect access key [TxID: ${maskedTxId}, Amount: ${amountString}, SubMerchant: ${initialSubMerchantId || 'N/A'}]`);
@@ -325,7 +337,8 @@ export class EasebuzzAutocollectService {
         })(),
         amount_rule: input.amountRule || this.configService.get<string>('EASEBUZZ_MANDATE_AMOUNT_RULE') || 'MAX',
         payment_modes: input.paymentModes || ['EN'],
-        ...(input.autoDebitType || input.mandateType === 'UPI' || (input.paymentModes && input.paymentModes.includes('UPIAD')) ? { auto_debit_type: input.autoDebitType || 'UPI' } : {}),
+        ...(isUpi ? { auto_debit_type: input.autoDebitType || 'UPI' } : {}),
+        ...(upfrontPresentmentAmount !== undefined ? { upfront_presentment_amount: upfrontPresentmentAmount } : {}),
         udf1: input.udf1 || '',
         udf2: input.udf2 || '',
         udf3: input.udf3 || '',
