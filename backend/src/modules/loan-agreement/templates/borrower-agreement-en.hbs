@@ -515,15 +515,21 @@
 <p class="empty">&nbsp;</p>
 <p class="">In witness whereof, the Parties have entered into this Agreement the day and year first above written</p>
 <p class="empty">&nbsp;</p>
-<p class="">Signed, Sealed and delivered, Fintree Finance Private Limited
-</p>
-<p class="empty">&nbsp;</p>
-<p class="">Borrower Name &amp; Signature:</p>
-<p class="empty">&nbsp;</p>
-<p class="empty">&nbsp;</p>
-<p class="">Date: </p>
-<p class="empty">&nbsp;</p>
-<p class="">Digitally accepted By : </p>
+<div class="avoid-break" style="margin-top:6px;">
+  <p class="">Signed, Sealed and delivered, <strong>Fintree Finance Private Limited</strong></p>
+  <p class=""><strong>Authorized Signatory</strong></p>
+  {{#if authorizedSignatorySignature}}
+  <img src="{{authorizedSignatorySignature}}" alt="Authorized Signatory" style="height:42px;max-width:170px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{/if}}
+  <p class=""><strong>Borrower Signature</strong></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Pending Borrower Signature: {{borrower.fullName}}]</p>
+  {{/if}}
+  <p class="">Date: {{document.generatedDateFormatted}}</p>
+  <p class="">Digitally accepted By: {{#if electronicAcceptance.completed}}{{electronicAcceptance.signerName}} ({{electronicAcceptance.acceptedAtFormatted}}){{else}}{{borrower.fullName}}{{/if}}</p>
+</div>
 <div class="page-break"></div>
 <p class=""><u><strong>Repayment Schedule</strong></u></p>
 <p class="">The repayment schedule shall be system generated and shared accordingly</p>
@@ -587,9 +593,18 @@
 <p class="empty">&nbsp;</p>
 <p class=""><strong>Kind Regards,</strong></p>
 <p class="empty">&nbsp;</p>
-<p class=""><strong>_______________</strong></p>
-<p class=""><strong>Authorized Signatory: {{lender.legalName}}</strong></p>
-<p class=""><strong>Digital signature of the customer: {{borrower.fullName}}</strong></p>
+<div class="avoid-break" style="margin-top:6px;">
+  <p class=""><strong>Authorized Signatory: {{lender.legalName}}</strong></p>
+  {{#if authorizedSignatorySignature}}
+  <img src="{{authorizedSignatorySignature}}" alt="Authorized Signatory" style="height:42px;max-width:170px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{/if}}
+  <p class=""><strong>Borrower Signature: {{borrower.fullName}}</strong></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Digital signature of the customer: {{borrower.fullName}}]</p>
+  {{/if}}
+</div>
 <p class="empty">&nbsp;</p>
 <div class="page-break"></div>
 <p class="empty">&nbsp;</p>
@@ -622,9 +637,18 @@
 <p class="empty">&nbsp;</p>
 <p class=""><u>Kind Regards,</u></p>
 <p class="empty">&nbsp;</p>
-<p class=""><u>____________________</u></p>
-<p class=""><strong>Authorized Signatory: {{lender.legalName}}</strong></p>
-<p class=""><strong>Digital signature of the customer: {{borrower.fullName}}</strong></p>
+<div class="avoid-break" style="margin-top:6px;">
+  <p class=""><strong>Authorized Signatory: {{lender.legalName}}</strong></p>
+  {{#if authorizedSignatorySignature}}
+  <img src="{{authorizedSignatorySignature}}" alt="Authorized Signatory" style="height:42px;max-width:170px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{/if}}
+  <p class=""><strong>Borrower Signature: {{borrower.fullName}}</strong></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Digital signature of the customer: {{borrower.fullName}}]</p>
+  {{/if}}
+</div>
 <p class="empty">&nbsp;</p>
 <div class="page-break"></div>
 <p class="section-title"><u><strong>PROMISSORY NOTE</strong></u></p>
@@ -642,7 +666,14 @@
 <p class="">Afﬁx Revenue Stamp</p>
 <p class="">Sign across the stamp</p>
 <p class="empty">&nbsp;</p>
-<p class="section-title"><strong>{{borrower.fullName}}</strong><br/><span style="font-size:9pt;font-weight:normal;">Borrower Signature</span></p>
+<div class="avoid-break" style="text-align:center;margin:6px 0;">
+  <p class="section-title" style="margin:2mm 0;"><strong>{{borrower.fullName}}</strong><br/><span style="font-size:9pt;font-weight:normal;">Borrower Signature</span></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px auto 8px auto;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;text-align:center;">[Pending Borrower Signature]</p>
+  {{/if}}
+</div>
 <p class="empty">&nbsp;</p>
 <p class="">Witness Signature: </p>
 <p class="">Name: <strong>{{borrower.fullName}}</strong></p>
@@ -677,7 +708,14 @@
 <p class="">Thanking you.</p>
 <p class="empty">&nbsp;</p>
 <p class="">Yours Faithfully,</p>
-<p class=""><strong>{{borrower.fullName}}</strong></p>
+<div class="avoid-break" style="margin-top:6px;">
+  <p class=""><strong>{{borrower.fullName}}</strong><br/><span style="font-size:9pt;font-weight:normal;">Borrower Signature</span></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Pending Borrower Signature]</p>
+  {{/if}}
+</div>
 <p class="empty">&nbsp;</p>
 <div class="page-break"></div>
 <p class=""><u><strong>Disbursement Acknowledgement Letter</strong></u></p>
@@ -698,9 +736,15 @@
 <p class="empty">&nbsp;</p>
 <p class="">Yours Faithfully</p>
 <p class="empty">&nbsp;</p>
-<p class=""><strong>Name:</strong> {{borrower.fullName}}</p>
-<p class="empty">&nbsp;</p>
-<p class="">Signature:</p>
+<div class="avoid-break" style="margin-top:6px;">
+  <p class=""><strong>Name:</strong> {{borrower.fullName}}</p>
+  <p class=""><strong>Borrower Signature</strong></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Pending Borrower Signature]</p>
+  {{/if}}
+</div>
 <p class="empty">&nbsp;</p>
 <div class="page-break"></div>
 <p class="section-title"><strong>DECLARATION FOR THUMB IMPRESSION/SIGNING IN VERNACULAR</strong></p>
@@ -766,7 +810,14 @@
 <p class="empty">&nbsp;</p>
 <p class="empty">&nbsp;</p>
 <p class="">Yours faithfully,</p>
-<p class=""><strong>{{borrower.fullName}}</strong><br/><span style="font-size:9pt;font-weight:normal;">Borrower Signature</span></p>
+<div class="avoid-break" style="margin-top:6px;">
+  <p class=""><strong>{{borrower.fullName}}</strong><br/><span style="font-size:9pt;font-weight:normal;">Borrower Signature</span></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Pending Borrower Signature]</p>
+  {{/if}}
+</div>
 <p class="empty">&nbsp;</p>
 <div class="page-break"></div>
 <p class="section-title"><strong>CONSENT AND SELF DECLARATION</strong></p>
@@ -794,29 +845,25 @@
 <p class="text-justify">I/We hereby agree to give my/our express consent to Lender to disclose all the information and data furnished by me/us and/or to receive information from Central KYC Registry/third parties including but not limited to vendors, outsourcing agencies, business correspondents for analysing, processing, report generation, storing, record keeping or to various credit information companies/ credit bureaus e.g. Credit Information Bureaus (India) Limited (CIBIL), or to information utilities under the Insolvency Bankruptcy Code 2016 through physical or SMS or email or any other mode, in case I am not registered on the CKYC portal, I provide consent to the Lender to get me registered on the portal.</p>
 <p class="text-justify">मैं/हम एतद्द्वारा ऋणदाताओं को मेरे/हमारे द्वारा प्रस्तुत सभी सूचनाओं और डेटा का खुलासा करने और/या केंद्रीय केवाईसी रजिस्ट्री/तृतीय पक्षों से जानकारी प्राप्त करने के लिए सहमत हूं, जिसमें विक्रेताओं, आउटसोर्सिंग एजेंसियों, विश्लेषण के लिए व्यापार संवाददाताओं तक सीमित नहीं है, प्रसंस्करण, रिपोर्ट निर्माण, भंडारण, रिकॉर्ड रखने या विभिन्न क्रेडिट सूचना ब्यूरो जैसे क्रेडिट सूचना ब्यूरो (इंडिया) लिमिटेड (सीआईबीआईएल),  या भौतिक या एसएमएस या ईमेल या किसी अन्य मोड के माध्यम से दिवाला दिवालियापन संहिता 2016 के तहत सूचना उपयोगिताओं के लिए, यदि मैं CKYC पोर्टल पर पंजीकृत नहीं हूं, तो मैं ऋणदाता को पोर्टल पर मुझे पंजीकृत करने के लिए सहमति देता हूं।</p>
 <p class="empty">&nbsp;</p>
-<div class="page-break"></div>
-<div class="signature-area avoid-break">
-  <div class="signature-box">
-    {{#if authorizedSignatoryImage}}
-    <img src="{{authorizedSignatoryImage}}" alt="Authorized Signatory" style="height:42px;max-width:170px;object-fit:contain;display:block;margin:0 auto 4px;" />
-    {{/if}}
-    <div class="signature-line">Authorized Signatory</div>
+<div class="avoid-break" style="margin-top: 15px;">
+  <p class="">Yours faithfully,</p>
+  <p class=""><strong>{{borrower.fullName}}</strong><br/><span style="font-size:9pt;font-weight:normal;">Borrower Signature</span></p>
+  {{#if borrowerSignature}}
+  <img src="{{borrowerSignature}}" alt="Borrower Signature" style="height:45px;max-width:180px;object-fit:contain;display:block;margin:4px 0 8px 0;" />
+  {{else}}
+  <p class="" style="color:#6b7280;font-size:9pt;">[Pending Borrower Signature]</p>
+  {{/if}}
+  {{#if electronicAcceptance.completed}}
+  <div class="acceptance-stamp" style="margin-top: 10px;">
+    <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
+    <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
+    <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
+    <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
+    {{#if electronicAcceptance.environmentLabel}}<div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>{{/if}}
+    <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
+    <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
   </div>
-  <div class="signature-box">
-    {{#if electronicAcceptance.completed}}
-    <div class="acceptance-stamp">
-      <div class="acceptance-title">{{electronicAcceptance.stampHeading}}</div>
-      <div class="acceptance-row"><span class="acceptance-label">By:</span><span>{{electronicAcceptance.signerName}}</span></div>
-      <div class="acceptance-row"><span class="acceptance-label">Date:</span><span>{{electronicAcceptance.acceptedAtFormatted}}</span></div>
-      <div class="acceptance-row"><span class="acceptance-label">IP:</span><span>{{electronicAcceptance.ipAddress}}</span></div>
-      {{#if electronicAcceptance.environmentLabel}}<div class="acceptance-row"><span class="acceptance-label">Env:</span><span>{{electronicAcceptance.environmentLabel}}</span></div>{{/if}}
-      <div class="acceptance-row"><span class="acceptance-label">Ref:</span><span>{{electronicAcceptance.transactionReference}}</span></div>
-      <div class="acceptance-footer">{{electronicAcceptance.stampFooterText}}</div>
-    </div>
-    {{else}}
-    <div class="acceptance-stamp"><div class="acceptance-title">Electronic Acceptance</div><div>Pending borrower acceptance.</div></div>
-    {{/if}}
-  </div>
+  {{/if}}
 </div>
 
 </body></html>

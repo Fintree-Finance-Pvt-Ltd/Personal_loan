@@ -1,4 +1,7 @@
 import { Logger } from '@nestjs/common';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 // Type-only import: puppeteer itself is loaded lazily, on the first render, so it is not
 // pulled in (or parsed) by anything that merely imports this file.
 import type { Browser, PDFOptions } from 'puppeteer';
@@ -85,6 +88,7 @@ export class PdfRenderer {
             // deploys skip Puppeteer's own Chrome download - see PUPPETEER_SKIP_DOWNLOAD in
             // .env.example). Falls back to Puppeteer's bundled Chrome when it is not set.
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+            userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'puppeteer_pdf_')),
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
           }),
         )
