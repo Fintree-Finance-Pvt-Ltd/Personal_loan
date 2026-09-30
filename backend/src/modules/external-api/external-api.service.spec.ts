@@ -33,6 +33,8 @@ describe('ExternalApiService.verifyCustomerBankAccount', () => {
       plLoan: { findFirst: jest.fn().mockResolvedValue(loanRecord), update: jest.fn() },
       plBankVerification: { findFirst: jest.fn(), upsert: jest.fn().mockResolvedValue({ id: 'BV-NEW' }) },
       plLoanAuditEvent: { create: jest.fn() },
+      plApplication: { update: jest.fn() },
+      customer: { update: jest.fn() },
     };
     digioBankService = {
       verifyBankAccount: jest.fn().mockResolvedValue({
@@ -43,6 +45,9 @@ describe('ExternalApiService.verifyCustomerBankAccount', () => {
       fuzzyMatch: jest.fn(),
     };
     lenderIntegrationOutbox = { enqueueUpdateWhenReady: jest.fn().mockResolvedValue(undefined) };
+    const mockLosRejectionWebhookService: any = {
+      sendRejectionWebhook: jest.fn().mockResolvedValue(true),
+    };
 
     service = new ExternalApiService(
       {} as any,
@@ -50,6 +55,7 @@ describe('ExternalApiService.verifyCustomerBankAccount', () => {
       prisma,
       digioBankService,
       lenderIntegrationOutbox,
+      mockLosRejectionWebhookService,
     );
   });
 
@@ -112,6 +118,73 @@ describe('ExternalApiService.verifyCustomerBankAccount', () => {
     expect(digioBankService.verifyBankAccount).toHaveBeenCalledWith(expect.objectContaining({
       accountNo: '999888777666',
       ifsc: 'HDFC0000123',
+    }));
+  });
+
+  it('rejects application, cancels loan and sends rejection webhook to LMS when fuzzy match score is low (NAME_MISMATCH)', async () => {
+    digioBankService.verifyBankAccount.mockResolvedValueOnce({
+      verified: true,
+      beneficiaryNameWithBank: 'DIFFERENT PERSON NAME',
+      bankName: 'HDFC Bank',
+      branchName: 'Andheri',
+      providerReference: 'DIGIO-MISMATCH-1',
+      verifiedAt: new Date('2026-08-18T00:00:00Z'),
+      fuzzyMatchScore: 40,
+      rawResponse: {},
+    });
+
+    const mockWebhook = { sendRejectionWebhook: jest.fn().mockResolvedValue(true) };
+    const svc = new ExternalApiService(
+      {} as any,
+      configService,
+      prisma,
+      digioBankService,
+      lenderIntegrationOutbox,
+      mockWebhook as any,
+    );
+
+    const manualPayload = {
+      accountHolderName: 'Lalit Amulakh Shah',
+      accountNumber: '999888777666',
+      confirmAccountNumber: '999888777666',
+      ifscCode: 'HDFC0000123',
+      bankName: 'HDFC Bank',
+      branchName: 'Andheri',
+      accountType: 'SAVINGS',
+    };
+
+    const res = await svc.verifyCustomerBankAccount('FTPL00000005', manualPayload, { customerId: '3' });
+
+    expect(res.success).toBe(false);
+    expect(res.data.status).toBe('REJECTED');
+
+    // Verify LOS DB updates
+    expect(prisma.plApplication.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 5n },
+      data: expect.objectContaining({
+        status: 'LENDER_REJECTED',
+        lenderDecisionReason: expect.stringContaining('Bank verification rejected'),
+      }),
+    }));
+    expect(prisma.customer.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 3n },
+      data: expect.objectContaining({
+        onboardingStatus: 'LENDER_REJECTED',
+      }),
+    }));
+    expect(prisma.plLoan.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 20n },
+      data: expect.objectContaining({
+        bankVerified: false,
+        status: 'CANCELLED',
+      }),
+    }));
+
+    // Verify Webhook triggered
+    expect(mockWebhook.sendRejectionWebhook).toHaveBeenCalledWith(expect.objectContaining({
+      lan: 'FTPL00000005',
+      reason: expect.stringContaining('Fuzzy match score: 40'),
+      applicationId: 5n,
     }));
   });
 });

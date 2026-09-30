@@ -1,0 +1,192 @@
+{
+	"info": {
+		"_postman_id": "8f5a11c2-64d8-4f27-b5b6-79cfb5b9e712",
+		"name": "LOS & LMS Rejection Webhooks",
+		"description": "Collection to test and simulate Rejection Webhooks between LOS (Personal Loan Platform) and LMS (Fintree LMS).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "los_base_url",
+			"value": "https://pl-fintree-uat.fintreelms.com",
+			"type": "string"
+		},
+		{
+			"key": "lms_base_url",
+			"value": "https://finle-uat.fintreelms.com",
+			"type": "string"
+		},
+		{
+			"key": "lender_code",
+			"value": "FFPL2026",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "Fintree@2026",
+			"type": "string"
+		},
+		{
+			"key": "webhook_secret",
+			"value": "kjhfdkjhdsfijfiueri9uew98982389udewui3e989823ui2387de3huie",
+			"type": "string"
+		},
+		{
+			"key": "lan",
+			"value": "FTPL00000043",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Inbound: LMS Rejects Case -> LOS Rejection Webhook",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "x-api-key",
+						"value": "{{api_key}}"
+					},
+					{
+						"key": "X-Correlation-Id",
+						"value": "{{$guid}}"
+					},
+					{
+						"key": "Idempotency-Key",
+						"value": "{{lan}}:LMS_REJECTED"
+					},
+					{
+						"key": "x-webhook-secret",
+						"value": "{{webhook_secret}}",
+						"description": "Matches PLP_DISBURSAL_WEBHOOK_SECRET in LOS backend .env"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"stage\": \"LMS_REJECTED\",\n  \"message\": \"Loan application rejected by LMS\",\n  \"reject_reason\": \"Bank verification failed (NAME_MISMATCH) / Credit review rejected\",\n  \"rejected_by\": \"credit_manager@fintree.com\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{los_base_url}}/api/webhooks/lenders/{{lender_code}}/rejection",
+					"host": [
+						"{{los_base_url}}"
+					],
+					"path": [
+						"api",
+						"webhooks",
+						"lenders",
+						"{{lender_code}}",
+						"rejection"
+					]
+				},
+				"description": "Fin-Le-LMS dispatches this outbound webhook to LOS when a loan case is rejected."
+			},
+			"response": []
+		},
+		{
+			"name": "2. Inbound: LMS Rejects Case -> LOS Rejection Webhook (Default Path)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "x-api-key",
+						"value": "{{api_key}}"
+					},
+					{
+						"key": "X-Correlation-Id",
+						"value": "{{$guid}}"
+					},
+					{
+						"key": "Idempotency-Key",
+						"value": "{{lan}}:LMS_REJECTED"
+					},
+					{
+						"key": "x-webhook-secret",
+						"value": "{{webhook_secret}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"stage\": \"LMS_REJECTED\",\n  \"message\": \"Loan application rejected by LMS\",\n  \"reject_reason\": \"Bank verification failed (NAME_MISMATCH) / Credit review rejected\",\n  \"rejected_by\": \"credit_manager@fintree.com\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{los_base_url}}/api/webhooks/rejection",
+					"host": [
+						"{{los_base_url}}"
+					],
+					"path": [
+						"api",
+						"webhooks",
+						"rejection"
+					]
+				},
+				"description": "Fallback endpoint if lender code is omitted from path."
+			},
+			"response": []
+		},
+		{
+			"name": "3. Outbound: LOS Rejects Case -> LMS Webhook",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "x-api-key",
+						"value": "{{api_key}}"
+					},
+					{
+						"key": "X-Correlation-Id",
+						"value": "{{$guid}}"
+					},
+					{
+						"key": "Idempotency-Key",
+						"value": "{{lan}}:LOS_REJECTED"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"stage\": \"LOS_REJECTED\",\n  \"message\": \"Loan application rejected\",\n  \"reject_reason\": \"Application did not meet lender criteria.\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{lms_base_url}}/api/partner/v1/webhook",
+					"host": [
+						"{{lms_base_url}}"
+					],
+					"path": [
+						"api",
+						"partner",
+						"v1",
+						"webhook"
+					]
+				},
+				"description": "Sent by LOS to LMS when LOS rejects an application."
+			},
+			"response": []
+		}
+	]
+}

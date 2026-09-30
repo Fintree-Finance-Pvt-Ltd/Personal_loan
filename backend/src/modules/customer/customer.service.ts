@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -27,6 +28,7 @@ import { ApplicationTransitionService } from '../loan/services/application-trans
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 import { ALL_CONSENT_TYPES, CONSENT_CATALOGUE, consentTextFor } from '../lender-integrations/consent-catalogue';
 import { ProductCalculationService } from '../products/product-calculation.service';
+import { LosRejectionWebhookService } from '../lender-integrations/los-rejection-webhook.service';
 
 @Injectable()
 export class CustomerService {
@@ -41,6 +43,7 @@ export class CustomerService {
     private readonly applicationTransitionService: ApplicationTransitionService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
     private readonly productCalculationService: ProductCalculationService,
+    @Optional() private readonly losRejectionWebhookService?: LosRejectionWebhookService,
   ) {}
 
   async saveSecondaryMobile(customerId: bigint, mobileNumber: string) {
@@ -531,7 +534,7 @@ export class CustomerService {
     // These four reads depend only on customerId / latestApp, so they run together instead
     // of one after another. Only the columns actually used are selected: the payment and
     // loan rows are wide (raw provider JSON, Aadhaar fields).
-    const [latestSuccessPayment, mostRecentLoan, lender, aaRequest] = await Promise.all([
+    const [latestSuccessPayment, mostRecentLoan, lender, aaRequest, preApprovedOffer] = await Promise.all([
       latestApp
         ? this.prisma.plPaymentLink.findFirst({
             where: { customerId, applicationId: latestApp.id, purpose: 'ASSESSMENT_FEE', status: 'SUCCESS' },
@@ -556,6 +559,11 @@ export class CustomerService {
             select: { status: true },
           })
         : null,
+      // Only worth computing when the customer isn't already mid-journey on a fresh
+      // application — buildPreApprovedOffer() re-checks the loan is FULLY_PAID itself.
+      !latestApp || !ACTIVE_APPLICATION_STATUSES.includes(latestApp.status as any)
+        ? this.buildPreApprovedOffer(customerId)
+        : Promise.resolve(null),
     ]);
     const latestLoan = latestApp?.loans[0] ?? null;
     const allocatedLenderName: string | null = lender?.displayName ?? lender?.legalName ?? null;
@@ -678,6 +686,13 @@ export class CustomerService {
         latestLoanId: mostRecentLoan?.id?.toString() ?? null,
         latestLoanStatus: mostRecentLoan?.status ?? null,
         latestDisbursalStatus: mostRecentLoan?.disbursalStatus ?? null,
+        // A repeat customer who has fully repaid their last loan and isn't already
+        // mid-journey on a new one — an indicative figure (same calculator used for a real
+        // application, repriced against the product's CURRENT active version) to show on the
+        // dashboard as "pre-approved up to ₹X", so they see a reason to come back instead of
+        // starting cold. Never a lender/bureau commitment — the real amount is still decided
+        // when they actually apply.
+        preApprovedOffer,
         // Payment
         assessmentFeePaid: Boolean(latestSuccessPayment),
         latestPayment: latestSuccessPayment ? {
@@ -1343,6 +1358,20 @@ export class CustomerService {
       });
 
       if (!isPass) {
+        if (this.losRejectionWebhookService) {
+          const lan = updatedApp.platformLan || updatedApp.applicationNumber;
+          this.losRejectionWebhookService
+            .sendRejectionWebhook({
+              lan,
+              reason: failReason,
+              lenderId: updatedApp.lenderId || undefined,
+              applicationId: updatedApp.id,
+            })
+            .catch((err) => {
+              this.logger.warn(`Failed to dispatch rejection webhook for platform BRE fail: ${err?.message || err}`);
+            });
+        }
+
         const firstFailedRule = evalResult.ruleResults?.find((r: any) => r.outcome === 'FAIL' || r.outcome === 'REFER');
         return {
           outcome: 'FAIL',
@@ -1665,6 +1694,65 @@ export class CustomerService {
       daysRemaining: cooldown.daysRemaining,
       coolingOffDays: getReapplyCoolingOffDays(),
     };
+  }
+
+  /**
+   * An indicative "pre-approved up to ₹X" figure for a repeat customer whose last loan is
+   * FULLY_PAID, shown on the dashboard to give them a reason to apply again rather than
+   * starting cold. Read-only — runs the same simulate() calculator a real application uses,
+   * repriced against the product's CURRENT active version (not whatever version their last
+   * loan happened to be priced on, which may since have been superseded). Not a bureau or
+   * lender commitment: the actual amount is still decided when the lender processes the
+   * application for real. Returns null whenever there's nothing safe/meaningful to show.
+   */
+  private async buildPreApprovedOffer(customerId: bigint): Promise<{ amount: number; tenureMonths: number; currency: string } | null> {
+    const previousLoan = await this.prisma.plLoan.findFirst({
+      where: { customerId },
+      orderBy: { id: 'desc' },
+      select: { status: true, application: { select: { productStrategyVersionId: true } } },
+    });
+    if (!previousLoan || previousLoan.status !== 'FULLY_PAID' || !previousLoan.application?.productStrategyVersionId) {
+      return null;
+    }
+
+    const previousVersion = await this.prisma.lenderProductVersion.findUnique({
+      where: { id: previousLoan.application.productStrategyVersionId },
+      select: { productId: true },
+    });
+    if (!previousVersion) return null;
+
+    const currentVersion = await this.prisma.lenderProductVersion.findFirst({
+      where: { productId: previousVersion.productId, status: 'ACTIVE' },
+      include: { multipliers: true, tenures: { orderBy: { sortOrder: 'asc' } } },
+    });
+    if (!currentVersion) return null;
+
+    const validTenures = currentVersion.tenures.map((t) => t.tenure);
+    if (validTenures.length === 0) return null;
+
+    const completedLoans = await this.prisma.plLoan.count({
+      where: { customerId, status: { in: ['DISBURSED', 'FULLY_PAID'] } },
+    });
+
+    try {
+      const simulation = this.productCalculationService.simulate(
+        completedLoans,
+        validTenures[0],
+        currentVersion.maximumAmountCap.toString(),
+        currentVersion as any,
+        currentVersion.multipliers,
+        validTenures,
+      );
+      return {
+        amount: Number(simulation.finalPrincipalAmount),
+        tenureMonths: validTenures[0],
+        currency: 'INR',
+      };
+    } catch {
+      // A pricing config simulate() can't compute from (e.g. no valid amount/tenure
+      // combination) — nothing safe to show, not a reason to fail the whole getMe call.
+      return null;
+    }
   }
 
   private nextPermittedStep(input: { application: any; payment: any; link: any; outbox: any; updateReadiness: { ready: boolean; reasons: string[] }; loan: any; hasDecisionConsents: boolean; aaCompleted?: boolean }): string {

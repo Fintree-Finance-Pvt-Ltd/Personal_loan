@@ -218,6 +218,7 @@ export class WebhooksController {
 
     // Mandatory (not "if configured") — a missing secret must fail closed, not open.
     const configuredSecret =
+      this.config.get<string>('PLP_DISBURSAL_WEBHOOK_SECRET') ||
       this.config.get<string>('PL_WEBHOOK_SECRET') ||
       this.config.get<string>('DISBURSAL_WEBHOOK_SECRET');
     if (!configuredSecret) {
@@ -272,6 +273,81 @@ export class WebhooksController {
   }
 
   @Public()
+  @Post('rejection')
+  @HttpCode(HttpStatus.OK)
+  async handleDefaultRejectionWebhook(@Body() payload: any, @Req() req: Request) {
+    return this.handleLenderRejectionWebhook('DEFAULT', payload, req);
+  }
+
+  @Public()
+  @Post('lenders/:lenderCode/rejection')
+  @HttpCode(HttpStatus.OK)
+  async handleLenderRejectionWebhook(
+    @Param('lenderCode') lenderCode: string,
+    @Body() payload: any,
+    @Req() req: Request,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string) || 'UNKNOWN_IP';
+    const userAgent = req.headers['user-agent'] || '';
+
+    this.logger.log(`Received Rejection Webhook [Lender: ${lenderCode}, IP: ${clientIp}]`);
+
+    const configuredSecret =
+      this.config.get<string>('PLP_DISBURSAL_WEBHOOK_SECRET') ||
+      this.config.get<string>('PL_WEBHOOK_SECRET') ||
+      this.config.get<string>('DISBURSAL_WEBHOOK_SECRET');
+    if (!configuredSecret) {
+      this.logger.error('Rejection webhook rejected: no PLP_DISBURSAL_WEBHOOK_SECRET configured.');
+      throw new UnauthorizedException('Webhook is not configured for verification.');
+    }
+    const incomingSecret =
+      req.headers['x-webhook-secret'] ||
+      req.headers['x-pl-webhook-secret'] ||
+      req.headers['x-lender-webhook-secret'] ||
+      req.headers['x-disbursal-webhook-secret'];
+    if (!secretsMatch(incomingSecret, configuredSecret)) {
+      this.logger.warn(`Unauthorized rejection webhook request from IP ${clientIp}`);
+      throw new UnauthorizedException('Invalid rejection webhook signature/secret');
+    }
+
+    try {
+      const result = await this.webhooksService.processLenderRejectionWebhook(
+        lenderCode || 'DEFAULT',
+        payload,
+        clientIp,
+        userAgent,
+      );
+      return result;
+    } catch (error: any) {
+      this.logger.error(`Rejection webhook processing error: ${error?.message || error}`);
+
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException ||
+        error instanceof NotFoundException ||
+        error instanceof ConflictException ||
+        error instanceof UnprocessableEntityException
+      ) {
+        throw error;
+      }
+
+      if (
+        error instanceof ServiceUnavailableException ||
+        error?.message?.includes('Prisma') ||
+        error?.message?.includes('ECONNREFUSED') ||
+        error?.message?.includes('timeout')
+      ) {
+        throw new ServiceUnavailableException({
+          status: 'Error',
+          message: 'Temporary processing error. Please retry.',
+        });
+      }
+
+      throw new InternalServerErrorException('Rejection webhook processing failed.');
+    }
+  }
+
+  @Public()
   @Post('repayment')
   @HttpCode(HttpStatus.OK)
   async handleRepaymentWebhook(@Body() payload: any, @Req() req: Request) {
@@ -281,6 +357,7 @@ export class WebhooksController {
     // events with a fabricated body. The secret check stays so unauthenticated callers
     // are rejected outright rather than reaching the (now inert) service method.
     const configuredSecret =
+      this.config.get<string>('PLP_DISBURSAL_WEBHOOK_SECRET') ||
       this.config.get<string>('PL_WEBHOOK_SECRET') ||
       this.config.get<string>('DISBURSAL_WEBHOOK_SECRET');
     if (!configuredSecret) {

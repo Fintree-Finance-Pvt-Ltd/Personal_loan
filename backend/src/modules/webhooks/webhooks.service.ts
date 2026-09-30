@@ -60,6 +60,10 @@ export class WebhooksService {
     return this.loanService.processDisbursalWebhook(lenderCode, payload, ipAddress, userAgent);
   }
 
+  async processLenderRejectionWebhook(lenderCode: string, payload: any, ipAddress: string, userAgent: string) {
+    return this.loanService.processLenderRejectionWebhook(lenderCode, payload, ipAddress, userAgent);
+  }
+
   // NOTE: this route does NOT credit a repayment directly (VAPT C2 — it used to trust
   // lan/installmentNumber/amount straight from an unauthenticated request body with no
   // signature of any kind). It only reaches this far after the controller's mandatory
