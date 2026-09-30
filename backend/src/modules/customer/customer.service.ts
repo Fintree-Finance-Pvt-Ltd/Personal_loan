@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -27,6 +28,7 @@ import { ApplicationTransitionService } from '../loan/services/application-trans
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
 import { ALL_CONSENT_TYPES, CONSENT_CATALOGUE, consentTextFor } from '../lender-integrations/consent-catalogue';
 import { ProductCalculationService } from '../products/product-calculation.service';
+import { LosRejectionWebhookService } from '../lender-integrations/los-rejection-webhook.service';
 
 @Injectable()
 export class CustomerService {
@@ -41,6 +43,7 @@ export class CustomerService {
     private readonly applicationTransitionService: ApplicationTransitionService,
     private readonly lenderIntegrationOutbox: LenderIntegrationOutboxService,
     private readonly productCalculationService: ProductCalculationService,
+    @Optional() private readonly losRejectionWebhookService?: LosRejectionWebhookService,
   ) {}
 
   async saveSecondaryMobile(customerId: bigint, mobileNumber: string) {
@@ -1355,6 +1358,20 @@ export class CustomerService {
       });
 
       if (!isPass) {
+        if (this.losRejectionWebhookService) {
+          const lan = updatedApp.platformLan || updatedApp.applicationNumber;
+          this.losRejectionWebhookService
+            .sendRejectionWebhook({
+              lan,
+              reason: failReason,
+              lenderId: updatedApp.lenderId || undefined,
+              applicationId: updatedApp.id,
+            })
+            .catch((err) => {
+              this.logger.warn(`Failed to dispatch rejection webhook for platform BRE fail: ${err?.message || err}`);
+            });
+        }
+
         const firstFailedRule = evalResult.ruleResults?.find((r: any) => r.outcome === 'FAIL' || r.outcome === 'REFER');
         return {
           outcome: 'FAIL',

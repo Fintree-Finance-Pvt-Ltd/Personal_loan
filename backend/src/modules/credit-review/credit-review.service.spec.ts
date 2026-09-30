@@ -178,5 +178,24 @@ describe('CreditReviewService', () => {
       const { service } = buildService({ ...pendingApplication, status: 'LENDER_REJECTED' });
       await expect(service.reject(1n, 'USER-1')).rejects.toThrow(BadRequestException);
     });
+
+    it('triggers rejection webhook with actual reason and LAN after rejection is saved', async () => {
+      const mockWebhookService = {
+        sendRejectionWebhook: jest.fn().mockResolvedValue(true),
+      };
+      const { tx } = buildService();
+      const prisma: any = { $transaction: jest.fn(async (callback: any) => callback(tx)) };
+      const service = new CreditReviewService(prisma, undefined, undefined, undefined, mockWebhookService as any);
+
+      await service.reject(1n, 'USER-1', 'Insufficient CIBIL score');
+
+      expect(tx.plApplication.update).toHaveBeenCalled();
+      expect(mockWebhookService.sendRejectionWebhook).toHaveBeenCalledWith({
+        lan: 'FTPL00000001',
+        reason: 'Credit review rejected: Insufficient CIBIL score',
+        lenderId: 'LENDER-1',
+        applicationId: 1n,
+      });
+    });
   });
 });

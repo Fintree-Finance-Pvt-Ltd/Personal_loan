@@ -1,13 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LenderIntegrationError } from './lender-integration.errors';
 import { LenderDecisionResult } from './lender-integration.types';
+import { LosRejectionWebhookService } from './los-rejection-webhook.service';
 
 @Injectable()
 export class LenderDecisionProcessor {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly losRejectionWebhookService?: LosRejectionWebhookService,
+  ) {}
 
   /**
    * @param canPollStatus whether the lender's adapter actually implements status polling.
@@ -15,6 +19,13 @@ export class LenderDecisionProcessor {
    *   adapter that cannot poll manufactures an event guaranteed to fail permanently.
    */
   async process(eventId: string, lockToken: string, partnerApplicationId: string, result: LenderDecisionResult, canPollStatus = true): Promise<void> {
+    let rejectionWebhookData: {
+      lan: string;
+      reason: string;
+      lenderId?: string;
+      applicationId?: bigint;
+    } | null = null;
+
     await this.prisma.$transaction(async (tx) => {
       const event = await tx.lenderIntegrationOutbox.findFirst({ where: { id: eventId, status: 'PROCESSING', lockToken } });
       if (!event) throw new LenderIntegrationError('LENDER_EVENT_LEASE_LOST', 'Lender event lease is no longer owned by this worker.', 'TEMPORARY', true);
@@ -74,9 +85,17 @@ export class LenderDecisionProcessor {
         // A rejection is terminal at either stage — no PlLoan, no bank/mandate journey.
         const coolingOffDays = Math.max(0, result.coolingOffDays ?? 0);
         const coolingOffUntil = coolingOffDays ? new Date(decidedAt.getTime() + coolingOffDays * 24 * 60 * 60 * 1000) : null;
-        await tx.lenderApplicationLink.update({ where: { id: link.id }, data: { normalizedDecision: 'REJECTED', decisionStatus: 'COMPLETED', lastSyncedStage: event.integrationStage, lastResponseStatus: result.providerStatus, lastSuccessAt: decidedAt, lastErrorCode: null, lastErrorMessage: null, rejectionReasonCode: result.rejectionReasonCode?.slice(0, 100) || 'LENDER_CRITERIA_NOT_MET' } });
+        const rejectReason = result.rejectionReasonCode?.slice(0, 100) || 'Application did not meet lender criteria.';
+        await tx.lenderApplicationLink.update({ where: { id: link.id }, data: { normalizedDecision: 'REJECTED', decisionStatus: 'COMPLETED', lastSyncedStage: event.integrationStage, lastResponseStatus: result.providerStatus, lastSuccessAt: decidedAt, lastErrorCode: null, lastErrorMessage: null, rejectionReasonCode: rejectReason } });
         await tx.plApplication.update({ where: { id: application.id }, data: { status: 'LENDER_REJECTED', lenderDecisionReference: result.decisionReference, lenderDecisionAt: decidedAt, lenderDecisionReason: 'Application did not meet lender criteria.', lenderCoolingOffDays: coolingOffDays, lenderCoolingOffUntil: coolingOffUntil, lenderNextStatusCheckAt: null } });
         await tx.customer.update({ where: { id: application.customerId }, data: { onboardingStatus: 'LENDER_REJECTED', lastActivityAt: decidedAt } });
+
+        rejectionWebhookData = {
+          lan: application.platformLan || application.applicationNumber,
+          reason: rejectReason,
+          lenderId: application.lenderId || undefined,
+          applicationId: application.id,
+        };
       } else if (result.decision === 'PENDING') {
         const nextStatusCheckAt = result.nextStatusCheckAt ? new Date(result.nextStatusCheckAt) : new Date(decidedAt.getTime() + 5 * 60 * 1000);
         if (Number.isNaN(nextStatusCheckAt.getTime())) throw new LenderIntegrationError('LENDER_PENDING_DATE_INVALID', 'Lender pending response contained an invalid next status time.', 'PERMANENT_VALIDATION');
@@ -106,6 +125,12 @@ export class LenderDecisionProcessor {
       }
       await this.completeEvent(tx, eventId, lockToken);
     });
+
+    if (rejectionWebhookData && this.losRejectionWebhookService) {
+      await this.losRejectionWebhookService
+        .sendRejectionWebhook(rejectionWebhookData)
+        .catch(() => {});
+    }
   }
 
   private async completeEvent(tx: Prisma.TransactionClient, eventId: string, lockToken: string) {
