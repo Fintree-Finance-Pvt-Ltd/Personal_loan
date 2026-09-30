@@ -214,6 +214,13 @@ export default function CustomerDashboard() {
   const isFullyPaidRepeatCustomer =
     backendCustomer?.latestLoanStatus === 'FULLY_PAID';
 
+  // Indicative only (see backend buildPreApprovedOffer) — never shown as a lender commitment,
+  // just a reason for a repeat, fully-repaid customer to come back instead of applying cold.
+  const preApprovedOffer =
+    isFullyPaidRepeatCustomer && backendCustomer?.preApprovedOffer
+      ? backendCustomer.preApprovedOffer
+      : null;
+
   const handleApplicationButton = async () => {
     if (isFullyPaidRepeatCustomer) {
       await resumeApplication(customerId);
@@ -288,7 +295,9 @@ export default function CustomerDashboard() {
   const firstName =
     applicant.fullName?.trim()?.split(/\s+/)?.[0] || 'there';
 
-  const headline = isFullyPaidRepeatCustomer
+  const headline = preApprovedOffer
+    ? `You're pre-approved for up to ${formatCurrency(preApprovedOffer.amount)}!`
+    : isFullyPaidRepeatCustomer
     ? 'Your loan is fully repaid.'
     : isDisbursed
     ? 'Your loan has been disbursed.'
@@ -300,7 +309,9 @@ export default function CustomerDashboard() {
     ? 'Pick up where you left off.'
     : 'Your personal loan starts here.';
 
-  const subline = isFullyPaidRepeatCustomer
+  const subline = preApprovedOffer
+    ? "Your great repayment record has unlocked this offer, just for you. Apply now — it only takes a few minutes."
+    : isFullyPaidRepeatCustomer
     ? 'Well done on clearing your loan. You can start a new application whenever you need to borrow again.'
     : isDisbursed
     ? 'The funds are on their way to your account. View your loan details for repayment dates and EMI.'
@@ -357,6 +368,12 @@ export default function CustomerDashboard() {
                 <ShieldCheck size={13} />
                 Secure session
               </span>
+              {preApprovedOffer && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#9BE3B5] px-3 py-1 text-xs font-bold text-[#0E3B2C] ring-1 ring-white/40">
+                  <BadgeCheck size={13} />
+                  Pre-approved
+                </span>
+              )}
             </div>
 
             <h1 className="mt-5 max-w-xl text-[2rem] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[2.6rem]">
