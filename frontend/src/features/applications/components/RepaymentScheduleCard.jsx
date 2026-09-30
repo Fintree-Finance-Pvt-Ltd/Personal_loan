@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, RefreshCw, Zap } from 'lucide-react';
+import { Bell, CheckCircle2, Loader2, RefreshCw, Zap } from 'lucide-react';
 import { Alert, Badge, Button, Panel, TableShell } from '../../../components/ui';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
@@ -47,25 +47,50 @@ export function RepaymentScheduleCard({
     (m) => m.status === 'AUTHORIZED' || m.status === 'COMPLETED',
   ) || mandates[0];
 
-  const handleRetryDebit = async (schedule) => {
+  const handleSendNotification = async (schedule) => {
     if (!canManage) return;
-    const confirmMsg = `Initiate AutoCollect Mandate Presentment (Debit Request) for LAN ${lan} - Installment #${schedule.installmentNumber} of ${formatCurrency(schedule.remainingAmount || schedule.emi)}?`;
+    const confirmMsg = `Send pre-debit notification to customer for LAN ${lan} - Installment #${schedule.installmentNumber} (${formatCurrency(schedule.remainingAmount || schedule.emi)})?`;
     if (!window.confirm(confirmMsg)) return;
 
-    setProcessingRpsId(schedule.id);
+    setProcessingRpsId(`notif_${schedule.id}`);
     setMessage(null);
 
     try {
-      const res = await applicationsApi.retryDebit(schedule.id);
+      const res = await applicationsApi.sendNotification(schedule.id);
       setMessage({
         type: 'success',
-        text: res?.message || `Debit Request dispatched successfully! Status: ${res?.status || 'IN_PROCESS'}`,
+        text: res?.message || 'Pre-debit notification sent successfully to customer!',
       });
       if (onChanged) onChanged();
     } catch (err) {
       setMessage({
-        type: 'error',
-        text: apiError(err, 'Failed to trigger mandate debit request.'),
+        type: 'danger',
+        text: apiError(err, 'Failed to send pre-debit notification.'),
+      });
+    } finally {
+      setProcessingRpsId(null);
+    }
+  };
+
+  const handleExecuteMandate = async (schedule) => {
+    if (!canManage) return;
+    const confirmMsg = `Execute mandate debit of ${formatCurrency(schedule.remainingAmount || schedule.emi)} for Installment #${schedule.installmentNumber}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setProcessingRpsId(`exec_${schedule.id}`);
+    setMessage(null);
+
+    try {
+      const res = await applicationsApi.executeMandate(schedule.id);
+      setMessage({
+        type: res?.status === 'SUCCESS' ? 'success' : res?.status === 'FAILURE' ? 'danger' : 'info',
+        text: res?.message || `Mandate execution initiated: ${res?.status || 'IN_PROCESS'}`,
+      });
+      if (onChanged) onChanged();
+    } catch (err) {
+      setMessage({
+        type: 'danger',
+        text: apiError(err, 'Failed to execute mandate debit.'),
       });
     } finally {
       setProcessingRpsId(null);
@@ -86,7 +111,7 @@ export function RepaymentScheduleCard({
       if (onChanged) onChanged();
     } catch (err) {
       setMessage({
-        type: 'error',
+        type: 'danger',
         text: apiError(err, 'Failed to reconcile debit status.'),
       });
     } finally {
@@ -146,9 +171,17 @@ export function RepaymentScheduleCard({
           <tbody className="divide-y divide-neutral-100">
             {schedules.map((schedule) => {
               const isPaid = schedule.paymentStatus === 'PAID';
-              const isProcessing = processingRpsId === schedule.id;
+              const isNotifying = processingRpsId === `notif_${schedule.id}`;
+              const isExecuting = processingRpsId === `exec_${schedule.id}`;
               const isReconciling = processingRpsId === `rec_${schedule.id}`;
+              const isAnyProcessing = Boolean(processingRpsId);
               const debit = schedule.latestDebitRequest;
+
+              const isCustomerNotified = Boolean(
+                debit?.notificationRequestNumber ||
+                (debit?.failureReason && debit.failureReason.toLowerCase().includes('pre-debit notification active')) ||
+                (activeMandate?.mandateType && activeMandate.mandateType !== 'UPI')
+              );
 
               return (
                 <tr key={schedule.id} className="hover:bg-neutral-50/70">
@@ -162,11 +195,16 @@ export function RepaymentScheduleCard({
                   <td className="px-4 py-3">
                     {debit ? (
                       <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <Badge tone={DEBIT_STATUS_TONE[debit.status] || 'danger'}>{debit.status}</Badge>
                           <span className="text-xs text-neutral-500">
                             (Attempt #{debit.attemptNumber})
                           </span>
+                          {isCustomerNotified && (
+                            <span className="inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-700">
+                              <CheckCircle2 size={11} /> Notified
+                            </span>
+                          )}
                         </div>
                         {debit.failureReason && (
                           <p className="max-w-xs truncate text-xs text-danger-600" title={debit.failureReason}>
@@ -179,13 +217,13 @@ export function RepaymentScheduleCard({
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center justify-end gap-2">
+                    <div className="inline-flex flex-wrap items-center justify-end gap-2">
                       {debit && canManage && (
                         <Button
                           type="button"
                           variant="secondary"
                           size="sm"
-                          disabled={isProcessing || isReconciling}
+                          disabled={isAnyProcessing}
                           onClick={() => handleReconcileDebit(schedule)}
                           title="Check live status from Easebuzz"
                         >
@@ -204,25 +242,56 @@ export function RepaymentScheduleCard({
                       )}
 
                       {!isPaid && canManage && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={isProcessing || isReconciling || !activeMandate}
-                          onClick={() => handleRetryDebit(schedule)}
-                          title="Trigger AutoCollect Debit API"
-                        >
-                          {isProcessing ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin" />
-                              Presenting…
-                            </>
-                          ) : (
-                            <>
-                              <Zap size={13} />
-                              Present / debit now
-                            </>
-                          )}
-                        </Button>
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={isAnyProcessing || !activeMandate}
+                            onClick={() => handleSendNotification(schedule)}
+                            title={
+                              isCustomerNotified
+                                ? 'Customer already notified. Click to re-send notification.'
+                                : 'Send pre-debit notification to customer'
+                            }
+                          >
+                            {isNotifying ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin" />
+                                Sending…
+                              </>
+                            ) : (
+                              <>
+                                <Bell size={13} />
+                                Send notification
+                              </>
+                            )}
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={!isCustomerNotified || isAnyProcessing || !activeMandate}
+                            onClick={() => handleExecuteMandate(schedule)}
+                            title={
+                              !isCustomerNotified
+                                ? 'Send notification to customer first before executing mandate'
+                                : 'Execute mandate debit presentment'
+                            }
+                          >
+                            {isExecuting ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin" />
+                                Executing…
+                              </>
+                            ) : (
+                              <>
+                                <Zap size={13} />
+                                Execute mandate
+                              </>
+                            )}
+                          </Button>
+                        </>
                       )}
                     </div>
                   </td>

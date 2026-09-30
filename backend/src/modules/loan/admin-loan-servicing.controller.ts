@@ -111,6 +111,26 @@ export class AdminLoanServicingController {
   }
 
   @Permissions('LOAN_MANAGE')
+  @Post('repayment-schedule/:rpsId/send-notification')
+  @HttpCode(HttpStatus.OK)
+  sendNotification(@Param('rpsId') rpsId: string) {
+    if (!/^[1-9][0-9]*$/.test(rpsId)) {
+      throw new BadRequestException('Invalid repayment schedule ID.');
+    }
+    return this.easebuzzCollectionCronService.sendPreDebitNotification(rpsId);
+  }
+
+  @Permissions('LOAN_MANAGE')
+  @Post('repayment-schedule/:rpsId/execute-mandate')
+  @HttpCode(HttpStatus.OK)
+  executeMandate(@Param('rpsId') rpsId: string) {
+    if (!/^[1-9][0-9]*$/.test(rpsId)) {
+      throw new BadRequestException('Invalid repayment schedule ID.');
+    }
+    return this.easebuzzCollectionCronService.executeMandate(rpsId, 'MANUAL');
+  }
+
+  @Permissions('LOAN_MANAGE')
   @Post('repayment-schedule/:rpsId/retry-debit')
   @HttpCode(HttpStatus.OK)
   retryDebit(@Param('rpsId') rpsId: string) {

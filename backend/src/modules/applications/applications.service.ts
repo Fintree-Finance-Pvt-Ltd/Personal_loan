@@ -594,6 +594,7 @@ export class ApplicationsService {
                 ? {
                     id: s.debitRequests[0].id.toString(),
                     merchantRequestNumber: s.debitRequests[0].merchantRequestNumber,
+                    notificationRequestNumber: s.debitRequests[0].notificationRequestNumber,
                     status: s.debitRequests[0].status,
                     amount: s.debitRequests[0].amount?.toNumber() ?? null,
                     attemptNumber: s.debitRequests[0].attemptNumber,

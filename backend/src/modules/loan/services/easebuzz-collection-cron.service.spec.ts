@@ -497,5 +497,154 @@ describe('EasebuzzCollectionCronService', () => {
       expect(easebuzzAutocollectService.sendUpiPreDebitNotification).not.toHaveBeenCalled();
       expect(easebuzzAutocollectService.executeUpiOrSiDebit).not.toHaveBeenCalled();
     });
+
+    it('sendPreDebitNotification sends pre-debit notification for UPI mandate', async () => {
+      const mockUpiRps = {
+        id: 203n,
+        loanId: 10n,
+        lan: 'FTPL11001',
+        installmentNumber: 1,
+        dueDate: new Date('2026-10-01'),
+        remainingAmount: '4500.00',
+        paymentStatus: 'PENDING',
+        loan: {
+          id: 10n,
+          applicationId: 100n,
+          mandates: [
+            {
+              id: 77n,
+              merchantTransactionId: 'MTXN1779888991318695',
+              mandateType: PlMandateType.UPI,
+              amount: '10000.00',
+              status: PlMandateStatus.AUTHORIZED,
+            },
+          ],
+        },
+      };
+
+      prismaService.plRepaymentSchedule.findUnique.mockResolvedValue(mockUpiRps);
+      prismaService.easebuzzDebitRequest.findMany.mockResolvedValue([]);
+      easebuzzAutocollectService.getMandateStatus.mockResolvedValue({
+        isActive: true,
+        status: 'AUTHORIZED',
+        autocollectTxnId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+      });
+      easebuzzAutocollectService.sendUpiPreDebitNotification.mockResolvedValue({
+        success: true,
+        notificationRequestNumber: 'EB_NOTIF_REQ_203',
+      });
+      prismaService.easebuzzDebitRequest.create.mockResolvedValue({
+        id: 503n,
+        status: 'IN_PROCESS',
+        notificationRequestNumber: 'EB_NOTIF_REQ_203',
+      });
+
+      const res = await cronService.sendPreDebitNotification(203n);
+
+      expect(res.success).toBe(true);
+      expect(res.status).toBe('IN_PROCESS');
+      expect(res.notificationRequestNumber).toBe('EB_NOTIF_REQ_203');
+      expect(easebuzzAutocollectService.sendUpiPreDebitNotification).toHaveBeenCalled();
+    });
+
+    it('executeMandate throws BadRequestException if customer not yet notified for UPI mandate', async () => {
+      const mockUpiRps = {
+        id: 204n,
+        loanId: 10n,
+        lan: 'FTPL11001',
+        installmentNumber: 1,
+        dueDate: new Date('2026-10-01'),
+        remainingAmount: '4500.00',
+        paymentStatus: 'PENDING',
+        loan: {
+          id: 10n,
+          applicationId: 100n,
+          mandates: [
+            {
+              id: 77n,
+              merchantTransactionId: 'MTXN1779888991318695',
+              mandateType: PlMandateType.UPI,
+              amount: '10000.00',
+              status: PlMandateStatus.AUTHORIZED,
+            },
+          ],
+        },
+      };
+
+      prismaService.plRepaymentSchedule.findUnique.mockResolvedValue(mockUpiRps);
+      prismaService.easebuzzDebitRequest.findMany.mockResolvedValue([]);
+      easebuzzAutocollectService.getMandateStatus.mockResolvedValue({
+        isActive: true,
+        status: 'AUTHORIZED',
+        autocollectTxnId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+      });
+
+      await expect(cronService.executeMandate(204n, 'MANUAL')).rejects.toThrow(
+        /Customer has not been notified yet/,
+      );
+    });
+
+    it('executeMandate calls executeUpiOrSiDebit when customer is notified', async () => {
+      const mockUpiRps = {
+        id: 205n,
+        loanId: 10n,
+        lan: 'FTPL11001',
+        installmentNumber: 1,
+        dueDate: new Date('2026-10-01'),
+        remainingAmount: '4500.00',
+        paymentStatus: 'PENDING',
+        loan: {
+          id: 10n,
+          applicationId: 100n,
+          mandates: [
+            {
+              id: 77n,
+              merchantTransactionId: 'MTXN1779888991318695',
+              mandateType: PlMandateType.UPI,
+              amount: '10000.00',
+              status: PlMandateStatus.AUTHORIZED,
+            },
+          ],
+        },
+      };
+
+      const existingNotifiedDebit = {
+        id: 505n,
+        rpsId: 205n,
+        status: 'IN_PROCESS',
+        mandateTransactionId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+        merchantRequestNumber: 'EB_FTPL11001_205_1',
+        notificationRequestNumber: 'EB_NOTIF_ACTIVE_205',
+        attemptNumber: 1,
+      };
+
+      prismaService.plRepaymentSchedule.findUnique.mockResolvedValue(mockUpiRps);
+      prismaService.easebuzzDebitRequest.findMany.mockResolvedValue([existingNotifiedDebit]);
+      easebuzzAutocollectService.getMandateStatus.mockResolvedValue({
+        isActive: true,
+        status: 'AUTHORIZED',
+        autocollectTxnId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+      });
+      easebuzzAutocollectService.getDebitRequests.mockResolvedValue({ success: true, data: [] });
+      easebuzzAutocollectService.executeUpiOrSiDebit.mockResolvedValue({
+        success: true,
+        data: { status: 'IN_PROCESS' },
+      });
+      prismaService.easebuzzDebitRequest.update.mockResolvedValue({
+        id: 505n,
+        status: 'IN_PROCESS',
+      });
+
+      const res = await cronService.executeMandate(205n, 'MANUAL');
+
+      expect(res.success).toBe(true);
+      expect(easebuzzAutocollectService.executeUpiOrSiDebit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactionId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+          amount: 4500,
+          notificationRequestNumber: 'EB_NOTIF_ACTIVE_205',
+        }),
+      );
+    });
   });
 });

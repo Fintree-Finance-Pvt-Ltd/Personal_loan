@@ -9,6 +9,8 @@ describe('AdminLoanServicingController', () => {
     };
     const cronService: any = {
       retryDebit: jest.fn().mockResolvedValue({ success: true, status: 'IN_PROCESS' }),
+      sendPreDebitNotification: jest.fn().mockResolvedValue({ success: true, status: 'IN_PROCESS', notificationRequestNumber: 'NOTIF_123' }),
+      executeMandate: jest.fn().mockResolvedValue({ success: true, status: 'IN_PROCESS' }),
     };
     const autocollectService: any = {
       getDebitRequests: jest.fn(),
@@ -64,5 +66,35 @@ describe('AdminLoanServicingController', () => {
 
     expect(() => controller.retryDebit('abc')).toThrow(BadRequestException);
     expect(cronService.retryDebit).not.toHaveBeenCalled();
+  });
+
+  it('sendNotification delegates to easebuzzCollectionCronService for valid rpsId', async () => {
+    const { controller, cronService } = buildController();
+
+    const res = await controller.sendNotification('92');
+    expect(res).toEqual({ success: true, status: 'IN_PROCESS', notificationRequestNumber: 'NOTIF_123' });
+    expect(cronService.sendPreDebitNotification).toHaveBeenCalledWith('92');
+  });
+
+  it('sendNotification throws BadRequestException for non-numeric rpsId', () => {
+    const { controller, cronService } = buildController();
+
+    expect(() => controller.sendNotification('xyz')).toThrow(BadRequestException);
+    expect(cronService.sendPreDebitNotification).not.toHaveBeenCalled();
+  });
+
+  it('executeMandate delegates to easebuzzCollectionCronService for valid rpsId', async () => {
+    const { controller, cronService } = buildController();
+
+    const res = await controller.executeMandate('92');
+    expect(res).toEqual({ success: true, status: 'IN_PROCESS' });
+    expect(cronService.executeMandate).toHaveBeenCalledWith('92', 'MANUAL');
+  });
+
+  it('executeMandate throws BadRequestException for non-numeric rpsId', () => {
+    const { controller, cronService } = buildController();
+
+    expect(() => controller.executeMandate('invalid')).toThrow(BadRequestException);
+    expect(cronService.executeMandate).not.toHaveBeenCalled();
   });
 });
