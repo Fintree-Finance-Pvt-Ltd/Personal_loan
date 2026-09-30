@@ -7,13 +7,13 @@
 	},
 	"variable": [
 		{
-			"key": "lms_base_url",
-			"value": "https://finle-uat.fintreelms.com",
+			"key": "los_base_url",
+			"value": "https://pl-fintree-uat.fintreelms.com",
 			"type": "string"
 		},
 		{
-			"key": "los_base_url",
-			"value": "https://pl-fintree-uat.fintreelms.com",
+			"key": "lms_base_url",
+			"value": "https://finle-uat.fintreelms.com",
 			"type": "string"
 		},
 		{
@@ -39,7 +39,7 @@
 	],
 	"item": [
 		{
-			"name": "1. LOS -> LMS Rejection Webhook (What LOS sends to LMS)",
+			"name": "1. Inbound: LMS Rejects Case -> LOS Rejection Webhook",
 			"request": {
 				"method": "POST",
 				"header": [
@@ -49,18 +49,118 @@
 					},
 					{
 						"key": "x-api-key",
-						"value": "{{api_key}}",
-						"description": "API Key configured in FINTREE_API_KEY or LMS_API_KEY"
+						"value": "{{api_key}}"
 					},
 					{
 						"key": "X-Correlation-Id",
-						"value": "{{$guid}}",
-						"description": "Unique UUID for request tracing"
+						"value": "{{$guid}}"
 					},
 					{
 						"key": "Idempotency-Key",
-						"value": "{{lan}}:LOS_REJECTED",
-						"description": "Prevents duplicate rejection processing"
+						"value": "{{lan}}:LMS_REJECTED"
+					},
+					{
+						"key": "x-webhook-secret",
+						"value": "{{webhook_secret}}",
+						"description": "Matches PLP_DISBURSAL_WEBHOOK_SECRET in LOS backend .env"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"stage\": \"LMS_REJECTED\",\n  \"message\": \"Loan application rejected by LMS\",\n  \"reject_reason\": \"Bank verification failed (NAME_MISMATCH) / Credit review rejected\",\n  \"rejected_by\": \"credit_manager@fintree.com\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{los_base_url}}/api/webhooks/lenders/{{lender_code}}/rejection",
+					"host": [
+						"{{los_base_url}}"
+					],
+					"path": [
+						"api",
+						"webhooks",
+						"lenders",
+						"{{lender_code}}",
+						"rejection"
+					]
+				},
+				"description": "Fin-Le-LMS dispatches this outbound webhook to LOS when a loan case is rejected."
+			},
+			"response": []
+		},
+		{
+			"name": "2. Inbound: LMS Rejects Case -> LOS Rejection Webhook (Default Path)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "x-api-key",
+						"value": "{{api_key}}"
+					},
+					{
+						"key": "X-Correlation-Id",
+						"value": "{{$guid}}"
+					},
+					{
+						"key": "Idempotency-Key",
+						"value": "{{lan}}:LMS_REJECTED"
+					},
+					{
+						"key": "x-webhook-secret",
+						"value": "{{webhook_secret}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"stage\": \"LMS_REJECTED\",\n  \"message\": \"Loan application rejected by LMS\",\n  \"reject_reason\": \"Bank verification failed (NAME_MISMATCH) / Credit review rejected\",\n  \"rejected_by\": \"credit_manager@fintree.com\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{los_base_url}}/api/webhooks/rejection",
+					"host": [
+						"{{los_base_url}}"
+					],
+					"path": [
+						"api",
+						"webhooks",
+						"rejection"
+					]
+				},
+				"description": "Fallback endpoint if lender code is omitted from path."
+			},
+			"response": []
+		},
+		{
+			"name": "3. Outbound: LOS Rejects Case -> LMS Webhook",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "x-api-key",
+						"value": "{{api_key}}"
+					},
+					{
+						"key": "X-Correlation-Id",
+						"value": "{{$guid}}"
+					},
+					{
+						"key": "Idempotency-Key",
+						"value": "{{lan}}:LOS_REJECTED"
 					}
 				],
 				"body": {
@@ -84,87 +184,7 @@
 						"webhook"
 					]
 				},
-				"description": "Simulate the exact webhook payload sent by LOS when an application is rejected in Credit Review, Bank verification name mismatch, or Lender policy decline."
-			},
-			"response": []
-		},
-		{
-			"name": "2. LMS -> LOS Disbursal Rejection (Lender Specific)",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					},
-					{
-						"key": "x-pl-webhook-secret",
-						"value": "{{webhook_secret}}",
-						"description": "Secret configured in PL_WEBHOOK_SECRET or DISBURSAL_WEBHOOK_SECRET"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"DisbursalUTR\": \"REJ_{{$timestamp}}\",\n  \"DisbursalDate\": \"2026-09-30\",\n  \"DisbursedAmount\": 5000,\n  \"RepaymentDate\": \"2026-10-30\"\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{los_base_url}}/api/webhooks/lenders/{{lender_code}}/disbursal",
-					"host": [
-						"{{los_base_url}}"
-					],
-					"path": [
-						"api",
-						"webhooks",
-						"lenders",
-						"{{lender_code}}",
-						"disbursal"
-					]
-				},
-				"description": "Simulate LMS/Lender notifying LOS that disbursal was rejected/failed for a loan."
-			},
-			"response": []
-		},
-		{
-			"name": "3. LMS -> LOS Disbursal Rejection (Default Route)",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					},
-					{
-						"key": "x-pl-webhook-secret",
-						"value": "{{webhook_secret}}",
-						"description": "Secret configured in PL_WEBHOOK_SECRET or DISBURSAL_WEBHOOK_SECRET"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"lan\": \"{{lan}}\",\n  \"status\": \"REJECTED\",\n  \"DisbursalUTR\": \"REJ_{{$timestamp}}\",\n  \"DisbursalDate\": \"2026-09-30\",\n  \"DisbursedAmount\": 5000,\n  \"RepaymentDate\": \"2026-10-30\"\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{los_base_url}}/api/webhooks/disbursal",
-					"host": [
-						"{{los_base_url}}"
-					],
-					"path": [
-						"api",
-						"webhooks",
-						"disbursal"
-					]
-				},
-				"description": "Default disbursal rejection webhook endpoint on LOS."
+				"description": "Sent by LOS to LMS when LOS rejects an application."
 			},
 			"response": []
 		}

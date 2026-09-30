@@ -2756,6 +2756,154 @@ export class LoanService {
     return result;
   }
 
+  async processLenderRejectionWebhook(
+    lenderCode: string,
+    rawPayload: Record<string, any>,
+    clientIp?: string,
+    userAgent?: string,
+  ) {
+    const lan = String(rawPayload.lan || rawPayload.LAN || rawPayload.loanId || '').trim();
+    const rawStatus = String(rawPayload.status || rawPayload.Status || '').trim().toUpperCase();
+    const stage = String(rawPayload.stage || 'LMS_REJECTED').trim();
+    const message = String(rawPayload.message || 'Loan application rejected by LMS').trim();
+    const rejectReason = String(rawPayload.reject_reason || rawPayload.rejectReason || message).trim();
+    const rejectedBy = rawPayload.rejected_by ? String(rawPayload.rejected_by).trim() : undefined;
+    const timestampStr = rawPayload.timestamp ? String(rawPayload.timestamp).trim() : undefined;
+    const decidedAt = timestampStr && !isNaN(Date.parse(timestampStr)) ? new Date(timestampStr) : new Date();
+
+    if (!lan) {
+      throw new BadRequestException('lan is required in rejection webhook payload');
+    }
+
+    if (rawStatus !== 'REJECTED') {
+      throw new BadRequestException(`Unsupported status: ${rawStatus}. Expected REJECTED.`);
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Try finding PlLoan by LAN
+      const loan = await tx.plLoan.findFirst({
+        where: { lan },
+        include: { customer: true, application: true },
+      });
+
+      // 2. Try finding PlApplication by platformLan or applicationNumber
+      const application = loan?.application || await tx.plApplication.findFirst({
+        where: {
+          OR: [
+            { platformLan: lan },
+            { applicationNumber: lan },
+          ],
+        },
+        include: { customer: true, lenderApplicationLink: true },
+      });
+
+      if (!loan && !application) {
+        throw new NotFoundException(`No loan or application found for LAN / reference: ${lan}`);
+      }
+
+      // Check idempotency: If loan is already CANCELLED or application is already LENDER_REJECTED
+      const isAlreadyRejected =
+        (loan && (loan.status === PlLoanStatus.CANCELLED || loan.status === PlLoanStatus.FAILED)) ||
+        (application && application.status === PlApplicationStatus.LENDER_REJECTED);
+
+      if (isAlreadyRejected) {
+        this.logger.log(`[LMS REJECTION WEBHOOK] LAN ${lan} is already marked as rejected. Idempotent acknowledgment.`);
+        return {
+          success: true,
+          status: 'REJECTED',
+          message: 'Loan application was already marked as rejected',
+          lan,
+          acknowledged: true,
+        };
+      }
+
+      // Update PlLoan if exists
+      if (loan) {
+        await tx.plLoan.update({
+          where: { id: loan.id },
+          data: {
+            status: PlLoanStatus.CANCELLED,
+          },
+        });
+      }
+
+      // Update PlApplication if exists
+      if (application) {
+        await tx.plApplication.update({
+          where: { id: application.id },
+          data: {
+            status: PlApplicationStatus.LENDER_REJECTED,
+            lenderDecisionReason: rejectReason,
+            lenderDecisionAt: decidedAt,
+            lenderNextStatusCheckAt: null,
+          },
+        });
+
+        // Update Customer onboardingStatus
+        if (application.customerId) {
+          await tx.customer.update({
+            where: { id: application.customerId },
+            data: {
+              onboardingStatus: 'LENDER_REJECTED',
+              lastActivityAt: decidedAt,
+            },
+          });
+        }
+
+        // Update LenderApplicationLink if exists
+        const link = await tx.lenderApplicationLink.findFirst({
+          where: { applicationId: application.id },
+        });
+
+        if (link) {
+          await tx.lenderApplicationLink.update({
+            where: { id: link.id },
+            data: {
+              normalizedDecision: 'REJECTED',
+              decisionStatus: 'COMPLETED',
+              rejectionReasonCode: rejectReason.slice(0, 100),
+              lastSuccessAt: decidedAt,
+            },
+          });
+        }
+      }
+
+      // Record Audit Event if loan exists (loanId has a foreign key to pl_loans)
+      if (loan) {
+        await tx.plLoanAuditEvent.create({
+          data: {
+            loanId: loan.id,
+            lan,
+            customerId: loan.customerId,
+            applicationId: loan.applicationId,
+            eventType: 'LMS_REJECTED',
+            metadata: {
+              lenderCode,
+              stage,
+              status: 'REJECTED',
+              message,
+              rejectReason,
+              rejectedBy: rejectedBy || null,
+              timestamp: decidedAt.toISOString(),
+            },
+            ipAddress: clientIp || null,
+            userAgent: userAgent || null,
+          },
+        });
+      }
+
+      this.logger.log(`[LMS REJECTION WEBHOOK] LAN ${lan} successfully marked as REJECTED by LMS.`);
+
+      return {
+        success: true,
+        status: 'REJECTED',
+        message: 'Loan application successfully marked as rejected by LMS',
+        lan,
+        acknowledged: true,
+      };
+    });
+  }
+
   private async sendDisbursalWelcomeLetter(
     lan: string,
     customer: { id: bigint; email: string | null; fullName: string | null; firstName: string | null; middleName: string | null; lastName: string | null },
