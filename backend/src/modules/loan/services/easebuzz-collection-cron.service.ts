@@ -742,6 +742,308 @@ export class EasebuzzCollectionCronService {
    * Manual / Admin Retry Operation
    * Can be triggered by authorized internal admins for an outstanding installment
    */
+  /**
+   * Dispatches UPI Pre-debit Notification to customer for a specific repayment schedule installment.
+   */
+  async sendPreDebitNotification(rpsIdInput: string | bigint) {
+    const rpsId = BigInt(rpsIdInput);
+
+    const rps: any = await this.prisma.plRepaymentSchedule.findUnique({
+      where: { id: rpsId },
+      include: {
+        loan: {
+          include: {
+            mandates: {
+              where: { status: { in: [PlMandateStatus.AUTHORIZED, PlMandateStatus.COMPLETED] } },
+              orderBy: { id: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    if (!rps) throw new NotFoundException(`Repayment schedule installment #${rpsId} not found.`);
+    if (Number(rps.remainingAmount) <= 0 || rps.paymentStatus === 'PAID') {
+      throw new BadRequestException(`Installment #${rps.installmentNumber} for LAN ${rps.lan} is already fully paid.`);
+    }
+
+    const mandate = rps.loan?.mandates?.[0];
+    if (!mandate) throw new BadRequestException(`No active authorized mandate found for LAN ${rps.lan}.`);
+
+    if (mandate.mandateType === PlMandateType.ENACH) {
+      return {
+        success: true,
+        status: 'NOT_REQUIRED',
+        message: 'eNACH mandate does not require UPI pre-debit notification. You can execute mandate directly.',
+      };
+    }
+
+    const mandateTxId = mandate.merchantTransactionId || mandate.providerMandateId || '';
+    const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(mandateTxId);
+    if (!mandateCheck.isActive) {
+      throw new BadRequestException(`Mandate ${mandateTxId} is not active (Status: ${mandateCheck.status}).`);
+    }
+
+    const upiAutoCollectTxnId = this.extractAutocollectTxnId(mandate, mandateCheck);
+    const effectiveUpiTxId = upiAutoCollectTxnId || mandateTxId;
+
+    const existingDebits = await this.prisma.easebuzzDebitRequest.findMany({
+      where: { rpsId },
+      orderBy: { attemptNumber: 'desc' },
+    });
+    const activeDebit = existingDebits.find((d) => ['IN_PROCESS', 'UNKNOWN', 'SUBMITTING'].includes(d.status));
+    const attemptNumber = activeDebit ? activeDebit.attemptNumber : (existingDebits.length + 1);
+    const notifMerchantReq = `NT_${rps.lan}_${rps.id}_${attemptNumber}`;
+
+    const debitAmount = Math.min(Number(rps.remainingAmount), Number(mandate.amount));
+    const todayStr = this.getIstDateString();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = this.getIstDateString(tomorrow);
+    const rpsDueDateStr = rps.dueDate ? this.getIstDateString(new Date(rps.dueDate)) : tomorrowStr;
+    const effectivePresentmentDateStr = rpsDueDateStr > todayStr ? rpsDueDateStr : tomorrowStr;
+
+    this.logger.log(`[sendPreDebitNotification] Dispatching notification for LAN: ${rps.lan}, Mandate TxID: ${effectiveUpiTxId}, Merchant Req: ${notifMerchantReq}`);
+
+    const notifRes = await this.easebuzzAutocollectService.sendUpiPreDebitNotification({
+      transactionId: effectiveUpiTxId,
+      amount: debitAmount,
+      merchantRequestNumber: notifMerchantReq,
+      debitDate: effectivePresentmentDateStr,
+      udf1: rps.lan,
+      udf2: rps.id.toString(),
+      udf3: rps.installmentNumber.toString(),
+      udf4: 'MANUAL_NOTIF',
+    });
+
+    if (notifRes.success && notifRes.notificationRequestNumber) {
+      const notifRequestNum = notifRes.notificationRequestNumber;
+      let targetDebitReq = activeDebit;
+      if (!targetDebitReq) {
+        targetDebitReq = await this.prisma.easebuzzDebitRequest.create({
+          data: {
+            loanId: rps.loanId,
+            applicationId: rps.loan.applicationId,
+            lan: rps.lan,
+            rpsId: rps.id,
+            installmentNumber: rps.installmentNumber,
+            mandateId: mandate.id,
+            mandateTransactionId: effectiveUpiTxId,
+            mandateType: mandate.mandateType,
+            merchantRequestNumber: this.generateMerchantRequestNumber(rps.lan, rps.id, attemptNumber),
+            notificationRequestNumber: notifRequestNum,
+            amount: new Prisma.Decimal(debitAmount),
+            presentmentDate: new Date(effectivePresentmentDateStr),
+            status: 'IN_PROCESS',
+            attemptNumber,
+            source: 'MANUAL',
+            initiatedAt: new Date(),
+            failureReason: `Pre-debit notification active: ${notifRequestNum}`,
+            responseEncrypted: JSON.stringify(notifRes.rawResponse || notifRes.data || {}),
+          },
+        });
+      } else {
+        await this.prisma.easebuzzDebitRequest.update({
+          where: { id: targetDebitReq.id },
+          data: {
+            status: 'IN_PROCESS',
+            notificationRequestNumber: notifRequestNum,
+            mandateTransactionId: effectiveUpiTxId,
+            failureReason: `Pre-debit notification active: ${notifRequestNum}`,
+            responseEncrypted: JSON.stringify(notifRes.rawResponse || notifRes.data || {}),
+          },
+        });
+      }
+
+      return {
+        success: true,
+        status: 'IN_PROCESS',
+        notificationRequestNumber: notifRequestNum,
+        message: `Pre-debit notification sent successfully to customer (${notifRequestNum}). Customer has been notified.`,
+      };
+    } else {
+      const notifError = notifRes.error || 'Pre-debit notification failed';
+      return {
+        success: false,
+        status: 'FAILURE',
+        message: `Failed to send pre-debit notification: ${notifError}`,
+      };
+    }
+  }
+
+  /**
+   * Executes AutoCollect mandate debit (presentment) for a specific installment.
+   * Requires that the customer has already been notified if UPI mandate.
+   */
+  async executeMandate(rpsIdInput: string | bigint, source: 'MANUAL' | 'RETRY' = 'MANUAL') {
+    const rpsId = BigInt(rpsIdInput);
+
+    const rps: any = await this.prisma.plRepaymentSchedule.findUnique({
+      where: { id: rpsId },
+      include: {
+        loan: {
+          include: {
+            mandates: {
+              where: { status: { in: [PlMandateStatus.AUTHORIZED, PlMandateStatus.COMPLETED] } },
+              orderBy: { id: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    if (!rps) throw new NotFoundException(`Repayment schedule installment #${rpsId} not found.`);
+    if (Number(rps.remainingAmount) <= 0 || rps.paymentStatus === 'PAID') {
+      throw new BadRequestException(`Installment #${rps.installmentNumber} for LAN ${rps.lan} is already fully paid.`);
+    }
+
+    const mandate = rps.loan?.mandates?.[0];
+    if (!mandate) throw new BadRequestException(`No active authorized mandate found for LAN ${rps.lan}.`);
+
+    let existingDebits = await this.prisma.easebuzzDebitRequest.findMany({
+      where: { rpsId },
+      orderBy: { attemptNumber: 'desc' },
+    });
+
+    let activeDebit = existingDebits.find((d) => ['IN_PROCESS', 'UNKNOWN', 'SUBMITTING'].includes(d.status));
+
+    // Auto-reconcile active debit before deciding
+    if (activeDebit) {
+      const recResult = await this.reconcileSingleDebitRequest(activeDebit);
+      if (recResult.resolved && recResult.status === 'SUCCESS') {
+        return {
+          success: true,
+          status: 'SUCCESS',
+          message: 'Debit was already confirmed SUCCESS at bank! Repayment has been recorded.',
+        };
+      }
+      existingDebits = await this.prisma.easebuzzDebitRequest.findMany({
+        where: { rpsId },
+        orderBy: { attemptNumber: 'desc' },
+      });
+      activeDebit = existingDebits.find((d) => ['IN_PROCESS', 'UNKNOWN', 'SUBMITTING'].includes(d.status));
+    }
+
+    const mandateTxId = mandate.merchantTransactionId || mandate.providerMandateId || '';
+    const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(mandateTxId);
+    if (!mandateCheck.isActive) {
+      throw new BadRequestException(`Mandate ${mandateTxId} is not active (Status: ${mandateCheck.status}). Cannot execute mandate.`);
+    }
+
+    const upiAutoCollectTxnId = this.extractAutocollectTxnId(mandate, mandateCheck);
+    const effectiveUpiTxId = upiAutoCollectTxnId || mandateTxId;
+    const debitMandateTxId = mandate.mandateType === PlMandateType.UPI ? effectiveUpiTxId : mandateTxId;
+
+    const existingNotifDebit = existingDebits.find(
+      (d: any) =>
+        Boolean(d.notificationRequestNumber) &&
+        (mandate.mandateType !== PlMandateType.UPI || d.mandateTransactionId === effectiveUpiTxId || d.mandateTransactionId === mandateTxId),
+    );
+    const notifRequestNum = activeDebit?.notificationRequestNumber || existingNotifDebit?.notificationRequestNumber;
+
+    // Check if customer has been notified for UPI mandate
+    if (mandate.mandateType === PlMandateType.UPI && !notifRequestNum) {
+      throw new BadRequestException('Customer has not been notified yet. Please click "Send notification" first before executing mandate.');
+    }
+
+    let targetDebitReq = activeDebit;
+    const attemptNumber = targetDebitReq ? targetDebitReq.attemptNumber : (existingDebits.length + 1);
+    const merchantReqNumber = targetDebitReq ? targetDebitReq.merchantRequestNumber : this.generateMerchantRequestNumber(rps.lan, rps.id, attemptNumber);
+
+    const debitAmount = Math.min(Number(rps.remainingAmount), Number(mandate.amount));
+    const todayStr = this.getIstDateString();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = this.getIstDateString(tomorrow);
+    const rpsDueDateStr = rps.dueDate ? this.getIstDateString(new Date(rps.dueDate)) : tomorrowStr;
+    const effectivePresentmentDateStr = rpsDueDateStr > todayStr ? rpsDueDateStr : tomorrowStr;
+
+    if (!targetDebitReq) {
+      targetDebitReq = await this.prisma.easebuzzDebitRequest.create({
+        data: {
+          loanId: rps.loanId,
+          applicationId: rps.loan.applicationId,
+          lan: rps.lan,
+          rpsId: rps.id,
+          installmentNumber: rps.installmentNumber,
+          mandateId: mandate.id,
+          mandateTransactionId: debitMandateTxId,
+          mandateType: mandate.mandateType,
+          merchantRequestNumber: merchantReqNumber,
+          notificationRequestNumber: notifRequestNum,
+          amount: new Prisma.Decimal(debitAmount),
+          presentmentDate: new Date(effectivePresentmentDateStr),
+          status: 'SUBMITTING',
+          attemptNumber,
+          source,
+          initiatedAt: new Date(),
+        },
+      });
+    }
+
+    let res: any = null;
+    if (mandate.mandateType === PlMandateType.ENACH) {
+      res = await this.easebuzzAutocollectService.initiateEnachPresentment({
+        transactionId: mandateTxId,
+        amount: debitAmount,
+        merchantRequestNumber: merchantReqNumber,
+        presentmentDate: effectivePresentmentDateStr,
+        udf1: rps.lan,
+        udf2: rps.id.toString(),
+        udf3: rps.installmentNumber.toString(),
+        udf4: source,
+      });
+    } else {
+      // Execute UPI Mandate debit with notification reference
+      res = await this.easebuzzAutocollectService.executeUpiOrSiDebit({
+        transactionId: effectiveUpiTxId,
+        amount: debitAmount,
+        merchantRequestNumber: merchantReqNumber,
+        notificationRequestNumber: notifRequestNum || undefined,
+        udf1: rps.lan,
+        udf2: rps.id.toString(),
+        udf3: rps.installmentNumber.toString(),
+        udf4: source,
+      });
+    }
+
+    let finalStatus = 'IN_PROCESS';
+    let responseMessage = 'Mandate debit request dispatched successfully to Easebuzz.';
+
+    if (res?.success) {
+      finalStatus = 'IN_PROCESS';
+      responseMessage = 'Mandate debit request submitted successfully. Waiting for bank processing & reconciliation.';
+    } else if (res?.isUnknown) {
+      finalStatus = 'UNKNOWN';
+      responseMessage = 'Debit request status is UNKNOWN (network timeout/provider 5xx). It will be resolved by reconciliation.';
+    } else {
+      finalStatus = 'FAILURE';
+      responseMessage = `Debit request rejected: ${res?.error || 'Unknown error'}`;
+    }
+
+    await this.prisma.easebuzzDebitRequest.update({
+      where: { id: targetDebitReq.id },
+      data: {
+        status: finalStatus,
+        failureReason: finalStatus === 'FAILURE' ? (res?.error ? String(res.error).slice(0, 500) : null) : (notifRequestNum ? `Pre-debit notification active: ${notifRequestNum}` : null),
+        completedAt: finalStatus === 'FAILURE' ? new Date() : null,
+        responseEncrypted: JSON.stringify(res?.rawResponse || {}),
+      },
+    });
+
+    return {
+      success: finalStatus === 'IN_PROCESS' || res?.success || res?.isUnknown,
+      status: finalStatus,
+      merchantRequestNumber: merchantReqNumber,
+      notificationRequestNumber: notifRequestNum,
+      amount: debitAmount,
+      attemptNumber,
+      message: responseMessage,
+    };
+  }
+
   async retryDebit(rpsIdInput: string | bigint, source: 'MANUAL' | 'RETRY' = 'MANUAL') {
     const rpsId = BigInt(rpsIdInput);
 

@@ -49,6 +49,14 @@ export const applicationsApi = {
     const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/retry-debit`);
     return res.data.data;
   },
+  sendNotification: async (rpsId) => {
+    const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/send-notification`);
+    return res.data?.data ?? res.data;
+  },
+  executeMandate: async (rpsId) => {
+    const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/execute-mandate`);
+    return res.data?.data ?? res.data;
+  },
   reconcileDebit: async (rpsId) => {
     const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/reconcile-debit`);
     return res.data.data;
