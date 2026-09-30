@@ -5,6 +5,39 @@ import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { BorrowerAgreementTemplateData } from '../types/loan-agreement-template-data.type';
 import { numberToWords } from '../helpers/handlebars-helpers';
 
+function escapeXml(unsafe: string): string {
+  return (unsafe || '').replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+}
+
+function generateBorrowerSignatureSvg(signerName: string, dateStr?: string, ref?: string): string {
+  const safeName = escapeXml(signerName || 'Borrower');
+  const safeDate = escapeXml(dateStr || new Date().toLocaleDateString('en-IN'));
+  const safeRef = escapeXml(ref ? `Ref: ${ref}` : 'OTP Verified');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="220" height="55">
+    <text x="10" y="34" font-family="'Brush Script MT', 'Dancing Script', 'Caveat', 'Segoe Script', cursive, serif" font-size="26" font-style="italic" fill="#0f2b5c">${safeName}</text>
+    <path d="M 8 42 Q 80 48 180 40 T 270 44" fill="none" stroke="#1759b3" stroke-width="1.8" stroke-linecap="round"/>
+    <g transform="translate(10, 52)">
+      <circle cx="5" cy="8" r="4" fill="#16a34a"/>
+      <path d="M 3 8 L 5 10 L 8 6" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>
+      <text x="14" y="11" font-family="Arial, sans-serif" font-size="8" font-weight="bold" fill="#1e3a8a">DIGITALLY SIGNED</text>
+      <text x="105" y="11" font-family="Arial, sans-serif" font-size="7.5" fill="#4b5563">| ${safeDate}</text>
+      <text x="195" y="11" font-family="Arial, sans-serif" font-size="7" fill="#6b7280">${safeRef}</text>
+    </g>
+  </svg>`;
+
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
 @Injectable()
 export class LoanAgreementDataBuilder {
   private readonly logger = new Logger(LoanAgreementDataBuilder.name);
@@ -15,6 +48,8 @@ export class LoanAgreementDataBuilder {
     lan: string;
     authenticatedCustomerId?: bigint;
     applicationId?: bigint;
+    authorizedSignatorySignature?: string;
+    borrowerSignature?: string;
   }): Promise<BorrowerAgreementTemplateData> {
     const loan = await this.prisma.plLoan.findFirst({
       where: { lan: input.lan },
@@ -226,6 +261,9 @@ export class LoanAgreementDataBuilder {
     }
 
     const borrowerFullName = loan.bankAccountHolderName || loan.aadhaarVerifiedName || customer?.fullName || (customer?.firstName ? `${customer.firstName} ${customer.lastName || ''}`.trim() : 'Borrower');
+
+    const effectiveAuthorizedSignatorySignature = input.authorizedSignatorySignature || authorizedSignatoryImage || undefined;
+    const effectiveBorrowerSignature = input.borrowerSignature || (isSigned ? generateBorrowerSignatureSvg(electronicAcceptance?.signerName || borrowerFullName, electronicAcceptance?.acceptedAtFormatted || formattedDate, electronicAcceptance?.transactionReference) : undefined);
 
     return {
       document: {
@@ -450,9 +488,11 @@ export class LoanAgreementDataBuilder {
       authorizedSignatory: {
         name: 'Authorized Signatory',
         designation: 'Fintree Finance Private Limited',
-        imageUrl: authorizedSignatoryImage,
+        imageUrl: effectiveAuthorizedSignatorySignature,
       },
-      authorizedSignatoryImage,
+      authorizedSignatoryImage: effectiveAuthorizedSignatorySignature,
+      authorizedSignatorySignature: effectiveAuthorizedSignatorySignature,
+      borrowerSignature: effectiveBorrowerSignature,
       electronicAcceptance,
     };
   }

@@ -394,4 +394,6 @@ export interface BorrowerAgreementTemplateData {
   electronicAcceptance?: ElectronicAcceptanceDetails;
   authorizedSignatory: AuthorizedSignatoryDetails;
   authorizedSignatoryImage?: string;
+  authorizedSignatorySignature?: string;
+  borrowerSignature?: string;
 }
