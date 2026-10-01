@@ -339,7 +339,7 @@ export class EasebuzzCollectionCronService {
         const debitAmount = Math.min(Number(rps.remainingAmount), Number(mandate.amount));
 
         this.logger.log(`[UPI PRESENTMENT] Sending pre-debit notification - LAN: ${rps.lan}, Mandate TxID: ${effectiveTxId}, Merchant Req: ${merchantReqNumber}`);
-        this.logger.log(`[UPI PRESENTMENT] schedule_presentment=true`);
+        this.logger.log(`[UPI PRESENTMENT] schedule_presentment=false`);
 
         processed++;
         const res = await this.easebuzzAutocollectService.sendUpiPreDebitNotification({
@@ -347,6 +347,7 @@ export class EasebuzzCollectionCronService {
           amount: debitAmount,
           merchantRequestNumber: merchantReqNumber,
           debitDate: tomorrowStr,
+          schedulePresentment: false,
           udf1: rps.lan,
           udf2: rps.id.toString(),
           udf3: 'UPI_NOTIF',
@@ -355,7 +356,7 @@ export class EasebuzzCollectionCronService {
         if (res.success && res.notificationRequestNumber) {
           success++;
           this.logger.log(`[UPI PRESENTMENT] Pre-debit notification sent successfully - LAN: ${rps.lan}, Mandate TxID: ${effectiveTxId}, Notif Req: ${res.notificationRequestNumber}, Merchant Req: ${merchantReqNumber}`);
-          this.logger.log(`[UPI PRESENTMENT] Presentment scheduled with Easebuzz; skipping immediate execute - LAN: ${rps.lan}, Mandate TxID: ${effectiveTxId}, Notif Req: ${res.notificationRequestNumber}`);
+          this.logger.log(`[UPI PRESENTMENT] Customer notified (schedule_presentment=false). Mandate will be executed automatically at 06:00 AM IST on debit date: ${tomorrowStr}`);
           await this.prisma.easebuzzDebitRequest.create({
             data: {
               loanId: rps.loanId,
@@ -370,9 +371,11 @@ export class EasebuzzCollectionCronService {
               notificationRequestNumber: res.notificationRequestNumber,
               amount: new Prisma.Decimal(debitAmount),
               presentmentDate: tomorrowDate,
-              status: 'IN_PROCESS',
+              status: 'NOTIFIED',
               attemptNumber: 1,
               source: 'CRON',
+              initiatedAt: new Date(),
+              failureReason: `Pre-debit notification active: ${res.notificationRequestNumber}`,
               responseEncrypted: JSON.stringify(res.rawResponse || res.data || {}),
             },
           });
@@ -386,9 +389,9 @@ export class EasebuzzCollectionCronService {
   }
 
   /**
-   * UPI / SI Debit Execution Cron (Run inside allowed NPCI hours e.g. 06:30 AM IST)
+   * UPI / SI Debit Execution Cron (Runs at 06:00 AM IST within preferred NPCI non-peak window)
    */
-  @Cron('30 6 * * *', { timeZone: 'Asia/Kolkata' })
+  @Cron('0 6 * * *', { timeZone: 'Asia/Kolkata' })
   async runDueUpiOrSiExecutions(): Promise<{ processed: number; success: number; unknown: number; failed: number }> {
     const enabled = this.configService.get<string>('EASEBUZZ_COLLECTION_CRON_ENABLED') !== 'false';
     if (!enabled) return { processed: 0, success: 0, unknown: 0, failed: 0 };
@@ -403,7 +406,7 @@ export class EasebuzzCollectionCronService {
 
     try {
       const currentHour = new Date().getHours();
-      // NPCI allowed hours check: 00:00-10:00, 13:00-17:00, 21:30-23:59
+      // NPCI allowed hours check: 00:00-10:00 (preferred non-peak window), 13:00-17:00, 21:30-23:59. Blocked by NPCI: 10:00-13:00, 17:00-21:30.
       const isAllowedWindow = (currentHour >= 0 && currentHour < 10) || (currentHour >= 13 && currentHour < 17) || (currentHour >= 21);
       if (!isAllowedWindow) {
         this.logger.log(`Current hour ${currentHour} is outside NPCI allowed UPI execution windows. Skipping.`);
@@ -416,15 +419,36 @@ export class EasebuzzCollectionCronService {
       const pendingExecutions = await this.prisma.easebuzzDebitRequest.findMany({
         where: {
           presentmentDate: { lte: todayDate },
-          status: 'CREATED',
+          status: { in: ['NOTIFIED', 'CREATED'] },
           mandateType: { in: [PlMandateType.UPI, PlMandateType.SI] },
         },
         take: 50,
       });
 
       for (const req of pendingExecutions) {
+        // Pre-Debit Validation per NPCI & Easebuzz Guidelines:
+        // Invoke Mandate Get Status API before initiating Debit API to verify mandate is still active
+        try {
+          const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(req.mandateTransactionId);
+          if (!mandateCheck.isActive) {
+            this.logger.warn(`[runDueUpiOrSiExecutions] Mandate ${req.mandateTransactionId} is not active at bank (Status: ${mandateCheck.status}). Aborting debit request.`);
+            failed++;
+            await this.prisma.easebuzzDebitRequest.update({
+              where: { id: req.id },
+              data: {
+                status: 'FAILURE',
+                failureReason: `Mandate is not active at bank: ${mandateCheck.status || 'REVOKED'}`,
+                completedAt: new Date(),
+              },
+            });
+            continue;
+          }
+        } catch (mErr: any) {
+          this.logger.warn(`[runDueUpiOrSiExecutions] Mandate status check warning for ${req.mandateTransactionId}: ${mErr?.message || mErr}`);
+        }
+
         const claim = await this.prisma.easebuzzDebitRequest.updateMany({
-          where: { id: req.id, status: 'CREATED' },
+          where: { id: req.id, status: req.status },
           data: { status: 'SUBMITTING', initiatedAt: new Date() },
         });
 
@@ -444,7 +468,12 @@ export class EasebuzzCollectionCronService {
           success++;
           await this.prisma.easebuzzDebitRequest.update({
             where: { id: req.id },
-            data: { status: 'IN_PROCESS', responseEncrypted: JSON.stringify(res.rawResponse || {}) },
+            data: {
+              status: 'IN_PROCESS',
+              pgTransactionId: res.data?.pg_transaction_id ? String(res.data.pg_transaction_id) : undefined,
+              easebuzzRequestId: res.data?.id ? String(res.data.id) : undefined,
+              responseEncrypted: JSON.stringify(res.rawResponse || res.data || {}),
+            },
           });
         } else if (res.isUnknown) {
           unknown++;
@@ -859,6 +888,7 @@ export class EasebuzzCollectionCronService {
       amount: debitAmount,
       merchantRequestNumber: notifMerchantReq,
       debitDate: effectivePresentmentDateStr,
+      schedulePresentment: false,
       udf1: rps.lan,
       udf2: rps.id.toString(),
       udf3: rps.installmentNumber.toString(),
@@ -883,11 +913,11 @@ export class EasebuzzCollectionCronService {
             notificationRequestNumber: notifRequestNum,
             amount: new Prisma.Decimal(debitAmount),
             presentmentDate: new Date(effectivePresentmentDateStr),
-            status: 'IN_PROCESS',
+            status: 'NOTIFIED',
             attemptNumber,
             source: 'MANUAL',
             initiatedAt: new Date(),
-            failureReason: `Pre-debit notification active: ${notifRequestNum}`,
+            failureReason: `Pre-debit notification active (schedule_presentment=false): ${notifRequestNum}`,
             responseEncrypted: JSON.stringify(notifRes.rawResponse || notifRes.data || {}),
           },
         });
@@ -895,10 +925,10 @@ export class EasebuzzCollectionCronService {
         await this.prisma.easebuzzDebitRequest.update({
           where: { id: targetDebitReq.id },
           data: {
-            status: 'IN_PROCESS',
+            status: 'NOTIFIED',
             notificationRequestNumber: notifRequestNum,
             mandateTransactionId: effectiveUpiTxId,
-            failureReason: `Pre-debit notification active: ${notifRequestNum}`,
+            failureReason: `Pre-debit notification active (schedule_presentment=false): ${notifRequestNum}`,
             responseEncrypted: JSON.stringify(notifRes.rawResponse || notifRes.data || {}),
           },
         });
@@ -906,9 +936,9 @@ export class EasebuzzCollectionCronService {
 
       return {
         success: true,
-        status: 'IN_PROCESS',
+        status: 'NOTIFIED',
         notificationRequestNumber: notifRequestNum,
-        message: `Pre-debit notification sent successfully to customer (${notifRequestNum}). Customer has been notified.`,
+        message: `Pre-debit notification sent successfully to customer (${notifRequestNum}). Schedule presentment is false; mandate will be executed automatically at 6:00 AM IST or on demand.`,
       };
     } else {
       const notifError = notifRes.error || 'Pre-debit notification failed';
@@ -1234,17 +1264,18 @@ export class EasebuzzCollectionCronService {
       });
     } else {
       // UPI Mandate Presentment Flow
-      // 1. If no valid notification exists, send Pre-Debit Notification first with schedule_presentment=true
+      // 1. If no valid notification exists, send Pre-Debit Notification first with schedule_presentment=false
       if (!notifRequestNum) {
         const notifMerchantReq = `NT_${rps.lan}_${rps.id}_${attemptNumber}`;
         this.logger.log(`[UPI PRESENTMENT] Sending pre-debit notification - LAN: ${rps.lan}, Mandate TxID: ${effectiveUpiTxId}, Merchant Req: ${notifMerchantReq}`);
-        this.logger.log(`[UPI PRESENTMENT] schedule_presentment=true`);
+        this.logger.log(`[UPI PRESENTMENT] schedule_presentment=false`);
 
         const notifRes = await this.easebuzzAutocollectService.sendUpiPreDebitNotification({
           transactionId: effectiveUpiTxId,
           amount: debitAmount,
           merchantRequestNumber: notifMerchantReq,
           debitDate: effectivePresentmentDateStr,
+          schedulePresentment: false,
           udf1: rps.lan,
           udf2: rps.id.toString(),
           udf3: rps.installmentNumber.toString(),
@@ -1254,28 +1285,27 @@ export class EasebuzzCollectionCronService {
         if (notifRes.success && notifRes.notificationRequestNumber) {
           notifRequestNum = notifRes.notificationRequestNumber;
           this.logger.log(`[UPI PRESENTMENT] Pre-debit notification sent successfully - LAN: ${rps.lan}, Mandate TxID: ${effectiveUpiTxId}, Notif Req: ${notifRequestNum}, Merchant Req: ${notifMerchantReq}`);
-          this.logger.log(`[UPI PRESENTMENT] Presentment scheduled with Easebuzz; skipping immediate execute - LAN: ${rps.lan}, Mandate TxID: ${effectiveUpiTxId}, Notif Req: ${notifRequestNum}`);
 
           const updated = await this.prisma.easebuzzDebitRequest.update({
             where: { id: targetDebitReq.id },
             data: {
-              status: 'IN_PROCESS',
+              status: 'NOTIFIED',
               notificationRequestNumber: notifRequestNum,
               mandateTransactionId: effectiveUpiTxId,
               responseEncrypted: JSON.stringify(notifRes.rawResponse || notifRes.data || {}),
-              failureReason: `Pre-debit notification active and scheduled: ${notifRequestNum}`,
+              failureReason: `Pre-debit notification sent (schedule_presentment=false): ${notifRequestNum}. Scheduled for 6:00 AM IST execution.`,
             },
           });
 
           return {
             success: true,
-            status: 'IN_PROCESS',
+            status: 'NOTIFIED',
             merchantRequestNumber: merchantReqNumber,
             notificationRequestNumber: notifRequestNum,
             amount: debitAmount,
             attemptNumber,
             debitRequestId: updated.id.toString(),
-            message: `Pre-debit notification sent and presentment scheduled with Easebuzz (${notifRequestNum}). Debit will be executed automatically by Easebuzz after notification period.`,
+            message: `Pre-debit notification sent successfully to customer (${notifRequestNum}). Schedule presentment is false. Mandate will be executed automatically at 6:00 AM IST on debit date after customer notification window.`,
           };
         } else {
           // Pre-debit notification failed
@@ -1304,28 +1334,43 @@ export class EasebuzzCollectionCronService {
         }
       }
 
-      // 2. If a valid notification already exists for this mandate transaction, it is already scheduled with Easebuzz
-      this.logger.log(`[UPI PRESENTMENT] Existing valid notification found (${notifRequestNum}) for LAN: ${rps.lan}, Mandate TxID: ${effectiveUpiTxId}. Presentment is scheduled with Easebuzz; skipping immediate execute.`);
+      // 2. A valid notification already exists for this mandate transaction -> perform Pre-Debit Validation & Execute Mandate API
+      this.logger.log(`[UPI PRESENTMENT] Existing notification found (${notifRequestNum}) for LAN: ${rps.lan}, Mandate TxID: ${effectiveUpiTxId}. Validating mandate status before execute.`);
 
-      const updated = await this.prisma.easebuzzDebitRequest.update({
-        where: { id: targetDebitReq.id },
-        data: {
-          status: 'IN_PROCESS',
+      const mandateCheck = await this.easebuzzAutocollectService.getMandateStatus(effectiveUpiTxId);
+      if (!mandateCheck.isActive) {
+        this.logger.warn(`[retryDebit] Mandate ${effectiveUpiTxId} is not active at bank (Status: ${mandateCheck.status}). Aborting debit.`);
+        const updated = await this.prisma.easebuzzDebitRequest.update({
+          where: { id: targetDebitReq.id },
+          data: {
+            status: 'FAILURE',
+            failureReason: `Mandate is not active at bank (Status: ${mandateCheck.status || 'REVOKED'})`,
+            completedAt: new Date(),
+          },
+        });
+
+        return {
+          success: false,
+          status: 'FAILURE',
+          merchantRequestNumber: merchantReqNumber,
           notificationRequestNumber: notifRequestNum,
-          mandateTransactionId: effectiveUpiTxId,
-        },
-      });
+          amount: debitAmount,
+          attemptNumber,
+          debitRequestId: updated.id.toString(),
+          message: `Mandate is not active (Status: ${mandateCheck.status || 'REVOKED'}). Debit request aborted.`,
+        };
+      }
 
-      return {
-        success: true,
-        status: 'IN_PROCESS',
-        merchantRequestNumber: merchantReqNumber,
-        notificationRequestNumber: notifRequestNum,
+      // Invoke Execute Mandate API
+      res = await this.easebuzzAutocollectService.executeUpiOrSiDebit({
+        transactionId: effectiveUpiTxId,
         amount: debitAmount,
-        attemptNumber,
-        debitRequestId: updated.id.toString(),
-        message: `Pre-debit notification is active (${notifRequestNum}) and scheduled with Easebuzz. Presentment will execute after the notification window.`,
-      };
+        merchantRequestNumber: merchantReqNumber,
+        udf1: rps.lan,
+        udf2: rps.id.toString(),
+        udf3: rps.installmentNumber.toString(),
+        udf4: source,
+      });
     }
 
     let finalStatus = 'IN_PROCESS';

@@ -120,6 +120,50 @@ export class AdminLoanServicingController {
     return this.easebuzzCollectionCronService.sendPreDebitNotification(rpsId);
   }
 
+  @Permissions('ADMIN_DASHBOARD_VIEW')
+  @Get('repayment-schedule/:rpsId/notification-status')
+  @HttpCode(HttpStatus.OK)
+  async getRpsNotificationStatus(@Param('rpsId') rpsId: string) {
+    if (!/^[1-9][0-9]*$/.test(rpsId)) {
+      throw new BadRequestException('Invalid repayment schedule ID.');
+    }
+    const rpsIdBigInt = BigInt(rpsId);
+    const debitReq = await this.prisma.easebuzzDebitRequest.findFirst({
+      where: {
+        rpsId: rpsIdBigInt,
+        notificationRequestNumber: { not: null },
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!debitReq?.notificationRequestNumber) {
+      throw new BadRequestException('No pre-debit notification request found for this installment.');
+    }
+
+    const liveRes = await this.easebuzzAutocollectService.retrieveNotification(debitReq.notificationRequestNumber);
+    return {
+      success: liveRes.success,
+      status: liveRes.status,
+      notificationRequestNumber: debitReq.notificationRequestNumber,
+      debitRequestId: debitReq.id.toString(),
+      notifiedAt: liveRes.data?.notified_at || null,
+      createdAt: liveRes.data?.created_at || null,
+      amount: liveRes.data?.amount || Number(debitReq.amount),
+      data: liveRes.data,
+      rawResponse: liveRes.rawResponse,
+    };
+  }
+
+  @Permissions('ADMIN_DASHBOARD_VIEW')
+  @Get('notifications/:identifier/status')
+  @HttpCode(HttpStatus.OK)
+  async getNotificationStatus(@Param('identifier') identifier: string) {
+    if (!identifier?.trim()) {
+      throw new BadRequestException('Invalid notification identifier.');
+    }
+    return this.easebuzzAutocollectService.retrieveNotification(identifier.trim());
+  }
+
   @Permissions('LOAN_MANAGE')
   @Post('repayment-schedule/:rpsId/execute-mandate')
   @HttpCode(HttpStatus.OK)

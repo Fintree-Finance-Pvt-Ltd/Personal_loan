@@ -97,4 +97,42 @@ describe('AdminLoanServicingController', () => {
     expect(() => controller.executeMandate('invalid')).toThrow(BadRequestException);
     expect(cronService.executeMandate).not.toHaveBeenCalled();
   });
+
+  it('getRpsNotificationStatus retrieves notification status for valid rpsId', async () => {
+    const { controller } = buildController();
+    (controller as any).prisma.easebuzzDebitRequest.findFirst = jest.fn().mockResolvedValue({
+      id: 111n,
+      rpsId: 92n,
+      notificationRequestNumber: 'NT_FTPL00000011_4_4',
+      amount: '5005.00',
+    });
+    (controller as any).easebuzzAutocollectService.retrieveNotification = jest.fn().mockResolvedValue({
+      success: true,
+      status: 'notified',
+      data: {
+        id: 'NF2609293DA203',
+        status: 'notified',
+        notified_at: '2026-09-29 17:15:26',
+        amount: 5005,
+      },
+    });
+
+    const res = await controller.getRpsNotificationStatus('92');
+    expect(res.success).toBe(true);
+    expect(res.status).toBe('notified');
+    expect(res.notificationRequestNumber).toBe('NT_FTPL00000011_4_4');
+    expect(res.notifiedAt).toBe('2026-09-29 17:15:26');
+  });
+
+  it('getNotificationStatus retrieves status by identifier', async () => {
+    const { controller } = buildController();
+    (controller as any).easebuzzAutocollectService.retrieveNotification = jest.fn().mockResolvedValue({
+      success: true,
+      status: 'notified',
+    });
+
+    const res = await controller.getNotificationStatus('NT_FTPL00000011_4_4');
+    expect(res.success).toBe(true);
+    expect(res.status).toBe('notified');
+  });
 });
