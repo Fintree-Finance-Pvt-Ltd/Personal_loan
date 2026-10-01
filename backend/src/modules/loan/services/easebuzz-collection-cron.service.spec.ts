@@ -423,7 +423,7 @@ describe('EasebuzzCollectionCronService', () => {
       const res = await cronService.retryDebit(201n, 'MANUAL');
 
       expect(res.success).toBe(true);
-      expect(res.status).toBe('IN_PROCESS');
+      expect(res.status).toBe('NOTIFIED');
       expect(res.notificationRequestNumber).toBe('EB_NOTIF_REQ_999');
 
       // Verify correct Easebuzz AutoCollect transaction ID was passed to notification
@@ -431,6 +431,7 @@ describe('EasebuzzCollectionCronService', () => {
         expect.objectContaining({
           transactionId: '5bffd7cf6a8a459fa7f031aa51318c1e',
           amount: 4500,
+          schedulePresentment: false,
         }),
       );
 
@@ -438,7 +439,7 @@ describe('EasebuzzCollectionCronService', () => {
       expect(easebuzzAutocollectService.executeUpiOrSiDebit).not.toHaveBeenCalled();
     });
 
-    it('skips sending duplicate notification and does not immediately execute if active notification exists', async () => {
+    it('skips sending duplicate notification and calls executeUpiOrSiDebit if active notification exists', async () => {
       const mockUpiRps = {
         id: 202n,
         loanId: 10n,
@@ -481,6 +482,10 @@ describe('EasebuzzCollectionCronService', () => {
       });
       easebuzzAutocollectService.getDebitRequests.mockResolvedValue({ success: true, data: [] });
       easebuzzAutocollectService.retrieveNotification = jest.fn().mockResolvedValue({ success: true, status: 'notified' });
+      easebuzzAutocollectService.executeUpiOrSiDebit.mockResolvedValue({
+        success: true,
+        isUnknown: false,
+      });
       prismaService.easebuzzDebitRequest.update.mockResolvedValue({
         id: 502n,
         status: 'IN_PROCESS',
@@ -493,9 +498,14 @@ describe('EasebuzzCollectionCronService', () => {
       expect(res.status).toBe('IN_PROCESS');
       expect(res.notificationRequestNumber).toBe('EB_NOTIF_REQ_EXISTING');
 
-      // Verify neither notification nor execution is called again
+      // Verify notification was not sent again, but executeUpiOrSiDebit was called
       expect(easebuzzAutocollectService.sendUpiPreDebitNotification).not.toHaveBeenCalled();
-      expect(easebuzzAutocollectService.executeUpiOrSiDebit).not.toHaveBeenCalled();
+      expect(easebuzzAutocollectService.executeUpiOrSiDebit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactionId: '5bffd7cf6a8a459fa7f031aa51318c1e',
+          amount: 4500,
+        }),
+      );
     });
 
     it('sendPreDebitNotification sends pre-debit notification for UPI mandate', async () => {
@@ -535,14 +545,14 @@ describe('EasebuzzCollectionCronService', () => {
       });
       prismaService.easebuzzDebitRequest.create.mockResolvedValue({
         id: 503n,
-        status: 'IN_PROCESS',
+        status: 'NOTIFIED',
         notificationRequestNumber: 'EB_NOTIF_REQ_203',
       });
 
       const res = await cronService.sendPreDebitNotification(203n);
 
       expect(res.success).toBe(true);
-      expect(res.status).toBe('IN_PROCESS');
+      expect(res.status).toBe('NOTIFIED');
       expect(res.notificationRequestNumber).toBe('EB_NOTIF_REQ_203');
       expect(easebuzzAutocollectService.sendUpiPreDebitNotification).toHaveBeenCalled();
     });

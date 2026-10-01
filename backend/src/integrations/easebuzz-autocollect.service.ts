@@ -973,6 +973,7 @@ export class EasebuzzAutocollectService {
     amount: number;
     merchantRequestNumber: string;
     debitDate: string;
+    schedulePresentment?: boolean;
     udf1?: string;
     udf2?: string;
     udf3?: string;
@@ -1013,7 +1014,7 @@ export class EasebuzzAutocollectService {
       amount: Number(Number(input.amount).toFixed(2)),
       merchant_request_number: input.merchantRequestNumber,
       notification_request_number: input.merchantRequestNumber,
-      schedule_presentment: true,
+      schedule_presentment: input.schedulePresentment ?? false,
       debit_date: input.debitDate,
       udf1: input.udf1 || '',
       udf2: input.udf2 || '',
