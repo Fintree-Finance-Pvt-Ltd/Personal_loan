@@ -48,6 +48,9 @@ const schema = z
     SEED_SUPERADMIN_NAME: z.string().optional().default(''),
     SEED_SUPERADMIN_EMAIL: z.string().optional().default(''),
     SEED_SUPERADMIN_PASSWORD: z.string().optional().default(''),
+    // Apple App Review Test Login
+    APPLE_REVIEW_MOBILE: z.string().default('9999999999'),
+    APPLE_REVIEW_OTP: z.string().default('123456'),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     REQUEST_BODY_LIMIT: z.string().regex(/^\d+(kb|mb)$/i).default('100kb'),
     ELECTRONIC_SIGN_ALLOW_LOOPBACK_IP: booleanString.default('true'),

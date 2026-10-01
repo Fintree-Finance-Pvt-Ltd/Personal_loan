@@ -126,10 +126,14 @@ export class OtpService {
         ? input.userAgent.slice(0, 500)
         : null;
 
-    await this.enforceResendCooldown({
-      mobileNumber,
-      purpose: OtpPurpose.MOBILE_VERIFICATION,
-    });
+    // Apple App Review Test Login: bypass resend cooldown for test reviewer convenience
+    const isAppleReview = this.isAppleReviewMobile(mobileNumber);
+    if (!isAppleReview) {
+      await this.enforceResendCooldown({
+        mobileNumber,
+        purpose: OtpPurpose.MOBILE_VERIFICATION,
+      });
+    }
 
     const customer = await this.prisma.customer.findUnique({
       where: {
@@ -150,13 +154,18 @@ export class OtpService {
       purpose: OtpPurpose.MOBILE_VERIFICATION,
     });
 
-    const otp = this.generateOtp();
-    // TEMP DEBUG LOGGING — REMOVE BEFORE SHIPPING. Logs the raw OTP for local
-    // testing convenience only; never acceptable for real customer traffic.
-    this.logger.warn(`[DEBUG-ONLY] Mobile OTP for ${mobileNumber}: ${otp}`);
+    // Apple App Review Test Login: use fixed OTP and extended expiry
+    const otp = isAppleReview ? this.getAppleReviewOtp() : this.generateOtp();
+    if (!isAppleReview) {
+      // TEMP DEBUG LOGGING — REMOVE BEFORE SHIPPING. Logs the raw OTP for local
+      // testing convenience only; never acceptable for real customer traffic.
+      this.logger.warn(`[DEBUG-ONLY] Mobile OTP for ${mobileNumber}: ${otp}`);
+    }
     const otpHash = await this.hashOtp(otp);
     const now = new Date();
-    const expiresAt = this.getOtpExpiry(now);
+    const expiresAt = isAppleReview
+      ? new Date(now.getTime() + 24 * 60 * 60 * 1000)
+      : this.getOtpExpiry(now);
 
     const otpSession = await this.prisma.otpSession.create({
       data: {
@@ -175,6 +184,24 @@ export class OtpService {
         userAgent,
       },
     });
+
+    // Apple App Review Test Login: return success immediately without sending real SMS,
+    // and never expose fixed OTP in API responses
+    if (isAppleReview) {
+      this.logger.log(
+        `[Apple App Review Test Login] OTP request succeeded for ${mobileNumber}. SMS delivery bypassed.`,
+      );
+      return {
+        success: true,
+        message: 'OTP sent successfully.',
+        data: {
+          otpSessionId: otpSession.id.toString(),
+          expiresAt,
+          resendAfterSeconds: this.resendCooldownSeconds,
+          simulated: true,
+        },
+      };
+    }
 
     try {
       const smsResult = await this.smsService.sendOtp(mobileNumber, otp);
@@ -224,12 +251,60 @@ export class OtpService {
       throw new BadRequestException('OTP must contain exactly 6 digits.');
     }
 
-    const session = await this.getActiveOtpSession({
-      mobileNumber,
-      purpose: OtpPurpose.MOBILE_VERIFICATION,
-    });
+    const isAppleReview = this.isAppleReviewMobile(mobileNumber);
 
-    await this.validateOtpSession(session, otp);
+    let session: any;
+
+    if (isAppleReview) {
+      // Apple App Review Test Login: strictly validate fixed OTP for the test number
+      if (otp !== this.getAppleReviewOtp()) {
+        throw new UnauthorizedException('Invalid OTP. Please enter the correct OTP.');
+      }
+
+      // Find active session or lazily create one for App Review testing reliability
+      session = await this.prisma.otpSession.findFirst({
+        where: {
+          purpose: OtpPurpose.MOBILE_VERIFICATION,
+          mobileNumber,
+          verified: false,
+          invalidatedAt: null,
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      if (!session) {
+        const otpHash = await this.hashOtp(this.getAppleReviewOtp());
+        const now = new Date();
+        session = await this.prisma.otpSession.create({
+          data: {
+            mobileNumber,
+            purpose: OtpPurpose.MOBILE_VERIFICATION,
+            channel: OtpChannel.SMS,
+            otpHash,
+            expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            lastSentAt: now,
+            maxAttempts: this.maxAttempts,
+            consentGiven: true,
+            consentText: 'Apple App Review test consent',
+            consentAt: now,
+            ipAddress: input.ipAddress ? String(input.ipAddress).slice(0, 45) : null,
+            userAgent: input.userAgent ? String(input.userAgent).slice(0, 500) : null,
+          },
+        });
+      }
+    } else {
+      session = await this.getActiveOtpSession({
+        mobileNumber,
+        purpose: OtpPurpose.MOBILE_VERIFICATION,
+      });
+
+      await this.validateOtpSession(session, otp);
+    }
 
     try {
       const customer = await this.prisma.$transaction(async (transaction) => {
@@ -883,6 +958,29 @@ export class OtpService {
     return new Date(from.getTime() + this.otpExpiryMinutes * 60 * 1000);
   }
 
+  // =========================================================================
+  // Apple App Review Test Login
+  // =========================================================================
+  private isAppleReviewMobile(mobileNumber: string): boolean {
+    const configuredMobile = this.configService
+      .get<string>('APPLE_REVIEW_MOBILE', '9999999999')
+      ?.replace(/\D/g, '')
+      .replace(/^91(?=\d{10}$)/, '');
+    const cleanMobile = mobileNumber
+      ?.replace(/\D/g, '')
+      .replace(/^91(?=\d{10}$)/, '');
+    return Boolean(
+      configuredMobile && cleanMobile && cleanMobile === configuredMobile,
+    );
+  }
+
+  private getAppleReviewOtp(): string {
+    return (
+      this.configService.get<string>('APPLE_REVIEW_OTP', '123456')?.trim() ||
+      '123456'
+    );
+  }
+
   private normalizeMobile(mobileNumber: string): string {
     const digits = mobileNumber.replace(/\D/g, '');
 
@@ -890,6 +988,11 @@ export class OtpService {
       digits.length === 12 && digits.startsWith('91')
         ? digits.slice(2)
         : digits;
+
+    // Apple App Review Test Login: allow configured test mobile number
+    if (this.isAppleReviewMobile(normalized)) {
+      return normalized;
+    }
 
     if (!/^[6-9][0-9]{9}$/.test(normalized)) {
       throw new BadRequestException('Enter a valid Indian mobile number.');

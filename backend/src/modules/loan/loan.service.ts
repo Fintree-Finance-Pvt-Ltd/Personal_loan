@@ -3136,8 +3136,8 @@ export class LoanService {
       const mandateDebitMessage = isMandateLocked
         ? `Auto-debit mandate presented (${activeDebit.status}). Bank clearing in progress.`
         : isOverdue && isMandatePresented
-        ? `Overdue: Manual payment available.`
-        : null;
+          ? `Overdue: Manual payment available.`
+          : null;
 
       return {
         installmentNumber: rps.installmentNumber,

@@ -492,6 +492,61 @@ describe('OtpService', () => {
     });
   });
 
+  describe('Apple App Review Test Login', () => {
+    it('bypasses SMS delivery and resend cooldown for Apple review test number', async () => {
+      prisma.otpSession.findFirst.mockResolvedValue(null);
+      prisma.customer.findUnique.mockResolvedValue(null);
+      prisma.otpSession.create.mockResolvedValue({ id: 999n });
+
+      const result = await service.sendMobileOtp({
+        mobileNumber: '9999999999',
+        consentGiven: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data.otpSessionId).toBe('999');
+      expect(result.data.simulated).toBe(true);
+      // Fixed OTP must NOT be exposed in response
+      expect((result.data as any).developmentOtp).toBeUndefined();
+      // SMS service must NOT be called
+      expect(smsService.sendOtp).not.toHaveBeenCalled();
+    });
+
+    it('authenticates and logs in successfully with fixed OTP 123456', async () => {
+      prisma.otpSession.findFirst.mockResolvedValue(null);
+      prisma.otpSession.create.mockResolvedValue({ id: 999n, attempts: 0 });
+      prisma.customer.findUnique.mockResolvedValue(null);
+      prisma.customer.upsert.mockResolvedValue({
+        id: 99n,
+        customerCode: 'CUS-APPLE',
+        countryCode: '+91',
+        mobileNumber: '9999999999',
+        mobileVerified: true,
+        onboardingStatus: 'MOBILE_VERIFIED',
+        eligibilityStatus: 'NOT_CHECKED',
+      });
+      prisma.customerSession.create.mockResolvedValue({ id: 'cust-session-apple' });
+
+      const result = await service.verifyMobileOtp({
+        mobileNumber: '9999999999',
+        otp: '123456',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data.accessToken).toBe('signed.customer.jwt');
+      expect(result.data.customer.mobileNumber).toBe('9999999999');
+    });
+
+    it('rejects any wrong OTP for Apple review test number', async () => {
+      await expect(
+        service.verifyMobileOtp({
+          mobileNumber: '9999999999',
+          otp: '654321',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
   describe('cookie configuration', () => {
     it('scopes the customer refresh cookie to the customer auth path with httpOnly + strict defaults', () => {
       const options = service.getCookieOptions();
