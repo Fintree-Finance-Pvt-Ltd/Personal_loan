@@ -4073,7 +4073,7 @@ function AssessmentFeeStep({
         onBack={onBack}
         onNext={onContinue}
         nextLabel="Complete Profile"
-        nextDisabled={false}
+        nextDisabled={true}
         hideSave
       />
     </StepCard>
