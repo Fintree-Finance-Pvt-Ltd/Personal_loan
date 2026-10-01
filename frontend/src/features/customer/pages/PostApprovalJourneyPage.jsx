@@ -700,173 +700,173 @@ function BankVerificationStep({ lan, data, onNext }) {
               </div>
             </div>
           ) : (
-          <form onSubmit={handleVerify} className="space-y-5">
-            {previousBank?.available && (
-              <button
-                type="button"
-                onClick={() => setUseSameAccount(true)}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-info-700 transition hover:text-info-900 disabled:opacity-50"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Use my previous bank account instead
-              </button>
-            )}
-
-            <div>
-              <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                Account Holder Name <span className="text-danger-500">*</span>
-              </label>
-              <input
-                id="accountHolderName"
-                name="accountHolderName"
-                type="text"
-                placeholder="e.g. VISHAL YADAV (as per bank records)"
-                value={formData.accountHolderName}
-                onChange={handleChange}
-                disabled={isLoading}
-                className={inputClass('accountHolderName')}
-              />
-              {fieldErrors.accountHolderName && (
-                <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountHolderName}</p>
-              )}
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label htmlFor="accountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Bank Account Number <span className="text-danger-500">*</span>
-                </label>
-                <input
-                  id="accountNumber"
-                  name="accountNumber"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Enter 9–20 digit account number"
-                  value={formData.accountNumber}
-                  onChange={handleChange}
+            <form onSubmit={handleVerify} className="space-y-5">
+              {previousBank?.available && (
+                <button
+                  type="button"
+                  onClick={() => setUseSameAccount(true)}
                   disabled={isLoading}
-                  className={inputClass('accountNumber')}
-                />
-                {fieldErrors.accountNumber && (
-                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountNumber}</p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="confirmAccountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Confirm Account Number <span className="text-danger-500">*</span>
-                </label>
-                <input
-                  id="confirmAccountNumber"
-                  name="confirmAccountNumber"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Re-enter account number"
-                  value={formData.confirmAccountNumber}
-                  onChange={handleChange}
-                  onPaste={(e) => e.preventDefault()}
-                  disabled={isLoading}
-                  className={inputClass('confirmAccountNumber')}
-                />
-                {fieldErrors.confirmAccountNumber && (
-                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.confirmAccountNumber}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label htmlFor="ifscCode" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  IFSC Code <span className="text-danger-500">*</span>
-                </label>
-                <input
-                  id="ifscCode"
-                  name="ifscCode"
-                  type="text"
-                  placeholder="e.g. HDFC0001234"
-                  value={formData.ifscCode}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                  className={`${inputClass('ifscCode')} uppercase tracking-wider font-mono`}
-                />
-                {fieldErrors.ifscCode && (
-                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.ifscCode}</p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="accountType" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Account Type <span className="text-danger-500">*</span>
-                </label>
-                <select
-                  id="accountType"
-                  name="accountType"
-                  value={formData.accountType}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                  className={inputClass('accountType')}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-info-700 transition hover:text-info-900 disabled:opacity-50"
                 >
-                  <option value="SAVINGS">Savings Account</option>
-                  <option value="CURRENT">Current Account</option>
-                </select>
-              </div>
-            </div>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Use my previous bank account instead
+                </button>
+              )}
 
-            <div className="grid gap-5 sm:grid-cols-2">
               <div>
-                <label htmlFor="bankName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Bank Name <span className="text-danger-500">*</span>
+                <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                  Account Holder Name <span className="text-danger-500">*</span>
                 </label>
                 <input
-                  id="bankName"
-                  name="bankName"
+                  id="accountHolderName"
+                  name="accountHolderName"
                   type="text"
-                  placeholder="e.g. HDFC Bank Ltd"
-                  value={formData.bankName}
+                  placeholder="e.g. VISHAL YADAV (as per bank records)"
+                  value={formData.accountHolderName}
                   onChange={handleChange}
                   disabled={isLoading}
-                  className={inputClass('bankName')}
+                  className={inputClass('accountHolderName')}
                 />
-                {fieldErrors.bankName && (
-                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.bankName}</p>
+                {fieldErrors.accountHolderName && (
+                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountHolderName}</p>
                 )}
               </div>
 
-              <div>
-                <label htmlFor="branchName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Branch Name <span className="text-danger-500">*</span>
-                </label>
-                <input
-                  id="branchName"
-                  name="branchName"
-                  type="text"
-                  placeholder="e.g. Andheri West"
-                  value={formData.branchName}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                  className={inputClass('branchName')}
-                />
-                {fieldErrors.branchName && (
-                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.branchName}</p>
-                )}
-              </div>
-            </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="accountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                    Bank Account Number <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    id="accountNumber"
+                    name="accountNumber"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Enter 9–20 digit account number"
+                    value={formData.accountNumber}
+                    onChange={handleChange}
+                    disabled={isLoading}
+                    className={inputClass('accountNumber')}
+                  />
+                  {fieldErrors.accountNumber && (
+                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountNumber}</p>
+                  )}
+                </div>
 
-            <div className="flex items-center justify-between rounded-xl bg-neutral-50 border border-neutral-100 p-3.5 text-xs text-neutral-500">
-              <div className="flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4 text-brand-600" />
-                <span>256-bit AES Encrypted Storage</span>
+                <div>
+                  <label htmlFor="confirmAccountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                    Confirm Account Number <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    id="confirmAccountNumber"
+                    name="confirmAccountNumber"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Re-enter account number"
+                    value={formData.confirmAccountNumber}
+                    onChange={handleChange}
+                    onPaste={(e) => e.preventDefault()}
+                    disabled={isLoading}
+                    className={inputClass('confirmAccountNumber')}
+                  />
+                  {fieldErrors.confirmAccountNumber && (
+                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.confirmAccountNumber}</p>
+                  )}
+                </div>
               </div>
-              <span className="font-semibold text-neutral-700">PCI-DSS Compliant</span>
-            </div>
 
-            <div className="mt-8 flex justify-end pt-2">
-              <ActionButton type="submit" onClick={handleVerify} loading={isLoading} variant="blue">
-                Send ₹1.00 & Verify Bank
-              </ActionButton>
-            </div>
-          </form>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="ifscCode" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                    IFSC Code <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    id="ifscCode"
+                    name="ifscCode"
+                    type="text"
+                    placeholder="e.g. HDFC0001234"
+                    value={formData.ifscCode}
+                    onChange={handleChange}
+                    disabled={isLoading}
+                    className={`${inputClass('ifscCode')} uppercase tracking-wider font-mono`}
+                  />
+                  {fieldErrors.ifscCode && (
+                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.ifscCode}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="accountType" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                    Account Type <span className="text-danger-500">*</span>
+                  </label>
+                  <select
+                    id="accountType"
+                    name="accountType"
+                    value={formData.accountType}
+                    onChange={handleChange}
+                    disabled={isLoading}
+                    className={inputClass('accountType')}
+                  >
+                    <option value="SAVINGS">Savings Account</option>
+                    <option value="CURRENT">Current Account</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="bankName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                    Bank Name <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    id="bankName"
+                    name="bankName"
+                    type="text"
+                    placeholder="e.g. HDFC Bank Ltd"
+                    value={formData.bankName}
+                    onChange={handleChange}
+                    disabled={isLoading}
+                    className={inputClass('bankName')}
+                  />
+                  {fieldErrors.bankName && (
+                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.bankName}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="branchName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
+                    Branch Name <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    id="branchName"
+                    name="branchName"
+                    type="text"
+                    placeholder="e.g. Andheri West"
+                    value={formData.branchName}
+                    onChange={handleChange}
+                    disabled={isLoading}
+                    className={inputClass('branchName')}
+                  />
+                  {fieldErrors.branchName && (
+                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.branchName}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl bg-neutral-50 border border-neutral-100 p-3.5 text-xs text-neutral-500">
+                <div className="flex items-center gap-2">
+                  <BadgeCheck className="h-4 w-4 text-brand-600" />
+                  <span>256-bit AES Encrypted Storage</span>
+                </div>
+                <span className="font-semibold text-neutral-700">PCI-DSS Compliant</span>
+              </div>
+
+              <div className="mt-8 flex justify-end pt-2">
+                <ActionButton type="submit" onClick={handleVerify} loading={isLoading} variant="blue">
+                  Send ₹1.00 & Verify Bank
+                </ActionButton>
+              </div>
+            </form>
           )}
         </div>
       )}
@@ -1013,17 +1013,15 @@ function KfsStep({ lan, data, onNext }) {
           {summaryCards.map((item) => (
             <div
               key={item.label}
-              className={`rounded-2xl border p-5 transition-all ${
-                item.highlight
+              className={`rounded-2xl border p-5 transition-all ${item.highlight
                   ? 'border-brand-200 bg-brand-50/50 shadow-sm'
                   : 'border-neutral-200 bg-neutral-50/30'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{item.label}</span>
-                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                  item.highlight ? 'bg-brand-100 text-brand-800' : 'bg-neutral-200/70 text-neutral-700'
-                }`}>
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${item.highlight ? 'bg-brand-100 text-brand-800' : 'bg-neutral-200/70 text-neutral-700'
+                  }`}>
                   {item.tag}
                 </span>
               </div>
@@ -1123,7 +1121,7 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/60 p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8 max-h-[90vh] overflow-y-auto print:max-w-none print:shadow-none print:p-0">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-200 pb-5 print:border-b-2">
           <div className="flex items-center gap-3">
@@ -1305,7 +1303,7 @@ function MandateStep({ lan, data, onNext }) {
   // through, so "Start New Authorization Session" (used to recover a session that died —
   // SDK closed mid-flow, expired access key, etc.) resumes the SAME type instead of
   // silently defaulting back to ENACH regardless of what was in progress.
-  const [selectedMandateType, setSelectedMandateType] = useState(mandateData.mandateType || 'ENACH');
+  const [selectedMandateType, setSelectedMandateType] = useState(mandateData.mandateType || 'UPI');
   // Deliberately never auto-opens from a stored portalUrl on mount: a portalUrl left over
   // from a prior session may already have been opened once (its Easebuzz access key is
   // then single-use and spent), and there's no reliable way to tell "never opened yet"
