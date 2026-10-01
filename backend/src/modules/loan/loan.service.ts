@@ -2200,6 +2200,77 @@ export class LoanService {
         }
       }
 
+      // 1. Check if this is a Presentment / Recurring Debit status update webhook
+      const isPresentment =
+        event.includes('PRESENTMENT') ||
+        Boolean(payload?.data?.presentment_date || payload?.presentment_date) ||
+        Boolean(payload?.data?.status_at_bank && (payload?.data?.merchant_request_number || payload?.data?.notification));
+
+      if (isPresentment) {
+        const merchantReqNo = payload?.data?.merchant_request_number || payload?.merchant_request_number;
+        const notifReqNo = payload?.data?.notification?.notification_request_number || payload?.data?.notification_request_number;
+        const debitId = payload?.data?.id || payload?.id;
+
+        const debitReq = await tx.easebuzzDebitRequest.findFirst({
+          where: {
+            OR: [
+              ...(merchantReqNo ? [{ merchantRequestNumber: String(merchantReqNo) }] : []),
+              ...(notifReqNo ? [{ notificationRequestNumber: String(notifReqNo) }] : []),
+              ...(merchantReqNo ? [{ notificationRequestNumber: String(merchantReqNo) }] : []),
+              ...(debitId ? [{ easebuzzRequestId: String(debitId) }] : []),
+            ],
+          },
+        });
+
+        if (debitReq) {
+          const rawDebitStatus = String(
+            payload?.data?.status || payload?.data?.status_at_bank || payload?.status || ''
+          ).toUpperCase();
+
+          const pgTxId = payload?.data?.easebuzz_id || payload?.data?.pg_transaction_id || payload?.easebuzz_id || null;
+          const bankRef = payload?.data?.bank_reference_number || payload?.bank_reference_number || null;
+
+          if (['SUCCESS', 'PAID', 'SETTLED', 'COMPLETED'].includes(rawDebitStatus)) {
+            await tx.easebuzzDebitRequest.update({
+              where: { id: debitReq.id },
+              data: {
+                status: 'SUCCESS',
+                statusAtBank: rawDebitStatus,
+                pgTransactionId: pgTxId ? String(pgTxId) : debitReq.pgTransactionId,
+                bankReferenceNumber: bankRef ? String(bankRef) : debitReq.bankReferenceNumber,
+                completedAt: new Date(),
+              },
+            });
+
+            try {
+              await this.processRepayment(debitReq.lan, {
+                installmentNumber: debitReq.installmentNumber,
+                amount: Number(debitReq.amount),
+                paymentId: merchantReqNo ? String(merchantReqNo) : debitReq.merchantRequestNumber,
+                paymentMode: 'EASEBUZZ',
+                referenceNumber: bankRef ? String(bankRef) : (pgTxId ? String(pgTxId) : debitReq.merchantRequestNumber),
+              });
+              this.logger.log(`[Webhook] Successfully reconciled presentment for LAN ${debitReq.lan} RPS #${debitReq.installmentNumber}`);
+            } catch (err: any) {
+              this.logger.error(`[Webhook] Repayment allocation error for LAN ${debitReq.lan}: ${err?.message || err}`);
+            }
+
+            return { success: true, processed: true, event: 'PRESENTMENT_SUCCESS' };
+          } else if (['FAILURE', 'FAILED', 'REJECTED', 'BOUNCED', 'CANCELLED', 'DROPPED'].includes(rawDebitStatus)) {
+            await tx.easebuzzDebitRequest.update({
+              where: { id: debitReq.id },
+              data: {
+                status: 'FAILURE',
+                statusAtBank: rawDebitStatus,
+                failureReason: String(payload?.data?.response_meta?.description || rawDebitStatus).slice(0, 500),
+                completedAt: new Date(),
+              },
+            });
+            return { success: true, processed: true, event: 'PRESENTMENT_FAILURE' };
+          }
+        }
+      }
+
       const mandate = await tx.plLoanMandate.findFirst({
         where: {
           OR: [

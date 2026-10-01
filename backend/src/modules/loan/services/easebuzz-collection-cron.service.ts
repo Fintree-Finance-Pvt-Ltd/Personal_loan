@@ -506,20 +506,68 @@ export class EasebuzzCollectionCronService {
           reqDate = todayStr;
         }
 
-        const res = await this.easebuzzAutocollectService.getDebitRequests({
+        const extractList = (data: any): any[] => {
+          if (!data) return [];
+          if (Array.isArray(data)) return data;
+          if (Array.isArray(data.results)) return data.results;
+          if (Array.isArray(data.presentments)) return data.presentments;
+          if (Array.isArray(data.data)) return data.data;
+          return typeof data === 'object' && !data.request_id ? [data] : [];
+        };
+
+        let res = await this.easebuzzAutocollectService.getDebitRequests({
           merchantRequestNumber: debitReq.merchantRequestNumber,
           createdAt: reqDate,
         });
 
-        if (!res.success || !res.data) {
+        let rawList = extractList(res?.data);
+
+        // Fallback 1: Query by notificationRequestNumber if empty results (scheduled UPI notifications use NT_...)
+        if (rawList.length === 0 && debitReq.notificationRequestNumber) {
+          const fallbackNotifRes = await this.easebuzzAutocollectService.getDebitRequests({
+            notificationRequestNumber: debitReq.notificationRequestNumber,
+            createdAt: reqDate,
+          });
+          rawList = extractList(fallbackNotifRes?.data);
+        }
+
+        // Fallback 2: Query by mandateId if still empty
+        if (rawList.length === 0 && (debitReq.mandateId || debitReq.mandateTransactionId)) {
+          const mandate = await this.prisma.plLoanMandate.findFirst({
+            where: {
+              OR: [
+                ...(debitReq.mandateId ? [{ id: debitReq.mandateId }] : []),
+                ...(debitReq.mandateTransactionId ? [{ merchantTransactionId: debitReq.mandateTransactionId }] : []),
+              ],
+            },
+            select: { providerMandateId: true, merchantTransactionId: true },
+          });
+          const mId = mandate?.providerMandateId || mandate?.merchantTransactionId;
+          if (mId) {
+            const fallbackMandateRes = await this.easebuzzAutocollectService.getDebitRequests({
+              mandateId: mId,
+              createdAtStart: reqDate,
+              createdAtEnd: todayStr,
+            });
+            rawList = extractList(fallbackMandateRes?.data);
+          }
+        }
+
+        if (rawList.length === 0) {
           remaining++;
           continue;
         }
 
-        const rawList = Array.isArray(res.data) ? res.data : (res.data.presentments || res.data.data || [res.data]);
         const matched = rawList.find(
-          (item: any) =>
-            String(item.merchant_request_number || item.merchant_request_no || '').trim() === debitReq.merchantRequestNumber,
+          (item: any) => {
+            const mReq = String(item.merchant_request_number || item.merchant_request_no || '').trim();
+            const notifReq = String(item.notification?.notification_request_number || item.notification_request_number || '').trim();
+            return (
+              (debitReq.merchantRequestNumber && mReq === debitReq.merchantRequestNumber) ||
+              (debitReq.notificationRequestNumber && (mReq === debitReq.notificationRequestNumber || notifReq === debitReq.notificationRequestNumber)) ||
+              (debitReq.easebuzzRequestId && String(item.id || '').trim() === debitReq.easebuzzRequestId)
+            );
+          },
         ) || rawList[0];
 
         if (!matched || typeof matched !== 'object') {
