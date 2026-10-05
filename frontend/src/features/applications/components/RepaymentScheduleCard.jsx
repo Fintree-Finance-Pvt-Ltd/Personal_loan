@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bell, CheckCircle2, Loader2, RefreshCw, Zap } from 'lucide-react';
+import { Ban, Bell, CheckCircle2, Loader2, RefreshCw, Zap } from 'lucide-react';
 import { Alert, Badge, Button, Panel, TableShell } from '../../../components/ui';
 import { applicationsApi } from '../api/applications.api';
 import { apiError } from '../../../lib/api';
@@ -41,11 +41,47 @@ export function RepaymentScheduleCard({
   onChanged,
 }) {
   const [processingRpsId, setProcessingRpsId] = useState(null);
+  const [isCancellingMandate, setIsCancellingMandate] = useState(false);
   const [message, setMessage] = useState(null);
 
   const activeMandate = mandates.find(
     (m) => m.status === 'AUTHORIZED' || m.status === 'COMPLETED',
   ) || mandates[0];
+
+  const isMandateCancelled =
+    activeMandate?.status === 'CANCELLED' ||
+    activeMandate?.status === 'REVOKED' ||
+    activeMandate?.status === 'USER_CANCELLED';
+
+  const handleCancelMandate = async () => {
+    if (!canManage || !activeMandate) return;
+    const actionLabel = activeMandate.mandateType === 'ENACH' ? 'cancel' : 'revoke';
+    const identifier = activeMandate.merchantTransactionId || activeMandate.providerMandateId || activeMandate.id;
+    const confirmMsg = `Are you sure you want to ${actionLabel} the ${activeMandate.mandateType} mandate (${identifier}) for LAN ${lan}?\n\nThis will send a mandate status update to Easebuzz to ${actionLabel} the authorization. This action cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsCancellingMandate(true);
+    setMessage(null);
+
+    try {
+      const res = await applicationsApi.cancelMandate(lan, {
+        mandateId: activeMandate.id,
+        remarks: 'AdminCancelled',
+      });
+      setMessage({
+        type: res?.success !== false ? 'success' : 'danger',
+        text: res?.message || `Mandate ${identifier} ${actionLabel}led successfully.`,
+      });
+      if (onChanged) onChanged();
+    } catch (err) {
+      setMessage({
+        type: 'danger',
+        text: apiError(err, 'Failed to cancel mandate on Easebuzz.'),
+      });
+    } finally {
+      setIsCancellingMandate(false);
+    }
+  };
 
   const handleSendNotification = async (schedule) => {
     if (!canManage) return;
@@ -126,7 +162,13 @@ export function RepaymentScheduleCard({
         <span className="flex flex-wrap items-center gap-2">
           Repayment schedule &amp; AutoCollect mandate presentment
           {activeMandate && (
-            <Badge tone={activeMandate.status === 'AUTHORIZED' || activeMandate.status === 'COMPLETED' ? 'brand' : 'caution'}>
+            <Badge tone={
+              activeMandate.status === 'AUTHORIZED' || activeMandate.status === 'COMPLETED'
+                ? 'brand'
+                : isMandateCancelled
+                  ? 'neutral'
+                  : 'caution'
+            }>
               {activeMandate.mandateType} ({activeMandate.status})
             </Badge>
           )}
@@ -135,10 +177,36 @@ export function RepaymentScheduleCard({
       description="View EMI schedule, mandate details, and trigger manual or scheduled AutoCollect debit requests."
       actions={
         activeMandate && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 shadow-sm">
-            <span><strong className="text-ink">Mandate ID:</strong> {activeMandate.merchantTransactionId || activeMandate.providerMandateId || '-'}</span>
-            <span>·</span>
-            <span><strong className="text-ink">Max limit:</strong> {formatCurrency(activeMandate.amount)}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 shadow-sm">
+              <span><strong className="text-ink">Mandate ID:</strong> {activeMandate.merchantTransactionId || activeMandate.providerMandateId || '-'}</span>
+              <span>·</span>
+              <span><strong className="text-ink">Max limit:</strong> {formatCurrency(activeMandate.amount)}</span>
+            </div>
+            {canManage && (
+              <Button
+                type="button"
+                variant={isMandateCancelled ? 'secondary' : 'danger'}
+                size="sm"
+                disabled={isMandateCancelled || isCancellingMandate || Boolean(processingRpsId)}
+                onClick={handleCancelMandate}
+                title={isMandateCancelled ? `Mandate is already ${activeMandate.status}` : 'Cancel or revoke mandate on Easebuzz'}
+              >
+                {isCancellingMandate ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Cancelling…
+                  </>
+                ) : isMandateCancelled ? (
+                  `Mandate ${activeMandate.status}`
+                ) : (
+                  <>
+                    <Ban size={13} />
+                    Cancel Mandate
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         )
       }

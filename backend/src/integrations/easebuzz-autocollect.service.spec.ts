@@ -234,5 +234,120 @@ describe('EasebuzzAutocollectService - Webhook Hash Verification', () => {
       expect(capturedPayload.start_date).toBe('2099-01-01');
     });
   });
+
+  describe('updateMandateStatus - Mandate Cancellation / Revocation', () => {
+    it('sends status: "cancel" for ENACH with SHA-512 Authorization header', async () => {
+      let capturedUrl = '';
+      let capturedPayload: any = null;
+      let capturedHeaders: any = null;
+
+      jest.spyOn(axios, 'post').mockImplementation((url: string, payload: any, config: any) => {
+        capturedUrl = url;
+        capturedPayload = payload;
+        capturedHeaders = config?.headers;
+        return Promise.resolve({
+          status: 200,
+          data: {
+            success: true,
+            message: 'Mandate cancelled successfully',
+            data: { status: 'cancelled' },
+          },
+        }) as any;
+      });
+
+      const txId = 'PLM_TXN_ENACH_001';
+      const expectedAuth = createHash('sha512').update(`${mockKey}|${txId}|${mockSalt}`).digest('hex');
+
+      const result = await service.updateMandateStatus({
+        transactionId: txId,
+        mandateType: 'ENACH',
+        remarks: 'LoanFullyPaid',
+      });
+
+      expect(result.success).toBe(true);
+      expect(capturedUrl).toContain(`/autocollect/v1/mandate/${txId}/status_update`);
+      expect(capturedPayload).toEqual({
+        key: mockKey,
+        status: 'cancel',
+        remarks: 'LoanFullyPaid',
+      });
+      expect(capturedHeaders.Authorization).toBe(expectedAuth);
+      expect(capturedHeaders['X-EB-MERCHANT-KEY']).toBe(mockKey);
+    });
+
+    it('sends status: "revoke" for UPI with SHA-512 Authorization header', async () => {
+      let capturedPayload: any = null;
+
+      jest.spyOn(axios, 'post').mockImplementation((_url: string, payload: any) => {
+        capturedPayload = payload;
+        return Promise.resolve({
+          status: 200,
+          data: {
+            success: true,
+            message: 'Mandate revoked successfully',
+            data: { status: 'revoked' },
+          },
+        }) as any;
+      });
+
+      const txId = 'PLM_TXN_UPI_002';
+      const result = await service.updateMandateStatus({
+        transactionId: txId,
+        mandateType: 'UPI',
+        remarks: 'AdminRevoke123',
+      });
+
+      expect(result.success).toBe(true);
+      expect(capturedPayload.status).toBe('revoke');
+      expect(capturedPayload.remarks).toBe('AdminRevoke123');
+    });
+
+    it('on 5xx response, invokes retrieveMandate to verify status rather than blindly retrying POST', async () => {
+      jest.spyOn(axios, 'post').mockRejectedValue({
+        response: {
+          status: 502,
+          data: { message: 'Bad Gateway' },
+        },
+      });
+
+      jest.spyOn(service, 'retrieveMandate').mockResolvedValue({
+        success: true,
+        data: {
+          status: 'cancelled',
+          mandate_id: 'MR_CANCELLED_001',
+        },
+        sanitizedResponse: { status: 'cancelled' },
+      } as any);
+
+      const result = await service.updateMandateStatus({
+        transactionId: 'PLM_TXN_5XX_001',
+        mandateType: 'ENACH',
+      });
+
+      expect(service.retrieveMandate).toHaveBeenCalledWith('PLM_TXN_5XX_001');
+      expect(result.success).toBe(true);
+      expect(result.statusVerificationRequired).toBe(false);
+      expect(result.message).toContain('verified as CANCELLED');
+    });
+
+    it('on 5xx response where retrieveMandate is still unverified, flags statusVerificationRequired: true', async () => {
+      jest.spyOn(axios, 'post').mockRejectedValue({
+        response: {
+          status: 500,
+          data: { message: 'Internal Server Error' },
+        },
+      });
+
+      jest.spyOn(service, 'retrieveMandate').mockRejectedValue(new Error('Gateway Timeout'));
+
+      const result = await service.updateMandateStatus({
+        transactionId: 'PLM_TXN_500_UNVERIFIED',
+        mandateType: 'ENACH',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.statusVerificationRequired).toBe(true);
+    });
+  });
 });
 
