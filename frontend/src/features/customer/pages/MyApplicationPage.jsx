@@ -546,7 +546,7 @@ export default function MyApplicationPage() {
 
   const [isPanVerifying, setIsPanVerifying] = useState(false);
   const [panVerified, setPanVerified] = useState(false);
-  const [, setPanVerification] = useState(null);
+  const [panVerification, setPanVerification] = useState(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
@@ -1187,7 +1187,7 @@ export default function MyApplicationPage() {
     clearMessage();
 
     try {
-      const result = await verifyCustomerPan(normalizedPan);
+      const result = await verifyCustomerPan(normalizedPan, form.fullName);
 
       const responsePayload =
         result?.data?.data ||
@@ -1276,17 +1276,7 @@ export default function MyApplicationPage() {
           '',
         );
 
-      if (!normalizedDateOfBirth) {
-        throw new Error(
-          'The PAN provider did not return a valid date of birth.',
-        );
-      }
-
-      if (!normalizedGender) {
-        throw new Error(
-          'The PAN provider did not return a valid gender.',
-        );
-      }
+      // Date of birth and gender will be populated if returned by provider; otherwise customer enters them
 
       const updatedForm = {
         ...form,
@@ -1299,9 +1289,9 @@ export default function MyApplicationPage() {
         ...(providerFatherName ? { fatherName: providerFatherName } : {}),
 
         dateOfBirth:
-          normalizedDateOfBirth,
+          normalizedDateOfBirth || form.dateOfBirth,
 
-        gender: normalizedGender,
+        gender: normalizedGender || form.gender,
 
         pincode: isValidPincode(
           panData.pincode ||
@@ -1449,6 +1439,8 @@ export default function MyApplicationPage() {
       if (customerId && form.fatherName) {
         await updateBasicDetails(customerId, {
           fatherName: form.fatherName.trim(),
+          dateOfBirth: form.dateOfBirth || undefined,
+          gender: form.gender || undefined,
           residentialPincode: form.pincode ? form.pincode.trim() : undefined,
           email: form.email ? form.email.trim() : undefined,
           emailVerified: emailVerified,
@@ -1996,6 +1988,7 @@ export default function MyApplicationPage() {
               developmentEmailOtp
             }
             panVerified={panVerified}
+            panVerification={panVerification}
             isPanVerifying={
               isPanVerifying
             }
@@ -3137,6 +3130,7 @@ function BasicDetailsStep({
   emailOtp,
   developmentEmailOtp,
   panVerified,
+  panVerification,
   isPanVerifying,
   isBreRunning,
   isSaving,
@@ -3597,36 +3591,34 @@ function BasicDetailsStep({
                 label="Date of birth"
                 name="dateOfBirth"
                 type="date"
-                value={
-                  form.dateOfBirth
+                value={form.dateOfBirth}
+                error={errors.dateOfBirth}
+                onChange={onChange}
+                readOnly={Boolean(panVerification?.dateOfBirth)}
+                disabled={Boolean(panVerification?.dateOfBirth)}
+                helperText={
+                  panVerification?.dateOfBirth
+                    ? "Verified from PAN"
+                    : "Enter date of birth if not auto-filled"
                 }
-                error={
-                  errors.dateOfBirth
-                }
-                readOnly
-                disabled
-                helperText="Verified from PAN"
               />
 
               <FormSelect
                 label="Gender"
                 name="gender"
                 value={form.gender}
-                error={
-                  errors.gender
+                error={errors.gender}
+                onChange={onChange}
+                disabled={Boolean(panVerification?.gender)}
+                helperText={
+                  panVerification?.gender
+                    ? "Verified from PAN"
+                    : "Select gender if not auto-filled"
                 }
-                onChange={() => { }}
-                disabled
                 options={[
                   ['MALE', 'Male'],
-                  [
-                    'FEMALE',
-                    'Female',
-                  ],
-                  [
-                    'OTHER',
-                    'Other',
-                  ],
+                  ['FEMALE', 'Female'],
+                  ['OTHER', 'Other'],
                 ]}
               />
 

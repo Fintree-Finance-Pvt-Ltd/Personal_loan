@@ -6,6 +6,7 @@ describe('AdminLoanServicingController', () => {
     const loanService: any = {
       addLoanCharge: jest.fn().mockResolvedValue({ success: true, chargeId: '601' }),
       waiveLoanCharge: jest.fn().mockResolvedValue({ success: true, waiverId: '701', remainingAmount: 0 }),
+      cancelMandateForLoan: jest.fn().mockResolvedValue({ success: true, status: 'CANCELLED' }),
     };
     const cronService: any = {
       retryDebit: jest.fn().mockResolvedValue({ success: true, status: 'IN_PROCESS' }),
@@ -134,5 +135,23 @@ describe('AdminLoanServicingController', () => {
     const res = await controller.getNotificationStatus('NT_FTPL00000011_4_4');
     expect(res.success).toBe(true);
     expect(res.status).toBe('notified');
+  });
+
+  it('cancelMandate delegates to loanService.cancelMandateForLoan with ADMIN_MANUAL', async () => {
+    const { controller, loanService } = buildController();
+
+    const res = await controller.cancelMandate(
+      'FTPL00000001',
+      { mandateId: '101', remarks: 'AdminCancelled' },
+      { userId: 'USER-ADMIN-1' } as any,
+    );
+
+    expect(res).toEqual({ success: true, status: 'CANCELLED' });
+    expect(loanService.cancelMandateForLoan).toHaveBeenCalledWith('FTPL00000001', {
+      mandateId: '101',
+      remarks: 'AdminCancelled',
+      actorUserId: 'USER-ADMIN-1',
+      reason: 'ADMIN_MANUAL',
+    });
   });
 });

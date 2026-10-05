@@ -22,6 +22,23 @@ import { SmsAutomationService } from '../integrations/sms/sms-automation.service
 import { WhatsAppAutomationService } from '../integrations/whatsapp/whatsapp-automation.service';
 import { ReferralService } from '../referral/referral.service';
 
+export interface CancelMandateResult {
+  success: boolean;
+  status?: string;
+  alreadyCancelled?: boolean;
+  statusVerificationRequired?: boolean;
+  message?: string;
+  mandateId?: string;
+  results?: Array<{
+    mandateId: string;
+    success: boolean;
+    status?: string;
+    alreadyCancelled?: boolean;
+    statusVerificationRequired?: boolean;
+    message?: string;
+  }>;
+}
+
 @Injectable()
 export class LoanService {
   private readonly logger = new Logger(LoanService.name);
@@ -2068,6 +2085,255 @@ export class LoanService {
     return this.getMandateStatus(lan, customerId);
   }
 
+  /**
+   * Cancels/revokes mandate for a loan on Easebuzz.
+   * Shared function used for both automatic cancellation (upon loan being fully paid)
+   * and manual cancellation by admin.
+   */
+  async cancelMandateForLoan(
+    lanInput: string,
+    options?: {
+      mandateId?: bigint | string;
+      remarks?: string;
+      actorUserId?: bigint | string;
+      reason?: string;
+    },
+  ): Promise<CancelMandateResult> {
+    const lan = String(lanInput || '').trim();
+    if (!lan) throw new BadRequestException('LAN is required.');
+
+    const loan = await this.prisma.plLoan.findFirst({
+      where: { lan },
+      include: {
+        mandates: {
+          orderBy: { id: 'desc' },
+        },
+      },
+    });
+
+    if (!loan) {
+      throw new NotFoundException(`Loan with LAN ${lan} not found.`);
+    }
+
+    // Do not cancel on partial payment when triggered automatically
+    if (options?.reason !== 'ADMIN_MANUAL' && loan.status !== PlLoanStatus.FULLY_PAID) {
+      const remainingSchedules = await this.prisma.plRepaymentSchedule.count({
+        where: { lan, paymentStatus: { not: 'PAID' } },
+      });
+      if (remainingSchedules > 0) {
+        this.logger.warn(`Skipping automatic mandate cancellation for LAN ${lan}: Loan still has ${remainingSchedules} unpaid installments.`);
+        return {
+          success: false,
+          statusVerificationRequired: false,
+          message: 'Loan is not fully paid. Mandate cannot be cancelled on partial payment.',
+        };
+      }
+    }
+
+    // Find candidate mandates to cancel
+    let targetMandates: any[] = [];
+    if (options?.mandateId) {
+      const found = loan.mandates.find((m) => m.id.toString() === options.mandateId?.toString());
+      if (found) {
+        targetMandates = [found];
+      } else {
+        const dbMandate = await this.prisma.plLoanMandate.findUnique({
+          where: { id: BigInt(options.mandateId) },
+        });
+        if (dbMandate) targetMandates = [dbMandate];
+      }
+    } else {
+      // Look for any active/authorized or pending mandates that are not yet cancelled/revoked
+      targetMandates = loan.mandates.filter(
+        (m) =>
+          !([
+            PlMandateStatus.CANCELLED,
+            PlMandateStatus.REVOKED,
+            PlMandateStatus.USER_CANCELLED,
+          ] as PlMandateStatus[]).includes(m.status) &&
+          !['CANCELLED', 'REVOKED', 'CANCEL', 'REVOKE'].includes(String(m.providerStatus).toUpperCase()),
+      );
+    }
+
+    if (targetMandates.length === 0) {
+      this.logger.log(`No active or cancellable mandates found for loan ${lan}. Mandates may already be cancelled/revoked.`);
+      return {
+        success: true,
+        alreadyCancelled: true,
+        statusVerificationRequired: false,
+        message: 'No active mandate found or mandate is already cancelled/revoked.',
+      };
+    }
+
+    const results = [];
+    for (const targetMandate of targetMandates) {
+      // Do not call the API again if mandate is already cancelled/revoked
+      const isAlreadyCancelled =
+        ([PlMandateStatus.CANCELLED, PlMandateStatus.REVOKED, PlMandateStatus.USER_CANCELLED] as PlMandateStatus[]).includes(targetMandate.status) ||
+        ['CANCELLED', 'REVOKED', 'CANCEL', 'REVOKE'].includes(String(targetMandate.providerStatus).toUpperCase());
+
+      if (isAlreadyCancelled) {
+        this.logger.log(`Mandate ${targetMandate.merchantTransactionId} for loan ${lan} is already cancelled/revoked (${targetMandate.status}). Skipping API call.`);
+        results.push({
+          mandateId: targetMandate.id.toString(),
+          success: true,
+          alreadyCancelled: true,
+          status: targetMandate.status,
+          message: `Mandate is already ${targetMandate.status}.`,
+        });
+        continue;
+      }
+
+      // Use the existing stored Easebuzz transaction_id or mandate_id
+      const identifier = targetMandate.merchantTransactionId || targetMandate.providerMandateId;
+      if (!identifier) {
+        const errMsg = `Mandate ${targetMandate.id} does not have a valid transaction_id or provider_mandate_id.`;
+        this.logger.error(errMsg);
+        if (options?.reason === 'ADMIN_MANUAL') {
+          throw new BadRequestException(errMsg);
+        }
+        results.push({ mandateId: targetMandate.id.toString(), success: false, message: errMsg });
+        continue;
+      }
+
+      const cleanRemarks = options?.remarks
+        ? String(options.remarks).replace(/[^A-Za-z0-9]/g, '')
+        : options?.reason === 'ADMIN_MANUAL'
+          ? 'AdminCancelled'
+          : 'LoanFullyPaid';
+
+      this.logger.log(
+        `[cancelMandateForLoan] Requesting Easebuzz mandate status update for LAN: ${lan}, Mandate ID: ${targetMandate.id}, Identifier: ${identifier}, type: ${targetMandate.mandateType}`,
+      );
+
+      const res = await this.easebuzzAutocollectService.updateMandateStatus({
+        transactionId: identifier,
+        mandateType: targetMandate.mandateType,
+        remarks: cleanRemarks,
+      });
+
+      const finalStatus = targetMandate.mandateType === 'ENACH' ? PlMandateStatus.CANCELLED : PlMandateStatus.REVOKED;
+
+      if (res.success) {
+        await this.prisma.$transaction([
+          this.prisma.plLoanMandate.update({
+            where: { id: targetMandate.id },
+            data: {
+              status: finalStatus,
+              providerStatus: String(res.data?.status || (targetMandate.mandateType === 'ENACH' ? 'CANCELLED' : 'REVOKED')),
+              providerSubStatus: null,
+              lastStatusCheckedAt: new Date(),
+              providerResponseJson: JSON.stringify(res.rawResponse || res.data || {}),
+            },
+          }),
+          this.prisma.plLoan.update({
+            where: { id: loan.id },
+            data: {
+              mandateStatus: finalStatus,
+            },
+          }),
+        ]);
+
+        this.auditLogs
+          .record({
+            actorUserId: options?.actorUserId ? String(options.actorUserId) : null,
+            module: 'LOAN',
+            action: 'MANDATE_CANCELLED',
+            entityType: 'PlLoanMandate',
+            entityId: targetMandate.id.toString(),
+            outcome: 'SUCCESS',
+            requestId: randomBytes(16).toString('hex'),
+            newValue: {
+              lan,
+              mandateId: targetMandate.id.toString(),
+              identifier,
+              mandateType: targetMandate.mandateType,
+              status: finalStatus,
+              reason: options?.reason || 'LOAN_FULLY_PAID',
+            },
+          })
+          .catch(() => { });
+
+        results.push({
+          mandateId: targetMandate.id.toString(),
+          success: true,
+          status: finalStatus,
+          message: res.message || `Mandate ${identifier} ${finalStatus.toLowerCase()} successfully.`,
+        });
+      } else if (res.statusVerificationRequired) {
+        await this.prisma.plLoanMandate.update({
+          where: { id: targetMandate.id },
+          data: {
+            providerSubStatus: 'STATUS_VERIFICATION_REQUIRED',
+            failureReason: String(res.message || 'Status verification required following 5xx error').slice(0, 500),
+            lastStatusCheckedAt: new Date(),
+            providerResponseJson: JSON.stringify(res.rawResponse || {}),
+          },
+        });
+
+        this.auditLogs
+          .record({
+            actorUserId: options?.actorUserId ? String(options.actorUserId) : null,
+            module: 'LOAN',
+            action: 'MANDATE_CANCEL_STATUS_VERIFICATION_REQUIRED',
+            entityType: 'PlLoanMandate',
+            entityId: targetMandate.id.toString(),
+            outcome: 'FAILURE',
+            requestId: randomBytes(16).toString('hex'),
+            newValue: {
+              lan,
+              mandateId: targetMandate.id.toString(),
+              identifier,
+              statusVerificationRequired: true,
+              message: res.message,
+            },
+          })
+          .catch(() => { });
+
+        if (options?.reason === 'ADMIN_MANUAL') {
+          throw new BadRequestException(res.message || 'Provider returned 5xx server error. Mandate marked for status verification.');
+        }
+
+        results.push({
+          mandateId: targetMandate.id.toString(),
+          success: false,
+          statusVerificationRequired: true,
+          message: res.message,
+        });
+      } else {
+        await this.prisma.plLoanMandate.update({
+          where: { id: targetMandate.id },
+          data: {
+            failureReason: String(res.message || res.error || 'Mandate status update failed').slice(0, 500),
+            lastStatusCheckedAt: new Date(),
+            providerResponseJson: JSON.stringify(res.rawResponse || {}),
+          },
+        });
+
+        if (options?.reason === 'ADMIN_MANUAL') {
+          throw new BadRequestException(res.message || 'Failed to cancel mandate on Easebuzz.');
+        }
+
+        results.push({
+          mandateId: targetMandate.id.toString(),
+          success: false,
+          message: res.message || 'Failed to cancel mandate on Easebuzz.',
+        });
+      }
+    }
+
+    const allSuccessful = results.length > 0 && results.every((r) => r.success);
+    const hasStatusVerification = results.some((r) => r.statusVerificationRequired);
+    return {
+      success: allSuccessful,
+      statusVerificationRequired: hasStatusVerification,
+      results,
+      status: results[0]?.status,
+      mandateId: results[0]?.mandateId,
+      message: results[0]?.message || 'Mandate cancellation processed.',
+    };
+  }
+
   async handleEasebuzzMandateWebhook(payload: any, metadata?: { ipAddress?: string; userAgent?: string }) {
     const txId =
       payload?.merchant_transaction_id ||
@@ -3588,6 +3854,13 @@ export class LoanService {
     if (result.loanFullyPaid && this.whatsappAutomationService) {
       this.whatsappAutomationService.triggerLoanFullyPaidWhatsApp(lan, result.applicationId).catch((err) => {
         this.logger.warn(`Failed to auto-trigger repeat loan offer WhatsApp message for loan ${lan}: ${err?.message}`);
+      });
+    }
+
+    if (result.loanFullyPaid) {
+      // Mandate cancellation failure must not rollback or fail a successful repayment.
+      this.cancelMandateForLoan(lan, { reason: 'LOAN_FULLY_PAID', remarks: 'LoanFullyPaid' }).catch((err) => {
+        this.logger.error(`Failed to auto-cancel mandate for fully paid loan ${lan}: ${err?.message || err}`);
       });
     }
 

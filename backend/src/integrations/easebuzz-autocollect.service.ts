@@ -587,6 +587,142 @@ export class EasebuzzAutocollectService {
     throw new ServiceUnavailableException(`Unable to retrieve mandate status from provider: ${msg} (Attempts: ${attemptErrors.join(' ; ')})`);
   }
 
+  /**
+   * Updates mandate status with Easebuzz (Cancel for ENACH, Revoke for UPI/SI)
+   * API: POST /autocollect/v1/mandate/{transaction_id or mandate_id}/status_update
+   */
+  async updateMandateStatus(input: {
+    transactionId: string;
+    mandateType: 'ENACH' | 'UPI' | 'SI' | string;
+    remarks?: string;
+  }): Promise<{
+    success: boolean;
+    statusVerificationRequired?: boolean;
+    statusCode?: number;
+    message?: string;
+    data?: any;
+    rawResponse?: any;
+    error?: any;
+  }> {
+    if (!this.merchantKey || !this.merchantSalt) {
+      throw new BadRequestException('Easebuzz credentials not configured.');
+    }
+
+    const identifier = String(input.transactionId || '').trim();
+    if (!identifier) {
+      throw new BadRequestException('Transaction ID or Mandate ID is required.');
+    }
+
+    // Determine status: "cancel" for ENACH, "revoke" for UPI and SI
+    const normalizedType = String(input.mandateType || '').trim().toUpperCase();
+    const actionStatus = normalizedType === 'ENACH' ? 'cancel' : 'revoke';
+
+    // Remarks to cancel the mandate. Match pattern: ^[A-Za-z0-9]+$
+    const rawRemarks = input.remarks ? String(input.remarks).replace(/[^A-Za-z0-9]/g, '') : '';
+    const cleanRemarks = rawRemarks || (actionStatus === 'cancel' ? 'LoanFullyPaid' : 'LoanFullyPaid');
+
+    // SHA-512 Authorization Hash: <key>|<transaction_id or mandate_id>|<salt>
+    const authInput = `${this.merchantKey}|${identifier}|${this.merchantSalt}`;
+    const authorization = this.sha512Hex(authInput);
+
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'X-EB-MERCHANT-KEY': this.merchantKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+
+    if (this.subMerchantId) {
+      headers['X-EB-SUB-MERCHANT-ID'] = this.subMerchantId;
+      headers['sub_merchant_id'] = this.subMerchantId;
+      headers['submerchant_id'] = this.subMerchantId;
+      headers['sub-merchant-id'] = this.subMerchantId;
+    }
+
+    const payload = {
+      key: this.merchantKey,
+      status: actionStatus,
+      remarks: cleanRemarks,
+    };
+
+    const url = `${this.apiBaseUrl.replace(/\/+$/, '')}/autocollect/v1/mandate/${encodeURIComponent(identifier)}/status_update`;
+
+    this.logger.log(`[Easebuzz Mandate Status Update] Sending ${actionStatus} request for Mandate TxID: "${identifier}" to ${url}`);
+
+    try {
+      const response = await axios.post(url, payload, { headers, timeout: 30000 });
+      const resData = response.data;
+
+      this.logger.log(`[Easebuzz Mandate Status Update] Success for TxID "${identifier}". Response: ${JSON.stringify(resData)}`);
+
+      const isSuccess = Boolean(resData?.success === true || resData?.status === true || resData?.data?.status);
+
+      return {
+        success: isSuccess,
+        statusCode: response.status,
+        message: resData?.message || 'Mandate status update request successful.',
+        data: resData?.data || resData,
+        rawResponse: this.sanitizeEasebuzzMandatePayload(resData),
+      };
+    } catch (err: any) {
+      const status = err.response?.status;
+      const errData = err.response?.data;
+      const errorMsg = errData?.message || errData?.error || err.message;
+
+      this.logger.error(`[Easebuzz Mandate Status Update] Failed for TxID "${identifier}": HTTP ${status} -> ${JSON.stringify(errData || errorMsg)}`);
+
+      // Per Easebuzz docs: In the event of any 5xx (server-side) response for a POST API request,
+      // merchants must invoke the corresponding Retrieve Status (GET) API to fetch the latest status
+      // of the mandate or transaction. Do not blindly retry the POST request.
+      if (status && status >= 500 && status < 600) {
+        this.logger.warn(`[Easebuzz Mandate Status Update] 5xx received (${status}). Invoking Retrieve Status (GET) for TxID "${identifier}"...`);
+        try {
+          const retrieveRes = await this.retrieveMandate(identifier);
+          const retrievedData = retrieveRes?.data;
+          const retrievedRawStatus = String(
+            retrievedData?.status ||
+            retrievedData?.mandate_status ||
+            retrievedData?.state ||
+            retrievedData?.provider_status ||
+            ''
+          ).toUpperCase();
+
+          const isRetrievedCancelled = ['CANCEL', 'CANCELLED', 'REVOKE', 'REVOKED'].includes(retrievedRawStatus);
+
+          return {
+            success: isRetrievedCancelled,
+            statusVerificationRequired: !isRetrievedCancelled,
+            statusCode: status,
+            message: isRetrievedCancelled
+              ? `Mandate status verified as ${retrievedRawStatus} following 5xx error.`
+              : `Provider returned HTTP ${status}. Mandate status retrieved as ${retrievedRawStatus || 'UNKNOWN'} — verification required.`,
+            data: retrievedData,
+            rawResponse: retrieveRes?.sanitizedResponse || errData,
+            error: errorMsg,
+          };
+        } catch (retrieveErr: any) {
+          this.logger.error(`[Easebuzz Mandate Status Update] Status retrieval check after 5xx also failed for TxID "${identifier}": ${retrieveErr?.message || retrieveErr}`);
+          return {
+            success: false,
+            statusVerificationRequired: true,
+            statusCode: status,
+            message: `Provider returned HTTP ${status}. Retrieve status check failed. Marked for status verification.`,
+            rawResponse: errData,
+            error: errorMsg,
+          };
+        }
+      }
+
+      return {
+        success: false,
+        statusCode: status,
+        message: errorMsg,
+        rawResponse: errData,
+        error: errorMsg,
+      };
+    }
+  }
+
   public verifyEasebuzzMandateWebhookHash(payload: any, webhookSecret?: string): boolean {
     try {
       const data = payload?.data || {};

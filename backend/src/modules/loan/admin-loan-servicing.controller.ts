@@ -54,6 +54,17 @@ export class WaiveLoanChargeDto {
   remarks?: string | null;
 }
 
+export class CancelMandateDto {
+  @IsOptional()
+  @IsString()
+  mandateId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9]*$/, { message: 'remarks must contain only alphanumeric characters.' })
+  remarks?: string;
+}
+
 @Controller('admin/loans')
 export class AdminLoanServicingController {
   constructor(
@@ -62,6 +73,22 @@ export class AdminLoanServicingController {
     private readonly easebuzzAutocollectService: EasebuzzAutocollectService,
     private readonly prisma: PrismaService,
   ) { }
+
+  @Permissions('LOAN_MANAGE')
+  @Post(':lan/cancel-mandate')
+  @HttpCode(HttpStatus.OK)
+  cancelMandate(
+    @Param('lan') lan: string,
+    @Body() dto: CancelMandateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.loanService.cancelMandateForLoan(lan, {
+      mandateId: dto?.mandateId,
+      remarks: dto?.remarks,
+      actorUserId: user.userId,
+      reason: 'ADMIN_MANUAL',
+    });
+  }
 
   private parseChargeId(chargeId: string): bigint {
     if (!/^[1-9][0-9]*$/.test(chargeId)) {

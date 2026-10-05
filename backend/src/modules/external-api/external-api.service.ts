@@ -22,6 +22,7 @@ import {
 } from '@prisma/client';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
 import { AxiosError, AxiosResponse } from 'axios';
 import * as FormData from 'form-data';
 import { LenderIntegrationOutboxService } from '../lender-integrations/lender-integration-outbox.service';
@@ -60,6 +61,11 @@ export class ExternalApiService {
   private readonly panOcrApiUrl: string;
   private readonly panOcrApiKey: string;
 
+  // ZOOP PAN Configuration (Fallback)
+  private readonly zoopPanApiUrl: string;
+  private readonly zoopApiKey: string;
+  private readonly zoopAppId: string;
+
   // Face Liveness Configuration
   private readonly faceLivenessApiUrl: string;
   private readonly faceLivenessAuthHeader: string;
@@ -82,6 +88,11 @@ export class ExternalApiService {
 
     this.panOcrApiUrl = this.configService.get<string>('PAN_OCR_API_URL') || 'https://sandbox.fintreelms.com/ocr/v1/pan';
     this.panOcrApiKey = this.configService.get<string>('PAN_OCR_API_KEY') || 'Fintree@2026';
+
+    // ZOOP PAN API Setup (Fallback)
+    this.zoopPanApiUrl = this.configService.get<string>('ZOOP_PAN_API_URL') || 'https://test.zoop.one/api/v1/in/identity/pan/advance';
+    this.zoopApiKey = this.configService.get<string>('ZOOP_API_KEY') || '';
+    this.zoopAppId = this.configService.get<string>('ZOOP_APP_ID') || '';
 
     if (!Number.isFinite(this.panApiTimeoutMs) || this.panApiTimeoutMs <= 0) {
       throw new InternalServerErrorException(
@@ -335,7 +346,9 @@ export class ExternalApiService {
       String(input.customerId || ''),
     );
 
-    const normalizedPan = String(input.panNumber || '')
+    const normalizedPan = String(
+      input.panNumber || input.pan_number || input.id_number || '',
+    )
       .trim()
       .toUpperCase();
 
@@ -352,6 +365,7 @@ export class ExternalApiService {
         accountStatus: true,
         panNumber: true,
         panVerified: true,
+        fullName: true,
       },
     });
 
@@ -406,11 +420,37 @@ export class ExternalApiService {
       );
     }
 
-    const requestPayload = { panNumber: normalizedPan };
+    const isV5 =
+      this.panApiUrl.toLowerCase().includes('pandetailed') ||
+      this.panApiUrl.toLowerCase().includes('/v5') ||
+      this.panApiUrl.toLowerCase().includes('v5');
+
+    const requestPayload = isV5
+      ? { id_number: normalizedPan }
+      : {
+          panNumber: normalizedPan,
+          pan_number: normalizedPan,
+          id_number: normalizedPan,
+        };
 
     await this.markPanInitiated(customerId, requestPayload);
 
+    // Track state across providers
+    let finanalyzSuccess = false;
+    let finanalyzData: FinanalyzPanResponse | null = null;
+    let finanalyzError: any = null;
+    let customerNameForZoop = String(
+      input.fullName || input.panHolderName || customer.fullName || '',
+    ).trim();
+
+    // ──────────────────────────────────────────
+    // 1️⃣ PRIMARY PROVIDER: Finanalyz
+    // ──────────────────────────────────────────
     try {
+      this.logger.log(
+        `Attempting PAN verification via Finanalyz for customer ${customer.customerCode}...`,
+      );
+
       const response: AxiosResponse<FinanalyzPanResponse> =
         await firstValueFrom(
           this.httpService.post<FinanalyzPanResponse>(
@@ -422,78 +462,148 @@ export class ExternalApiService {
                 accept: '*/*',
                 'Content-Type': 'application/json',
                 XApiKey: this.panApiKey,
+                'X-API-Key': this.panApiKey,
               },
             },
           ),
         );
 
-      const providerResponse = response.data?.data?.response;
-      const providerStatus = response.data?.data?.status;
+      finanalyzData = response.data;
 
-      if (!providerResponse) {
-        await this.markPanFailed(customerId, requestPayload, response.data);
-        throw new BadGatewayException({
-          success: false,
-          message: 'PAN verification provider returned an invalid response.',
-        });
+      // Unwrap nested response envelopes:
+      // Finanalyz V5 can return:
+      // {
+      //   message: "Request processed successfully",
+      //   data: {
+      //     data: {
+      //       client_id: "...",
+      //       pan_number: "...",
+      //       pan_details: { full_name: "...", status: "valid", ... }
+      //     },
+      //     status_code: 200,
+      //     success: true,
+      //     message: "Success",
+      //     message_code: "success"
+      //   }
+      // }
+      const rootPayload = response.data;
+      const l1Payload = (rootPayload as any)?.data || rootPayload;
+      const l2Payload = (l1Payload as any)?.data || l1Payload;
+
+      const v5Details =
+        l2Payload?.pan_details ||
+        l1Payload?.pan_details ||
+        (rootPayload as any)?.pan_details;
+
+      const providerResponse =
+        l2Payload?.response ||
+        l1Payload?.response ||
+        (rootPayload as any)?.response;
+
+      const providerStatus =
+        l2Payload?.status ||
+        l1Payload?.status ||
+        (rootPayload as any)?.status;
+
+      // Extract customer name returned by Finanalyz (supports V5 full_name and legacy name)
+      const nameFromFinanalyz = (
+        v5Details?.full_name ||
+        providerResponse?.name ||
+        providerResponse?.firstName ||
+        (rootPayload as any)?.name ||
+        (l1Payload as any)?.name ||
+        (l2Payload as any)?.name ||
+        ''
+      ).trim();
+
+      if (nameFromFinanalyz) {
+        customerNameForZoop = nameFromFinanalyz;
       }
 
-      if (providerStatus?.statusCode && providerStatus.statusCode !== 200) {
-        await this.markPanFailed(customerId, requestPayload, response.data);
-        throw new BadGatewayException({
-          success: false,
-          message:
-            providerStatus.statusMessage ||
-            'PAN verification provider rejected the request.',
-        });
-      }
+      const isHttpOk = response.status === 200;
 
-      if (providerResponse.code && providerResponse.code !== 200) {
-        await this.markPanFailed(customerId, requestPayload, response.data);
-        throw new BadGatewayException({
-          success: false,
-          message: 'PAN verification could not be completed.',
-        });
-      }
+      // V5 Success check: checks across all wrapper layers
+      const isV5Success =
+        Boolean(v5Details?.full_name) &&
+        (
+          (rootPayload as any)?.success === true ||
+          (l1Payload as any)?.success === true ||
+          (l2Payload as any)?.success === true ||
+          (rootPayload as any)?.status_code === 200 ||
+          (l1Payload as any)?.status_code === 200 ||
+          (l2Payload as any)?.status_code === 200 ||
+          (rootPayload as any)?.message_code === 'success' ||
+          (l1Payload as any)?.message_code === 'success' ||
+          (rootPayload as any)?.message === 'Request processed successfully' ||
+          (v5Details?.status && String(v5Details.status).toLowerCase() === 'valid')
+        );
 
-      if (!providerResponse.isValid) {
-        await this.markPanFailed(customerId, requestPayload, response.data);
-        throw new BadRequestException({
-          success: false,
-          message: 'The PAN number is invalid.',
-          data: {
-            panNumber: normalizedPan,
-            isValid: false,
-          },
-        });
-      }
+      // Legacy Success check
+      const isLegacySuccess =
+        providerResponse?.isValid === true &&
+        (!providerStatus?.statusCode || providerStatus.statusCode === 200) &&
+        (!providerResponse?.code || providerResponse.code === 200);
 
-      const normalizedData = this.normalizePanResponse(
-        normalizedPan,
-        response.data,
-      );
+      const isPanValid = isV5Success || isLegacySuccess;
+      const hasName = Boolean(nameFromFinanalyz);
 
-      if (!normalizedData.fullName) {
-        await this.markPanFailed(customerId, requestPayload, response.data);
-        throw new BadGatewayException(
-          'PAN provider did not return the customer name.',
+      if (isHttpOk && isPanValid && hasName) {
+        finanalyzSuccess = true;
+      } else {
+        const failureReason = !isPanValid
+          ? 'PAN returned invalid or unverified status'
+          : !hasName
+            ? 'Customer name not returned by Finanalyz'
+            : (rootPayload as any)?.message ||
+              (l1Payload as any)?.message ||
+              providerStatus?.statusMessage ||
+              `Finanalyz response code: ${providerResponse?.code}`;
+        this.logger.warn(
+          `Finanalyz PAN verification was not successful (${failureReason}). Falling back to ZOOP...`,
         );
       }
+    } catch (error: any) {
+      finanalyzError = error;
+      this.logger.warn(
+        `Finanalyz PAN API request error (${error?.message || error}). Falling back to ZOOP...`,
+      );
+
+      // Check if error response contained customer name
+      const errResponseData = error?.response?.data;
+      const errName = (
+        errResponseData?.data?.pan_details?.full_name ||
+        errResponseData?.data?.response?.name ||
+        errResponseData?.data?.response?.firstName ||
+        errResponseData?.name ||
+        ''
+      ).trim();
+      if (errName) {
+        customerNameForZoop = errName;
+      }
+    }
+
+    // If Finanalyz succeeded, save and return
+    if (finanalyzSuccess && finanalyzData) {
+      const normalizedData = this.normalizePanResponse(
+        normalizedPan,
+        finanalyzData,
+      );
 
       const updatedCustomer = await this.saveVerifiedPan({
         customerId,
         normalizedData,
         rawRequest: requestPayload,
-        rawResponse: response.data,
+        rawResponse: finanalyzData,
       });
 
       this.logger.log(
-        `PAN verification completed for customer ${updatedCustomer.customerCode}, PAN ending ${normalizedPan.slice(-4)}.`,
+        `PAN verification completed via FINANALYZ for customer ${updatedCustomer.customerCode}, PAN ending ${normalizedPan.slice(-4)}.`,
       );
 
       return {
         success: true,
         message: 'PAN verified and customer details saved successfully.',
+        provider: 'FINANALYZ',
         data: {
           customerId: updatedCustomer.id.toString(),
           customerCode: updatedCustomer.customerCode,
@@ -504,24 +614,111 @@ export class ExternalApiService {
           verification: normalizedData,
         },
       };
-    } catch (error: unknown) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof BadGatewayException ||
-        error instanceof ConflictException ||
-        error instanceof NotFoundException
-      ) {
-        throw error;
+    }
+
+    // ──────────────────────────────────────────
+    // 2️⃣ FALLBACK PROVIDER: ZOOP
+    // ──────────────────────────────────────────
+    this.logger.log(
+      `Finanalyz failed. Triggering fallback PAN verification via ZOOP for PAN ${normalizedPan}...`,
+    );
+
+    // If customer name is still empty, check OCR log from previous PAN card photo scan
+    if (!customerNameForZoop) {
+      try {
+        const ocrLog = await this.prisma.kycVerificationStatus.findFirst({
+          where: { customerId },
+          select: { panApiResponse: true },
+        });
+        if (ocrLog?.panApiResponse) {
+          const parsed = JSON.parse(ocrLog.panApiResponse);
+          const ocrName =
+            parsed?.data?.name || parsed?.data?.fullName || parsed?.name;
+          if (ocrName) customerNameForZoop = String(ocrName).trim();
+        }
+      } catch {
+        // non-blocking
       }
+    }
+
+    if (!customerNameForZoop) {
+      this.logger.error(
+        `Cannot execute Zoop fallback for customer ${customerId}: No customer name found (neither in Finanalyz, form input, customer record, nor OCR).`,
+      );
 
       await this.markPanFailed(
         customerId,
         requestPayload,
-        this.getSafeErrorForStorage(error),
+        finanalyzData || this.getSafeErrorForStorage(finanalyzError),
       );
 
-      this.handlePanApiError(error);
+      if (finanalyzError) {
+        this.handlePanApiError(finanalyzError);
+      }
+
+      throw new BadRequestException({
+        success: false,
+        message:
+          'Customer name is required for fallback PAN verification.',
+      });
     }
+
+    const zoopResult = await this.callZoopPan(
+      normalizedPan,
+      customerNameForZoop,
+    );
+
+    if (zoopResult.success && zoopResult.raw) {
+      const normalizedData = this.normalizeZoopPanResponse(
+        normalizedPan,
+        zoopResult.raw,
+        customerNameForZoop,
+      );
+
+      const updatedCustomer = await this.saveVerifiedPan({
+        customerId,
+        normalizedData,
+        rawRequest: zoopResult.requestPayload,
+        rawResponse: zoopResult.raw,
+      });
+
+      this.logger.log(
+        `PAN verification completed via ZOOP (fallback) for customer ${updatedCustomer.customerCode}, PAN ending ${normalizedPan.slice(-4)}.`,
+      );
+
+      return {
+        success: true,
+        message: 'PAN verified successfully via fallback provider.',
+        provider: 'ZOOP',
+        data: {
+          customerId: updatedCustomer.id.toString(),
+          customerCode: updatedCustomer.customerCode,
+          panNumber: updatedCustomer.panNumber,
+          panVerified: updatedCustomer.panVerified,
+          onboardingStatus: updatedCustomer.onboardingStatus,
+          kycStatus: KycStatus.VERIFIED,
+          verification: normalizedData,
+        },
+      };
+    }
+
+    // Both Finanalyz and Zoop failed
+    const zoopErrorMsg =
+      zoopResult?.raw?.response_message ||
+      zoopResult?.raw?.message ||
+      (typeof zoopResult?.error === 'string' ? zoopResult.error : null) ||
+      'PAN verification could not be completed via primary or fallback provider.';
+
+    await this.markPanFailed(customerId, zoopResult.requestPayload || requestPayload, {
+      finanalyz: finanalyzData || this.getSafeErrorForStorage(finanalyzError),
+      zoop: zoopResult.raw || zoopResult.error,
+    });
+
+    throw new BadRequestException({
+      success: false,
+      message: zoopErrorMsg,
+      provider: 'ZOOP',
+    });
   }
 
   private async saveVerifiedPan(input: {
@@ -662,49 +859,145 @@ export class ExternalApiService {
     }
   }
 
-  private normalizePanResponse(requestedPan: string, response: FinanalyzPanResponse): NormalizedPanVerificationData {
-    const providerData = response.data;
-    const panDetails = providerData?.response;
-    const status = providerData?.status;
+  private normalizePanResponse(requestedPan: string, response: any): NormalizedPanVerificationData {
+    const root = response;
+    const l1 = root?.data || root;
+    const l2 = l1?.data || l1;
+
+    const v5Details =
+      l2?.pan_details ||
+      l1?.pan_details ||
+      root?.pan_details;
+
+    const panDetails =
+      l2?.response ||
+      l1?.response ||
+      root?.response;
+
+    const status =
+      l2?.status ||
+      l1?.status ||
+      root?.status;
+
+    const providerData =
+      l2?.client_id || l2?.pan_details ? l2 : (l1?.client_id || l1?.pan_details ? l1 : (root?.data || root));
+
+    const fullName = this.cleanOptionalText(
+      v5Details?.full_name || panDetails?.name,
+    );
+
+    let firstName: string | null = null;
+    let middleName: string | null = null;
+    let lastName: string | null = null;
+
+    if (Array.isArray(v5Details?.full_name_split) && v5Details.full_name_split.length > 0) {
+      firstName = this.cleanOptionalText(v5Details.full_name_split[0]);
+      middleName = this.cleanOptionalText(v5Details.full_name_split[1]);
+      lastName = this.cleanOptionalText(v5Details.full_name_split[2]);
+    } else if (panDetails?.firstName) {
+      firstName = this.cleanOptionalText(panDetails.firstName);
+      middleName = this.cleanOptionalText(panDetails.middleName);
+      lastName = this.cleanOptionalText(panDetails.lastName);
+    } else if (fullName) {
+      const split = this.splitFullName(fullName);
+      firstName = split.firstName;
+      middleName = split.middleName;
+      lastName = split.lastName;
+    }
+
+    const fatherName = this.cleanOptionalText(
+      v5Details?.father_name ||
+      panDetails?.father_name ||
+      panDetails?.fatherName ||
+      (panDetails as any)?.careOf ||
+      (panDetails as any)?.father ||
+      (providerData as any)?.father_name ||
+      (providerData as any)?.fatherName ||
+      (response as any)?.data?.response?.father_name ||
+      (response as any)?.data?.response?.fatherName,
+    );
+
+    const gender = this.mapGender(v5Details?.gender || panDetails?.gender);
+    const dateOfBirth = this.convertDateToIso(v5Details?.dob || panDetails?.dob);
+
+    const maskedAadhaar = this.cleanOptionalText(
+      v5Details?.masked_aadhaar || panDetails?.maskedAadhaar,
+    );
+
+    const aadhaarLastFourDigits = this.extractAadhaarLastFourDigits(
+      v5Details?.masked_aadhaar || panDetails?.lastFourDigit || panDetails?.maskedAadhaar,
+    );
+
+    const aadhaarSeedingStatus =
+      v5Details?.aadhaar_linked !== undefined
+        ? Boolean(v5Details.aadhaar_linked)
+        : typeof panDetails?.aadhaarSeedingStatus === 'boolean'
+          ? panDetails.aadhaarSeedingStatus
+          : null;
+
+    const typeOfHolder = this.cleanOptionalText(
+      v5Details?.category || panDetails?.typeOfHolder || 'Individual',
+    );
+
+    const address = v5Details?.address
+      ? (v5Details.address.full || this.formatAddressObject(v5Details.address))
+      : this.cleanOptionalText(panDetails?.address);
+
+    const city = this.cleanOptionalText(
+      v5Details?.address?.city || panDetails?.city,
+    );
+    const state = this.cleanOptionalText(
+      v5Details?.address?.state || panDetails?.state,
+    );
+    const country = this.cleanOptionalText(
+      v5Details?.address?.country || panDetails?.country || 'India',
+    );
+    const pincode = this.cleanOptionalText(
+      v5Details?.address?.zip || panDetails?.pincode,
+    );
+
+    const maskedMobile = this.cleanOptionalText(
+      v5Details?.phone_number || panDetails?.mobile_no,
+    );
+    const maskedEmail = this.cleanOptionalText(
+      v5Details?.email || panDetails?.email,
+    );
+
+    const providerStatusCode =
+      root?.status_code ||
+      l1?.status_code ||
+      l2?.status_code ||
+      (typeof status?.statusCode === 'number' ? status.statusCode : 200);
+
+    const providerStatusMessage = this.cleanOptionalText(
+      root?.message || l1?.message || l2?.message || status?.statusMessage || 'Success',
+    );
 
     return {
-      providerApplicationId: providerData?.applicationId || null,
-      panNumber: panDetails?.pan?.trim().toUpperCase() || requestedPan,
-      isValid: Boolean(panDetails?.isValid),
-      fullName: this.cleanOptionalText(panDetails?.name),
-      firstName: this.cleanOptionalText(panDetails?.firstName),
-      middleName: this.cleanOptionalText(panDetails?.middleName),
-      lastName: this.cleanOptionalText(panDetails?.lastName),
-      fatherName: this.cleanOptionalText(
-        panDetails?.father_name ||
-        panDetails?.fatherName ||
-        (panDetails as any)?.careOf ||
-        (panDetails as any)?.father ||
-        (providerData as any)?.father_name ||
-        (providerData as any)?.fatherName ||
-        (response as any)?.data?.response?.father_name ||
-        (response as any)?.data?.response?.fatherName,
-      ),
-      gender: this.mapGender(panDetails?.gender),
-      dateOfBirth: this.convertDateToIso(panDetails?.dob),
-      maskedAadhaar: this.cleanOptionalText(panDetails?.maskedAadhaar),
-      aadhaarLastFourDigits: this.extractAadhaarLastFourDigits(
-        panDetails?.lastFourDigit || panDetails?.maskedAadhaar,
-      ),
-      aadhaarSeedingStatus: typeof panDetails?.aadhaarSeedingStatus === 'boolean'
-        ? panDetails.aadhaarSeedingStatus
-        : null,
-      typeOfHolder: this.cleanOptionalText(panDetails?.typeOfHolder),
-      address: this.cleanOptionalText(panDetails?.address),
-      city: this.cleanOptionalText(panDetails?.city),
-      state: this.cleanOptionalText(panDetails?.state),
-      country: this.cleanOptionalText(panDetails?.country),
-      pincode: this.cleanOptionalText(panDetails?.pincode),
-      maskedMobile: this.cleanOptionalText(panDetails?.mobile_no),
-      maskedEmail: this.cleanOptionalText(panDetails?.email),
-      providerStatusCode: typeof status?.statusCode === 'number' ? status.statusCode : null,
-      providerStatusMessage: this.cleanOptionalText(status?.statusMessage),
-      providerTimestamp: this.cleanOptionalText(status?.timestamp),
+      providerApplicationId: providerData?.client_id || providerData?.applicationId || null,
+      panNumber: (providerData?.pan_number || panDetails?.pan || requestedPan).trim().toUpperCase(),
+      isValid: true,
+      fullName,
+      firstName,
+      middleName,
+      lastName,
+      fatherName,
+      gender,
+      dateOfBirth,
+      maskedAadhaar,
+      aadhaarLastFourDigits,
+      aadhaarSeedingStatus,
+      typeOfHolder,
+      address,
+      city,
+      state,
+      country,
+      pincode,
+      maskedMobile,
+      maskedEmail,
+      providerStatusCode,
+      providerStatusMessage,
+      providerTimestamp: new Date().toISOString(),
     };
   }
 
@@ -729,10 +1022,225 @@ export class ExternalApiService {
 
   private convertDateToIso(dateOfBirth?: string): string | null {
     if (!dateOfBirth) return null;
-    const match = dateOfBirth.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    const trimmed = dateOfBirth.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const match = trimmed.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
     if (!match) return null;
     const [, day, month, year] = match;
     return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * ZOOP Fallback PAN Verification Provider
+   */
+  async callZoopPan(panNumber: string, panHolderName: string) {
+    if (!this.zoopPanApiUrl || !this.zoopApiKey || !this.zoopAppId) {
+      this.logger.error('ZOOP PAN configuration is missing in environment variables.');
+      return {
+        success: false,
+        error: 'ZOOP PAN verification configuration is missing.',
+        raw: null,
+        result: null,
+        taskId: null,
+        requestPayload: null,
+      };
+    }
+
+    const taskId = randomUUID();
+    const payload = {
+      mode: 'sync',
+      data: {
+        customer_pan_number: panNumber.toUpperCase(),
+        pan_holder_name: panHolderName.toUpperCase(),
+        consent: 'Y',
+        consent_text:
+          'I hereby declare my consent agreement for fetching my information via ZOOP API',
+      },
+      task_id: taskId,
+    };
+
+    try {
+      this.logger.log(
+        `[ZOOP PAN API] Calling Zoop PAN endpoint for ${panNumber} with name "${panHolderName}" [Task ID: ${taskId}]...`,
+      );
+
+      const response = await firstValueFrom(
+        this.httpService.post(this.zoopPanApiUrl, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': this.zoopApiKey,
+            'app-id': this.zoopAppId,
+            app_id: this.zoopAppId,
+          },
+          timeout: 30000,
+        }),
+      );
+
+      const raw = response.data;
+      const httpOk = response.status === 200;
+      const apiSuccess =
+        raw?.success === true ||
+        raw?.status === 'success' ||
+        raw?.data?.result === 'success' ||
+        raw?.response_code === '100';
+
+      const result = raw?.result || raw?.data?.result || raw?.data || {};
+
+      const isVerified =
+        result?.extra_fields?.is_pan_verified === 'yes' ||
+        result?.isValid === true ||
+        (httpOk && apiSuccess && Boolean(result?.user_full_name || result?.name || result?.pan_number));
+
+      this.logger.log(
+        `[ZOOP PAN API] Response received. httpOk: ${httpOk}, apiSuccess: ${apiSuccess}, isVerified: ${isVerified}`,
+      );
+
+      return {
+        success: Boolean(httpOk && apiSuccess && isVerified),
+        raw,
+        result,
+        taskId,
+        requestPayload: payload,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `[ZOOP PAN API] Request failed: ${error?.response?.data ? JSON.stringify(error.response.data) : error?.message || error}`,
+      );
+
+      return {
+        success: false,
+        error: error?.response?.data || error?.message || 'Zoop PAN request failed',
+        raw: error?.response?.data || null,
+        result: null,
+        taskId,
+        requestPayload: payload,
+      };
+    }
+  }
+
+  private normalizeZoopPanResponse(
+    requestedPan: string,
+    zoopData: any,
+    fallbackName: string,
+  ): NormalizedPanVerificationData {
+    const result =
+      zoopData?.result || zoopData?.data?.result || zoopData?.data || {};
+
+    const fullName =
+      this.cleanOptionalText(result?.user_full_name) ||
+      this.cleanOptionalText(result?.name) ||
+      this.cleanOptionalText(result?.pan_holder_name) ||
+      fallbackName;
+
+    const nameParts = this.splitFullName(fullName);
+
+    const fatherName = this.cleanOptionalText(
+      result?.father_name || result?.fatherName,
+    );
+
+    const gender = this.mapGender(result?.gender);
+
+    const dateOfBirth = this.convertDateToIso(
+      result?.dob || result?.date_of_birth,
+    );
+
+    const addressStr =
+      typeof result?.address === 'object'
+        ? this.formatAddressObject(result.address)
+        : this.cleanOptionalText(result?.address);
+
+    const city = this.cleanOptionalText(
+      result?.address?.city || result?.city,
+    );
+    const state = this.cleanOptionalText(
+      result?.address?.state || result?.state,
+    );
+    const pincode = this.cleanOptionalText(
+      result?.address?.pincode || result?.pincode,
+    );
+
+    const maskedAadhaar = this.cleanOptionalText(
+      result?.masked_aadhaar || result?.aadhaar_number,
+    );
+
+    const aadhaarLastFourDigits = this.extractAadhaarLastFourDigits(
+      result?.masked_aadhaar ||
+        result?.aadhaar_number ||
+        result?.last_four_digit,
+    );
+
+    const aadhaarSeedingStatus =
+      result?.extra_fields?.aadhaar_seeding_status === 'OPERATIVE' ||
+      result?.extra_fields?.aadhaar_seeding_status === true ||
+      result?.aadhaar_seeding_status === 'OPERATIVE' ||
+      result?.aadhaar_seeding_status === true;
+
+    return {
+      providerApplicationId: zoopData?.task_id || zoopData?.id || null,
+      panNumber: (result?.pan_number || result?.pan || requestedPan)
+        .trim()
+        .toUpperCase(),
+      isValid: true,
+      fullName,
+      firstName:
+        this.cleanOptionalText(result?.first_name) || nameParts.firstName,
+      middleName:
+        this.cleanOptionalText(result?.middle_name) || nameParts.middleName,
+      lastName:
+        this.cleanOptionalText(result?.last_name) || nameParts.lastName,
+      fatherName,
+      gender,
+      dateOfBirth,
+      maskedAadhaar,
+      aadhaarLastFourDigits,
+      aadhaarSeedingStatus: aadhaarSeedingStatus ? true : null,
+      typeOfHolder:
+        this.cleanOptionalText(result?.type_of_holder) || 'Individual',
+      address: addressStr,
+      city,
+      state,
+      country: this.cleanOptionalText(result?.address?.country) || 'India',
+      pincode,
+      maskedMobile: this.cleanOptionalText(result?.mobile_no),
+      maskedEmail: this.cleanOptionalText(result?.email),
+      providerStatusCode:
+        typeof zoopData?.response_code === 'string'
+          ? parseInt(zoopData.response_code, 10)
+          : 200,
+      providerStatusMessage: this.cleanOptionalText(
+        zoopData?.response_message || 'SUCCESS',
+      ),
+      providerTimestamp: new Date().toISOString(),
+    };
+  }
+
+  private splitFullName(fullName: string | null): {
+    firstName: string | null;
+    middleName: string | null;
+    lastName: string | null;
+  } {
+    if (!fullName) return { firstName: null, middleName: null, lastName: null };
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return { firstName: parts[0], middleName: null, lastName: null };
+    if (parts.length === 2) return { firstName: parts[0], middleName: null, lastName: parts[1] };
+    return {
+      firstName: parts[0],
+      middleName: parts.slice(1, -1).join(' '),
+      lastName: parts[parts.length - 1],
+    };
+  }
+
+  private formatAddressObject(addr: any): string | null {
+    if (!addr || typeof addr !== 'object') return null;
+    const parts = [
+      addr.building_name,
+      addr.street_name,
+      addr.locality,
+      addr.city,
+      addr.state,
+      addr.pincode,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : null;
   }
 
   private parseIsoDate(value: string): Date {
@@ -861,6 +1369,19 @@ export class ExternalApiService {
     if (responseData && typeof responseData === 'object') {
       const data = responseData as Record<string, unknown>;
       if (typeof data.message === 'string') return data.message;
+      if (typeof data.error === 'string') return data.error;
+      if (data.error && typeof data.error === 'object') {
+        const errObj = data.error as Record<string, unknown>;
+        if (typeof errObj.message === 'string') return errObj.message;
+      }
+      if (typeof data.detail === 'string') return data.detail;
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const first = data.detail[0];
+        if (typeof first === 'string') return first;
+        if (first && typeof first === 'object' && typeof (first as any).msg === 'string') {
+          return `${(first as any).loc ? (first as any).loc.join('.') + ': ' : ''}${(first as any).msg}`;
+        }
+      }
       if (data.status && typeof data.status === 'object') {
         const status = data.status as Record<string, unknown>;
         if (typeof status.statusMessage === 'string') {

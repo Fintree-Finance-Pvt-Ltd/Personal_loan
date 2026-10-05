@@ -17,11 +17,11 @@ const menuItems = [
     path: '/customer/dashboard',
     icon: Home,
   },
-  {
-    label: 'My Application',
-    path: '/customer/application',
-    icon: FileText,
-  },
+  // {
+  //   label: 'My Application',
+  //   path: '/customer/application',
+  //   icon: FileText,
+  // },
   {
     label: 'Loan Details',
     path: '/customer/loan-details',

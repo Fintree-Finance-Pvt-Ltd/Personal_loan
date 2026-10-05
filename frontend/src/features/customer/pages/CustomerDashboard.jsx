@@ -295,8 +295,10 @@ export default function CustomerDashboard() {
   const firstName =
     applicant.fullName?.trim()?.split(/\s+/)?.[0] || 'there';
 
+  const maxLoanAmount = preApprovedOffer?.maxLoanAmount || 15000;
+
   const headline = preApprovedOffer
-    ? `You're pre-approved for up to ${formatCurrency(preApprovedOffer.amount)}!`
+    ? `Get a loan of up to ${formatCurrency(maxLoanAmount)}!`
     : isFullyPaidRepeatCustomer
     ? 'Your loan is fully repaid.'
     : isDisbursed

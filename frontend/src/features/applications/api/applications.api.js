@@ -61,6 +61,13 @@ export const applicationsApi = {
     const res = await api.post(`/admin/loans/repayment-schedule/${rpsId}/reconcile-debit`);
     return res.data.data;
   },
+  cancelMandate: async (lan, { mandateId, remarks } = {}) => {
+    const res = await api.post(`/admin/loans/${lan}/cancel-mandate`, {
+      mandateId,
+      remarks,
+    });
+    return res.data?.data ?? res.data;
+  },
   triggerWhatsAppEvent: async ({ eventType, applicationId, lan, installmentId }) => {
     const res = await api.post('/admin/whatsapp/test-event', {
       eventType,

@@ -328,10 +328,13 @@ export async function reverseGeocode(latitude, longitude) {
   return result?.data?.data || result?.data || result;
 }
 
-export async function verifyCustomerPan(panNumber) {
+export async function verifyCustomerPan(panNumber, fullName) {
   return apiRequest('/external-api/verify-pan', {
     method: 'POST',
-    body: JSON.stringify({ panNumber }),
+    body: JSON.stringify({
+      id_number: panNumber,
+      ...(fullName ? { fullName: String(fullName).trim() } : {}),
+    }),
   });
 }
 

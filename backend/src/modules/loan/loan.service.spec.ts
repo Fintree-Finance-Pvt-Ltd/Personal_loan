@@ -24,7 +24,7 @@ const buildService = () => {
     enqueueChargeWaiverNotification: jest.fn().mockResolvedValue(undefined),
     enqueueUpdateWhenReady: jest.fn().mockResolvedValue(undefined),
   };
-  const easebuzzAutocollectService: any = { retrieveMandate: jest.fn() };
+  const easebuzzAutocollectService: any = { retrieveMandate: jest.fn(), updateMandateStatus: jest.fn() };
   const service = new LoanService(
     prisma,
     auditLogs,
@@ -140,6 +140,39 @@ describe('LoanService.processRepayment', () => {
     prisma.plLoan.findFirst.mockResolvedValue(null);
 
     await expect(service.processRepayment('MISSING-LAN', { installmentNumber: 1, amount: 1000 })).rejects.toThrow(NotFoundException);
+  });
+
+  it('triggers cancelMandateForLoan when loan is fully paid', async () => {
+    const { service, prisma } = buildService();
+    setUpFullPayment(prisma);
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+    const cancelSpy = jest.spyOn(service, 'cancelMandateForLoan').mockResolvedValue({ success: true } as any);
+
+    await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 1000 });
+
+    expect(cancelSpy).toHaveBeenCalledWith('FTPL00000001', { reason: 'LOAN_FULLY_PAID', remarks: 'LoanFullyPaid' });
+  });
+
+  it('does not trigger cancelMandateForLoan on a partial repayment', async () => {
+    const { service, prisma } = buildService();
+    setUpFullPayment(prisma);
+    const cancelSpy = jest.spyOn(service, 'cancelMandateForLoan').mockResolvedValue({ success: true } as any);
+
+    await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 400 });
+
+    expect(cancelSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not fail repayment if cancelMandateForLoan rejects', async () => {
+    const { service, prisma } = buildService();
+    setUpFullPayment(prisma);
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+    jest.spyOn(service, 'cancelMandateForLoan').mockRejectedValue(new Error('Easebuzz network error'));
+
+    const result = await service.processRepayment('FTPL00000001', { installmentNumber: 1, amount: 1000 });
+
+    expect(result.success).toBe(true);
+    expect(result.paymentStatus).toBe('PAID');
   });
 });
 
@@ -335,5 +368,144 @@ describe('LoanService.refreshMandateStatus', () => {
     await service.refreshMandateStatus('FTPL00000001', 5n);
 
     expect(lenderIntegrationOutbox.enqueueUpdateWhenReady).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoanService.cancelMandateForLoan', () => {
+  const baseLoan = {
+    id: 20n,
+    lan: 'FTPL00000001',
+    status: 'FULLY_PAID',
+    mandates: [
+      {
+        id: 101n,
+        merchantTransactionId: 'PLM_TXN_001',
+        providerMandateId: 'EB_MAND_001',
+        mandateType: 'ENACH',
+        status: 'AUTHORIZED',
+        providerStatus: 'AUTHORIZED',
+      },
+    ],
+  };
+
+  it('cancels ENACH mandate sending cancel and updating status to CANCELLED', async () => {
+    const { service, prisma, easebuzzAutocollectService, auditLogs } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan });
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+    easebuzzAutocollectService.updateMandateStatus.mockResolvedValue({
+      success: true,
+      message: 'Mandate cancelled successfully',
+      data: { status: 'cancelled' },
+    });
+
+    const result = await service.cancelMandateForLoan('FTPL00000001', { reason: 'LOAN_FULLY_PAID' });
+
+    expect(result.success).toBe(true);
+    expect(easebuzzAutocollectService.updateMandateStatus).toHaveBeenCalledWith({
+      transactionId: 'PLM_TXN_001',
+      mandateType: 'ENACH',
+      remarks: 'LoanFullyPaid',
+    });
+    expect(prisma.plLoanMandate.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 101n },
+      data: expect.objectContaining({ status: 'CANCELLED' }),
+    }));
+    expect(prisma.plLoan.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 20n },
+      data: expect.objectContaining({ mandateStatus: 'CANCELLED' }),
+    }));
+    expect(auditLogs.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'MANDATE_CANCELLED' }));
+  });
+
+  it('revokes UPI mandate sending revoke and updating status to REVOKED', async () => {
+    const { service, prisma, easebuzzAutocollectService } = buildService();
+    const upiLoan = {
+      ...baseLoan,
+      mandates: [
+        {
+          id: 102n,
+          merchantTransactionId: 'PLM_UPI_002',
+          providerMandateId: null,
+          mandateType: 'UPI',
+          status: 'AUTHORIZED',
+          providerStatus: 'AUTHORIZED',
+        },
+      ],
+    };
+    prisma.plLoan.findFirst.mockResolvedValue(upiLoan);
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+    easebuzzAutocollectService.updateMandateStatus.mockResolvedValue({
+      success: true,
+      data: { status: 'revoked' },
+    });
+
+    const result = await service.cancelMandateForLoan('FTPL00000001', { reason: 'ADMIN_MANUAL', remarks: 'AdminRevoked' });
+
+    expect(result.success).toBe(true);
+    expect(easebuzzAutocollectService.updateMandateStatus).toHaveBeenCalledWith({
+      transactionId: 'PLM_UPI_002',
+      mandateType: 'UPI',
+      remarks: 'AdminRevoked',
+    });
+    expect(prisma.plLoanMandate.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 102n },
+      data: expect.objectContaining({ status: 'REVOKED' }),
+    }));
+  });
+
+  it('does not call the API again if mandate is already cancelled or revoked', async () => {
+    const { service, prisma, easebuzzAutocollectService } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({
+      ...baseLoan,
+      mandates: [
+        {
+          id: 101n,
+          merchantTransactionId: 'PLM_TXN_001',
+          mandateType: 'ENACH',
+          status: 'CANCELLED',
+          providerStatus: 'CANCELLED',
+        },
+      ],
+    });
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+
+    const result = await service.cancelMandateForLoan('FTPL00000001', { reason: 'LOAN_FULLY_PAID' });
+
+    expect(result.success).toBe(true);
+    expect(result.alreadyCancelled).toBe(true);
+    expect(easebuzzAutocollectService.updateMandateStatus).not.toHaveBeenCalled();
+  });
+
+  it('refuses to auto-cancel if loan is not fully paid and still has unpaid installments', async () => {
+    const { service, prisma, easebuzzAutocollectService } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan, status: 'DISBURSED' });
+    prisma.plRepaymentSchedule.count.mockResolvedValue(2);
+
+    const result = await service.cancelMandateForLoan('FTPL00000001', { reason: 'LOAN_FULLY_PAID' });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Loan is not fully paid');
+    expect(easebuzzAutocollectService.updateMandateStatus).not.toHaveBeenCalled();
+  });
+
+  it('marks STATUS_VERIFICATION_REQUIRED when Easebuzz returns 5xx', async () => {
+    const { service, prisma, easebuzzAutocollectService, auditLogs } = buildService();
+    prisma.plLoan.findFirst.mockResolvedValue({ ...baseLoan });
+    prisma.plRepaymentSchedule.count.mockResolvedValue(0);
+    easebuzzAutocollectService.updateMandateStatus.mockResolvedValue({
+      success: false,
+      statusVerificationRequired: true,
+      message: 'Provider returned 502. Marked for status verification.',
+    });
+
+    const result = await service.cancelMandateForLoan('FTPL00000001', { reason: 'LOAN_FULLY_PAID' });
+
+    expect(result.success).toBe(false);
+    expect(result.statusVerificationRequired).toBe(true);
+    expect(prisma.plLoanMandate.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 101n },
+      data: expect.objectContaining({ providerSubStatus: 'STATUS_VERIFICATION_REQUIRED' }),
+    }));
+    expect(auditLogs.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'MANDATE_CANCEL_STATUS_VERIFICATION_REQUIRED' }));
   });
 });
