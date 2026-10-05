@@ -1,8 +1,45 @@
+export interface FinanalyzPanV5Details {
+  full_name?: string;
+  full_name_split?: string[];
+  masked_aadhaar?: string;
+  address?: {
+    line_1?: string;
+    line_2?: string;
+    street_name?: string;
+    zip?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    full?: string;
+  };
+  email?: string | null;
+  phone_number?: string | null;
+  gender?: string;
+  dob?: string;
+  input_dob?: string | null;
+  aadhaar_linked?: boolean;
+  dob_verified?: boolean;
+  dob_check?: boolean;
+  category?: string;
+  father_name?: string;
+}
+
 export interface FinanalyzPanResponse {
+  status_code?: number;
+  success?: boolean;
   message?: string;
+  message_code?: string;
 
   data?: {
+    // V5 fields
+    client_id?: string;
+    pan_number?: string;
+    pan_details?: FinanalyzPanV5Details;
+    less_info?: boolean;
+
+    // Legacy fields
     endUserId?: string;
+    applicationId?: string;
 
     response?: {
       code?: number;
@@ -29,8 +66,6 @@ export interface FinanalyzPanResponse {
       aadhaarSeedingStatus?: boolean;
       tax?: boolean;
     };
-
-    applicationId?: string;
 
     status?: {
       statusCode?: number;

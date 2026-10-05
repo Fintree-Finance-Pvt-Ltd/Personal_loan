@@ -32,7 +32,8 @@ export class ExternalApiController {
   verifyPan(@Body() body: any, @CurrentCustomer() customer: any) {
     return this.externalApiService.verifyPan({
       customerId: customer.customerId,
-      panNumber: body?.panNumber,
+      panNumber: body?.id_number || body?.panNumber || body?.pan_number,
+      fullName: body?.fullName || body?.panHolderName || body?.name,
     });
   }
 

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   CustomerEligibilityStatus,
+  CustomerGender,
   CustomerOnboardingStatus,
   Prisma,
 } from '@prisma/client';
@@ -249,6 +250,20 @@ export class CustomerService {
 
     if (data?.email !== undefined && data?.email !== null) {
       updateData.email = String(data.email).trim().toLowerCase();
+    }
+
+    if (data?.dateOfBirth !== undefined && data?.dateOfBirth !== null && data?.dateOfBirth !== '') {
+      const parsedDob = new Date(data.dateOfBirth);
+      if (!Number.isNaN(parsedDob.getTime())) {
+        updateData.dateOfBirth = parsedDob;
+      }
+    }
+
+    if (data?.gender !== undefined && data?.gender !== null && data?.gender !== '') {
+      const g = String(data.gender).trim().toUpperCase();
+      if (['MALE', 'FEMALE', 'OTHER'].includes(g)) {
+        updateData.gender = g as CustomerGender;
+      }
     }
 
     if (data?.emailVerified !== undefined) {
@@ -1705,7 +1720,7 @@ export class CustomerService {
    * lender commitment: the actual amount is still decided when the lender processes the
    * application for real. Returns null whenever there's nothing safe/meaningful to show.
    */
-  private async buildPreApprovedOffer(customerId: bigint): Promise<{ amount: number; tenureMonths: number; currency: string } | null> {
+  private async buildPreApprovedOffer(customerId: bigint): Promise<{ amount: number; maxLoanAmount: number; tenureMonths: number; currency: string } | null> {
     const previousLoan = await this.prisma.plLoan.findFirst({
       where: { customerId },
       orderBy: { id: 'desc' },
@@ -1745,6 +1760,7 @@ export class CustomerService {
       );
       return {
         amount: Number(simulation.finalPrincipalAmount),
+        maxLoanAmount: Number(currentVersion.maximumAmountCap),
         tenureMonths: validTenures[0],
         currency: 'INR',
       };
