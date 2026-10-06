@@ -144,5 +144,17 @@ export const POLICY_RULE_CATALOG: Record<string, CatalogRuleDef> = {
     isMandatory: false,
     canBeDisabled: true,
     description: 'Restricts the number of customer registrations permitted from the same IP address.',
+  },
+  MINIMUM_ABB: {
+    ruleCode: 'MINIMUM_ABB',
+    ruleName: 'Minimum Average Bank Balance (ABB)',
+    category: 'INCOME',
+    inputKey: 'averageBankBalance',
+    valueType: 'DECIMAL',
+    supportedOperators: ['GREATER_THAN_OR_EQUAL', 'GREATER_THAN'],
+    isMandatory: false,
+    canBeDisabled: true,
+    description: 'Minimum required Average Bank Balance (ABB) from Account Aggregator or manual bank statement analysis.',
   }
 };
+

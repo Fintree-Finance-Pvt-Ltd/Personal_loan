@@ -12,6 +12,7 @@ export interface RuleEvaluationResult {
   reasonCode?: string;
   inputValue?: any;
   expectedValue?: any;
+  source?: string;
 }
 
 export interface PolicyEvaluationResult {
@@ -80,6 +81,10 @@ export class PolicyEvaluationService {
         throw new Error(`PLATFORM_POLICY_REFER_NOT_ALLOWED: Rule ${rule.ruleCode} returned REFER which is no longer supported.`);
       }
 
+      const ruleSource = rule.ruleCode === 'MINIMUM_ABB'
+        ? (inputs.averageBankBalanceSource || inputs.abbSource || undefined)
+        : undefined;
+
       ruleResults.push({
         ruleCode: rule.ruleCode,
         ruleName: rule.ruleName,
@@ -88,6 +93,7 @@ export class PolicyEvaluationService {
         reasonCode: passed ? undefined : rule.reasonCode,
         inputValue: actualInputVal,
         expectedValue: rule.expectedValue,
+        source: ruleSource,
       });
 
       if (!passed) {

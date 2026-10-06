@@ -14,7 +14,7 @@ import {
   CustomerOnboardingStatus,
   Prisma,
 } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 import { LoanService } from '../loan/loan.service';
@@ -1309,6 +1309,101 @@ export class CustomerService {
         }
       }
 
+      if (requiredKeys.has('averageBankBalance')) {
+        let actualAbb: number | null = null;
+        let abbSource: 'AA' | 'MANUAL_BANK_STATEMENT' | null = null;
+
+        // 1. Check customerBankAccountData (scoped to application, LAN, or customer)
+        const bankAccounts = await tx.customerBankAccountData.findMany({
+          where: {
+            customerId,
+            OR: [
+              { applicationId: application.id },
+              { lan: application.platformLan || application.applicationNumber },
+              { customerId },
+            ],
+          },
+          include: {
+            request: {
+              select: {
+                provider: true,
+                dataStatus: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: [
+            { id: 'desc' },
+          ],
+        });
+
+        // Application-scoped record has precedence if it contains a valid averageBalance
+        const appScopedRecord = bankAccounts.find(
+          (ba) =>
+            (ba.applicationId === application.id ||
+              (ba.lan && (ba.lan === application.platformLan || ba.lan === application.applicationNumber))) &&
+            ba.averageBalance != null &&
+            !isNaN(Number(ba.averageBalance)),
+        );
+
+        const chosenRecord = appScopedRecord || bankAccounts.find(
+          (ba) => ba.averageBalance != null && !isNaN(Number(ba.averageBalance)),
+        );
+
+        if (chosenRecord && chosenRecord.averageBalance != null) {
+          actualAbb = Number(chosenRecord.averageBalance);
+
+          const isManual =
+            chosenRecord.provider === 'BOOST_MONEY_BSA' ||
+            chosenRecord.provider === 'MANUAL_UPLOAD' ||
+            chosenRecord.provider === 'BANK_STATEMENT' ||
+            chosenRecord.request?.dataStatus === 'BSA_VERIFIED' ||
+            chosenRecord.request?.provider === 'BOOST_MONEY_BSA';
+
+          abbSource = isManual ? 'MANUAL_BANK_STATEMENT' : 'AA';
+        }
+
+        // 2. Fallback to customerBankStatementAnalysis if not found in customerBankAccountData
+        if (actualAbb == null) {
+          const bsaRecord = await tx.customerBankStatementAnalysis.findFirst({
+            where: {
+              customerId,
+              OR: [
+                { applicationId: application.id },
+                { lan: application.platformLan || application.applicationNumber },
+                { customerId },
+              ],
+              parseStatus: { in: ['PARSED', 'SUCCESS'] },
+            },
+            orderBy: { id: 'desc' },
+          });
+
+          if (bsaRecord && bsaRecord.rawResponse) {
+            try {
+              const parsed = JSON.parse(bsaRecord.rawResponse);
+              const dataObj = parsed?.data || parsed;
+              const extractedAbb =
+                dataObj?.averageMonthlyBalance ||
+                dataObj?.abb ||
+                dataObj?.averageBalance ||
+                parsed?.averageMonthlyBalance ||
+                parsed?.abb;
+
+              if (extractedAbb != null && !isNaN(Number(extractedAbb))) {
+                actualAbb = Number(extractedAbb);
+                abbSource = bsaRecord.source === 'AA' ? 'AA' : 'MANUAL_BANK_STATEMENT';
+              }
+            } catch {
+              // Ignore rawResponse parse errors
+            }
+          }
+        }
+
+        inputs.averageBankBalance = actualAbb;
+        inputs.averageBankBalanceSource = abbSource;
+        inputs.abbSource = abbSource;
+      }
+
       // 5. Evaluate policy
       let evalResult;
       try {
@@ -1372,6 +1467,42 @@ export class CustomerService {
         }
       });
 
+      // Record Audit Log for BRE Evaluation
+      try {
+        const integrityKey = process.env.AUDIT_INTEGRITY_KEY || 'default-audit-key';
+        const auditPayload = {
+          actorRoleCodes: ['SYSTEM'],
+          module: 'PLATFORM_POLICY',
+          action: 'BRE_EVALUATION',
+          entityType: 'PlApplication',
+          entityId: application.id.toString(),
+          outcome: isPass ? ('SUCCESS' as const) : ('FAILURE' as const),
+          reason: isPass ? 'Meets all criteria' : failReason,
+          newValue: {
+            platformDecisionOutcome: evalResult.finalOutcome,
+            platformEvaluationReference: updatedData.platformEvaluationReference,
+            platformPolicyVersionId: policyVersion.id,
+            actualAbb: inputs.averageBankBalance ?? null,
+            abbSource: inputs.abbSource ?? null,
+            ruleResults: evalResult.ruleResults,
+          } as any,
+          requestId: updatedData.platformEvaluationReference || `BRE-${application.id}`,
+        };
+        const integrityHash = createHmac('sha256', integrityKey)
+          .update(JSON.stringify(auditPayload))
+          .digest('hex');
+
+        await tx.auditLog.create({
+          data: {
+            ...auditPayload,
+            actorRoleCodes: auditPayload.actorRoleCodes,
+            integrityHash,
+          } as any,
+        });
+      } catch (auditErr: any) {
+        this.logger.warn(`Failed to record BRE evaluation audit log: ${auditErr?.message || auditErr}`);
+      }
+
       if (!isPass) {
         if (this.losRejectionWebhookService) {
           const lan = updatedApp.platformLan || updatedApp.applicationNumber;
@@ -1391,6 +1522,18 @@ export class CustomerService {
         return {
           outcome: 'FAIL',
           message: firstFailedRule?.message || 'You are not eligible for this loan offer.',
+          reasonCode: firstFailedRule?.reasonCode,
+          ruleCode: firstFailedRule?.ruleCode,
+          abbSource: inputs.abbSource || undefined,
+          actualAbb: inputs.averageBankBalance ?? undefined,
+          breSnapshot: {
+            evaluationReference: updatedData.platformEvaluationReference,
+            policyVersionId: policyVersion.id,
+            outcome: evalResult.finalOutcome,
+            abbSource: inputs.abbSource ?? null,
+            actualAbb: inputs.averageBankBalance ?? null,
+            ruleResults: evalResult.ruleResults,
+          },
         };
       }
 
@@ -1505,6 +1648,16 @@ export class CustomerService {
         lenderId: updatedApp.lenderId || application.lenderId,
         lenderProductId: updatedApp.lenderProductId || application.lenderProductId,
         applicationNumber: application.applicationNumber,
+        abbSource: inputs.abbSource || undefined,
+        actualAbb: inputs.averageBankBalance ?? undefined,
+        breSnapshot: {
+          evaluationReference: updatedData.platformEvaluationReference,
+          policyVersionId: policyVersion.id,
+          outcome: evalResult.finalOutcome,
+          abbSource: inputs.abbSource ?? null,
+          actualAbb: inputs.averageBankBalance ?? null,
+          ruleResults: evalResult.ruleResults,
+        },
         assessmentFee: {
           baseAmount: (updatedApp.assessmentFeeBaseAmount || application.assessmentFeeBaseAmount)?.toNumber() ?? null,
           gstRate: (updatedApp.assessmentFeeGstRate || application.assessmentFeeGstRate)?.toNumber() ?? null,
