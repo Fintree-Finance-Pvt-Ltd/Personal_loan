@@ -117,6 +117,10 @@ export default function PolicySimulationPanel({ versionId, rules }) {
                       <span className="font-medium text-neutral-900">{r.ruleCode}</span>
                       <span className={`px-2 py-0.5 rounded text-xs font-semibold ${getOutcomeColor(r.outcome)}`}>{r.outcome}</span>
                     </div>
+                    {r.source && <p className="text-neutral-500 text-xs font-mono">Source: {r.source}</p>}
+                    {r.inputValue !== undefined && r.inputValue !== null && (
+                      <p className="text-neutral-500 text-xs">Input: {String(r.inputValue)} (Expected: {String(r.expectedValue ?? 'N/A')})</p>
+                    )}
                     {r.message && <p className="text-danger-600 text-xs mt-1">Reason: {r.message} ({r.reasonCode})</p>}
                   </div>
                 ))}

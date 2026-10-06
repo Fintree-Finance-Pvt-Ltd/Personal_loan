@@ -113,6 +113,10 @@ export default function PolicyRulesEditor({ initialRules, catalog, onSave }) {
                               setValue(`rules.${index}.expectedValue`, '2');
                               setValue(`rules.${index}.reasonCode`, 'SAME_IP_LIMIT_EXCEEDED');
                               setValue(`rules.${index}.customerMessage`, 'You are not eligible for this loan offer.');
+                            } else if (newDef.ruleCode === 'MINIMUM_ABB') {
+                              setValue(`rules.${index}.expectedValue`, '5000');
+                              setValue(`rules.${index}.reasonCode`, 'ABB_BELOW_MINIMUM');
+                              setValue(`rules.${index}.customerMessage`, 'Your average bank balance does not meet the minimum requirement.');
                             } else {
                               setValue(`rules.${index}.expectedValue`, '');
                               setValue(`rules.${index}.reasonCode`, `${newDef.ruleName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}_FAILED`);

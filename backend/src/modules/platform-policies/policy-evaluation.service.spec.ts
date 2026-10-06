@@ -176,4 +176,63 @@ describe('PolicyEvaluationService', () => {
       expect(service.evaluate(rules, { sameIpCustomerCount: 2 }).finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
     });
   });
+
+  describe('MINIMUM_ABB rule evaluation', () => {
+    const abbRule = createRule({
+      ruleCode: 'MINIMUM_ABB',
+      ruleName: 'Minimum Average Bank Balance (ABB)',
+      category: 'INCOME',
+      inputKey: 'averageBankBalance',
+      valueType: 'DECIMAL',
+      operator: 'GREATER_THAN_OR_EQUAL',
+      expectedValue: '10000',
+      customerMessage: 'Your average bank balance does not meet the minimum requirement.',
+      reasonCode: 'ABB_BELOW_MINIMUM',
+    });
+
+    it('passes when actual ABB meets or exceeds configured minimum value and preserves AA source', () => {
+      const result = service.evaluate([abbRule], {
+        averageBankBalance: 24013.49,
+        averageBankBalanceSource: 'AA',
+      });
+
+      expect(result.finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+      expect(result.ruleResults[0].outcome).toBe(PolicyDecisionOutcome.PASS);
+      expect(result.ruleResults[0].inputValue).toBe(24013.49);
+      expect(result.ruleResults[0].source).toBe('AA');
+    });
+
+    it('passes when actual ABB meets or exceeds configured minimum value and preserves MANUAL_BANK_STATEMENT source', () => {
+      const result = service.evaluate([abbRule], {
+        averageBankBalance: 15000,
+        averageBankBalanceSource: 'MANUAL_BANK_STATEMENT',
+      });
+
+      expect(result.finalOutcome).toBe(PolicyDecisionOutcome.PASS);
+      expect(result.ruleResults[0].outcome).toBe(PolicyDecisionOutcome.PASS);
+      expect(result.ruleResults[0].source).toBe('MANUAL_BANK_STATEMENT');
+    });
+
+    it('fails with ABB_BELOW_MINIMUM when actual ABB is below configured minimum', () => {
+      const result = service.evaluate([abbRule], {
+        averageBankBalance: 4605.81,
+        averageBankBalanceSource: 'AA',
+      });
+
+      expect(result.finalOutcome).toBe(PolicyDecisionOutcome.FAIL);
+      expect(result.ruleResults[0].outcome).toBe(PolicyDecisionOutcome.FAIL);
+      expect(result.ruleResults[0].reasonCode).toBe('ABB_BELOW_MINIMUM');
+      expect(result.ruleResults[0].message).toBe('Your average bank balance does not meet the minimum requirement.');
+      expect(result.ruleResults[0].source).toBe('AA');
+    });
+
+    it('returns POLICY_INPUT_MISSING if actual ABB is missing', () => {
+      const result = service.evaluate([abbRule], {});
+
+      expect(result.finalOutcome).toBe('POLICY_INPUT_MISSING');
+      expect(result.ruleResults[0].outcome).toBe('POLICY_INPUT_MISSING');
+      expect(result.ruleResults[0].ruleCode).toBe('MINIMUM_ABB');
+    });
+  });
 });
+

@@ -41,6 +41,9 @@ describe('CustomerService Integration', () => {
             customerAccountAggregatorRequest: { findFirst: jest.fn().mockResolvedValue(null) },
             applicationAddress: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn() },
             applicationKycSnapshot: { findFirst: jest.fn(), create: jest.fn() },
+            customerBankAccountData: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
+            customerBankStatementAnalysis: { findFirst: jest.fn().mockResolvedValue(null) },
+            auditLog: { create: jest.fn().mockResolvedValue({}) },
           },
         },
         { provide: LoanService, useValue: {} },
@@ -180,10 +183,190 @@ describe('CustomerService Integration', () => {
       expect(prisma.customer.count).toHaveBeenCalledWith({
         where: { customerCreationIp: '103.25.45.67' },
       });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         outcome: 'FAIL',
         message: 'You are not eligible for this loan offer.',
       });
+    });
+
+    it('resolves actual ABB from Account Aggregator (AA) and passes when ABB meets minimum', async () => {
+      const application = {
+        id: 10n, customerId: 1n, applicationNumber: 'APP-10', status: 'DRAFT',
+        platformProductId: 'PLATFORM-1', scopeCode: 'PLATFORM_DEFAULT', requestedAmount: null,
+      };
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, applications: [application] } as any);
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue(application as any);
+      jest.spyOn(prisma.plApplication, 'update').mockResolvedValue(application as any);
+      jest.spyOn(prisma.customer, 'update').mockResolvedValue({ id: 1n } as any);
+
+      const mockRule = {
+        ruleCode: 'MINIMUM_ABB',
+        inputKey: 'averageBankBalance',
+        isActive: true,
+        operator: 'GREATER_THAN_OR_EQUAL',
+        expectedValue: 10000,
+        failureOutcome: 'FAIL',
+        customerMessage: 'Average bank balance is below the minimum required amount.',
+        reasonCode: 'ABB_BELOW_MINIMUM',
+      };
+      (service as any).platformPoliciesService.resolveActivePolicyVersion = jest.fn().mockResolvedValue({
+        id: 'BRE-V1',
+        rules: [mockRule],
+      });
+
+      // Mock bank account data with AA provider
+      jest.spyOn((prisma as any).customerBankAccountData, 'findMany').mockResolvedValue([
+        {
+          id: 1n,
+          applicationId: 10n,
+          customerId: 1n,
+          provider: 'UNAPORT',
+          averageBalance: 25000,
+          request: { provider: 'UNAPORT', dataStatus: 'COMPLETED' },
+        },
+      ]);
+
+      jest.spyOn(policyEvalService, 'evaluate').mockImplementation((rules: any[], inputs: any) => {
+        expect(inputs.averageBankBalance).toBe(25000);
+        expect(inputs.abbSource).toBe('AA');
+        return {
+          finalOutcome: 'PASS',
+          ruleResults: [{
+            ruleCode: 'MINIMUM_ABB',
+            outcome: 'PASS',
+            inputValue: 25000,
+            source: 'AA',
+          }],
+        } as any;
+      });
+
+      const result = await service.runEligibility(1n, {});
+
+      expect(result.outcome).toBe('PASS');
+      expect(result.abbSource).toBe('AA');
+      expect(result.actualAbb).toBe(25000);
+      expect(result.breSnapshot?.abbSource).toBe('AA');
+    });
+
+    it('resolves actual ABB from manual bank statement upload flow and preserves MANUAL_BANK_STATEMENT source', async () => {
+      const application = {
+        id: 10n, customerId: 1n, applicationNumber: 'APP-10', status: 'DRAFT',
+        platformProductId: 'PLATFORM-1', scopeCode: 'PLATFORM_DEFAULT', requestedAmount: null,
+      };
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, applications: [application] } as any);
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue(application as any);
+      jest.spyOn(prisma.plApplication, 'update').mockResolvedValue(application as any);
+      jest.spyOn(prisma.customer, 'update').mockResolvedValue({ id: 1n } as any);
+
+      const mockRule = {
+        ruleCode: 'MINIMUM_ABB',
+        inputKey: 'averageBankBalance',
+        isActive: true,
+        operator: 'GREATER_THAN_OR_EQUAL',
+        expectedValue: 10000,
+        failureOutcome: 'FAIL',
+        customerMessage: 'Average bank balance is below the minimum required amount.',
+        reasonCode: 'ABB_BELOW_MINIMUM',
+      };
+      (service as any).platformPoliciesService.resolveActivePolicyVersion = jest.fn().mockResolvedValue({
+        id: 'BRE-V1',
+        rules: [mockRule],
+      });
+
+      // Mock bank account data with BOOST_MONEY_BSA (manual statement upload)
+      jest.spyOn((prisma as any).customerBankAccountData, 'findMany').mockResolvedValue([
+        {
+          id: 2n,
+          applicationId: 10n,
+          customerId: 1n,
+          provider: 'BOOST_MONEY_BSA',
+          averageBalance: 18000,
+          request: { provider: 'BOOST_MONEY_BSA', dataStatus: 'BSA_VERIFIED' },
+        },
+      ]);
+
+      jest.spyOn(policyEvalService, 'evaluate').mockImplementation((rules: any[], inputs: any) => {
+        expect(inputs.averageBankBalance).toBe(18000);
+        expect(inputs.abbSource).toBe('MANUAL_BANK_STATEMENT');
+        return {
+          finalOutcome: 'PASS',
+          ruleResults: [{
+            ruleCode: 'MINIMUM_ABB',
+            outcome: 'PASS',
+            inputValue: 18000,
+            source: 'MANUAL_BANK_STATEMENT',
+          }],
+        } as any;
+      });
+
+      const result = await service.runEligibility(1n, {});
+
+      expect(result.outcome).toBe('PASS');
+      expect(result.abbSource).toBe('MANUAL_BANK_STATEMENT');
+      expect(result.actualAbb).toBe(18000);
+      expect(result.breSnapshot?.abbSource).toBe('MANUAL_BANK_STATEMENT');
+    });
+
+    it('fails with ABB_BELOW_MINIMUM when actual ABB is below configured minimum', async () => {
+      const application = {
+        id: 10n, customerId: 1n, applicationNumber: 'APP-10', status: 'DRAFT',
+        platformProductId: 'PLATFORM-1', scopeCode: 'PLATFORM_DEFAULT', requestedAmount: null,
+      };
+      jest.spyOn(prisma.customer, 'findUnique').mockResolvedValue({ id: 1n, applications: [application] } as any);
+      jest.spyOn(prisma.plApplication, 'findFirst').mockResolvedValue(application as any);
+      jest.spyOn(prisma.plApplication, 'update').mockResolvedValue(application as any);
+      jest.spyOn(prisma.customer, 'update').mockResolvedValue({ id: 1n } as any);
+
+      const mockRule = {
+        ruleCode: 'MINIMUM_ABB',
+        inputKey: 'averageBankBalance',
+        isActive: true,
+        operator: 'GREATER_THAN_OR_EQUAL',
+        expectedValue: 10000,
+        failureOutcome: 'FAIL',
+        customerMessage: 'Average bank balance is below the minimum required amount.',
+        reasonCode: 'ABB_BELOW_MINIMUM',
+      };
+      (service as any).platformPoliciesService.resolveActivePolicyVersion = jest.fn().mockResolvedValue({
+        id: 'BRE-V1',
+        rules: [mockRule],
+      });
+
+      // Mock bank account data with ABB below 10000
+      jest.spyOn((prisma as any).customerBankAccountData, 'findMany').mockResolvedValue([
+        {
+          id: 3n,
+          applicationId: 10n,
+          customerId: 1n,
+          provider: 'UNAPORT',
+          averageBalance: 4600,
+          request: { provider: 'UNAPORT', dataStatus: 'COMPLETED' },
+        },
+      ]);
+
+      jest.spyOn(policyEvalService, 'evaluate').mockImplementation((rules: any[], inputs: any) => {
+        expect(inputs.averageBankBalance).toBe(4600);
+        return {
+          finalOutcome: 'FAIL',
+          ruleResults: [{
+            ruleCode: 'MINIMUM_ABB',
+            outcome: 'FAIL',
+            reasonCode: 'ABB_BELOW_MINIMUM',
+            message: 'Average bank balance is below the minimum required amount.',
+            inputValue: 4600,
+            expectedValue: 10000,
+            source: 'AA',
+          }],
+        } as any;
+      });
+
+      const result = await service.runEligibility(1n, {});
+
+      expect(result.outcome).toBe('FAIL');
+      expect(result.reasonCode).toBe('ABB_BELOW_MINIMUM');
+      expect(result.ruleCode).toBe('MINIMUM_ABB');
+      expect(result.abbSource).toBe('AA');
+      expect(result.actualAbb).toBe(4600);
     });
 
     it('persists the exact MLM decision product version without active-version re-resolution', async () => {
