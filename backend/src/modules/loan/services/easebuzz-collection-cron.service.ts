@@ -12,6 +12,7 @@ export class EasebuzzCollectionCronService {
   private isEnachRunning = false;
   private isUpiRunning = false;
   private isReconciliationRunning = false;
+  private isOverdueChargesRunning = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -276,6 +277,8 @@ export class EasebuzzCollectionCronService {
               responseEncrypted: JSON.stringify(res.rawResponse || {}),
             },
           });
+          // Gap 1 fix: auto-apply BOUNCE_CHARGE when eNACH presentment is rejected at submission
+          await this.applyBounceChargeIfEligible(rps.lan, rps.installmentNumber, rps.loanId);
         }
       }
     } catch (err: any) {
@@ -652,6 +655,8 @@ export class EasebuzzCollectionCronService {
               completedAt: new Date(),
             },
           });
+          // Gap 1 fix: auto-apply BOUNCE_CHARGE when bank confirms bounce during reconciliation
+          await this.applyBounceChargeIfEligible(debitReq.lan, debitReq.installmentNumber, debitReq.loanId);
         } else {
           remaining++;
         }
@@ -756,6 +761,8 @@ export class EasebuzzCollectionCronService {
             completedAt: new Date(),
           },
         });
+        // Gap 1 fix: auto-apply BOUNCE_CHARGE on single-debit reconciliation FAILURE
+        await this.applyBounceChargeIfEligible(debitReq.lan, debitReq.installmentNumber, debitReq.loanId);
 
         return { status: 'FAILURE', resolved: true, rawStatus, message: `Debit rejected at bank: ${failReason}` };
       }
@@ -1410,5 +1417,237 @@ export class EasebuzzCollectionCronService {
       debitRequestId: updated.id.toString(),
       message: responseMessage,
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Gap 1 Fix: Auto BOUNCE_CHARGE helper
+  // Called whenever a debit presentment is confirmed FAILURE/BOUNCED at any point
+  // (submission rejection or bank-level reconciliation). Idempotent — will not
+  // create a second BOUNCE_CHARGE for the same installment on the same calendar day.
+  // ─────────────────────────────────────────────────────────────────────────────
+  public async applyBounceChargeIfEligible(
+    lan: string,
+    installmentNumber: number,
+    loanId: bigint,
+  ): Promise<void> {
+    try {
+      // 1. Look up configured bounce charge amount from the product version
+      const loan = await this.prisma?.plLoan?.findUnique({
+        where: { lan },
+        select: {
+          application: {
+            select: {
+              lenderApplicationLink: {
+                select: {
+                  productStrategyVersion: {
+                    select: { bounceChargeAmount: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const bounceChargeAmount = loan?.application?.lenderApplicationLink?.productStrategyVersion?.bounceChargeAmount
+        ? Number(loan.application.lenderApplicationLink.productStrategyVersion.bounceChargeAmount)
+        : 0;
+
+      if (!bounceChargeAmount || bounceChargeAmount <= 0) {
+        this.logger.debug(`[BounceCharge] No bounce charge configured for LAN ${lan}. Skipping.`);
+        return;
+      }
+
+      // 2. Idempotency guard: skip if a BOUNCE_CHARGE already exists for this
+      //    installment on today's date (prevents double-charging on retry).
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const existing = await (this.prisma as any).plLoanCharge.findFirst({
+        where: {
+          lan,
+          chargeType: 'BOUNCE_CHARGE',
+          description: { contains: `#${installmentNumber}` },
+          createdAt: { gte: todayStart, lte: todayEnd },
+        },
+      }).catch(() => null);
+
+      if (existing) {
+        this.logger.debug(`[BounceCharge] BOUNCE_CHARGE already exists for LAN ${lan} installment #${installmentNumber} today. Skipping.`);
+        return;
+      }
+
+      // 3. Create the charge
+      await this.loanService.addLoanCharge(
+        lan,
+        {
+          chargeType: 'BOUNCE_CHARGE',
+          amount: bounceChargeAmount,
+          dueDate: new Date(),
+          remarks: `Auto bounce charge — installment #${installmentNumber} debit failed`,
+        },
+      );
+
+      this.logger.log(`[BounceCharge] Applied BOUNCE_CHARGE of ₹${bounceChargeAmount} to LAN ${lan} for installment #${installmentNumber}.`);
+    } catch (err: any) {
+      // Never let charge-creation failures surface as fatal errors — the debit
+      // status update has already succeeded and the admin can add charges manually.
+      this.logger.error(`[BounceCharge] Failed to auto-apply bounce charge for LAN ${lan}: ${err?.message || err}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Gap 2 & 3 Fix: Daily Overdue Charges + DPD Increment
+  // Runs every night at 23:00 IST (end-of-business day).
+  //
+  // For every unpaid installment where dueDate < today:
+  //   • Increments the dpd counter by 1.
+  //   • On the FIRST day overdue (dpd becomes 1) → auto-creates a PENAL_CHARGE
+  //     using the product-configured penalChargeAmount.
+  // ─────────────────────────────────────────────────────────────────────────────
+  @Cron('0 23 * * *', { timeZone: 'Asia/Kolkata' })
+  async runDailyOverdueCharges(): Promise<{ processed: number; dpdUpdated: number; penalCharged: number }> {
+    const enabled = this.configService.get<string>('EASEBUZZ_COLLECTION_CRON_ENABLED') !== 'false';
+    if (!enabled) return { processed: 0, dpdUpdated: 0, penalCharged: 0 };
+
+    if (this.isOverdueChargesRunning) {
+      this.logger.warn('Previous runDailyOverdueCharges execution still in progress. Skipping overlap.');
+      return { processed: 0, dpdUpdated: 0, penalCharged: 0 };
+    }
+
+    this.isOverdueChargesRunning = true;
+    let processed = 0;
+    let dpdUpdated = 0;
+    let penalCharged = 0;
+
+    try {
+      const todayStr = this.getIstDateString();
+      // Use start-of-today so only strictly past-due installments are picked up
+      const todayDate = new Date(todayStr);
+
+      this.logger.log(`[OverdueCron] Starting daily overdue charges sweep for date ${todayStr}`);
+
+      // Fetch all unpaid installments that are strictly overdue (dueDate < today)
+      const overdueInstallments: any[] = await this.prisma.plRepaymentSchedule.findMany({
+        where: {
+          dueDate: { lt: todayDate },
+          paymentStatus: { not: 'PAID' },
+          remainingAmount: { gt: new Prisma.Decimal(0) },
+          loan: {
+            status: { in: [PlLoanStatus.DISBURSED] },
+            disbursalStatus: 'DISBURSED',
+          },
+        },
+        include: {
+          loan: {
+            include: {
+              // Reach through application → lenderApplicationLink → productVersion
+              // to get the configured penalChargeAmount for this loan's product.
+              application: {
+                include: {
+                  lenderApplicationLink: {
+                    include: {
+                      productStrategyVersion: {
+                        select: { penalChargeAmount: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+      });
+
+      this.logger.log(`[OverdueCron] Found ${overdueInstallments.length} overdue installment(s).`);
+
+      for (const rps of overdueInstallments) {
+        processed++;
+
+        try {
+          // ── Step 1: Increment DPD ──────────────────────────────────────
+          const newDpd = (rps.dpd ?? 0) + 1;
+          await this.prisma.plRepaymentSchedule.update({
+            where: { id: rps.id },
+            data: { dpd: newDpd },
+          });
+          dpdUpdated++;
+
+          this.logger.log(
+            `[OverdueCron] LAN ${rps.lan} installment #${rps.installmentNumber}: dpd updated to ${newDpd}.`,
+          );
+
+          // ── Step 2: PENAL_CHARGE on first day overdue (DPD 0→1) ───────
+          // We only charge on the transition from 0 to 1 (i.e., the previous
+          // dpd was 0, meaning it was NOT overdue before today's run).
+          const wasJustOverdue = (rps.dpd ?? 0) === 0;
+          if (!wasJustOverdue) {
+            // Already charged on a previous day
+            continue;
+          }
+
+          // Resolve penalChargeAmount from product version
+          const productStrategyVersion = rps.loan?.application?.lenderApplicationLink?.productStrategyVersion;
+          const penalChargeAmount = productStrategyVersion?.penalChargeAmount
+            ? Number(productStrategyVersion.penalChargeAmount)
+            : 0;
+
+          if (!penalChargeAmount || penalChargeAmount <= 0) {
+            this.logger.debug(
+              `[OverdueCron] No penal charge configured for LAN ${rps.lan}. Skipping PENAL_CHARGE.`,
+            );
+            continue;
+          }
+
+          // Idempotency guard: do not add a second PENAL_CHARGE if one already
+          // exists for this installment (guards against rerun after a crash).
+          const existingPenal = await (this.prisma as any).plLoanCharge.findFirst({
+            where: {
+              lan: rps.lan,
+              chargeType: 'PENAL_CHARGE',
+              description: { contains: `#${rps.installmentNumber}` },
+            },
+          }).catch(() => null);
+
+          if (existingPenal) {
+            this.logger.debug(
+              `[OverdueCron] PENAL_CHARGE already exists for LAN ${rps.lan} installment #${rps.installmentNumber}. Skipping.`,
+            );
+            continue;
+          }
+
+          await this.loanService.addLoanCharge(
+            rps.lan,
+            {
+              chargeType: 'PENAL_CHARGE',
+              amount: penalChargeAmount,
+              dueDate: new Date(),
+              remarks: `Auto penal charge — installment #${rps.installmentNumber} overdue (DPD 1)`,
+            },
+          );
+          penalCharged++;
+
+          this.logger.log(
+            `[OverdueCron] Applied PENAL_CHARGE of ₹${penalChargeAmount} to LAN ${rps.lan} for overdue installment #${rps.installmentNumber}.`,
+          );
+        } catch (rpsErr: any) {
+          this.logger.error(
+            `[OverdueCron] Error processing installment #${rps.id} for LAN ${rps.lan}: ${rpsErr?.message || rpsErr}`,
+          );
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`runDailyOverdueCharges exception: ${err?.message || err}`, err?.stack);
+    } finally {
+      this.isOverdueChargesRunning = false;
+    }
+
+    this.logger.log(
+      `[OverdueCron] Completed. processed=${processed}, dpdUpdated=${dpdUpdated}, penalCharged=${penalCharged}`,
+    );
+    return { processed, dpdUpdated, penalCharged };
   }
 }

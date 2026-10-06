@@ -228,6 +228,13 @@ export class AdminLoanServicingController {
     return this.loanService.resendWelcomeLetter(lan);
   }
 
+  @Permissions('LOAN_MANAGE')
+  @Post('cron/run-daily-overdue-charges')
+  @HttpCode(HttpStatus.OK)
+  runDailyOverdueCharges() {
+    return this.easebuzzCollectionCronService.runDailyOverdueCharges();
+  }
+
   @Permissions('ADMIN_DASHBOARD_VIEW')
   @Get('debit-requests')
   @HttpCode(HttpStatus.OK)
