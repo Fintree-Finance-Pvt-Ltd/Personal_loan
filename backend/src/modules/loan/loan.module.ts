@@ -24,6 +24,7 @@ import { WhatsAppModule } from '../integrations/whatsapp/whatsapp.module';
 import { AttributionService } from '../customer/attribution.service';
 
 import { ReferralModule } from '../referral/referral.module';
+import { StageReminderModule } from '../stage-reminder/stage-reminder.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ReferralModule } from '../referral/referral.module';
     SmsModule,
     WhatsAppModule,
     ReferralModule,
+    StageReminderModule,
   ],
   controllers: [LoanController, AdminLoanServicingController],
   providers: [LoanService, EasebuzzAutocollectService, ApplicationTransitionService, EasebuzzCollectionCronService, SigningStorageService, AttributionService],

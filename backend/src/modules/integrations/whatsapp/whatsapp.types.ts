@@ -3,6 +3,7 @@ export enum WhatsAppEventType {
   LOAN_DISBURSED = 'LOAN_DISBURSED',
   EMI_DUE = 'EMI_DUE',
   APPLICATION_PENDING = 'APPLICATION_PENDING',
+  APPLICATION_STAGE_REMINDER = 'APPLICATION_STAGE_REMINDER',
   FULLY_PAID = 'FULLY_PAID',
   CUSTOM = 'CUSTOM',
 }
@@ -12,6 +13,10 @@ export enum WhatsAppTemplateName {
   LOAN_DISBURSED = 'loan_disbursed',
   EMI_DUE_REMINDER = 'emi_due_reminder',
   APPLICATION_PENDING = 'application_pending',
+  APPLICATION_REMINDER_FIRST = 'application_reminder_first',
+  APPLICATION_REMINDER_SECOND = 'application_reminder_second',
+  APPLICATION_REMINDER_WEEKLY = 'application_reminder_weekly',
+  APPLICATION_REMINDER_FINAL = 'application_reminder_final',
   FULLY_PAID = 'fully_paid',
 }
 

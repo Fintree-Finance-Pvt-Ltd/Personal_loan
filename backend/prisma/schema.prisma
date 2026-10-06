@@ -1349,6 +1349,7 @@ model PlApplication {
   partnerApplications       PartnerApplication[]
   ivrCallLogs               IvrCallLog[]
   whatsappMessageLogs       PlWhatsappMessageLog[]
+  stageReminders            PlApplicationStageReminder[]
   attribution               ApplicationAttribution?
 
 
@@ -3158,6 +3159,42 @@ model PlWhatsappMessageLog {
   @@index([eventType], map: "idx_wa_logs_event")
   @@index([status], map: "idx_wa_logs_status")
   @@map("whatsapp_message_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Application Stage WhatsApp Reminders (BullMQ + Redis)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ApplicationReminderStatus {
+  ACTIVE
+  STAGE_CHANGED
+  COMPLETED
+  TERMINAL_STATUS
+  MAX_REACHED
+  CANCELLED
+}
+
+model PlApplicationStageReminder {
+  id                  BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  applicationId       BigInt                    @map("application_id") @db.UnsignedBigInt
+  stage               String                    @db.VarChar(60)
+  stuckSince          DateTime                  @default(now()) @map("stuck_since") @db.DateTime(0)
+  lastReminderSentAt  DateTime?                 @map("last_reminder_sent_at") @db.DateTime(0)
+  reminderCount       Int                       @default(0) @map("reminder_count")
+  weeklyReminderCount Int                       @default(0) @map("weekly_reminder_count")
+  nextReminderDate    DateTime?                 @map("next_reminder_date") @db.DateTime(0)
+  status              ApplicationReminderStatus @default(ACTIVE) @map("status")
+  lastJobId           String?                   @map("last_job_id") @db.VarChar(120)
+  stopReason          String?                   @map("stop_reason") @db.VarChar(100)
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt           DateTime                  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  application         PlApplication             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, stage], map: "uk_app_stage_reminder")
+  @@index([applicationId], map: "idx_app_reminder_app_id")
+  @@index([status], map: "idx_app_reminder_status")
+  @@map("pl_application_stage_reminders")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

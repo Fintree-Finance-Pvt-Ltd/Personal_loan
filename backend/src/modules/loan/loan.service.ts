@@ -21,6 +21,7 @@ import { IvrAutomationService } from '../integrations/ivr/ivr-automation.service
 import { SmsAutomationService } from '../integrations/sms/sms-automation.service';
 import { WhatsAppAutomationService } from '../integrations/whatsapp/whatsapp-automation.service';
 import { ReferralService } from '../referral/referral.service';
+import { StageReminderQueueService } from '../stage-reminder/stage-reminder-queue.service';
 
 export interface CancelMandateResult {
   success: boolean;
@@ -58,7 +59,16 @@ export class LoanService {
     @Optional() private readonly smsAutomationService?: SmsAutomationService,
     @Optional() private readonly whatsappAutomationService?: WhatsAppAutomationService,
     @Optional() private readonly referralService?: ReferralService,
+    @Optional() private readonly stageReminderQueueService?: StageReminderQueueService,
   ) { }
+
+  private notifyStageTransition(applicationId?: bigint | null) {
+    if (applicationId && this.stageReminderQueueService) {
+      this.stageReminderQueueService.onStageTransition(applicationId).catch((err) => {
+        this.logger.warn(`Failed to process stage transition for app #${applicationId}: ${err?.message}`);
+      });
+    }
+  }
 
 
 
@@ -678,6 +688,8 @@ export class LoanService {
         currentStep: 'BANK_VERIFICATION',
       },
     });
+
+    this.notifyStageTransition(loan.applicationId);
 
     this.auditLogs.record({
       actorUserId: null,
@@ -1507,6 +1519,8 @@ export class LoanService {
         currentStep: 'EMANDATE',
       },
     });
+
+    this.notifyStageTransition(loan.applicationId);
 
     this.auditLogs
       .record({
