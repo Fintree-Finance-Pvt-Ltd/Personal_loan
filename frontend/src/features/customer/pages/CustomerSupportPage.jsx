@@ -32,16 +32,16 @@ import {
 } from 'react-router-dom';
 
 const SUPPORT_EMAIL =
-    'support@fintreefinance.com';
+    'wecare@fintreefinance.com';
 
 const SUPPORT_PHONE =
-    '+91 22 6900 0000';
+    '18002678111';
 
 const SUPPORT_PHONE_LINK =
-    '+912269000000';
+    '+918355930723';
 
 const WHATSAPP_NUMBER =
-    '919999999999';
+    '+918355930723';
 
 const SUPPORT_CATEGORIES = [
     {
