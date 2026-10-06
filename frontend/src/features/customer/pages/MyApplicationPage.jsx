@@ -67,6 +67,24 @@ import { getPreApprovalOffer, selectPreApprovalOffer } from '../postApprovalApi'
 import { resolveFileUrl } from '../../../lib/files';
 import { AccountAggregatorStep } from '../components/AccountAggregatorStep';
 
+/* ------------------------------------------------------------------ */
+/*  Design tokens — same palette as the customer dashboard             */
+/*  forest #0E3B2C · leaf #1F8A5B · sprout #9BE3B5 · mint #E7F4EC      */
+/*  paper  #F7F9F6 · ink  #13211A                                      */
+/*  Written as complete literal class strings so Tailwind detects them */
+/* ------------------------------------------------------------------ */
+
+const BTN_PRIMARY =
+  'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#0E3B2C] px-6 text-sm font-semibold text-white transition hover:bg-[#145239] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
+const BTN_SECONDARY =
+  'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
+const BTN_SOFT =
+  'inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#E7F4EC] px-4 text-sm font-semibold text-[#0E3B2C] transition hover:bg-[#D5EDDF] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
+const CARD = 'rounded-[26px] border border-slate-200/80 bg-white';
+
 const FLOW_STEPS = [
   {
     id: 'basic_details',
@@ -93,6 +111,36 @@ const FLOW_STEPS = [
     label: 'Submit Application',
   },
 ];
+
+// Customer-facing wording for the page header. The internal step list is no longer
+// printed on screen — one clear "you are here" line reads better and keeps the
+// system's own vocabulary out of the customer's way.
+const STEP_COPY = {
+  basic_details: {
+    title: 'Let us start with your PAN',
+    hint: 'We fetch your name and date of birth automatically, so there is almost nothing to type.',
+  },
+  assessment_fee: {
+    title: 'Your lending partner is ready',
+    hint: 'Review the one-time assessment fee and pay securely to continue.',
+  },
+  profile_details: {
+    title: 'Tell us where you live and work',
+    hint: 'This helps your lender match you with the right offer.',
+  },
+  aadhaar_kyc: {
+    title: 'Confirm it is really you',
+    hint: 'A quick Aadhaar check through DigiLocker. It takes about a minute.',
+  },
+  account_aggregator: {
+    title: 'Share your bank statement',
+    hint: 'Securely, through RBI-licensed Account Aggregators. Your passwords are never shared.',
+  },
+  submit_application: {
+    title: 'One last look',
+    hint: 'Check your details, then send the application to your lender.',
+  },
+};
 
 const INITIAL_FORM = {
   fullName: '',
@@ -1592,7 +1640,7 @@ export default function MyApplicationPage() {
       easebuzzCheckout.initiatePayment({
         access_key: accessKey,
         onResponse: handleEasebuzzResponse,
-        theme: '#2563eb',
+        theme: '#0E3B2C',
       });
     } catch (error) {
       console.error('Failed to initiate Easebuzz payment:', error);
@@ -1907,12 +1955,25 @@ export default function MyApplicationPage() {
 
   if (isCustomerLoading) {
     return (
-      <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-neutral-200 bg-white p-12 text-center shadow-sm">
-          <LoaderCircle className="h-10 w-10 animate-spin text-brand-600" />
-          <p className="mt-4 text-sm font-medium text-neutral-600">
-            Loading your application details...
-          </p>
+    <div className="mx-auto w-full max-w-[1280px] px-3 sm:px-4 md:px-6 lg:px-8">
+        <div className="overflow-hidden rounded-[28px] bg-[#0E3B2C] p-7 sm:p-9">
+          <div className="h-3 w-32 rounded-full bg-white/10 motion-safe:animate-pulse" />
+          <div className="mt-4 h-8 w-72 max-w-full rounded-2xl bg-white/10 motion-safe:animate-pulse" />
+          <div className="mt-4 h-3 w-96 max-w-full rounded-full bg-white/10 motion-safe:animate-pulse" />
+          <div className="mt-8 h-1.5 w-full rounded-full bg-white/10 motion-safe:animate-pulse" />
+        </div>
+
+        <div className={`mt-6 ${CARD} p-7 sm:p-9`}>
+          <div className="h-5 w-56 rounded-full bg-slate-200/80 motion-safe:animate-pulse" />
+          <div className="mt-3 h-3 w-80 max-w-full rounded-full bg-slate-200/60 motion-safe:animate-pulse" />
+          <div className="mt-8 grid gap-5 md:grid-cols-2">
+            {[0, 1, 2, 3].map((index) => (
+              <div key={index} className="space-y-2">
+                <div className="h-3 w-24 rounded-full bg-slate-200/70 motion-safe:animate-pulse" />
+                <div className="h-12 rounded-2xl bg-slate-100 motion-safe:animate-pulse" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -1920,27 +1981,30 @@ export default function MyApplicationPage() {
 
   if (customerLoadError) {
     return (
-      <div className="mx-auto max-w-7xl">
-        <div className="mx-auto max-w-xl rounded-3xl border border-danger-200 bg-white p-8 text-center shadow-lg">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-danger-100 text-danger-600">
-            <AlertCircle size={28} />
+      <div className="mx-auto max-w-5xl">
+        <div className={`mx-auto max-w-lg ${CARD} p-8 text-center sm:p-10`}>
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-rose-50 text-rose-600 ring-8 ring-rose-50/50">
+            <AlertCircle size={26} />
           </div>
 
-          <h3 className="mt-4 text-lg font-bold text-neutral-900">
-            Unable to load application
-          </h3>
+          <h2 className="mt-6 text-xl font-bold text-[#13211A]">
+            Your application didn't load
+          </h2>
 
-          <p className="mt-2 text-sm text-neutral-600">
+          <p className="mt-2 text-sm leading-6 text-slate-600">
             {customerLoadError}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Nothing you have filled in is lost. Check your connection and try again.
           </p>
 
           <button
             type="button"
             onClick={fetchCustomer}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-brand-700"
+            className={`mt-7 ${BTN_PRIMARY}`}
           >
             <RotateCcw size={16} />
-            Retry
+            Try again
           </button>
         </div>
       </div>
@@ -1950,7 +2014,7 @@ export default function MyApplicationPage() {
   const workflow = deriveCustomerWorkflow(customer);
 
   return (
-    <div className="mx-auto max-w-7xl">
+   <div className="mx-auto w-full max-w-[1280px] px-3 pb-10 sm:px-4 md:px-6 lg:px-8 text-[#13211A]">
       <ApplicationProgress
         currentStep={currentStep}
         workflow={workflow}
@@ -2140,6 +2204,140 @@ export default function MyApplicationPage() {
   );
 }
 
+/* ================================================================== */
+/*  Shared journey header                                             */
+/* ================================================================== */
+
+function ApplicationProgress({ currentStep, workflow }) {
+  const stepIndices = {
+    basic_details: 0,
+    assessment_fee: 1,
+    profile_details: 2,
+    aadhaar_kyc: 3,
+    account_aggregator: 4,
+    submit_application: 5,
+  };
+
+  const isFlowStep = Object.prototype.hasOwnProperty.call(stepIndices, currentStep);
+  const currentStepIndex = stepIndices[currentStep] ?? 0;
+  const copy = STEP_COPY[currentStep];
+  const stepsLeft = FLOW_STEPS.length - (currentStepIndex + 1);
+
+  const isStepComplete = (stepId) => {
+    if (stepId === 'basic_details') return Boolean(workflow?.basicDetailsCompleted);
+    if (stepId === 'assessment_fee') return Boolean(workflow?.assessmentFeePaid);
+    if (stepId === 'profile_details') return Boolean(workflow?.profileDetailsCompleted);
+    if (stepId === 'aadhaar_kyc') return Boolean(workflow?.aadhaarKycCompleted);
+    if (stepId === 'account_aggregator') return Boolean(workflow?.aaCompleted);
+    if (stepId === 'submit_application') return Boolean(workflow?.applicationSubmitted);
+    return false;
+  };
+
+  return (
+    <section className="relative mb-6 overflow-hidden rounded-[28px] bg-[#0E3B2C] text-white">
+      {/* leaf-vein texture, the one decorative moment on the page */}
+      <svg
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-16 -top-28 h-[420px] w-[420px] text-white/[0.06]"
+        viewBox="0 0 200 200"
+        fill="none"
+      >
+        <path
+          d="M100 10C150 40 180 90 160 150C140 190 60 190 40 150C20 90 50 40 100 10Z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+        <path d="M100 10V190" stroke="currentColor" strokeWidth="1.5" />
+        <path
+          d="M100 60L140 40M100 90L155 70M100 120L160 105M100 60L60 40M100 90L45 70M100 120L40 105M100 150L140 140M100 150L60 140"
+          stroke="currentColor"
+          strokeWidth="1.2"
+        />
+      </svg>
+
+      <div className="relative px-6 py-7 sm:px-9 sm:py-8">
+        <p className="text-sm text-emerald-100/70">Personal loan application</p>
+
+        <h1 className="mt-1.5 max-w-xl text-2xl font-bold leading-[1.15] tracking-[-0.02em] sm:text-[28px]">
+          {copy ? copy.title : 'Your application'}
+        </h1>
+
+        <p className="mt-2.5 max-w-lg text-sm leading-6 text-emerald-50/70">
+          {copy ? copy.hint : 'We will keep you posted here at every stage.'}
+        </p>
+
+        {isFlowStep && (
+          <div className="mt-7">
+            <div className="flex items-center justify-between text-xs text-emerald-100/70">
+              <span>
+                Step {currentStepIndex + 1} of {FLOW_STEPS.length}
+              </span>
+              <span>
+                {stepsLeft === 0
+                  ? 'Final step'
+                  : stepsLeft === 1
+                    ? '1 step to go'
+                    : `${stepsLeft} steps to go`}
+              </span>
+            </div>
+
+            {/* A slim rail instead of the old labelled stepper: the customer sees how far
+                along they are without reading the system's internal step names. */}
+            <div className="mt-3 flex gap-1.5" aria-hidden="true">
+              {FLOW_STEPS.map((step, index) => {
+                const done = isStepComplete(step.id);
+                const current = index === currentStepIndex;
+                return (
+                  <span
+                    key={step.id}
+                    className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${
+                      done ? 'bg-[#9BE3B5]' : current ? 'bg-white' : 'bg-white/15'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <p className="mt-6 inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs text-emerald-50 ring-1 ring-white/15">
+          <ShieldCheck size={13} />
+          Encrypted, and shared only with your lender
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function MessageBanner({
+  message,
+  type,
+}) {
+  const isError = type === 'error';
+
+  return (
+    <div
+      role="status"
+      className={`mb-6 flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm ${
+        isError
+          ? 'border-rose-100 bg-rose-50 text-rose-800'
+          : 'border-[#C9E6D5] bg-[#E7F4EC] text-[#0E3B2C]'
+      }`}
+    >
+      {isError ? (
+        <AlertCircle size={17} className="mt-0.5 shrink-0" />
+      ) : (
+        <CheckCircle2 size={17} className="mt-0.5 shrink-0" />
+      )}
+      <span className="leading-6">{message}</span>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Eligibility result modal                                          */
+/* ================================================================== */
+
 function EligibilityCheckModal({
   isOpen,
   status,
@@ -2151,91 +2349,79 @@ function EligibilityCheckModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200">
-        {/* Top Accent Bar */}
-        <div
-          className={`h-2.5 w-full transition-colors duration-300 ${
-            status === 'APPROVED'
-              ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600'
-              : status === 'REJECTED'
-              ? 'bg-gradient-to-r from-rose-500 via-danger-500 to-rose-600'
-              : 'bg-gradient-to-r from-brand-500 via-indigo-500 to-brand-600 animate-pulse'
-          }`}
-        />
-
-        <div className="p-7 sm:p-9 text-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A2318]/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md overflow-hidden rounded-[28px] bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="p-8 text-center sm:p-9">
           {status === 'CHECKING' && (
             <div className="flex flex-col items-center">
-              <div className="relative mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-50 text-brand-600 shadow-inner">
-                <div className="absolute inset-0 rounded-3xl border-2 border-brand-400/40 animate-ping opacity-30" />
-                <LoaderCircle size={38} className="animate-spin text-brand-600" />
+              <div className="relative grid h-20 w-20 place-items-center rounded-full bg-[#E7F4EC] text-[#1F8A5B]">
+                <span className="absolute inset-0 rounded-full bg-[#9BE3B5]/40 motion-safe:animate-ping" />
+                <LoaderCircle size={34} className="relative animate-spin" />
               </div>
-              <h3 className="text-xl font-bold text-neutral-900 tracking-tight">
-                Checking Loan Eligibility
+
+              <h3 className="mt-6 text-xl font-bold tracking-tight text-[#13211A]">
+                Checking your eligibility
               </h3>
-              <p className="mt-2.5 text-sm text-neutral-600 leading-relaxed max-w-xs">
-                {message || 'Evaluating your application against platform policy and underwriting guidelines...'}
+
+              <p className="mt-2.5 max-w-xs text-sm leading-6 text-slate-600">
+                {message || 'This takes a few seconds. Please keep this window open.'}
               </p>
-              <div className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-neutral-500 bg-neutral-100/80 py-2 px-4 rounded-full">
-                <ShieldCheck size={14} className="text-brand-600" />
-                <span>Secured Bank-Grade Evaluation</span>
-              </div>
+
+              <p className="mt-6 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-xs text-slate-600">
+                <ShieldCheck size={14} className="text-[#1F8A5B]" />
+                Bank-grade security
+              </p>
             </div>
           )}
 
           {status === 'APPROVED' && (
             <div className="flex flex-col items-center animate-in zoom-in-95 duration-300">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-600 shadow-md ring-8 ring-emerald-50">
-                <CheckCircle2 size={42} className="stroke-[2.5]" />
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-[#E7F4EC] text-[#1F8A5B] ring-8 ring-[#E7F4EC]/60">
+                <CheckCircle2 size={40} />
               </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-2.5">
-                <Sparkles size={13} />
-                <span>Eligibility Passed</span>
-              </div>
-              <h3 className="text-2xl font-bold text-neutral-900 tracking-tight">
-                Congratulations! 🎉
+
+              <h3 className="mt-6 text-2xl font-bold tracking-tight text-[#13211A]">
+                Good news — you qualify
               </h3>
-              <p className="mt-2.5 text-sm text-neutral-600 leading-relaxed max-w-sm">
-                {message || `Your application has passed eligibility criteria with ${allocatedLender || 'our lending partner'}.`}
+
+              <p className="mt-2.5 max-w-sm text-sm leading-6 text-slate-600">
+                {message || `Your application has passed our checks with ${allocatedLender || 'our lending partner'}.`}
               </p>
-              <div className="mt-7 w-full">
-                <button
-                  type="button"
-                  onClick={onProceed}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-700 active:scale-[0.98] transition cursor-pointer"
-                >
-                  <span>Continue to Profile Details</span>
-                  <ArrowRight size={18} />
-                </button>
-              </div>
+
+              <button
+                type="button"
+                onClick={onProceed}
+                className={`mt-8 w-full ${BTN_PRIMARY}`}
+              >
+                Continue
+                <ArrowRight size={17} />
+              </button>
             </div>
           )}
 
           {status === 'REJECTED' && (
             <div className="flex flex-col items-center animate-in zoom-in-95 duration-300">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-danger-50 text-danger-600 shadow-md ring-8 ring-danger-50/60">
-                <AlertCircle size={42} className="stroke-[2.2]" />
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-rose-50 text-rose-600 ring-8 ring-rose-50/60">
+                <AlertCircle size={38} />
               </div>
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-danger-50 text-danger-700 text-xs font-bold uppercase tracking-wider mb-2.5">
-                <span>Application Unsuccessful</span>
-              </div>
-              <h3 className="text-2xl font-bold text-neutral-900 tracking-tight mb-2">
-                Application Unsuccessful
+
+              <h3 className="mt-6 text-2xl font-bold tracking-tight text-[#13211A]">
+                We can't take this further
               </h3>
-              <p className="mt-2 text-sm font-bold text-neutral-800 leading-relaxed max-w-sm">
-                Based on the information provided, we are unable to proceed with your application at this time as it does not meet our current platform policies.
+
+              <p className="mt-2.5 max-w-sm text-sm leading-6 text-slate-600">
+                Based on the information provided, your application does not meet our current
+                lending policy. You can see what this means and when you may apply again.
               </p>
-              <div className="mt-7 w-full flex flex-col gap-2.5">
-                <button
-                  type="button"
-                  onClick={onViewRejection}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 active:scale-[0.98] transition cursor-pointer"
-                >
-                  <span>Return to Home</span>
-                  <ArrowRight size={18} />
-                </button>
-              </div>
+
+              <button
+                type="button"
+                onClick={onViewRejection}
+                className={`mt-8 w-full ${BTN_PRIMARY}`}
+              >
+                See what happens next
+                <ArrowRight size={17} />
+              </button>
             </div>
           )}
         </div>
@@ -2243,6 +2429,10 @@ function EligibilityCheckModal({
     </div>
   );
 }
+
+/* ================================================================== */
+/*  Aadhaar KYC                                                       */
+/* ================================================================== */
 
 function AadhaarKycStep({
   customerId: _customerId,
@@ -2511,333 +2701,200 @@ function AadhaarKycStep({
       <StepHeading
         icon={FileCheck2}
         eyebrow="AADHAAR VERIFICATION"
-        title="Aadhaar KYC via DigiLocker"
-        description="Verify your identity securely through DigiLocker before submitting your application to the lender."
+        title="Confirm your identity"
+        description="A quick Aadhaar check through DigiLocker, the Government of India's own service."
       />
 
-      <div className="mt-6 space-y-6">
-        <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-5 space-y-3">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Applicant Name</p>
-              <p className="mt-0.5 text-sm font-bold text-neutral-800">{customer?.fullName || 'N/A'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Registered Mobile</p>
-              <p className="mt-0.5 text-sm font-bold text-neutral-800">
-                {customer?.mobileNumber ? `+91 ${customer.mobileNumber.slice(0, 2)}****${customer.mobileNumber.slice(-4)}` : 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Customer Reference</p>
-              <p className="mt-0.5 font-mono text-sm font-bold text-brand-700">{customerCode || customer?.customerCode || 'N/A'}</p>
-            </div>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-4 rounded-2xl bg-[#F7F9F6] px-5 py-4">
+          <div>
+            <p className="text-xs text-slate-500">Applicant</p>
+            <p className="mt-0.5 text-sm font-semibold text-[#13211A]">{customer?.fullName || 'Not available'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Registered mobile</p>
+            <p className="mt-0.5 text-sm font-semibold tabular-nums text-[#13211A]">
+              {customer?.mobileNumber ? `+91 ${customer.mobileNumber.slice(0, 2)}****${customer.mobileNumber.slice(-4)}` : 'Not available'}
+            </p>
           </div>
         </div>
 
         {isVerified ? (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-brand-200 bg-brand-50/70 p-6 text-center">
-              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-brand-500 text-white">
+            <div className="rounded-2xl bg-[#E7F4EC] p-6 text-center">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#0E3B2C] text-[#9BE3B5]">
                 <CheckCircle2 size={24} />
               </div>
-              <h3 className="mt-3 text-lg font-bold text-brand-900">Aadhaar KYC Verified</h3>
-              <p className="mt-1 text-sm text-brand-700">
-                Your identity has been verified via DigiLocker.
-                {kycStatus?.maskedAadhaar ? ` (Aadhaar: ${kycStatus.maskedAadhaar})` : ''}
+              <h3 className="mt-4 text-lg font-bold text-[#0E3B2C]">Identity verified</h3>
+              <p className="mt-1 text-sm text-[#0E3B2C]/75">
+                Your Aadhaar has been verified through DigiLocker.
+                {kycStatus?.maskedAadhaar ? ` (${kycStatus.maskedAadhaar})` : ''}
               </p>
               {(kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName) && (
-                <p className="mt-2 text-sm font-semibold text-brand-900">
-                  Full Name: {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
+                <p className="mt-2 text-sm font-semibold text-[#0E3B2C]">
+                  {kycStatus?.aadhaarVerifiedName || customer?.aadhaarVerifiedName}
                 </p>
               )}
             </div>
 
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-6">
+            <div className="space-y-7">
               <div>
-                <h4 className="text-sm font-bold text-neutral-900">Permanent Address</h4>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Pre-filled from your Aadhaar via DigiLocker. Please check it and fill in anything missing — Aadhaar records don't always include a complete address.
+                <h3 className="text-base font-bold text-[#13211A]">Permanent address</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Taken from your Aadhaar. Please check it and fill in anything missing — Aadhaar
+                  records do not always carry a complete address.
                 </p>
-                <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 1 <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      value={permanentAddressForm.addressLine1}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, addressLine1: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.addressLine1 ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                      placeholder="Flat, House no., Building, Company, Apartment"
-                    />
-                    {permanentAddressErrors.addressLine1 && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.addressLine1}</p>}
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 2 (Optional)</label>
-                    <input
-                      type="text"
-                      value={permanentAddressForm.addressLine2}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, addressLine2: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                      placeholder="Area, Street, Sector, Village"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Locality (Optional)</label>
-                    <input
-                      type="text"
-                      value={permanentAddressForm.locality}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, locality: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Landmark (Optional)</label>
-                    <input
-                      type="text"
-                      value={permanentAddressForm.landmark}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, landmark: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Pincode <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={permanentAddressForm.pincode}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, pincode: e.target.value.replace(/\D/g, '') })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.pincode ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                    />
-                    {permanentAddressErrors.pincode && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.pincode}</p>}
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">City <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      value={permanentAddressForm.city}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, city: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.city ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                    />
-                    {permanentAddressErrors.city && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.city}</p>}
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">State <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      value={permanentAddressForm.state}
-                      onChange={(e) => setPermanentAddressForm({ ...permanentAddressForm, state: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${permanentAddressErrors.state ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                    />
-                    {permanentAddressErrors.state && <p className="mt-1 text-xs text-danger-500">{permanentAddressErrors.state}</p>}
-                  </div>
+                <div className="mt-4">
+                  <AddressFieldset
+                    value={permanentAddressForm}
+                    errors={permanentAddressErrors}
+                    onChange={setPermanentAddressForm}
+                    idPrefix="permanent"
+                  />
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-neutral-100">
-                <h4 className="text-sm font-bold text-neutral-900 mb-3">Is your current address the same as your permanent address?</h4>
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center gap-2 cursor-pointer">
+              <div className="border-t border-slate-100 pt-6">
+                <h3 className="text-base font-bold text-[#13211A]">Do you live at this address right now?</h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 text-sm font-semibold transition ${
+                      sameAsPermanent
+                        ? 'border-[#1F8A5B] bg-[#E7F4EC] text-[#0E3B2C]'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
                     <input
                       type="radio"
                       name="sameAsPermanent"
                       checked={sameAsPermanent}
                       onChange={() => setSameAsPermanent(true)}
-                      className="h-4 w-4 border-neutral-300 text-brand-600 focus:ring-brand-500"
+                      className="h-4 w-4 accent-[#1F8A5B]"
                     />
-                    <span className="text-sm text-neutral-700">Yes, it is the same</span>
+                    Yes, same address
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 text-sm font-semibold transition ${
+                      !sameAsPermanent
+                        ? 'border-[#1F8A5B] bg-[#E7F4EC] text-[#0E3B2C]'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
                     <input
                       type="radio"
                       name="sameAsPermanent"
                       checked={!sameAsPermanent}
                       onChange={() => setSameAsPermanent(false)}
-                      className="h-4 w-4 border-neutral-300 text-brand-600 focus:ring-brand-500"
+                      className="h-4 w-4 accent-[#1F8A5B]"
                     />
-                    <span className="text-sm text-neutral-700">No, it is different</span>
+                    No, I live elsewhere
                   </label>
                 </div>
               </div>
 
               {!sameAsPermanent && (
-                <div className="pt-4 border-t border-neutral-100 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 1 <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      value={addressForm.addressLine1}
-                      onChange={(e) => setAddressForm({ ...addressForm, addressLine1: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.addressLine1 ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                      placeholder="Flat, House no., Building, Company, Apartment"
+                <div className="border-t border-slate-100 pt-6">
+                  <h3 className="text-base font-bold text-[#13211A]">Current address</h3>
+                  <div className="mt-4">
+                    <AddressFieldset
+                      value={addressForm}
+                      errors={addressErrors}
+                      onChange={setAddressForm}
+                      idPrefix="current"
                     />
-                    {addressErrors.addressLine1 && <p className="mt-1 text-xs text-danger-500">{addressErrors.addressLine1}</p>}
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Address Line 2 (Optional)</label>
-                    <input
-                      type="text"
-                      value={addressForm.addressLine2}
-                      onChange={(e) => setAddressForm({ ...addressForm, addressLine2: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                      placeholder="Area, Street, Sector, Village"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Locality (Optional)</label>
-                    <input
-                      type="text"
-                      value={addressForm.locality}
-                      onChange={(e) => setAddressForm({ ...addressForm, locality: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Landmark (Optional)</label>
-                    <input
-                      type="text"
-                      value={addressForm.landmark}
-                      onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
-                      className="block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition border-neutral-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">Pincode <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={addressForm.pincode}
-                      onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, '') })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.pincode ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                    />
-                    {addressErrors.pincode && <p className="mt-1 text-xs text-danger-500">{addressErrors.pincode}</p>}
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">City <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      value={addressForm.city}
-                      onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.city ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                    />
-                    {addressErrors.city && <p className="mt-1 text-xs text-danger-500">{addressErrors.city}</p>}
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-neutral-700">State <span className="text-danger-500">*</span></label>
-                    <input
-                      type="text"
-                      value={addressForm.state}
-                      onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
-                      className={`block w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-brand-500/20 ${addressErrors.state ? 'border-danger-300 focus:border-danger-500' : 'border-neutral-300 focus:border-brand-500'}`}
-                    />
-                    {addressErrors.state && <p className="mt-1 text-xs text-danger-500">{addressErrors.state}</p>}
                   </div>
                 </div>
               )}
             </div>
-            
-            {error && (
-              <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-xs font-medium text-danger-700 flex items-center gap-2">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+
+            {error && <InlineError message={error} />}
           </div>
         ) : (
           <>
             {/* Plain-language walkthrough before the legal consent text — a first-time
                 applicant has likely never heard of DigiLocker and needs to know exactly
                 what's about to happen before a new window pops up asking for Aadhaar. */}
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-5">
-              <h4 className="flex items-center gap-2 text-sm font-bold text-neutral-900">
-                <ShieldCheck size={17} className="text-brand-600" />
+            <div className="rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-[#13211A]">
+                <ShieldCheck size={17} className="text-[#1F8A5B]" />
                 What happens next
-              </h4>
-              <ol className="mt-3 space-y-2.5 text-xs leading-5 text-neutral-600">
-                <li className="flex gap-2.5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">1</span>
-                  A new window opens to <strong>DigiLocker</strong> — a Government of India service that instantly confirms your identity.
+              </h3>
+              <ol className="mt-4 space-y-3.5 text-sm leading-6 text-slate-600">
+                <li className="flex gap-3">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#D5EDDF] text-xs font-bold text-[#0E3B2C]">1</span>
+                  A new window opens to <strong className="font-semibold text-[#13211A]">DigiLocker</strong>, a Government of India service that confirms your identity instantly.
                 </li>
-                <li className="flex gap-2.5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">2</span>
-                  Enter your Aadhaar number and verify with the OTP sent to your Aadhaar-linked mobile.
+                <li className="flex gap-3">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#D5EDDF] text-xs font-bold text-[#0E3B2C]">2</span>
+                  Enter your Aadhaar number and the OTP sent to your Aadhaar-linked mobile.
                 </li>
-                <li className="flex gap-2.5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">3</span>
-                  Come back to this tab — we'll pick up automatically once you're verified. Takes about a minute.
+                <li className="flex gap-3">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#D5EDDF] text-xs font-bold text-[#0E3B2C]">3</span>
+                  Come back to this tab. We pick up automatically once you are verified.
                 </li>
               </ol>
             </div>
 
-            <div className="rounded-2xl border border-info-200 bg-info-50/60 p-5">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={consentGiven}
-                  onChange={(e) => setConsentGiven(e.target.checked)}
-                  className="mt-1 h-5 w-5 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
-                />
-                {/* Text comes from the backend consent catalogue, which is also what gets
-                    hashed and stored as evidence — a local copy here would mean recording a
-                    consent whose wording differs from what was actually shown. */}
-                <span className="text-xs text-neutral-700 leading-relaxed">
-                  {consentText('AADHAAR_KYC')}
-                </span>
-              </label>
-            </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-5 transition hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
+              />
+              {/* Text comes from the backend consent catalogue, which is also what gets
+                  hashed and stored as evidence — a local copy here would mean recording a
+                  consent whose wording differs from what was actually shown. */}
+              <span className="text-sm leading-6 text-slate-600">
+                {consentText('AADHAAR_KYC')}
+              </span>
+            </label>
 
-            {error && (
-              <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-xs font-medium text-danger-700 flex items-center gap-2">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+            {error && <InlineError message={error} />}
 
             <div>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={handleStartDigilocker}
                   disabled={!consentGiven || loading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-50 disabled:shadow-none cursor-pointer"
+                  className={BTN_PRIMARY}
                 >
                   {loading ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                  Start DigiLocker Verification
+                  Verify with DigiLocker
                 </button>
 
                 <button
                   type="button"
                   onClick={handleRefresh}
                   disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-5 py-3 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50 cursor-pointer"
-                  title="Already completed verification in the popup? Click here to refresh your status."
+                  className={BTN_SECONDARY}
+                  title="Already finished in the DigiLocker window? Refresh your status here."
                 >
                   <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-                  Check Status
+                  Check status
                 </button>
               </div>
+
               {!consentGiven && !loading && (
-                <p className="animate-fade-in mt-2.5 flex items-center gap-1.5 text-xs font-medium text-neutral-400">
-                  <Info size={13} className="shrink-0" />
-                  Check the consent box above to continue
+                <p className="animate-fade-in mt-3 flex items-center gap-1.5 text-sm text-slate-500">
+                  <Info size={14} className="shrink-0" />
+                  Tick the consent box above to continue
                 </p>
               )}
             </div>
 
             {polling && (
-              <div className="flex items-center gap-3 text-xs font-medium text-info-700 bg-info-50/50 p-3 rounded-xl border border-info-100">
-                <LoaderCircle size={14} className="animate-spin text-info-600" />
-                <span>DigiLocker verification in progress... Please complete the window and return.</span>
+              <div className="flex items-center gap-3 rounded-2xl bg-[#E7F4EC] p-4 text-sm text-[#0E3B2C]">
+                <LoaderCircle size={16} className="animate-spin text-[#1F8A5B]" />
+                <span>Waiting for DigiLocker. Finish in the other window and come back here.</span>
               </div>
             )}
           </>
         )}
 
-        <div className="flex items-center justify-between border-t border-neutral-100 pt-6">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-5 py-2.5 text-sm font-bold text-neutral-700 shadow-sm hover:bg-neutral-50 cursor-pointer"
-          >
+        <div className="flex items-center justify-between border-t border-slate-100 pt-6">
+          <button type="button" onClick={onBack} className={BTN_SECONDARY}>
             <ArrowLeft size={16} /> Back
           </button>
 
@@ -2846,9 +2903,11 @@ function AadhaarKycStep({
               type="button"
               onClick={handleSaveAddress}
               disabled={isSavingAddress}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow transition hover:bg-brand-700 cursor-pointer disabled:opacity-50"
+              className={BTN_PRIMARY}
             >
-              {isSavingAddress ? <LoaderCircle size={16} className="animate-spin" /> : 'Save & Continue'} <ArrowRight size={16} />
+              {isSavingAddress ? <LoaderCircle size={16} className="animate-spin" /> : null}
+              {isSavingAddress ? 'Saving' : 'Save and continue'}
+              {!isSavingAddress && <ArrowRight size={16} />}
             </button>
           )}
         </div>
@@ -2856,65 +2915,53 @@ function AadhaarKycStep({
 
       {/* Enable Popup Permission Modal */}
       {showPopupBlockedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/60 backdrop-blur-xs animate-fade-in">
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border border-neutral-100 animate-scale-up">
-            {/* Top Accent Gradient */}
-            <div className="bg-gradient-to-r from-amber-500 via-brand-600 to-emerald-600 h-2 w-full" />
-            
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A2318]/70 p-4 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md overflow-hidden rounded-[28px] bg-white shadow-2xl animate-scale-up">
             <div className="p-6 sm:p-7">
-              {/* Header */}
               <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-600 shadow-xs">
-                  <ShieldCheck size={26} />
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-700">
+                  <ExternalLink size={24} />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-bold text-neutral-900 leading-snug">
-                    Enable Popup Permission
+                  <h3 className="text-lg font-bold leading-snug text-[#13211A]">
+                    Your browser blocked the window
                   </h3>
-                  <p className="mt-1 text-xs text-neutral-600 leading-relaxed">
-                    To continue Aadhaar verification, please allow pop-ups for this application.
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Allow pop-ups for this site, then open DigiLocker again.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowPopupBlockedModal(false)}
-                  className="rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition cursor-pointer"
+                  className="cursor-pointer rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              {/* Step-by-Step Guide */}
-              <div className="mt-5 rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-amber-950 mb-3 flex items-center gap-1.5">
-                  <Info size={14} className="text-amber-800" />
-                  Steps to allow popups:
-                </div>
-                <ol className="space-y-2.5 text-xs leading-relaxed text-neutral-700">
-                  <li className="flex items-start gap-2.5">
-                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-200/80 text-[10px] font-bold text-amber-950 mt-0.5">1</span>
-                    <span>Look for the <strong>Pop-up blocked icon (🚫)</strong> in your browser's address bar or open browser settings.</span>
-                  </li>
-                  <li className="flex items-start gap-2.5">
-                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-200/80 text-[10px] font-bold text-amber-950 mt-0.5">2</span>
-                    <span>Select <strong>"Always allow pop-ups and redirects"</strong> for this website.</span>
-                  </li>
-                  <li className="flex items-start gap-2.5">
-                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-200/80 text-[10px] font-bold text-amber-950 mt-0.5">3</span>
-                    <span>Return and click <strong>Open DigiLocker Window</strong> below.</span>
-                  </li>
-                </ol>
-              </div>
+              <ol className="mt-5 space-y-3 rounded-2xl bg-[#F7F9F6] p-4 text-sm leading-6 text-slate-600">
+                <li className="flex items-start gap-3">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-800">1</span>
+                  <span>Find the blocked pop-up icon in your browser's address bar.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-800">2</span>
+                  <span>Choose <strong className="font-semibold text-[#13211A]">Always allow pop-ups</strong> for this site.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-800">3</span>
+                  <span>Come back and open the DigiLocker window below.</span>
+                </li>
+              </ol>
 
-              {/* Actions */}
-              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
                   onClick={handleOpenDigilockerWindow}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-bold text-white shadow-md hover:bg-brand-700 transition active:scale-[0.98] cursor-pointer"
+                  className={`flex-1 ${BTN_PRIMARY}`}
                 >
                   <ExternalLink size={16} />
-                  Open DigiLocker Window
+                  Open DigiLocker
                 </button>
                 <button
                   type="button"
@@ -2922,9 +2969,9 @@ function AadhaarKycStep({
                     setShowPopupBlockedModal(false);
                     handleRefresh();
                   }}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition cursor-pointer"
+                  className={BTN_SECONDARY}
                 >
-                  Check Status
+                  Check status
                 </button>
               </div>
             </div>
@@ -2935,189 +2982,97 @@ function AadhaarKycStep({
   );
 }
 
-function ApplicationProgress({ currentStep, workflow }) {
-  const stepIndices = {
-    basic_details: 0,
-    assessment_fee: 1,
-    profile_details: 2,
-    aadhaar_kyc: 3,
-    account_aggregator: 4,
-    submit_application: 5,
+/**
+ * Address inputs, shared by the permanent and current address blocks. Purely
+ * presentational: it writes back the same object shape the state setters already hold.
+ */
+function AddressFieldset({ value, errors, onChange, idPrefix }) {
+  const update = (key) => (event) => {
+    const raw = event.target.value;
+    onChange({ ...value, [key]: key === 'pincode' ? raw.replace(/\D/g, '') : raw });
   };
-  const currentStepIndex = stepIndices[currentStep] ?? 0;
-  const progressPercentage =
-    ((currentStepIndex + 1) / FLOW_STEPS.length) * 100;
 
   return (
-    <section className="mb-6 overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
-      <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-6 py-6 text-white sm:px-8">
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div>
-            <p className="text-sm font-medium text-brand-100">
-              Personal Loan Application
-            </p>
-
-            <h1 className="mt-1 text-2xl font-bold sm:text-3xl">
-              My Application
-            </h1>
-
-            <p className="mt-2 text-sm text-brand-50">
-              Complete all steps and submit your application to the assigned lender.
-            </p>
-          </div>
-
-          <div className="w-full max-w-sm rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
-            <div className="flex justify-between text-sm">
-              <span className="text-brand-100">Progress</span>
-              <strong>{Math.round(progressPercentage)}%</strong>
-            </div>
-
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/20">
-              <div
-                className="h-full rounded-full bg-white transition-all duration-500"
-                style={{ width: `${progressPercentage}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Basic Details Status Badges Summary */}
-        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-white/20 pt-4">
-          <span className="text-xs font-semibold text-brand-100">
-            Basic Details Status:
-          </span>
-
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.mobileVerified
-                ? 'bg-brand-800/80 text-white border border-brand-400/50'
-                : 'bg-white/10 text-brand-100'
-              }`}
-          >
-            {workflow?.mobileVerified ? (
-              <CheckCircle2 size={14} className="text-brand-300" />
-            ) : null}
-            Mobile {workflow?.mobileVerified ? 'Verified' : 'Pending'}
-          </span>
-
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.panVerified
-                ? 'bg-brand-800/80 text-white border border-brand-400/50'
-                : 'bg-white/10 text-brand-100'
-              }`}
-          >
-            {workflow?.panVerified ? (
-              <CheckCircle2 size={14} className="text-brand-300" />
-            ) : null}
-            PAN {workflow?.panVerified ? 'Verified' : 'Pending'}
-          </span>
-
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${workflow?.emailVerified
-                ? 'bg-brand-800/80 text-white border border-brand-400/50'
-                : 'bg-white/10 text-brand-100'
-              }`}
-          >
-            {workflow?.emailVerified ? (
-              <CheckCircle2 size={14} className="text-brand-300" />
-            ) : null}
-            Email {workflow?.emailVerified ? 'Verified' : 'Pending'}
-          </span>
-        </div>
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <FormInput
+          label="Address line 1"
+          name={`${idPrefix}AddressLine1`}
+          value={value.addressLine1}
+          error={errors.addressLine1}
+          onChange={update('addressLine1')}
+          placeholder="Flat, house number, building"
+          required
+        />
       </div>
-
-      {/* Mobile: compact "Step X of N" — avoids forcing a horizontal-scroll stepper on
-          small screens, which reads as a desktop layout squeezed onto a phone. */}
-      <div className="flex items-center gap-3 px-4 py-4 sm:hidden">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-bold text-white">
-          {currentStepIndex + 1}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-neutral-900">
-            {FLOW_STEPS[currentStepIndex]?.label}
-          </p>
-          <p className="text-xs text-neutral-500">
-            Step {currentStepIndex + 1} of {FLOW_STEPS.length}
-          </p>
-        </div>
+      <div className="sm:col-span-2">
+        <FormInput
+          label="Address line 2"
+          name={`${idPrefix}AddressLine2`}
+          value={value.addressLine2}
+          onChange={update('addressLine2')}
+          placeholder="Area, street, sector, village"
+          helperText="Optional"
+        />
       </div>
-
-      {/* Desktop / tablet: full dot-and-connector stepper */}
-      <div className="hidden px-4 py-4 sm:block sm:px-6">
-        <div className="flex items-center">
-          {FLOW_STEPS.map((step, index) => {
-            let isCompleted = false;
-            if (step.id === 'basic_details') {
-              isCompleted = Boolean(workflow?.basicDetailsCompleted);
-            } else if (step.id === 'assessment_fee') {
-              isCompleted = Boolean(workflow?.assessmentFeePaid);
-            } else if (step.id === 'profile_details') {
-              isCompleted = Boolean(workflow?.profileDetailsCompleted);
-            } else if (step.id === 'aadhaar_kyc') {
-              isCompleted = Boolean(workflow?.aadhaarKycCompleted);
-            } else if (step.id === 'account_aggregator') {
-              isCompleted = Boolean(workflow?.aaCompleted);
-            } else if (step.id === 'submit_application') {
-              isCompleted = Boolean(workflow?.applicationSubmitted);
-            }
-
-            const isActive = step.id === currentStep && !isCompleted;
-
-            return (
-              <div key={step.id} className="flex flex-1 items-center">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold transition-all duration-300 ${isCompleted
-                        ? 'bg-brand-600 text-white'
-                        : isActive
-                          ? 'bg-info-600 text-white ring-4 ring-info-100 animate-pulse'
-                          : 'bg-neutral-100 text-neutral-400'
-                      }`}
-                  >
-                    {isCompleted ? <Check size={17} /> : index + 1}
-                  </div>
-
-                  <span
-                    className={`whitespace-nowrap text-xs font-semibold ${isActive
-                        ? 'text-info-700'
-                        : isCompleted
-                          ? 'text-brand-700'
-                          : 'text-neutral-400'
-                      }`}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-
-                {index < FLOW_STEPS.length - 1 && (
-                  <div
-                    className={`mx-3 h-0.5 flex-1 transition-colors duration-500 ${isCompleted ? 'bg-brand-500' : 'bg-neutral-200'
-                      }`}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+      <FormInput
+        label="Locality"
+        name={`${idPrefix}Locality`}
+        value={value.locality}
+        onChange={update('locality')}
+        helperText="Optional"
+      />
+      <FormInput
+        label="Landmark"
+        name={`${idPrefix}Landmark`}
+        value={value.landmark}
+        onChange={update('landmark')}
+        helperText="Optional"
+      />
+      <FormInput
+        label="PIN code"
+        name={`${idPrefix}Pincode`}
+        value={value.pincode}
+        error={errors.pincode}
+        onChange={update('pincode')}
+        maxLength={6}
+        inputMode="numeric"
+        required
+      />
+      <FormInput
+        label="City"
+        name={`${idPrefix}City`}
+        value={value.city}
+        error={errors.city}
+        onChange={update('city')}
+        required
+      />
+      <div className="sm:col-span-2">
+        <FormInput
+          label="State"
+          name={`${idPrefix}State`}
+          value={value.state}
+          error={errors.state}
+          onChange={update('state')}
+          required
+        />
       </div>
-    </section>
-  );
-}
-
-function MessageBanner({
-  message,
-  type,
-}) {
-  return (
-    <div
-      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${type === 'error'
-          ? 'border-danger-200 bg-danger-50 text-danger-700'
-          : 'border-brand-200 bg-brand-50 text-brand-700'
-        }`}
-    >
-      {message}
     </div>
   );
 }
+
+function InlineError({ message }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-800">
+      <AlertCircle size={16} className="mt-0.5 shrink-0 text-rose-600" />
+      <span className="leading-6">{message}</span>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Step 1 — Basic details                                            */
+/* ================================================================== */
 
 function BasicDetailsStep({
   customerId,
@@ -3290,46 +3245,37 @@ function BasicDetailsStep({
       <StepHeading
         icon={CircleUserRound}
         eyebrow="APPLICATION DETAILS"
-        title="Verify your PAN"
+        title={panVerified ? 'Your verified details' : 'Verify your PAN'}
         description={
           panVerified
-            ? 'Your PAN has been verified. Complete the remaining details to check your eligibility.'
-            : 'Enter your 10-digit PAN number to verify and fetch your details.'
+            ? 'These came straight from the PAN database. Add the few remaining details to continue.'
+            : 'Enter your 10-digit PAN. We will fill in your name, date of birth and gender for you.'
         }
         right={
           <StatusBadge>
-            <Phone size={15} />
+            <Phone size={14} />
             Mobile verified
           </StatusBadge>
         }
       />
 
-
-      <SectionHeading
-        title="PAN verification"
-        description="Enter your PAN number to fetch and verify your details."
-      />
-
       {!panVerified && (
-        <div className="mb-6 rounded-2xl border border-info-100 bg-gradient-to-r from-info-50/80 via-neutral-50 to-accent-50/50 p-5 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-600 text-white shadow-md shadow-info-200">
-                <ScanLine size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-neutral-900 flex items-center gap-1.5">
-                  Auto-fill details via PAN Card OCR
-                  <span className="rounded-md bg-info-100 px-2 py-0.5 text-[10px] font-extrabold text-info-700 uppercase tracking-wider">AI Scan</span>
-                </h4>
-                <p className="text-xs text-neutral-500">
-                  Upload or capture your PAN card image to auto-fill your Name as per PAN and PAN Number
-                </p>
-              </div>
+        <div className="mb-7 overflow-hidden rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
+          <div className="flex items-start gap-3.5">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#0E3B2C] text-[#9BE3B5]">
+              <ScanLine size={20} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[#13211A]">
+                Skip the typing — scan your PAN card
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Upload a photo and we will read your name and PAN number from it.
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
             <input
               type="file"
               ref={panFileInputRef}
@@ -3342,10 +3288,14 @@ function BasicDetailsStep({
               type="button"
               onClick={() => panFileInputRef.current?.click()}
               disabled={isOcrScanning}
-              className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-xs font-semibold text-neutral-700 shadow-xs hover:bg-neutral-50 hover:border-neutral-400 transition cursor-pointer disabled:opacity-60"
+              className={BTN_SECONDARY}
             >
-              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin text-info-600" /> : <Upload size={15} className="text-info-600" />}
-              <span>Upload PAN Photo</span>
+              {isOcrScanning ? (
+                <LoaderCircle size={16} className="animate-spin text-[#1F8A5B]" />
+              ) : (
+                <Upload size={16} className="text-[#1F8A5B]" />
+              )}
+              Upload photo
             </button>
 
             <input
@@ -3361,33 +3311,30 @@ function BasicDetailsStep({
               type="button"
               onClick={handleOpenPanCamera}
               disabled={isOcrScanning}
-              className="inline-flex items-center gap-2 rounded-xl bg-info-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-info-700 transition cursor-pointer disabled:opacity-60"
+              className={BTN_SOFT}
             >
-              {isOcrScanning ? <LoaderCircle size={15} className="animate-spin" /> : <Camera size={15} />}
-              <span>Take Photo (Camera)</span>
+              {isOcrScanning ? <LoaderCircle size={16} className="animate-spin" /> : <Camera size={16} />}
+              Use camera
             </button>
           </div>
 
           {isOcrScanning && (
-            <div className="mt-3.5 flex items-center gap-2.5 rounded-xl bg-info-100/80 p-3 text-xs font-semibold text-info-900 border border-info-200">
-              <LoaderCircle size={16} className="animate-spin text-info-600 shrink-0" />
-              <span>Scanning PAN Card with AI OCR... Extracting Full Name and PAN Number...</span>
+            <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-white p-3.5 text-sm text-[#0E3B2C]">
+              <LoaderCircle size={16} className="shrink-0 animate-spin text-[#1F8A5B]" />
+              <span>Reading your PAN card…</span>
             </div>
           )}
 
           {ocrSuccessMsg && !isOcrScanning && (
-            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-brand-50 p-3.5 text-xs font-medium text-brand-900 border border-brand-200">
-              <Sparkles size={16} className="text-brand-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold text-brand-800">PAN OCR Success!</span> {ocrSuccessMsg}
-              </div>
+            <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-[#E7F4EC] p-3.5 text-sm leading-6 text-[#0E3B2C]">
+              <Sparkles size={16} className="mt-0.5 shrink-0 text-[#1F8A5B]" />
+              <span>{ocrSuccessMsg}</span>
             </div>
           )}
 
           {ocrError && !isOcrScanning && (
-            <div className="mt-3.5 flex items-start gap-2.5 rounded-xl bg-danger-50 p-3 text-xs font-medium text-danger-800 border border-danger-200">
-              <AlertCircle size={16} className="text-danger-600 shrink-0 mt-0.5" />
-              <div>{ocrError}</div>
+            <div className="mt-4">
+              <InlineError message={ocrError} />
             </div>
           )}
         </div>
@@ -3395,23 +3342,20 @@ function BasicDetailsStep({
 
       {/* Camera Capture Modal */}
       {isPanCameraOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/80 p-4 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-neutral-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Camera className="h-5 w-5 text-info-600" />
-                <h3 className="text-base font-bold text-neutral-900">Capture PAN Card Photo</h3>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A2318]/80 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-[28px] bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#13211A]">Photograph your PAN card</h3>
               <button
                 type="button"
                 onClick={handleClosePanCamera}
-                className="rounded-full p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition cursor-pointer"
+                className="cursor-pointer rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="relative overflow-hidden rounded-2xl bg-black mb-4">
+            <div className="relative mb-4 overflow-hidden rounded-2xl bg-black">
               <video
                 ref={panVideoRef}
                 autoPlay
@@ -3420,27 +3364,19 @@ function BasicDetailsStep({
                 className="h-64 w-full object-cover"
               />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-                <div className="h-44 w-full rounded-2xl border-2 border-dashed border-white/80 bg-info-500/10 shadow-2xl flex flex-col items-center justify-center text-white/90 text-xs font-semibold">
-                  <span>Align PAN Card inside frame</span>
+                <div className="flex h-44 w-full items-center justify-center rounded-2xl border-2 border-dashed border-white/80 text-sm font-semibold text-white/90">
+                  Line up the card inside this frame
                 </div>
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={handleClosePanCamera}
-                className="rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-200 transition cursor-pointer"
-              >
+              <button type="button" onClick={handleClosePanCamera} className={BTN_SECONDARY}>
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleCapturePanPhoto}
-                className="inline-flex items-center gap-2 rounded-xl bg-info-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-info-700 transition cursor-pointer"
-              >
+              <button type="button" onClick={handleCapturePanPhoto} className={BTN_PRIMARY}>
                 <Camera size={16} />
-                <span>Capture & Scan PAN</span>
+                Capture
               </button>
             </div>
           </div>
@@ -3448,20 +3384,19 @@ function BasicDetailsStep({
       )}
 
       <div className="max-w-xl">
-        <label className="mb-2 block text-sm font-semibold text-neutral-700">
+        <label className="mb-2 block text-sm font-semibold text-slate-700">
           PAN number
-          <span className="ml-1 text-danger-500">
-            *
-          </span>
+          <span className="ml-1 text-rose-500">*</span>
         </label>
 
         <div
-          className={`flex overflow-hidden rounded-xl border bg-white ${errors.panNumber
-              ? 'border-danger-400 ring-4 ring-danger-50'
+          className={`flex min-h-12 overflow-hidden rounded-2xl border bg-white transition ${
+            errors.panNumber
+              ? 'border-rose-300 ring-4 ring-rose-50'
               : panVerified
-                ? 'border-brand-400 ring-4 ring-brand-50'
-                : 'border-neutral-300 focus-within:border-info-600 focus-within:ring-4 focus-within:ring-info-50'
-            }`}
+                ? 'border-[#1F8A5B] ring-4 ring-[#E7F4EC]'
+                : 'border-slate-200 focus-within:border-[#1F8A5B] focus-within:ring-4 focus-within:ring-[#E7F4EC]'
+          }`}
         >
           <input
             type="text"
@@ -3476,7 +3411,7 @@ function BasicDetailsStep({
             placeholder="ABCDE1234F"
             maxLength={10}
             autoComplete="off"
-            className="min-w-0 flex-1 px-4 py-3 text-sm font-medium uppercase outline-none read-only:bg-neutral-50 read-only:text-neutral-600"
+            className="min-w-0 flex-1 bg-transparent px-4 py-3 text-[15px] font-semibold uppercase tracking-wider text-[#13211A] outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 read-only:text-slate-600"
           />
 
           <button
@@ -3490,10 +3425,11 @@ function BasicDetailsStep({
               form.panNumber
                 .length !== 10
             }
-            className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold ${panVerified
-                ? 'border-brand-200 bg-brand-50 text-brand-700'
-                : 'border-neutral-200 text-info-700 hover:bg-info-50'
-              } disabled:cursor-not-allowed disabled:opacity-60`}
+            className={`flex shrink-0 cursor-pointer items-center gap-1.5 px-5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              panVerified
+                ? 'bg-[#E7F4EC] text-[#0E3B2C]'
+                : 'bg-[#0E3B2C] text-white hover:bg-[#145239]'
+            }`}
           >
             {isPanVerifying ? (
               <>
@@ -3501,79 +3437,68 @@ function BasicDetailsStep({
                   size={15}
                   className="animate-spin"
                 />
-                Verifying PAN
+                Verifying
               </>
             ) : panVerified ? (
               <>
                 <CheckCircle2
                   size={15}
                 />
-                PAN Verified
+                Verified
               </>
             ) : (
-              'Verify PAN'
+              'Verify'
             )}
           </button>
         </div>
 
         {errors.panNumber ? (
-          <p className="mt-1.5 text-xs text-danger-600">
+          <p className="animate-fade-in mt-2 text-sm text-rose-600">
             {
               errors.panNumber
             }
           </p>
         ) : (
-          <p className="mt-1.5 text-xs text-neutral-500">
-            Format:
-            ABCDE1234F
+          <p className="mt-2 text-sm text-slate-500">
+            Ten characters, like ABCDE1234F
           </p>
         )}
       </div>
 
       {!panVerified && (
-        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-info-100 bg-info-50 p-4">
+        <div className="mt-6 flex max-w-xl items-start gap-3 rounded-2xl bg-[#F7F9F6] p-4 text-sm leading-6 text-slate-600">
           <Info
-            size={19}
-            className="mt-0.5 shrink-0 text-info-700"
+            size={18}
+            className="mt-0.5 shrink-0 text-[#1F8A5B]"
           />
-
-          <p className="text-sm leading-6 text-info-800">
-            Your verified full name, father's name,
-            date of birth and gender
-            will appear automatically
-            after PAN verification.
+          <p>
+            Your name, father's name, date of birth and gender will fill in on their own once
+            your PAN is verified.
           </p>
         </div>
       )}
 
       {panVerified && (
         <>
-          <div className="mt-7 rounded-2xl border border-brand-200 bg-brand-50 p-5">
-            <div className="flex items-start gap-3">
-              <CheckCircle2
-                size={22}
-                className="mt-0.5 shrink-0 text-brand-700"
-              />
-
-              <div>
-                <p className="text-sm font-bold text-brand-900">
-                  PAN verified
-                  successfully
-                </p>
-
-                <p className="mt-1 text-xs text-brand-700">
-                  Your PAN details
-                  have been fetched
-                  and populated.
-                </p>
-              </div>
+          <div className="mt-7 flex items-start gap-3 rounded-2xl bg-[#E7F4EC] p-5">
+            <CheckCircle2
+              size={20}
+              className="mt-0.5 shrink-0 text-[#1F8A5B]"
+            />
+            <div>
+              <p className="text-sm font-bold text-[#0E3B2C]">
+                PAN verified
+              </p>
+              <p className="mt-0.5 text-sm text-[#0E3B2C]/75">
+                We have filled in everything we could from your PAN record.
+              </p>
             </div>
           </div>
 
-          <div className="mt-7">
+          <div className="mt-8">
             <SectionHeading
-              title="Verified personal details"
-              description="These details were received from the PAN verification service."
+              title="Your details"
+              description="Straight from the PAN database — only add what is missing."
             />
 
             <div className="grid gap-5 md:grid-cols-2">
@@ -3584,7 +3509,7 @@ function BasicDetailsStep({
                 }
                 readOnly
                 disabled
-                helperText="Verified from PAN"
+                helperText="From your PAN"
               />
 
               <FormInput
@@ -3598,8 +3523,8 @@ function BasicDetailsStep({
                 disabled={Boolean(panVerification?.dateOfBirth)}
                 helperText={
                   panVerification?.dateOfBirth
-                    ? "Verified from PAN"
-                    : "Enter date of birth if not auto-filled"
+                    ? 'From your PAN'
+                    : 'Add your date of birth'
                 }
               />
 
@@ -3612,8 +3537,8 @@ function BasicDetailsStep({
                 disabled={Boolean(panVerification?.gender)}
                 helperText={
                   panVerification?.gender
-                    ? "Verified from PAN"
-                    : "Select gender if not auto-filled"
+                    ? 'From your PAN'
+                    : 'Choose your gender'
                 }
                 options={[
                   ['MALE', 'Male'],
@@ -3632,17 +3557,17 @@ function BasicDetailsStep({
                   errors.fatherName
                 }
                 onChange={onChange}
-                placeholder="Enter father's full name"
+                placeholder="As printed on your PAN card"
                 helperText={
                   form.fatherName
-                    ? 'Verified / populated from PAN'
-                    : "Enter father's full name if not auto-filled"
+                    ? 'From your PAN'
+                    : 'Add this if it did not fill in'
                 }
                 required
               />
 
               <FormInput
-                label="Residential PIN code"
+                label="Home PIN code"
                 name="pincode"
                 value={
                   form.pincode
@@ -3651,54 +3576,56 @@ function BasicDetailsStep({
                   errors.pincode
                 }
                 onChange={onChange}
-                placeholder="Enter 6-digit PIN code"
+                placeholder="400059"
                 maxLength={6}
                 inputMode="numeric"
                 required
               />
 
-              {pincodeCity && pincodeState && (
-                <div className="flex items-start gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3">
-                  <MapPin
-                    size={18}
-                    className="mt-0.5 shrink-0 text-brand-700"
-                  />
-                  <div>
-                    <p className="text-sm font-semibold text-brand-900">
-                      {pincodeCity}, {pincodeState}
-                    </p>
-                    <p className="mt-0.5 text-xs text-brand-600">
-                      Location verified from PIN code
-                    </p>
+              <div className="flex items-end">
+                {pincodeCity && pincodeState && (
+                  <div className="flex w-full items-start gap-3 rounded-2xl bg-[#E7F4EC] p-4">
+                    <MapPin
+                      size={17}
+                      className="mt-0.5 shrink-0 text-[#1F8A5B]"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-[#0E3B2C]">
+                        {pincodeCity}, {pincodeState}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#0E3B2C]/70">
+                        Matched to your PIN code
+                      </p>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {isPincodeLoading && (
-                <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                  <LoaderCircle
-                    size={16}
-                    className="animate-spin text-neutral-500"
-                  />
-                  <span className="text-xs text-neutral-500">
-                    Looking up location...
-                  </span>
-                </div>
-              )}
+                {isPincodeLoading && (
+                  <div className="flex w-full items-center gap-2 rounded-2xl bg-slate-50 p-4">
+                    <LoaderCircle
+                      size={16}
+                      className="animate-spin text-slate-400"
+                    />
+                    <span className="text-sm text-slate-500">
+                      Looking up your area…
+                    </span>
+                  </div>
+                )}
 
-              {pincodeError && (
-                <div className="rounded-xl border border-caution-200 bg-caution-50 px-3 py-2.5 text-xs text-caution-700">
-                  {pincodeError}
-                </div>
-              )}
+                {pincodeError && (
+                  <div className="w-full rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {pincodeError}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="my-8 border-t border-neutral-200" />
+          <div className="my-9 border-t border-slate-100" />
 
           <SectionHeading
-            title="Communication"
-            description="We will send receipts, KFS and application updates here."
+            title="Where should we reach you?"
+            description="Receipts, your loan agreement and status updates all go here."
           />
 
           <div className="grid gap-5 md:grid-cols-2">
@@ -3707,25 +3634,24 @@ function BasicDetailsStep({
               value={`+91 ${mobileNumber}`}
               readOnly
               disabled
-              helperText="Verified during login"
+              helperText="Verified when you signed in"
               required
             />
 
             <div>
-              <label className="mb-2 block text-sm font-semibold text-neutral-700">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Email address
-                <span className="ml-1 text-danger-500">
-                  *
-                </span>
+                <span className="ml-1 text-rose-500">*</span>
               </label>
 
               <div
-                className={`flex overflow-hidden rounded-xl border bg-white ${errors.email
-                    ? 'border-danger-400 ring-4 ring-danger-50'
+                className={`flex min-h-12 overflow-hidden rounded-2xl border bg-white transition ${
+                  errors.email
+                    ? 'border-rose-300 ring-4 ring-rose-50'
                     : emailVerified
-                      ? 'border-brand-400 ring-4 ring-brand-50'
-                      : 'border-neutral-300 focus-within:border-info-600 focus-within:ring-4 focus-within:ring-info-50'
-                  }`}
+                      ? 'border-[#1F8A5B] ring-4 ring-[#E7F4EC]'
+                      : 'border-slate-200 focus-within:border-[#1F8A5B] focus-within:ring-4 focus-within:ring-[#E7F4EC]'
+                }`}
               >
                 <input
                   type="email"
@@ -3737,7 +3663,7 @@ function BasicDetailsStep({
                     onChange
                   }
                   placeholder="name@example.com"
-                  className="min-w-0 flex-1 px-4 py-3 text-sm outline-none"
+                  className="min-w-0 flex-1 bg-transparent px-4 py-3 text-[15px] text-[#13211A] outline-none placeholder:text-slate-400"
                 />
 
                 {!emailVerified && !isEmailOtpSent && (
@@ -3750,7 +3676,7 @@ function BasicDetailsStep({
                       isEmailVerifying ||
                       !form.email.trim()
                     }
-                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-neutral-200 text-info-700 hover:bg-info-50 disabled:cursor-not-allowed disabled:opacity-60`}
+                    className="flex shrink-0 cursor-pointer items-center gap-1.5 bg-[#0E3B2C] px-5 text-sm font-semibold text-white transition hover:bg-[#145239] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isEmailVerifying ? (
                       <>
@@ -3758,18 +3684,16 @@ function BasicDetailsStep({
                           size={15}
                           className="animate-spin"
                         />
-                        Sending OTP
+                        Sending
                       </>
                     ) : (
-                      'Send OTP'
+                      'Send code'
                     )}
                   </button>
                 )}
 
                 {emailVerified && (
-                  <span
-                    className={`flex shrink-0 items-center gap-1.5 border-l px-4 text-xs font-semibold border-brand-200 bg-brand-50 text-brand-700`}
-                  >
+                  <span className="flex shrink-0 items-center gap-1.5 bg-[#E7F4EC] px-5 text-sm font-semibold text-[#0E3B2C]">
                     <MailCheck size={15} />
                     Verified
                   </span>
@@ -3777,7 +3701,10 @@ function BasicDetailsStep({
               </div>
 
               {isEmailOtpSent && !emailVerified && (
-                <div className="animate-fade-in mt-3">
+                <div className="animate-fade-in mt-4">
+                  <p className="mb-2.5 text-sm text-slate-500">
+                    Enter the 6-digit code we emailed you.
+                  </p>
                   <div className="flex flex-wrap items-center gap-3">
                     <OtpInput
                       length={6}
@@ -3791,7 +3718,7 @@ function BasicDetailsStep({
                       type="button"
                       onClick={onVerifyEmailOtp}
                       disabled={isEmailVerifying || emailOtp.length !== 6}
-                      className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-neutral-200 px-4 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className={BTN_SOFT}
                     >
                       {isEmailVerifying ? (
                         <>
@@ -3799,20 +3726,20 @@ function BasicDetailsStep({
                           Verifying
                         </>
                       ) : (
-                        'Verify OTP'
+                        'Verify code'
                       )}
                     </button>
                   </div>
                   {developmentEmailOtp && (
-                    <p className="mt-1.5 text-xs text-caution-600">
-                      Dev OTP: {developmentEmailOtp}
+                    <p className="mt-2 text-xs text-slate-400">
+                      Test code: {developmentEmailOtp}
                     </p>
                   )}
                 </div>
               )}
 
               {errors.email && (
-                <p className="mt-1.5 text-xs text-danger-600">
+                <p className="animate-fade-in mt-2 text-sm text-rose-600">
                   {errors.email}
                 </p>
               )}
@@ -3825,8 +3752,8 @@ function BasicDetailsStep({
             onNext={onContinue}
             nextLabel={
               isBreRunning
-                ? 'Allocating Lender...'
-                : 'Save & Next'
+                ? 'Finding your lender'
+                : 'Save and continue'
             }
             nextDisabled={
               isBreRunning ||
@@ -3850,6 +3777,10 @@ function BasicDetailsStep({
   );
 }
 
+/* ================================================================== */
+/*  Step 2 — Lender and assessment fee                                */
+/* ================================================================== */
+
 function AssessmentFeeStep({
   customer,
   lenderConsent,
@@ -3870,58 +3801,62 @@ function AssessmentFeeStep({
   const totalFee = customer?.assessmentFee?.totalAmount || 0;
   const gstRate = customer?.assessmentFee?.gstRate || 18;
 
+  // 'ALREADY_PAID' is an internal marker set when a paid fee is detected on load — it is
+  // not a real transaction reference, so it is never shown to the customer.
+  const hasRealTransactionRef = Boolean(transactionId) && transactionId !== 'ALREADY_PAID';
+
   return (
     <StepCard>
       <StepHeading
         icon={Building2}
         eyebrow="LENDER & ASSESSMENT FEE"
-        title="Your application route"
-        description="An eligible lending partner has been assigned based on policy and available allocation."
+        title="Your lending partner"
+        description="We matched you with a partner whose policy fits your profile."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        <section className="rounded-3xl border border-neutral-200 p-6">
-          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-info-700">
-            <BadgeCheck size={17} />
-            Allocated lending partner
-          </p>
-
-          <div className="mt-5 flex flex-col justify-between gap-4 border-b border-neutral-100 pb-6 sm:flex-row sm:items-center">
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+        <section>
+          <div className="flex flex-col justify-between gap-4 rounded-2xl bg-[#F7F9F6] p-5 sm:flex-row sm:items-center sm:p-6">
             <div className="flex items-center gap-4">
-              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-info-600 font-bold text-white">
+              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-[#0E3B2C] text-lg font-bold text-[#9BE3B5]">
                 {lenderName.substring(0, 2).toUpperCase()}
               </div>
 
-              <div>
-                <h3 className="font-bold text-neutral-900">
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-[#13211A]">
                   {lenderName}
                 </h3>
-
-                <p className="mt-1 text-xs text-neutral-500">
-                  Personal Loan · New customer
+                <p className="mt-0.5 text-sm text-slate-500">
+                  Personal loan
                 </p>
               </div>
             </div>
 
-            <span className="w-fit rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">
-              Assigned
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#E7F4EC] px-3.5 py-1.5 text-sm font-semibold text-[#0E3B2C]">
+              <BadgeCheck size={15} />
+              Matched
             </span>
           </div>
 
-          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-info-100 bg-info-50 p-4 text-sm text-info-900">
+          <div className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-600">
             <Info
-              size={19}
-              className="mt-0.5 shrink-0 text-info-700"
+              size={18}
+              className="mt-0.5 shrink-0 text-[#1F8A5B]"
             />
-
             <p>
-              <strong>Why this lender?</strong>
-              <br />
-              Your profile matches the active lender policy and monthly capacity is available.
+              <span className="font-semibold text-[#13211A]">Why this partner?</span> Your profile
+              matches their current lending policy, and they have room to take new applications
+              this month.
             </p>
           </div>
 
-          <label className={`mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-4 transition-all duration-150 ${lenderConsent ? 'border-brand-400 bg-brand-50/50' : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50'}`}>
+          <label
+            className={`mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border p-5 transition ${
+              lenderConsent
+                ? 'border-[#1F8A5B] bg-[#E7F4EC]'
+                : 'border-slate-200 hover:bg-slate-50'
+            }`}
+          >
             <input
               type="checkbox"
               checked={lenderConsent}
@@ -3929,63 +3864,63 @@ function AssessmentFeeStep({
               onChange={(event) =>
                 onConsentChange(event.target.checked)
               }
-              className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
             />
 
-            <span className="text-sm font-semibold leading-6 text-neutral-900">
-              I consent to share my application data with <strong>{lenderName}</strong> for eligibility assessment and final decision, and understand this assessment fee is <strong className="text-danger-700">non-refundable</strong>, including if my application is not approved.
+            <span className="text-sm leading-6 text-[#13211A]">
+              I agree to share my application with <strong className="font-semibold">{lenderName}</strong> for
+              assessment and a final decision, and I understand this assessment fee is{' '}
+              <strong className="font-semibold text-rose-700">non-refundable</strong>, including if my
+              application is not approved.
             </span>
           </label>
 
-          <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-neutral-500">
-            <Info size={14} className="mt-0.5 shrink-0 text-neutral-400" />
-            Paying the assessment fee does not guarantee loan approval — the lender runs its own independent eligibility check after submission, and the fee is not refunded regardless of the outcome.
+          <p className="mt-4 flex items-start gap-2 text-sm leading-6 text-slate-500">
+            <Info size={15} className="mt-0.5 shrink-0 text-slate-400" />
+            Paying this fee does not guarantee approval. Your lender runs its own independent
+            check after your application is submitted.
           </p>
         </section>
 
-        <aside className="flex flex-col justify-between rounded-3xl bg-neutral-950 p-6 text-white shadow-xl">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-              Assessment fee
-            </p>
+        <aside className="flex h-fit flex-col rounded-[24px] bg-[#0E3B2C] p-6 text-white">
+          <p className="text-sm text-emerald-100/70">Assessment fee</p>
 
-            <div className="mt-6 space-y-4">
-              <FeeRow
-                label="Base fee"
-                amount={`₹${baseFee.toFixed(2)}`}
-              />
+          <div className="mt-5 space-y-4">
+            <FeeRow
+              label="Base fee"
+              amount={`₹${baseFee.toFixed(2)}`}
+            />
 
-              <FeeRow
-                label={`GST at ${gstRate}%`}
-                amount={`₹${gstFee.toFixed(2)}`}
-              />
+            <FeeRow
+              label={`GST at ${gstRate}%`}
+              amount={`₹${gstFee.toFixed(2)}`}
+            />
 
-              <div className="flex items-center justify-between border-t border-neutral-800 pt-5">
-                <span className="text-sm text-neutral-300">
-                  Total payable
-                </span>
+            <div className="flex items-baseline justify-between border-t border-white/15 pt-5">
+              <span className="text-sm text-emerald-50/80">
+                {feePaid ? 'Total paid' : 'Total payable'}
+              </span>
 
-                <strong className="text-2xl">
-                  {`₹${totalFee.toFixed(2)}`}
-                </strong>
-              </div>
+              <strong className="text-2xl tabular-nums">
+                {`₹${totalFee.toFixed(2)}`}
+              </strong>
             </div>
           </div>
 
-          <div className="mt-8">
+          <div className="mt-7">
             {feePaid ? (
-              <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 p-4">
+              <div className="rounded-2xl bg-white/10 p-4">
                 <div className="flex items-start gap-3">
-                  <CheckCircle2 className="shrink-0 text-brand-400" />
-
+                  <CheckCircle2 size={20} className="shrink-0 text-[#9BE3B5]" />
                   <div>
-                    <p className="text-sm font-bold text-white">
-                      Payment successful
+                    <p className="text-sm font-semibold text-white">
+                      Payment received
                     </p>
-
-                    <p className="mt-1 text-xs text-brand-200">
-                      {transactionId ? `Txn Ref: ${transactionId}` : 'Fee Verified'}
-                    </p>
+                    {hasRealTransactionRef && (
+                      <p className="mt-1 text-xs text-emerald-100/70">
+                        Reference {transactionId}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3999,7 +3934,7 @@ function AssessmentFeeStep({
                     isCheckingPayment
                   }
                   onClick={onPay}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-40 disabled:shadow-none"
+                  className="flex w-full min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#9BE3B5] px-5 text-sm font-bold text-[#0E3B2C] transition hover:bg-[#B4EDC7] disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-emerald-100/50"
                 >
                   {isCheckingPayment ? (
                     <>
@@ -4007,7 +3942,7 @@ function AssessmentFeeStep({
                         size={18}
                         className="animate-spin"
                       />
-                      Confirming payment...
+                      Confirming payment
                     </>
                   ) : isFeeProcessing ? (
                     <>
@@ -4015,7 +3950,7 @@ function AssessmentFeeStep({
                         size={18}
                         className="animate-spin"
                       />
-                      Initializing secure payment...
+                      Opening secure payment
                     </>
                   ) : (
                     <>
@@ -4026,36 +3961,38 @@ function AssessmentFeeStep({
                     </>
                   )}
                 </button>
+
                 {!lenderConsent && !isFeeProcessing && !isCheckingPayment && (
-                  <p className="animate-fade-in mt-2.5 flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                  <p className="animate-fade-in mt-3 flex items-center gap-1.5 text-xs text-emerald-100/70">
                     <Info size={13} className="shrink-0" />
-                    Check the consent box above to enable payment
+                    Tick the consent box to enable payment
                   </p>
                 )}
+
                 {/* isFeeProcessing but not yet isCheckingPayment means the payment
                     window was asked to open but Easebuzz hasn't called back at all
                     yet — could still be legitimately loading, or could mean it never
                     opened. Never auto-resets; the customer decides when to give up. */}
                 {isFeeProcessing && !isCheckingPayment && showPaymentRetryHint && (
-                  <div className="animate-fade-in mt-3 rounded-xl border border-caution-200 bg-caution-50 p-3 text-center">
-                    <p className="text-xs font-medium text-caution-800">
-                      Payment window not showing anything?
+                  <div className="animate-fade-in mt-4 rounded-2xl bg-white/10 p-4 text-center">
+                    <p className="text-xs text-emerald-50/80">
+                      Nothing showing up?
                     </p>
                     <button
                       type="button"
                       onClick={onRetryPayment}
-                      className="mt-1.5 text-xs font-bold text-caution-900 underline underline-offset-2 hover:text-caution-950 cursor-pointer"
+                      className="mt-1.5 cursor-pointer text-xs font-bold text-[#9BE3B5] underline underline-offset-2"
                     >
-                      Click here to try again
+                      Try the payment again
                     </button>
                   </div>
                 )}
               </>
             )}
 
-            <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-neutral-400">
+            <p className="mt-5 flex items-center justify-center gap-1.5 text-xs text-emerald-100/60">
               <Lock size={13} />
-              256bit Secure Easebuzz Payment
+              Secure payment by Easebuzz
             </p>
           </div>
         </aside>
@@ -4064,8 +4001,13 @@ function AssessmentFeeStep({
       <StepActions
         onBack={onBack}
         onNext={onContinue}
-        nextLabel="Complete Profile"
+        nextLabel="Continue"
         nextDisabled={true}
+        nextDisabledReason={
+          feePaid
+            ? 'We are confirming your payment — this page will move on by itself'
+            : 'Pay the assessment fee above to continue'
+        }
         hideSave
       />
     </StepCard>
@@ -4077,12 +4019,12 @@ function FeeRow({
   amount,
 }) {
   return (
-    <div className="flex justify-between border-b border-neutral-800 pb-4 text-sm">
-      <span className="text-neutral-400">
+    <div className="flex items-center justify-between border-b border-white/10 pb-4 text-sm">
+      <span className="text-emerald-50/70">
         {label}
       </span>
 
-      <strong>{amount}</strong>
+      <strong className="tabular-nums">{amount}</strong>
     </div>
   );
 }
@@ -4154,6 +4096,10 @@ function drawWatermarkOnCanvas(canvas, videoElement, metadata) {
     currentY += lineHeight;
   });
 }
+
+/* ================================================================== */
+/*  Live photograph + location                                        */
+/* ================================================================== */
 
 function LivePhotographSection({
   customerId,
@@ -4428,30 +4374,34 @@ function LivePhotographSection({
   };
 
   return (
-    <div className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+    <div className="mt-9 rounded-2xl border border-slate-200 p-5 sm:p-6">
       <canvas ref={canvasRef} className="hidden" />
 
-      <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#E7F4EC] text-[#1F8A5B]">
             <Camera size={20} />
           </div>
           <div>
-            <h3 className="text-base font-bold text-neutral-900">
-              Live photograph and location verification
+            <h3 className="text-base font-bold text-[#13211A]">
+              Take a quick selfie
             </h3>
-            <p className="text-xs text-neutral-500">
-              Capture a live photograph at your current location. The date, time, coordinates and address will be printed on the image.
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              A live photo at your current location. The date, time and address are printed on
+              the image, so it cannot be reused later.
             </p>
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center rounded-full bg-danger-50 px-2.5 py-1 text-xs font-semibold text-danger-700">
+        <span className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
           Required
         </span>
       </div>
 
       {!savedPhotoDocument && !capturedPhotoUrl && (
-        <div className="mt-4 flex items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+        <label
+          htmlFor="photoConsent"
+          className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl bg-[#F7F9F6] p-4"
+        >
           <input
             type="checkbox"
             id="photoConsent"
@@ -4460,68 +4410,63 @@ function LivePhotographSection({
               setConsentChecked(e.target.checked);
               setPhotoError('');
             }}
-            className="mt-1 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+            className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
           />
           {/* Backend consent catalogue supplies this — see resolveConsentText. */}
-          <label htmlFor="photoConsent" className="text-xs leading-relaxed text-neutral-700">
+          <span className="text-sm leading-6 text-slate-600">
             {resolveConsentText(
               customer,
               'LIVE_PHOTO_CAPTURE',
               'I consent to the capture and processing of my live photograph and current location for identity verification, fraud prevention and loan application processing.',
             )}
-          </label>
-        </div>
+          </span>
+        </label>
       )}
 
       {photoError && (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-danger-200 bg-danger-50 p-3 text-xs font-medium text-danger-700">
-          <AlertCircle size={16} className="shrink-0 text-danger-600" />
-          <span>{photoError}</span>
+        <div className="mt-5">
+          <InlineError message={photoError} />
         </div>
       )}
 
       {savedPhotoDocument ? (
-        <div className="mt-5 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
+        <div className="mt-5 rounded-2xl bg-[#E7F4EC] p-4 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-lg border border-brand-300 bg-neutral-100">
+            <div className="h-28 w-28 shrink-0 overflow-hidden rounded-2xl bg-white">
               <img
                 src={resolveFileUrl(savedPhotoDocument.fileUrl)}
-                alt="Saved customer photo"
+                alt="Your verified photo"
                 className="h-full w-full object-cover"
               />
             </div>
-            <div className="flex-1 space-y-2 text-xs">
+
+            <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 font-semibold text-brand-800">
-                  <UserCheck size={13} /> Face Verified
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#0E3B2C]">
+                  <UserCheck size={13} /> Face verified
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-info-100 px-2.5 py-0.5 font-semibold text-info-800">
-                  <MapPin size={13} /> Location Captured
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-0.5 font-semibold text-neutral-700">
-                  <CheckCircle2 size={13} /> Uploaded & Saved
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#0E3B2C]">
+                  <MapPin size={13} /> Location captured
                 </span>
               </div>
-              <p className="font-semibold text-neutral-900">
+
+              <p className="text-sm font-semibold text-[#0E3B2C]">
                 {savedPhotoDocument.formattedAddress || 'Address recorded'}
               </p>
-              {savedPhotoDocument.latitude && savedPhotoDocument.longitude && (
-                <p className="text-neutral-600">
-                  Lat: {Number(savedPhotoDocument.latitude).toFixed(6)}, Lon: {Number(savedPhotoDocument.longitude).toFixed(6)}
-                </p>
-              )}
+
               {savedPhotoDocument.capturedAt && (
-                <p className="text-neutral-500">
-                  Captured: {new Date(savedPhotoDocument.capturedAt).toLocaleString('en-IN')}
+                <p className="text-xs text-[#0E3B2C]/70">
+                  Taken {new Date(savedPhotoDocument.capturedAt).toLocaleString('en-IN')}
                 </p>
               )}
             </div>
+
             <button
               type="button"
               onClick={handleRetake}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+              className={BTN_SECONDARY}
             >
-              <RefreshCw size={14} /> Retake Photo
+              <RefreshCw size={15} /> Retake
             </button>
           </div>
         </div>
@@ -4532,15 +4477,15 @@ function LivePhotographSection({
               type="button"
               disabled={!consentChecked}
               onClick={handleOpenCamera}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className={BTN_PRIMARY}
             >
-              <Camera size={18} /> Open Camera & Verify Location
+              <Camera size={17} /> Open camera
             </button>
           )}
 
           {isCameraOpen && (
             <div className="flex flex-col items-center gap-4">
-              <div className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-brand-500 bg-neutral-900 shadow-lg">
+              <div className="relative w-full max-w-md overflow-hidden rounded-[24px] bg-black">
                 <video
                   ref={videoRef}
                   autoPlay
@@ -4548,14 +4493,14 @@ function LivePhotographSection({
                   muted
                   className="h-72 w-full object-cover"
                 />
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-neutral-900/80 px-3 py-1 text-xs font-medium text-brand-400 backdrop-blur-sm">
+                <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
                   {isLoadingLocation ? (
                     <>
-                      <LoaderCircle size={12} className="animate-spin" /> Fetching GPS coordinates...
+                      <LoaderCircle size={12} className="animate-spin" /> Finding your location
                     </>
                   ) : (
                     <>
-                      <MapPin size={12} /> {locationData ? `GPS: ${locationData.latitude.toFixed(4)}, ${locationData.longitude.toFixed(4)}` : 'Location active'}
+                      <MapPin size={12} /> {locationData ? 'Location locked' : 'Location active'}
                     </>
                   )}
                 </div>
@@ -4566,24 +4511,24 @@ function LivePhotographSection({
                   type="button"
                   onClick={handleCapturePhoto}
                   disabled={isLoadingLocation || isWatermarking}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-50"
+                  className={BTN_PRIMARY}
                 >
                   {isWatermarking ? (
                     <>
-                      <LoaderCircle size={18} className="animate-spin" /> Processing Snapshot...
+                      <LoaderCircle size={17} className="animate-spin" /> Processing
                     </>
                   ) : (
                     <>
-                      <Camera size={18} /> Capture Photo
+                      <Camera size={17} /> Take photo
                     </>
                   )}
                 </button>
                 <button
                   type="button"
                   onClick={stopCameraStream}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+                  className={BTN_SECONDARY}
                 >
-                  <X size={18} /> Cancel
+                  Cancel
                 </button>
               </div>
             </div>
@@ -4591,10 +4536,10 @@ function LivePhotographSection({
 
           {capturedPhotoUrl && !isCameraOpen && (
             <div className="flex flex-col items-center gap-4">
-              <div className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-brand-500 bg-neutral-950 shadow-lg">
+              <div className="w-full max-w-md overflow-hidden rounded-[24px] bg-slate-900">
                 <img
                   src={capturedPhotoUrl}
-                  alt="Captured Geo-tagged"
+                  alt="Your captured photo"
                   className="w-full object-contain"
                 />
               </div>
@@ -4604,19 +4549,19 @@ function LivePhotographSection({
                   type="button"
                   onClick={handleVerifyAndSave}
                   disabled={isRunningLiveness || isUploading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-brand-700 disabled:opacity-50"
+                  className={BTN_PRIMARY}
                 >
                   {isRunningLiveness ? (
                     <>
-                      <LoaderCircle size={18} className="animate-spin" /> Verifying Face Liveness...
+                      <LoaderCircle size={17} className="animate-spin" /> Checking your photo
                     </>
                   ) : isUploading ? (
                     <>
-                      <LoaderCircle size={18} className="animate-spin" /> Saving Document...
+                      <LoaderCircle size={17} className="animate-spin" /> Saving
                     </>
                   ) : (
                     <>
-                      <UserCheck size={18} /> Verify and Save Photo
+                      <UserCheck size={17} /> Use this photo
                     </>
                   )}
                 </button>
@@ -4624,9 +4569,9 @@ function LivePhotographSection({
                   type="button"
                   onClick={handleRetake}
                   disabled={isRunningLiveness || isUploading}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                  className={BTN_SECONDARY}
                 >
-                  <RotateCcw size={18} /> Retake
+                  <RotateCcw size={16} /> Retake
                 </button>
               </div>
             </div>
@@ -4636,6 +4581,10 @@ function LivePhotographSection({
     </div>
   );
 }
+
+/* ================================================================== */
+/*  Step 3 — Profile details                                          */
+/* ================================================================== */
 
 function ProfileDetailsStep({
   customerId,
@@ -4665,21 +4614,19 @@ function ProfileDetailsStep({
       <StepHeading
         icon={BriefcaseBusiness}
         eyebrow="COMPLETE YOUR PROFILE"
-        title="Residence and professional details"
-        description="Add the details required by the assigned lender before submission."
+        title="About you"
+        description="Where you live, what you do, and what you earn. Your lender needs this to decide."
         right={
           <StatusBadge>
-            <ReceiptText
-              size={15}
-            />
+            <ReceiptText size={14} />
             Fee paid
           </StatusBadge>
         }
       />
 
       <SectionHeading
-        title="Residence and employment"
-        description="Provide your current residence and work status."
+        title="Home and work"
+        description="Start with where you live and how you earn."
       />
 
       <div className="grid gap-5 md:grid-cols-2">
@@ -4709,7 +4656,7 @@ function ProfileDetailsStep({
         />
 
         <SelectableCardGroup
-          label="Employment type"
+          label="How do you earn?"
           name="employmentType"
           value={
             form.employmentType
@@ -4777,7 +4724,7 @@ function ProfileDetailsStep({
               errors.companyName
             }
             onChange={onChange}
-            placeholder="Enter company name"
+            placeholder="Where you work"
             required
           />
 
@@ -4791,12 +4738,12 @@ function ProfileDetailsStep({
               errors.designation
             }
             onChange={onChange}
-            placeholder="Enter designation"
+            placeholder="Your role"
             required
           />
 
           <FormInput
-            label="Net monthly salary"
+            label="Monthly take-home salary"
             name="monthlyIncome"
             value={
               form.monthlyIncome
@@ -4812,7 +4759,7 @@ function ProfileDetailsStep({
           />
 
           <FormSelect
-            label="Current employment vintage"
+            label="Time at this job"
             name="employmentVintage"
             value={
               form.employmentVintage
@@ -4878,7 +4825,7 @@ function ProfileDetailsStep({
           />
 
           <FormSelect
-            label="Mode of salary"
+            label="How are you paid?"
             name="salaryMode"
             value={
               form.salaryMode
@@ -4912,12 +4859,12 @@ function ProfileDetailsStep({
               errors.businessName
             }
             onChange={onChange}
-            placeholder="Enter business name"
+            placeholder="Your business"
             required
           />
 
           <FormSelect
-            label="Business constitution"
+            label="Business type"
             name="businessConstitution"
             value={
               form.businessConstitution
@@ -4945,7 +4892,7 @@ function ProfileDetailsStep({
           />
 
           <FormSelect
-            label="Business vintage"
+            label="Years in business"
             name="businessVintage"
             value={
               form.businessVintage
@@ -5027,7 +4974,7 @@ function ProfileDetailsStep({
         />
 
         <FormSelect
-          label="KFS language"
+          label="Language for your loan documents"
           name="kfsLanguage"
           value={
             form.kfsLanguage
@@ -5060,16 +5007,12 @@ function ProfileDetailsStep({
         onPhotoSaved={onPhotoSaved}
       />
 
-      <div className="mt-7 flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-800">
+      <div className="mt-7 flex items-start gap-3 rounded-2xl bg-[#E7F4EC] p-4 text-sm leading-6 text-[#0E3B2C]">
         <ShieldCheck
-          size={20}
-          className="mt-0.5 shrink-0"
+          size={18}
+          className="mt-0.5 shrink-0 text-[#1F8A5B]"
         />
-
-        Your information is
-        encrypted and shared only
-        with the assigned lender
-        after consent.
+        Everything here is encrypted, and shared only with the lender you agreed to.
       </div>
 
       <StepActions
@@ -5077,11 +5020,15 @@ function ProfileDetailsStep({
         onSave={onSaveDraft}
         isSaving={isSaving}
         onNext={onContinue}
-        nextLabel="Continue to Aadhaar KYC"
+        nextLabel="Continue"
       />
     </StepCard>
   );
 }
+
+/* ================================================================== */
+/*  Step 4 — Review and submit                                        */
+/* ================================================================== */
 
 function SubmitApplicationStep({
   form,
@@ -5106,30 +5053,48 @@ function SubmitApplicationStep({
   const isRejected = status === 'LENDER_REJECTED';
   const hasLan = !!customer?.latestLan;
   const isSubmittedState = applicationSubmitted || status === 'APPLICATION_SUBMITTED' || isApproved || isRejected;
+
+  // Always the real allocated partner — never a hardcoded lender name.
+  const lenderName = customer?.allocatedLenderName || customer?.allocatedLenderCode || 'Your lending partner';
+
   if (isSubmittedState) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div className={`rounded-3xl p-6 text-white shadow-xl ${isApproved ? 'bg-gradient-to-r from-brand-900 via-neutral-900 to-neutral-950 border border-brand-500/30' : isRejected ? 'bg-gradient-to-r from-danger-900 via-neutral-900 to-neutral-950 border border-danger-500/30' : 'bg-gradient-to-r from-neutral-900 via-caution-950/40 to-neutral-950 border border-caution-500/30'}`}>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${isApproved ? 'bg-brand-500/20 text-brand-300 border border-brand-500/40' : isRejected ? 'bg-danger-500/20 text-danger-300 border border-danger-500/40' : 'bg-caution-500/20 text-caution-300 border border-caution-500/40'}`}>
-                  <span className={`h-2 w-2 rounded-full ${isApproved ? 'bg-brand-400' : isRejected ? 'bg-danger-400' : 'bg-caution-400 animate-ping'}`}></span>
-                  {isApproved ? 'FINAL APPROVAL GRANTED' : isRejected ? 'APPLICATION REJECTED' : 'UNDER FINAL APPROVAL'}
-                </span>
-              </div>
-              <h2 className="mt-3 text-2xl font-black text-white tracking-tight">
-                {isApproved ? 'Congratulations! Loan Final Approval Received' : isRejected ? 'Application Declined' : 'Application Submitted for Final Review'}
-              </h2>
-              <p className="mt-1 text-xs sm:text-sm text-neutral-300 max-w-2xl leading-relaxed">
-                {isApproved
-                  ? 'Fintree Finance has approved your loan application. You can now continue your post-approval journey.'
-                  : isRejected
-                    ? 'Unfortunately, your application did not meet the lender criteria at this time.'
-                    : 'Your loan application is currently under final evaluation by our credit underwriting team. Once final approval comes, the next flow will start automatically.'}
-              </p>
-            </div>
-          </div>
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div
+          className={`overflow-hidden rounded-[28px] p-7 sm:p-9 ${
+            isRejected ? 'bg-[#2B1116] text-white' : 'bg-[#0E3B2C] text-white'
+          }`}
+        >
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold ${
+              isApproved
+                ? 'bg-[#9BE3B5] text-[#0E3B2C]'
+                : isRejected
+                  ? 'bg-rose-200 text-rose-900'
+                  : 'bg-white/15 text-emerald-50'
+            }`}
+          >
+            {!isApproved && !isRejected && (
+              <span className="h-1.5 w-1.5 rounded-full bg-[#9BE3B5] motion-safe:animate-pulse" />
+            )}
+            {isApproved ? 'Approved' : isRejected ? 'Not approved' : 'With your lender'}
+          </span>
+
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-[28px]">
+            {isApproved
+              ? 'Congratulations — your loan is approved'
+              : isRejected
+                ? 'Your application was not approved'
+                : 'Your application is in review'}
+          </h2>
+
+          <p className="mt-3 max-w-xl text-sm leading-6 text-white/70">
+            {isApproved
+              ? `${lenderName} has approved your loan. Continue to set up your disbursal.`
+              : isRejected
+                ? 'This lender could not approve your application this time.'
+                : `${lenderName} is reviewing your application now. This page updates on its own — there is nothing you need to do.`}
+          </p>
         </div>
 
         {isApproved && hasLan && (() => {
@@ -5140,11 +5105,16 @@ function SubmitApplicationStep({
             customer?.latestLoanStatus === 'DISBURSED';
 
           return (
-            <div className="rounded-3xl border border-brand-200 bg-brand-50 p-6 text-center shadow-sm">
-              <h3 className="text-xl font-bold text-neutral-900 mb-2">
-                {isDisbursalRequestedOrDisbursed ? 'Loan Account & Disbursal Status' : 'Continue to Disbursal'}
+            <div className={`${CARD} p-7 text-center sm:p-9`}>
+              <h3 className="text-xl font-bold tracking-tight text-[#13211A]">
+                {isDisbursalRequestedOrDisbursed ? 'Your loan account' : 'Next: receive your money'}
               </h3>
-              <p className="text-sm text-neutral-600 mb-6">Your Loan Account Number is: <strong>{customer.latestLan}</strong></p>
+              <p className="mt-2 text-sm text-slate-500">
+                Loan account number
+              </p>
+              <p className="mt-1 text-lg font-bold tabular-nums tracking-wide text-[#0E3B2C]">
+                {customer.latestLan}
+              </p>
               <button
                 onClick={() =>
                   navigate(
@@ -5153,10 +5123,10 @@ function SubmitApplicationStep({
                       : `/customer/loan/${customer.latestLan}/post-approval`
                   )
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 font-bold text-white shadow hover:bg-brand-700 cursor-pointer"
+                className={`mt-7 ${BTN_PRIMARY}`}
               >
-                {isDisbursalRequestedOrDisbursed ? 'View Loan Details' : 'Continue Approved Loan Journey'}
-                <ArrowRight size={18} />
+                {isDisbursalRequestedOrDisbursed ? 'View loan details' : 'Continue'}
+                <ArrowRight size={17} />
               </button>
             </div>
           );
@@ -5174,10 +5144,10 @@ function SubmitApplicationStep({
         )}
 
         {isApproved && !hasLan && (
-          <div className="rounded-3xl border border-brand-200 bg-white p-6 text-center shadow-sm">
-            <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-brand-600 mb-4" />
-            <h3 className="text-lg font-bold text-neutral-900 mb-2">Generating Loan Account...</h3>
-            <p className="text-sm text-neutral-600">Please wait while we set up your loan account.</p>
+          <div className={`${CARD} p-7 text-center sm:p-9`}>
+            <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-[#1F8A5B]" />
+            <h3 className="mt-5 text-lg font-bold text-[#13211A]">Setting up your loan account</h3>
+            <p className="mt-2 text-sm text-slate-500">This only takes a moment.</p>
           </div>
         )}
       </div>
@@ -5189,15 +5159,15 @@ function SubmitApplicationStep({
       <StepHeading
         icon={FileCheck2}
         eyebrow="FINAL REVIEW"
-        title="Review and submit your application"
-        description="Confirm that the information below is correct before submitting it to the lender."
+        title="One last look"
+        description="Check that everything is right. You cannot change these details after submitting."
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="space-y-5">
           <ReviewSection
             icon={CircleUserRound}
-            title="Personal Details"
+            title="Personal details"
           >
             <ReviewItem
               label="Name"
@@ -5240,7 +5210,7 @@ function SubmitApplicationStep({
             icon={
               BriefcaseBusiness
             }
-            title="Professional Details"
+            title="Work and income"
           >
             <ReviewItem
               label="Employment"
@@ -5289,7 +5259,7 @@ function SubmitApplicationStep({
             />
 
             <ReviewItem
-              label="KFS language"
+              label="Document language"
               value={
                 form.kfsLanguage
               }
@@ -5297,35 +5267,33 @@ function SubmitApplicationStep({
           </ReviewSection>
         </div>
 
-        <aside className="h-fit rounded-3xl border border-neutral-200 bg-neutral-50 p-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-            Submission Summary
-          </p>
+        <aside className="h-fit rounded-[24px] bg-[#F7F9F6] p-6">
+          <h3 className="text-base font-bold text-[#13211A]">Everything is ready</h3>
 
-          <div className="mt-5 space-y-4">
+          <div className="mt-5 space-y-3.5">
             <SummaryStatus
-              label="Mobile verification"
-              value="Completed"
+              label="Mobile"
+              value="Verified"
             />
 
             <SummaryStatus
-              label="PAN verification"
-              value="Completed"
+              label="PAN"
+              value="Verified"
             />
 
             <SummaryStatus
-              label="Email verification"
-              value="Completed"
+              label="Email"
+              value="Verified"
             />
 
             <SummaryStatus
-              label="Platform BRE"
+              label="Eligibility check"
               value="Passed"
             />
 
             <SummaryStatus
-              label="Assigned lender"
-              value="Fintree Finance"
+              label="Lending partner"
+              value={lenderName}
             />
 
             <SummaryStatus
@@ -5334,52 +5302,52 @@ function SubmitApplicationStep({
             />
 
             <SummaryStatus
-              label="Profile details"
-              value="Completed"
+              label="Your profile"
+              value="Complete"
             />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-caution-200 bg-caution-50 p-4">
-            <div className="flex items-start gap-3">
-              <Info
-                size={18}
-                className="mt-0.5 shrink-0 text-caution-700"
-              />
-
-              <p className="text-xs leading-5 text-caution-800">
-                Submission does not
-                guarantee loan
-                approval. The lender
-                performs its own
-                credit assessment.
-              </p>
-            </div>
-          </div>
+          <p className="mt-6 flex items-start gap-2.5 rounded-2xl bg-white p-4 text-sm leading-6 text-slate-500">
+            <Info
+              size={16}
+              className="mt-0.5 shrink-0 text-slate-400"
+            />
+            Submitting does not guarantee approval — your lender makes its own credit decision.
+          </p>
 
           <div className="mt-5 space-y-3">
-            <label className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3.5 text-xs leading-5 text-neutral-600 transition hover:bg-neutral-50">
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-4 text-sm leading-6 text-slate-600 transition hover:bg-slate-50">
               <input
                 type="checkbox"
                 checked={sameAsPermanent}
                 onChange={(event) => setSameAsPermanent(event.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+                className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
               />
-              My current address is the same as my DigiLocker permanent address.
+              I live at my Aadhaar address right now.
             </label>
+
             {!sameAsPermanent && (
-              <p className="rounded-lg bg-neutral-50 p-2 text-[11px] text-neutral-600">
-                Current address from verified photo location: {savedPhotoDocument?.formattedAddress || 'Location address unavailable'}
+              <p className="rounded-2xl bg-white p-3.5 text-xs leading-5 text-slate-500">
+                We will use the address from your verified photo: {savedPhotoDocument?.formattedAddress || 'not available'}
               </p>
             )}
-            <label className={`flex items-start gap-3 rounded-2xl border-2 p-4 transition-all duration-150 ${decisionConsentAccepted ? 'border-brand-400 bg-brand-50/50' : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50'}`}>
+
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
+                decisionConsentAccepted
+                  ? 'border-[#1F8A5B] bg-[#E7F4EC]'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={decisionConsentAccepted}
                 onChange={(event) => setDecisionConsentAccepted(event.target.checked)}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600"
+                className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
               />
-              <span className="text-sm font-semibold leading-6 text-neutral-900">
-                I authorize the bureau enquiry, lender credit assessment, and submission of this completed application to the allocated lender for a decision.
+              <span className="text-sm leading-6 text-[#13211A]">
+                I authorise the credit bureau enquiry and the submission of this application to
+                my lending partner for a decision.
               </span>
             </label>
           </div>
@@ -5390,7 +5358,7 @@ function SubmitApplicationStep({
             disabled={
               isSubmitting || !decisionConsentAccepted
             }
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`mt-6 w-full ${BTN_PRIMARY}`}
           >
             {isSubmitting ? (
               <>
@@ -5399,11 +5367,10 @@ function SubmitApplicationStep({
                   className="animate-spin"
                 />
                 Submitting
-                Application...
               </>
             ) : (
               <>
-                Submit Application
+                Submit application
                 <ArrowRight
                   size={17}
                 />
@@ -5411,32 +5378,31 @@ function SubmitApplicationStep({
             )}
           </button>
 
-          <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-neutral-500">
-            <Lock size={12} />
-            Secure application
-            submission
-          </p>
+          {!decisionConsentAccepted && !isSubmitting && (
+            <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-slate-500">
+              <Info size={13} />
+              Tick the box above to submit
+            </p>
+          )}
         </aside>
       </div>
 
-      <div className="mt-8 border-t border-neutral-200 pt-6">
+      <div className="mt-8 border-t border-slate-100 pt-6">
         <button
           type="button"
           onClick={onBack}
           disabled={
             isSubmitting
           }
-          className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+          className={BTN_SECONDARY}
         >
-          <ArrowLeft size={17} />
-          Back to Profile
+          <ArrowLeft size={16} />
+          Back
         </button>
       </div>
     </StepCard>
   );
 }
-
-
 
 function ReviewSection({
   icon: Icon,
@@ -5444,20 +5410,20 @@ function ReviewSection({
   children,
 }) {
   return (
-    <section className="rounded-3xl border border-neutral-200 bg-white p-6">
-      <div className="flex items-center gap-3 border-b border-neutral-100 pb-4">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-700">
-          <Icon size={20} />
+    <section className={`${CARD} p-6`}>
+      <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+        <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#E7F4EC] text-[#1F8A5B]">
+          <Icon size={19} />
         </div>
 
-        <h3 className="font-bold text-neutral-900">
+        <h3 className="text-base font-bold text-[#13211A]">
           {title}
         </h3>
       </div>
 
-      <div className="mt-5 grid gap-5 sm:grid-cols-2">
+      <dl className="mt-5 grid gap-5 sm:grid-cols-2">
         {children}
-      </div>
+      </dl>
     </section>
   );
 }
@@ -5468,14 +5434,14 @@ function ReviewItem({
 }) {
   return (
     <div>
-      <p className="text-xs font-medium text-neutral-500">
+      <dt className="text-xs text-slate-500">
         {label}
-      </p>
+      </dt>
 
-      <p className="mt-1 break-words text-sm font-semibold text-neutral-900">
+      <dd className="mt-1 break-words text-sm font-semibold text-[#13211A]">
         {value ||
           'Not provided'}
-      </p>
+      </dd>
     </div>
   );
 }
@@ -5485,14 +5451,15 @@ function SummaryStatus({
   value,
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-neutral-200 pb-4 last:border-0 last:pb-0">
-      <span className="text-xs text-neutral-500">
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-sm text-slate-500">
         {label}
       </span>
 
-      <span className="flex items-center gap-1 text-right text-xs font-bold text-brand-700">
+      <span className="flex items-center gap-1.5 text-right text-sm font-semibold text-[#0E3B2C]">
         <CheckCircle2
-          size={14}
+          size={15}
+          className="shrink-0 text-[#1F8A5B]"
         />
         {value}
       </span>
@@ -5502,11 +5469,15 @@ function SummaryStatus({
 
 function StepCard({ children }) {
   return (
-    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-8">
+    <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 sm:p-9">
       {children}
     </section>
   );
 }
+
+/* ================================================================== */
+/*  Pre-approval offer                                                */
+/* ================================================================== */
 
 function PreApprovalOfferStep({ lan, onSelected }) {
   const [offer, setOffer] = useState(null);
@@ -5545,123 +5516,121 @@ function PreApprovalOfferStep({ lan, onSelected }) {
 
   return (
     <StepCard>
-      <div className="p-2 sm:p-4">
-        {loading ? (
-          <div className="animate-fade-in">
-            <div className="h-6 w-48 animate-pulse rounded-lg bg-neutral-100" />
-            <div className="mt-3 h-4 w-72 max-w-full animate-pulse rounded-lg bg-neutral-100" />
-            <div className="mt-6 h-32 animate-pulse rounded-2xl bg-neutral-100" />
-            <div className="mt-6 h-24 animate-pulse rounded-2xl bg-neutral-100" />
+      {loading ? (
+        <div className="animate-fade-in">
+          <div className="h-6 w-56 animate-pulse rounded-full bg-slate-100" />
+          <div className="mt-3 h-4 w-80 max-w-full animate-pulse rounded-full bg-slate-100" />
+          <div className="mt-7 h-40 animate-pulse rounded-[24px] bg-slate-100" />
+          <div className="mt-6 h-24 animate-pulse rounded-2xl bg-slate-100" />
+        </div>
+      ) : error ? (
+        <InlineError message={error} />
+      ) : (
+        <>
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#E7F4EC] text-[#1F8A5B]">
+              <Sparkles size={17} />
+            </span>
+            <h2 className="text-xl font-bold tracking-tight text-[#13211A]">You are pre-approved</h2>
           </div>
-        ) : error ? (
-          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-            <div>
-              <p className="font-semibold">We couldn't load your offer</p>
-              <p className="mt-0.5 text-danger-600">{error}</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <h2 className="text-xl font-bold text-neutral-900">You're pre-approved!</h2>
-            </div>
-            <p className="mt-1 text-sm text-neutral-600">Choose how long you'd like to repay — you'll see the exact terms before anything is final.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Choose how long you would like to repay. You will see the exact terms before anything
+            is final.
+          </p>
 
-            {/* Hero amount — the number that matters most, given the most visual weight */}
-            <div className="animate-pop-in mt-6 overflow-hidden rounded-3xl border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-brand-50/60 p-6 text-center sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Pre-approved amount</p>
-              <p className="mt-2 text-4xl font-extrabold tracking-tight text-neutral-900 sm:text-5xl">
-                {formatCurrency(offer?.amount)}
+          {/* Hero amount — the number that matters most, given the most visual weight */}
+          <div className="animate-pop-in mt-7 overflow-hidden rounded-[24px] bg-[#0E3B2C] p-8 text-center text-white sm:p-10">
+            <p className="text-sm text-emerald-100/70">Pre-approved amount</p>
+            <p className="mt-2 text-4xl font-bold tracking-tight tabular-nums sm:text-5xl">
+              {formatCurrency(offer?.amount)}
+            </p>
+            {offer?.lenderApprovedAmount ? (
+              <p className="mt-3 text-xs text-emerald-100/60">
+                Within your lender's approved limit of {formatCurrency(offer.lenderApprovedAmount)}
               </p>
-              {offer?.lenderApprovedAmount ? (
-                <p className="mt-2 text-xs text-neutral-500">
-                  Within your lender's approved credit limit of {formatCurrency(offer.lenderApprovedAmount)}
-                </p>
-              ) : null}
-            </div>
+            ) : null}
+          </div>
 
-            <div className="mt-7">
-              <p className="text-sm font-bold text-neutral-900">Select your repayment tenure</p>
-              <p className="mt-0.5 text-xs text-neutral-500">This is how long you'll have to repay the loan in full.</p>
+          <div className="mt-8">
+            <p className="text-base font-bold text-[#13211A]">How long do you need to repay?</p>
+            <p className="mt-1 text-sm text-slate-500">You can repay earlier if you want to.</p>
 
-              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {(offer?.allowedTenures || []).map((t) => {
-                  const isSelected = selectedTenure === t;
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setSelectedTenure(t)}
-                      aria-pressed={isSelected}
-                      className={`relative rounded-2xl border-2 px-4 py-4 text-left transition-all duration-150 ${isSelected
-                        ? 'border-brand-500 bg-brand-50 shadow-sm'
-                        : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50 active:scale-[0.98]'
-                        }`}
-                    >
-                      {isSelected && (
-                        <span className="animate-pop-in absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-white">
-                          <Check size={12} strokeWidth={3} />
-                        </span>
-                      )}
-                      <p className={`text-lg font-extrabold ${isSelected ? 'text-brand-800' : 'text-neutral-900'}`}>{t}</p>
-                      <p className={`text-xs font-medium ${isSelected ? 'text-brand-600' : 'text-neutral-500'}`}>days tenure</p>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {(offer?.allowedTenures || []).map((t) => {
+                const isSelected = selectedTenure === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSelectedTenure(t)}
+                    aria-pressed={isSelected}
+                    className={`relative cursor-pointer rounded-2xl border p-4 text-left transition ${
+                      isSelected
+                        ? 'border-[#1F8A5B] bg-[#E7F4EC]'
+                        : 'border-slate-200 hover:border-[#9BE3B5] hover:bg-slate-50'
+                    }`}
+                  >
+                    {isSelected && (
+                      <span className="animate-pop-in absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-[#0E3B2C] text-white">
+                        <Check size={12} strokeWidth={3} />
+                      </span>
+                    )}
+                    <p className={`text-xl font-bold tabular-nums ${isSelected ? 'text-[#0E3B2C]' : 'text-[#13211A]'}`}>{t}</p>
+                    <p className={`text-xs ${isSelected ? 'text-[#0E3B2C]/70' : 'text-slate-500'}`}>days</p>
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            <div className="mt-6 flex items-start gap-2.5 rounded-xl bg-neutral-50 px-4 py-3 text-xs leading-5 text-neutral-500">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
-              Confirming here sends your selection to the lender for final approval — you'll see the full interest, fees and EMI breakdown on the next screen before you're asked to accept anything.
-            </div>
+          <div className="mt-7 flex items-start gap-2.5 rounded-2xl bg-[#F7F9F6] px-4 py-3.5 text-sm leading-6 text-slate-500">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#1F8A5B]" />
+            Confirming sends your choice to the lender for final approval. You will see the full
+            interest, fees and EMI breakdown on the next screen before you accept anything.
+          </div>
 
-            <div className="mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={handleSelect}
-                disabled={submitting || !selectedTenure}
-                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-60 disabled:shadow-none"
-              >
-                {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                {submitting ? 'Submitting…' : 'Confirm offer & continue'}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+          <div className="mt-7 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSelect}
+              disabled={submitting || !selectedTenure}
+              className={BTN_PRIMARY}
+            >
+              {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {submitting ? 'Submitting' : 'Confirm and continue'}
+              {!submitting && <ArrowRight size={17} />}
+            </button>
+          </div>
+        </>
+      )}
     </StepCard>
   );
 }
 
+/* ================================================================== */
+/*  Shared layout pieces                                              */
+/* ================================================================== */
+
 function StepHeading({
   icon: Icon,
-  eyebrow,
+  eyebrow: _eyebrow,
   title,
   description,
   right,
 }) {
   return (
-    <header className="mb-8 flex flex-col justify-between gap-4 border-b border-neutral-200 pb-6 sm:flex-row sm:items-start">
+    <header className="mb-8 flex flex-col justify-between gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-start">
       <div className="flex items-start gap-4">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
-          <Icon size={23} />
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E7F4EC] text-[#1F8A5B]">
+          <Icon size={22} />
         </div>
 
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">
-            {eyebrow}
-          </p>
-
-          <h2 className="mt-2 text-2xl font-bold text-neutral-900">
+          <h2 className="text-xl font-bold tracking-tight text-[#13211A] sm:text-2xl">
             {title}
           </h2>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
             {description}
           </p>
         </div>
@@ -5678,11 +5647,11 @@ function SectionHeading({
 }) {
   return (
     <div className="mb-5">
-      <h3 className="text-lg font-bold text-neutral-900">
+      <h3 className="text-base font-bold text-[#13211A]">
         {title}
       </h3>
 
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-slate-500">
         {description}
       </p>
     </div>
@@ -5693,7 +5662,7 @@ function StatusBadge({
   children,
 }) {
   return (
-    <span className="flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700">
+    <span className="flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-[#E7F4EC] px-3.5 py-1.5 text-sm font-semibold text-[#0E3B2C]">
       {children}
     </span>
   );
@@ -5711,7 +5680,7 @@ function StepActions({
   isNextLoading = false,
 }) {
   return (
-    <footer className="mt-8 border-t border-neutral-200 pt-6">
+    <footer className="mt-9 border-t border-slate-100 pt-6">
       <div className="flex flex-col-reverse justify-between gap-3 sm:flex-row">
         <div className="flex flex-col gap-3 sm:flex-row">
           {onBack && (
@@ -5721,9 +5690,9 @@ function StepActions({
               disabled={
                 isNextLoading
               }
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              className={BTN_SECONDARY}
             >
-              <ArrowLeft size={17} />
+              <ArrowLeft size={16} />
               Back
             </button>
           )}
@@ -5736,18 +5705,18 @@ function StepActions({
                 isSaving ||
                 isNextLoading
               }
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+              className={BTN_SECONDARY}
             >
-              <Save size={17} />
+              <Save size={16} />
 
               {isSaving
-                ? 'Saving...'
-                : 'Save Draft'}
+                ? 'Saving'
+                : 'Save for later'}
             </button>
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
           <button
             type="button"
             onClick={onNext}
@@ -5755,11 +5724,11 @@ function StepActions({
               nextDisabled ||
               isNextLoading
             }
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-tranneutral-y-0.5 hover:bg-brand-700 hover:shadow-md active:tranneutral-y-0 disabled:cursor-not-allowed disabled:tranneutral-y-0 disabled:opacity-50 disabled:shadow-none"
+            className={BTN_PRIMARY}
           >
             {isNextLoading && (
               <LoaderCircle
-                size={17}
+                size={16}
                 className="animate-spin"
               />
             )}
@@ -5767,15 +5736,15 @@ function StepActions({
             {nextLabel}
 
             {!isNextLoading && (
-              <ArrowRight size={17} />
+              <ArrowRight size={16} />
             )}
           </button>
 
           {/* First-time users hitting a dead, grayed-out button with no explanation is a
               classic silent abandonment point — always tell them exactly what's missing. */}
           {nextDisabled && !isNextLoading && nextDisabledReason && (
-            <p className="animate-fade-in flex items-center gap-1.5 text-xs font-medium text-neutral-500">
-              <Info size={13} className="shrink-0" />
+            <p className="animate-fade-in flex items-center gap-1.5 text-sm text-slate-500">
+              <Info size={14} className="shrink-0" />
               {nextDisabledReason}
             </p>
           )}
@@ -5805,28 +5774,26 @@ function FormInput({
     <div>
       <label
         htmlFor={name}
-        className="mb-2 block text-sm font-semibold text-neutral-700"
+        className="mb-2 block text-sm font-semibold text-slate-700"
       >
         {label}
 
         {required && (
-          <span className="ml-1 text-danger-500">
+          <span className="ml-1 text-rose-500">
             *
           </span>
         )}
       </label>
 
       <div
-        className={`flex min-h-12 items-center overflow-hidden rounded-xl border transition-all duration-150 ${error
-            ? 'border-danger-400 ring-4 ring-danger-50'
-            : 'border-neutral-300 focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-50'
-          } ${disabled
-            ? 'bg-neutral-100'
-            : 'bg-white'
-          }`}
+        className={`flex min-h-12 items-center overflow-hidden rounded-2xl border transition ${
+          error
+            ? 'border-rose-300 ring-4 ring-rose-50'
+            : 'border-slate-200 focus-within:border-[#1F8A5B] focus-within:ring-4 focus-within:ring-[#E7F4EC]'
+        } ${disabled ? 'bg-slate-50' : 'bg-white'}`}
       >
         {prefix && (
-          <span className="border-r border-neutral-200 px-4 text-sm font-bold text-neutral-600">
+          <span className="self-stretch border-r border-slate-200 px-4 py-3 text-sm font-semibold text-slate-500">
             {prefix}
           </span>
         )}
@@ -5844,16 +5811,16 @@ function FormInput({
           inputMode={inputMode}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${name}-error` : helperText ? `${name}-helper` : undefined}
-          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm font-medium text-neutral-900 outline-none placeholder:font-normal placeholder:text-neutral-400 disabled:cursor-not-allowed disabled:text-neutral-500"
+          className="min-w-0 flex-1 bg-transparent px-4 py-3 text-[15px] text-[#13211A] outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:text-slate-500"
         />
       </div>
 
       {error ? (
-        <p id={`${name}-error`} className="animate-fade-in mt-1.5 flex items-center gap-1 text-xs font-medium text-danger-600">
+        <p id={`${name}-error`} className="animate-fade-in mt-2 text-sm text-rose-600">
           {error}
         </p>
       ) : helperText ? (
-        <p id={`${name}-helper`} className="mt-1.5 text-xs text-neutral-500">
+        <p id={`${name}-helper`} className="mt-2 text-sm text-slate-500">
           {helperText}
         </p>
       ) : null}
@@ -5872,10 +5839,11 @@ function SelectableCardGroup({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-semibold text-neutral-700">
+      <label className="mb-2 block text-sm font-semibold text-slate-700">
         {label}
-        {required && <span className="ml-1 text-danger-500">*</span>}
+        {required && <span className="ml-1 text-rose-500">*</span>}
       </label>
+
       <div className="grid grid-cols-2 gap-3">
         {options.map(([optValue, optLabel, optDescription]) => {
           const isSelected = value === optValue;
@@ -5885,26 +5853,28 @@ function SelectableCardGroup({
               type="button"
               onClick={() => onChange({ target: { name, value: optValue } })}
               aria-pressed={isSelected}
-              className={`relative rounded-2xl border-2 p-4 text-left transition-all duration-150 ${isSelected
-                ? 'border-brand-500 bg-brand-50 shadow-sm'
-                : 'border-neutral-200 hover:border-brand-300 hover:bg-neutral-50 active:scale-[0.98]'
-                }`}
+              className={`relative cursor-pointer rounded-2xl border p-4 text-left transition ${
+                isSelected
+                  ? 'border-[#1F8A5B] bg-[#E7F4EC]'
+                  : 'border-slate-200 hover:border-[#9BE3B5] hover:bg-slate-50'
+              }`}
             >
               {isSelected && (
-                <span className="animate-pop-in absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-white">
+                <span className="animate-pop-in absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-[#0E3B2C] text-white">
                   <Check size={12} strokeWidth={3} />
                 </span>
               )}
-              <p className={`text-sm font-bold ${isSelected ? 'text-brand-800' : 'text-neutral-900'}`}>{optLabel}</p>
+              <p className={`text-sm font-bold ${isSelected ? 'text-[#0E3B2C]' : 'text-[#13211A]'}`}>{optLabel}</p>
               {optDescription && (
-                <p className={`mt-0.5 text-xs ${isSelected ? 'text-brand-600' : 'text-neutral-500'}`}>{optDescription}</p>
+                <p className={`mt-1 text-xs leading-5 ${isSelected ? 'text-[#0E3B2C]/70' : 'text-slate-500'}`}>{optDescription}</p>
               )}
             </button>
           );
         })}
       </div>
+
       {error && (
-        <p className="animate-fade-in mt-1.5 text-xs font-medium text-danger-600">{error}</p>
+        <p className="animate-fade-in mt-2 text-sm text-rose-600">{error}</p>
       )}
     </div>
   );
@@ -5919,17 +5889,18 @@ function FormSelect({
   options,
   required = false,
   disabled = false,
+  helperText,
 }) {
   return (
     <div>
       <label
         htmlFor={name}
-        className="mb-2 block text-sm font-semibold text-neutral-700"
+        className="mb-2 block text-sm font-semibold text-slate-700"
       >
         {label}
 
         {required && (
-          <span className="ml-1 text-danger-500">
+          <span className="ml-1 text-rose-500">
             *
           </span>
         )}
@@ -5942,15 +5913,16 @@ function FormSelect({
         onChange={onChange}
         disabled={disabled}
         aria-invalid={Boolean(error)}
-        className={`min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition-all duration-150 ${disabled
-            ? 'cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-500'
+        className={`min-h-12 w-full rounded-2xl border px-4 py-3 text-[15px] outline-none transition ${
+          disabled
+            ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-500'
             : error
-              ? 'border-danger-400 bg-white text-neutral-900 ring-4 ring-danger-50'
-              : 'border-neutral-300 bg-white text-neutral-900 focus:border-brand-500 focus:ring-4 focus:ring-brand-50'
-          }`}
+              ? 'border-rose-300 bg-white text-[#13211A] ring-4 ring-rose-50'
+              : 'border-slate-200 bg-white text-[#13211A] focus:border-[#1F8A5B] focus:ring-4 focus:ring-[#E7F4EC]'
+        }`}
       >
         <option value="">
-          Select {label}
+          Choose an option
         </option>
 
         {options.map(
@@ -5968,11 +5940,15 @@ function FormSelect({
         )}
       </select>
 
-      {error && (
-        <p className="animate-fade-in mt-1.5 text-xs font-medium text-danger-600">
+      {error ? (
+        <p className="animate-fade-in mt-2 text-sm text-rose-600">
           {error}
         </p>
-      )}
+      ) : helperText ? (
+        <p className="mt-2 text-sm text-slate-500">
+          {helperText}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -6118,114 +6094,90 @@ function IntegrationSupportCard({ customer, isRetrying, retryError, onRetry, onC
 
   return (
     <StepCard>
-      <div className="p-6 sm:p-8">
-        {/* Top status indicator */}
-        <div className="flex items-center justify-center">
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-caution-50 text-caution-600">
-            <AlertCircle className="h-8 w-8" />
-            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-caution-500 text-[10px] font-bold text-white shadow-sm">!</span>
-          </div>
+      <div className="mx-auto max-w-lg text-center">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-amber-50 text-amber-700">
+          <RefreshCw className="h-7 w-7" />
         </div>
 
-        <h2 className="mt-5 text-center text-xl font-bold text-neutral-900 tracking-tight">
-          Application Needs a Retry
+        <h2 className="mt-6 text-xl font-bold tracking-tight text-[#13211A]">
+          We need to send this again
         </h2>
-        <p className="mt-2 text-center text-sm text-neutral-600 leading-relaxed max-w-md mx-auto">
-          A temporary issue occurred during lender processing. Your data and payment are safe — you can retry now or contact support if the issue persists.
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Something went wrong while handing your application to the lender. Your details and
+          your payment are safe. Try once more below.
         </p>
 
-        {/* Error Details Card */}
-        <div className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50/80 overflow-hidden">
-          <div className="flex items-center gap-3 border-b border-neutral-200 bg-white px-4 py-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-caution-100 text-caution-600">
-              <Info className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-neutral-900">Error Details</p>
-              <p className="text-[11px] text-neutral-500">Reference information for support</p>
-            </div>
+        <div className="mt-7 rounded-2xl bg-[#F7F9F6] p-5 text-left">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#1F8A5B]" />
+            <p className="text-sm leading-6 text-slate-600">
+              Nothing has been lost — your documents, details and payment are all recorded.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200">
-            <div className="px-4 py-3">
-              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Error Code</p>
-              <p className="mt-1 font-mono text-xs font-bold text-neutral-900 break-all">{errorCode}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-slate-200 pt-4">
+            <div>
+              <p className="text-xs text-slate-500">Reference for support</p>
+              <p className="mt-0.5 text-sm font-semibold tabular-nums text-[#13211A]">{errorCode}</p>
             </div>
             {integrationStage && (
-              <div className="px-4 py-3">
-                <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Stage</p>
-                <p className="mt-1 text-xs font-bold text-neutral-900 capitalize">
+              <div>
+                <p className="text-xs text-slate-500">Stage</p>
+                <p className="mt-0.5 text-sm font-semibold capitalize text-[#13211A]">
                   {integrationStage.toLowerCase().replace(/_/g, ' ')}
                 </p>
               </div>
             )}
           </div>
-
-          <div className="border-t border-neutral-200 px-4 py-3 flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-brand-600" />
-            <p className="text-[11px] text-neutral-600">
-              Your data, documents and payment are securely recorded. Nothing has been lost.
-            </p>
-          </div>
         </div>
 
         {/* Non-cooldown error message */}
         {retryError && !isCoolingDown && (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-danger-200 bg-danger-50 p-3.5">
-            <AlertCircle className="h-4 w-4 shrink-0 text-danger-600 mt-0.5" />
-            <p className="text-xs font-medium text-danger-800 leading-relaxed">{retryError}</p>
+          <div className="mt-5 text-left">
+            <InlineError message={retryError} />
           </div>
         )}
 
         {/* Cooldown countdown */}
         {isCoolingDown && (
-          <div className="mt-4 flex items-center justify-center gap-3 rounded-xl border border-info-200 bg-info-50 p-3.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-info-100 text-info-700">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            </div>
+          <div className="mt-5 flex items-center justify-center gap-3 rounded-2xl bg-[#E7F4EC] p-4 text-left">
+            <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-[#1F8A5B]" />
             <div>
-              <p className="text-xs font-semibold text-info-900">
-                Retry available in <span className="tabular-nums font-bold">{cooldownSeconds}s</span>
+              <p className="text-sm font-semibold text-[#0E3B2C]">
+                You can try again in <span className="tabular-nums">{cooldownSeconds}s</span>
               </p>
-              <p className="text-[11px] text-info-700">Please wait before retrying to avoid duplicate submissions.</p>
+              <p className="text-xs text-[#0E3B2C]/70">This short wait prevents a duplicate submission.</p>
             </div>
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            onClick={handleRetryClick}
-            disabled={isDisabled}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-7 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-brand-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-          >
-            {isRetrying ? (
-              <>
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                Retrying…
-              </>
-            ) : isCoolingDown ? (
-              <>
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                Wait {cooldownSeconds}s
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4" />
-                Retry Submission
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleRetryClick}
+          disabled={isDisabled}
+          className={`mt-7 ${BTN_PRIMARY}`}
+        >
+          {isRetrying ? (
+            <>
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Sending again
+            </>
+          ) : isCoolingDown ? (
+            <>
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Wait {cooldownSeconds}s
+            </>
+          ) : (
+            <>
+              <RotateCcw className="h-4 w-4" />
+              Send again
+            </>
+          )}
+        </button>
 
-        {/* Support Contact Footer */}
-        <div className="mt-6 border-t border-neutral-100 pt-4 text-center">
-          <p className="text-[11px] text-neutral-500">
-            If this issue persists, please contact support and quote error code{' '}
-            <span className="font-mono font-bold text-neutral-700">{errorCode}</span>
-          </p>
-        </div>
+        <p className="mt-6 text-xs leading-5 text-slate-500">
+          Still stuck? Contact support and quote {errorCode}.
+        </p>
       </div>
     </StepCard>
   );
@@ -6245,47 +6197,58 @@ const formatLongDate = (value) => {
 function ProcessingPanel() {
   const steps = [
     { label: 'Details received', hint: 'Your application is safely with us', state: 'done' },
-    { label: 'Checking with our lending partner', hint: 'This usually takes less than a minute', state: 'active' },
+    { label: 'Checking with your lending partner', hint: 'This usually takes less than a minute', state: 'active' },
     { label: 'Decision ready', hint: 'You will move ahead automatically', state: 'todo' },
   ];
 
   return (
     <StepCard>
-      <div className="mx-auto max-w-xl p-6 sm:p-10 text-center" role="status" aria-live="polite">
+      <div className="mx-auto max-w-xl py-4 text-center sm:py-6" role="status" aria-live="polite">
         <div className="relative mx-auto grid h-20 w-20 place-items-center">
-          <span className="absolute inset-0 animate-ping rounded-full bg-brand-100" />
-          <span className="relative grid h-16 w-16 place-items-center rounded-full bg-brand-50 text-brand-600 ring-8 ring-brand-50/60">
+          <span className="absolute inset-0 rounded-full bg-[#E7F4EC] motion-safe:animate-ping" />
+          <span className="relative grid h-16 w-16 place-items-center rounded-full bg-[#E7F4EC] text-[#1F8A5B]">
             <LoaderCircle className="h-8 w-8 animate-spin" />
           </span>
         </div>
-        <h2 className="mt-6 text-2xl font-black tracking-tight text-neutral-900">Reviewing your application</h2>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-600">
-          Please keep this page open. It moves ahead on its own — there is no need to refresh.
+
+        <h2 className="mt-7 text-2xl font-bold tracking-tight text-[#13211A]">
+          Reviewing your application
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+          Keep this page open. It moves ahead on its own — there is no need to refresh.
         </p>
 
-        <ol className="mx-auto mt-8 max-w-sm space-y-4 text-left">
+        <ol className="mx-auto mt-9 max-w-sm space-y-5 text-left">
           {steps.map((step) => (
-            <li key={step.label} className="flex items-start gap-3">
+            <li key={step.label} className="flex items-start gap-3.5">
               <span
-                className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${
                   step.state === 'done'
-                    ? 'bg-brand-600 text-white'
+                    ? 'bg-[#0E3B2C] text-white'
                     : step.state === 'active'
-                      ? 'bg-brand-50 text-brand-600 ring-2 ring-brand-500'
-                      : 'bg-neutral-100 text-neutral-400'
+                      ? 'bg-[#E7F4EC] ring-2 ring-[#1F8A5B]'
+                      : 'bg-slate-100'
                 }`}
               >
-                {step.state === 'done' ? '✓' : step.state === 'active' ? <span className="h-2 w-2 animate-pulse rounded-full bg-brand-600" /> : '•'}
+                {step.state === 'done' ? (
+                  <Check size={13} strokeWidth={3} />
+                ) : step.state === 'active' ? (
+                  <span className="h-2 w-2 rounded-full bg-[#1F8A5B] motion-safe:animate-pulse" />
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                )}
               </span>
               <span>
-                <span className={`block text-sm font-bold ${step.state === 'todo' ? 'text-neutral-400' : 'text-neutral-900'}`}>{step.label}</span>
-                <span className="block text-xs text-neutral-500">{step.hint}</span>
+                <span className={`block text-sm font-semibold ${step.state === 'todo' ? 'text-slate-400' : 'text-[#13211A]'}`}>
+                  {step.label}
+                </span>
+                <span className="mt-0.5 block text-sm text-slate-500">{step.hint}</span>
               </span>
             </li>
           ))}
         </ol>
 
-        <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-neutral-400">
+        <p className="mt-9 flex items-center justify-center gap-1.5 text-xs text-slate-400">
           <ShieldCheck size={14} /> Your information is encrypted and handled securely
         </p>
       </div>
@@ -6314,52 +6277,55 @@ function RejectionPanel({ reapply, embedded = false, isApplyingAgain = false, ap
 
   return (
     <StepCard>
-      <div className={`mx-auto max-w-2xl ${embedded ? 'p-4 sm:p-6' : 'p-6 sm:p-10'}`}>
+      <div className={`mx-auto max-w-2xl ${embedded ? '' : 'py-2 sm:py-4'}`}>
         {!embedded && (
           <div className="text-center">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-danger-50 text-danger-600 ring-8 ring-danger-50/50">
-              <AlertCircle size={32} className="stroke-[2.2]" />
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-rose-50 text-rose-600 ring-8 ring-rose-50/50">
+              <AlertCircle size={30} />
             </div>
-            <h2 className="mt-5 text-2xl font-black tracking-tight text-neutral-900">We couldn't approve your application this time</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-600">
-              Based on the information available, your application doesn't meet our current lending criteria. This is not permanent — you can apply again.
+            <h2 className="mt-6 text-2xl font-bold tracking-tight text-[#13211A]">
+              We could not approve your application this time
+            </h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+              Based on the information available, your application does not meet our current
+              lending criteria. This is not permanent — you can apply again.
             </p>
           </div>
         )}
 
         {known && !canReapply && (
-          <div className="mt-6 rounded-2xl border border-caution-200 bg-caution-50/60 p-5">
+          <div className="mt-7 rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
             <div className="flex items-center gap-4">
-              <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white text-center shadow-sm">
-                <span className="text-2xl font-black leading-none text-neutral-900">{daysRemaining}</span>
-                <span className="-mt-3 text-[10px] font-bold uppercase text-neutral-500">{daysRemaining === 1 ? 'day' : 'days'}</span>
+              <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white text-center">
+                <span className="text-2xl font-bold leading-none tabular-nums text-[#13211A]">{daysRemaining}</span>
+                <span className="-mt-2.5 text-[10px] font-semibold text-slate-500">{daysRemaining === 1 ? 'day' : 'days'}</span>
               </div>
               <div className="min-w-0">
-                <p className="flex items-center gap-1.5 text-sm font-bold text-neutral-900"><Clock size={15} /> Waiting period in progress</p>
-                <p className="mt-0.5 flex items-center gap-1.5 text-sm text-neutral-600">
-                  <CalendarDays size={15} /> You can apply again on <strong className="text-neutral-900">{eligibleOn}</strong>
+                <p className="flex items-center gap-1.5 text-sm font-bold text-[#13211A]"><Clock size={15} /> Short waiting period</p>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-600">
+                  <CalendarDays size={15} /> You can apply again on <strong className="font-semibold text-[#13211A]">{eligibleOn}</strong>
                 </p>
               </div>
             </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
-              <div className="h-full rounded-full bg-caution-400 transition-all duration-700" style={{ width: `${elapsedPct}%` }} />
+            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white">
+              <div className="h-full rounded-full bg-[#9BE3B5] transition-all duration-700" style={{ width: `${elapsedPct}%` }} />
             </div>
           </div>
         )}
 
         {known && canReapply && (
-          <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-50/60 p-5 text-center">
-            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-brand-800"><Sparkles size={16} /> You can apply again now</p>
-            <p className="mt-1 text-sm text-neutral-600">Your waiting period is over. Start a fresh application whenever you're ready.</p>
+          <div className="mt-7 rounded-2xl bg-[#E7F4EC] p-5 text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-[#0E3B2C]"><Sparkles size={16} /> You can apply again now</p>
+            <p className="mt-1 text-sm text-[#0E3B2C]/75">Your waiting period is over. Start a fresh application whenever you are ready.</p>
           </div>
         )}
 
-        <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
-          <p className="flex items-center gap-1.5 text-sm font-bold text-neutral-900"><Lightbulb size={15} className="text-caution-500" /> Ways to improve your chances</p>
-          <ul className="mt-3 space-y-2">
+        <div className="mt-6 rounded-2xl border border-slate-200 p-5">
+          <p className="flex items-center gap-2 text-sm font-bold text-[#13211A]"><Lightbulb size={16} className="text-amber-500" /> Ways to improve your chances</p>
+          <ul className="mt-4 space-y-2.5">
             {tips.map((tip) => (
-              <li key={tip} className="flex items-start gap-2 text-sm text-neutral-600">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+              <li key={tip} className="flex items-start gap-2.5 text-sm leading-6 text-slate-600">
+                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#9BE3B5]" />
                 {tip}
               </li>
             ))}
@@ -6367,14 +6333,16 @@ function RejectionPanel({ reapply, embedded = false, isApplyingAgain = false, ap
         </div>
 
         {applyAgainError && (
-          <p className="mt-4 rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700" role="alert">{applyAgainError}</p>
+          <div className="mt-5" role="alert">
+            <InlineError message={applyAgainError} />
+          </div>
         )}
 
-        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-center">
+        <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-center">
           <button
             type="button"
             onClick={onHome}
-            className="rounded-2xl border border-neutral-200 bg-white px-6 py-3 text-sm font-bold text-neutral-700 transition hover:bg-neutral-50 cursor-pointer"
+            className={BTN_SECONDARY}
           >
             Back to home
           </button>
@@ -6383,7 +6351,7 @@ function RejectionPanel({ reapply, embedded = false, isApplyingAgain = false, ap
               type="button"
               onClick={onApplyAgain}
               disabled={!canReapply || isApplyingAgain}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 disabled:shadow-none cursor-pointer"
+              className={BTN_PRIMARY}
             >
               {isApplyingAgain ? <LoaderCircle size={16} className="animate-spin" /> : null}
               {canReapply ? 'Apply again' : `Available in ${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'}`}

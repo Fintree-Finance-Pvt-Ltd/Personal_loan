@@ -38,6 +38,25 @@ import { loadEasebuzzCheckout } from '../utils/loadEasebuzzCheckout';
 import { resolveFileUrl } from '../../../lib/files';
 import { OtpInput } from '../../../components/ui/OtpInput';
 
+/* ------------------------------------------------------------------ */
+/*  Design tokens — same palette as the dashboard and application page */
+/*  forest #0E3B2C · leaf #1F8A5B · sprout #9BE3B5 · mint #E7F4EC      */
+/*  paper  #F7F9F6 · ink  #13211A                                      */
+/* ------------------------------------------------------------------ */
+
+const BTN_PRIMARY =
+  'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#0E3B2C] px-6 text-sm font-semibold text-white transition hover:bg-[#145239] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
+const BTN_SECONDARY =
+  'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
+const BTN_SOFT =
+  'inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#E7F4EC] px-4 text-sm font-semibold text-[#0E3B2C] transition hover:bg-[#D5EDDF] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
+
+const CARD = 'rounded-[26px] border border-slate-200/80 bg-white';
+
+const FACT = 'rounded-2xl bg-[#F7F9F6] p-4';
+
 function getCustomerSession() {
   try {
     return JSON.parse(localStorage.getItem('customerSession') || 'null');
@@ -54,6 +73,17 @@ const STEPS = [
   { id: 'ESIGN', label: 'eSign', icon: PenLine },
   { id: 'READY_FOR_DISBURSAL', label: 'Disbursal', icon: Landmark },
 ];
+
+// Plain-language line for the header, so the customer reads what to do next rather
+// than the system's own step name.
+const STEP_COPY = {
+  APPROVAL_SUMMARY: 'Check your offer and pick how long you want to repay.',
+  BANK_VERIFICATION: 'Tell us where the money should land.',
+  KFS_ACCEPTANCE: 'Read the key facts of your loan, then accept them.',
+  EMANDATE: 'Set up automatic repayment from your bank account.',
+  ESIGN: 'Read your agreement and sign it with an OTP.',
+  READY_FOR_DISBURSAL: 'Last step — ask for your money.',
+};
 
 export default function PostApprovalJourneyPage() {
   const { lan } = useParams();
@@ -93,26 +123,42 @@ export default function PostApprovalJourneyPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-3xl border border-neutral-200 bg-white text-center shadow-sm">
-        <LoaderCircle className="h-10 w-10 animate-spin text-brand-600" />
-        <p className="mt-4 text-sm font-medium text-neutral-600">Loading your loan journey details…</p>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="overflow-hidden rounded-[28px] bg-[#0E3B2C] p-7 sm:p-9">
+          <div className="h-3 w-28 rounded-full bg-white/10 motion-safe:animate-pulse" />
+          <div className="mt-4 h-8 w-64 max-w-full rounded-2xl bg-white/10 motion-safe:animate-pulse" />
+          <div className="mt-4 h-3 w-48 rounded-full bg-white/10 motion-safe:animate-pulse" />
+          <div className="mt-8 h-1.5 w-full rounded-full bg-white/10 motion-safe:animate-pulse" />
+        </div>
+        <div className={`${CARD} p-7 sm:p-9`}>
+          <div className="h-5 w-52 rounded-full bg-slate-200/80 motion-safe:animate-pulse" />
+          <div className="mt-3 h-3 w-80 max-w-full rounded-full bg-slate-200/60 motion-safe:animate-pulse" />
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-20 rounded-2xl bg-slate-100 motion-safe:animate-pulse" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-3xl border border-danger-200 bg-danger-50/50 p-8 text-center shadow-sm">
-        <AlertCircle className="mx-auto h-12 w-12 text-danger-500" />
-        <h2 className="mt-3 text-lg font-bold text-neutral-900">Something went wrong</h2>
-        <p className="mt-1 text-sm text-neutral-600">{error}</p>
-        <button
-          type="button"
-          onClick={fetchJourney}
-          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow hover:bg-brand-700 cursor-pointer"
-        >
-          <RotateCcw size={16} /> Try Again
-        </button>
+      <div className="mx-auto max-w-4xl">
+        <div className={`mx-auto max-w-lg ${CARD} p-8 text-center sm:p-10`}>
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-rose-50 text-rose-600 ring-8 ring-rose-50/50">
+            <AlertCircle size={26} />
+          </div>
+          <h2 className="mt-6 text-xl font-bold text-[#13211A]">This page didn't load</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{error}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Nothing you have completed is lost. Check your connection and try again.
+          </p>
+          <button type="button" onClick={fetchJourney} className={`mt-7 ${BTN_PRIMARY}`}>
+            <RotateCcw size={16} /> Try again
+          </button>
+        </div>
       </div>
     );
   }
@@ -140,28 +186,59 @@ export default function PostApprovalJourneyPage() {
     await fetchJourney();
   };
 
+  const stepsLeft = isDisbursed ? 0 : STEPS.length - (currentIdx + 1);
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6 text-[#13211A]">
       {/* Header banner */}
-      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-brand-800 via-brand-700 to-brand-500 p-6 text-white shadow-xl sm:p-8">
-        <div className="relative z-10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-brand-200">Final Disbursal Journey</p>
-          <h1 className="mt-2 text-2xl font-extrabold sm:text-3xl">
-            {isDisbursed ? 'Loan Disbursed Successfully!' : 'Complete Your Loan Steps'}
+      <section className="relative overflow-hidden rounded-[28px] bg-[#0E3B2C] text-white">
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-28 h-[420px] w-[420px] text-white/[0.06]"
+          viewBox="0 0 200 200"
+          fill="none"
+        >
+          <path
+            d="M100 10C150 40 180 90 160 150C140 190 60 190 40 150C20 90 50 40 100 10Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path d="M100 10V190" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M100 60L140 40M100 90L155 70M100 120L160 105M100 60L60 40M100 90L45 70M100 120L40 105M100 150L140 140M100 150L60 140"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+        </svg>
+
+        <div className="relative px-6 py-7 sm:px-9 sm:py-8">
+          <p className="text-sm text-emerald-100/70">Your approved loan</p>
+
+          <h1 className="mt-1.5 max-w-xl text-2xl font-bold leading-[1.15] tracking-[-0.02em] sm:text-[28px]">
+            {isDisbursed ? 'Your money is on its way' : 'A few steps and the money is yours'}
           </h1>
-          <p className="mt-1 text-sm text-brand-100">
-            LAN: <span className="font-mono font-bold text-white">{data?.loan?.lan || normalizedLan}</span>
+
+          <p className="mt-2.5 max-w-lg text-sm leading-6 text-emerald-50/70">
+            {isDisbursed
+              ? 'Your loan has been disbursed to your bank account.'
+              : STEP_COPY[activeStepId] || 'Finish the remaining steps to receive your funds.'}
           </p>
 
-          {/* Progress */}
-          <div className="mt-5 w-full max-w-sm rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-brand-100">Progress</span>
-              <strong>{progress}% Complete</strong>
+          <p className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs text-emerald-50 ring-1 ring-white/15">
+            <ShieldCheck size={13} />
+            Loan account {data?.loan?.lan || normalizedLan}
+          </p>
+
+          <div className="mt-7">
+            <div className="flex items-center justify-between text-xs text-emerald-100/70">
+              <span>{progress}% complete</span>
+              <span>
+                {stepsLeft === 0 ? 'All done' : stepsLeft === 1 ? '1 step to go' : `${stepsLeft} steps to go`}
+              </span>
             </div>
-            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/20">
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/15">
               <div
-                className="h-full rounded-full bg-white transition-all duration-700"
+                className="h-full rounded-full bg-[#9BE3B5] transition-all duration-700"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -169,9 +246,9 @@ export default function PostApprovalJourneyPage() {
         </div>
       </section>
 
-      {/* Steps progress strip */}
-      <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-        <div className="flex overflow-x-auto">
+      {/* Steps strip — tappable, so a customer can look back at a finished step */}
+      <section className="overflow-x-auto">
+        <div className="flex min-w-max gap-2">
           {STEPS.map((step, idx) => {
             const isDone = idx < currentIdx || (idx === currentIdx && isDisbursed);
             const isActive = step.id === activeStepId;
@@ -186,29 +263,16 @@ export default function PostApprovalJourneyPage() {
                   if (isClickable) setSelectedStepId(step.id);
                 }}
                 disabled={!isClickable}
-                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors cursor-pointer disabled:cursor-not-allowed ${isActive
-                  ? 'border-brand-600 bg-brand-50'
+                aria-current={isActive ? 'step' : undefined}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed ${isActive
+                  ? 'border-[#0E3B2C] bg-[#0E3B2C] text-white'
                   : isDone
-                    ? 'border-brand-400 bg-brand-50/50 hover:bg-brand-50'
-                    : 'border-transparent bg-white opacity-60'
+                    ? 'cursor-pointer border-[#C9E6D5] bg-[#E7F4EC] text-[#0E3B2C] hover:bg-[#D5EDDF]'
+                    : 'border-slate-200 bg-white text-slate-400'
                   }`}
               >
-                <div
-                  className={`grid h-8 w-8 place-items-center rounded-full transition ${isDone
-                    ? 'bg-brand-500 text-white'
-                    : isActive
-                      ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-400'
-                      : 'bg-neutral-100 text-neutral-400'
-                    }`}
-                >
-                  {isDone ? <CheckCircle2 size={16} /> : <Icon size={15} />}
-                </div>
-                <p
-                  className={`text-[11px] font-semibold leading-tight ${isActive ? 'text-brand-900 font-bold' : isDone ? 'text-brand-700' : 'text-neutral-400'
-                    }`}
-                >
-                  {step.label}
-                </p>
+                {isDone && !isActive ? <CheckCircle2 size={15} /> : <Icon size={15} />}
+                {step.label}
               </button>
             );
           })}
@@ -250,26 +314,28 @@ export default function PostApprovalJourneyPage() {
 
 function StepCard({ title, subtitle, icon: Icon, children }) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
-      <div className="flex items-center gap-4 border-b border-neutral-100 bg-neutral-50/60 px-6 py-5">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-100 text-brand-700">
+    <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white">
+      <div className="flex items-start gap-4 border-b border-slate-100 px-6 py-6 sm:px-9">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E7F4EC] text-[#1F8A5B]">
           <Icon size={22} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-neutral-900">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-sm text-neutral-500">{subtitle}</p>}
+          <h2 className="text-xl font-bold tracking-tight text-[#13211A]">{title}</h2>
+          {subtitle && <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-500">{subtitle}</p>}
         </div>
       </div>
-      <div className="p-6 sm:p-8">{children}</div>
+      <div className="p-6 sm:p-9">{children}</div>
     </div>
   );
 }
 
 function ActionButton({ onClick, disabled, loading, children, variant = 'primary', type = 'button' }) {
-  const base = 'inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold shadow transition disabled:opacity-50 cursor-pointer';
+  const base =
+    'inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-sm font-semibold transition disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-2';
   const styles = {
-    primary: 'bg-brand-600 text-white hover:bg-brand-700',
-    blue: 'bg-info-600 text-white hover:bg-info-700',
+    primary: 'bg-[#0E3B2C] text-white hover:bg-[#145239] disabled:bg-slate-200 disabled:text-slate-400',
+    blue: 'bg-[#1F8A5B] text-white hover:bg-[#157049] disabled:bg-slate-200 disabled:text-slate-400',
+    slate: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50',
   };
   return (
     <button type={type} onClick={onClick} disabled={disabled || loading} className={`${base} ${styles[variant] || styles.primary}`}>
@@ -282,19 +348,46 @@ function ActionButton({ onClick, disabled, loading, children, variant = 'primary
 
 function CompletedBadge({ title, description }) {
   return (
-    <div className="mb-6 flex items-center justify-between rounded-2xl border border-brand-200 bg-brand-50/80 p-4 text-brand-900">
-      <div className="flex items-center gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
-          <ShieldCheck size={20} />
-        </div>
-        <div>
-          <h4 className="text-sm font-bold">{title || 'Step Completed'}</h4>
-          {description && <p className="text-xs text-brand-700 mt-0.5">{description}</p>}
-        </div>
+    <div className="mb-7 flex items-start gap-3.5 rounded-2xl bg-[#E7F4EC] p-5">
+      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#0E3B2C] text-[#9BE3B5]">
+        <CheckCircle2 size={20} />
       </div>
-      <span className="rounded-lg bg-brand-200/60 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-brand-800">
-        Saved in DB
-      </span>
+      <div>
+        <h4 className="text-sm font-bold text-[#0E3B2C]">{title || 'Step completed'}</h4>
+        {description && <p className="mt-0.5 text-sm leading-6 text-[#0E3B2C]/75">{description}</p>}
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, value, mono = false, strong = false }) {
+  return (
+    <div className={FACT}>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p
+        className={`mt-1 break-words tabular-nums ${mono ? 'tracking-wide' : ''} ${
+          strong ? 'text-lg font-bold text-[#0E3B2C]' : 'text-base font-semibold text-[#13211A]'
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function InlineError({ message }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-800">
+      <AlertCircle size={16} className="mt-0.5 shrink-0 text-rose-600" />
+      <span className="leading-6">{message}</span>
+    </div>
+  );
+}
+
+function InlineNote({ message }) {
+  return (
+    <div className="rounded-2xl bg-[#E7F4EC] p-4 text-sm leading-6 text-[#0E3B2C]">
+      {message}
     </div>
   );
 }
@@ -330,76 +423,74 @@ function ApprovalSummaryStep({ data, onNext }) {
   const approvedAmount = formatCurrency(data?.loan?.approvedAmount || data?.offer?.approvedAmount);
 
   return (
-    <StepCard title="Loan Offer Details" subtitle="Review your approved loan offer and selected tenure." icon={BadgeCheck}>
+    <StepCard
+      title="Your loan offer"
+      subtitle="Here is what your lender approved. Choose how long you want to repay."
+      icon={BadgeCheck}
+    >
       {isAccepted ? (
         <CompletedBadge
-          title="Loan Offer Accepted"
-          description={`Selected tenure: ${data?.offer?.acceptedTenureDays} Days`}
+          title="Offer accepted"
+          description={`You chose a ${data?.offer?.acceptedTenureDays}-day tenure.`}
         />
       ) : (
-        <div className="mb-6 flex flex-col items-center rounded-2xl bg-brand-50 py-8 text-center">
-          <div className="grid h-16 w-16 place-items-center rounded-full bg-brand-100 text-brand-600 ring-8 ring-brand-50">
-            <CheckCircle2 size={36} />
-          </div>
-          <h3 className="mt-4 text-xl font-extrabold text-neutral-900">Your Loan is Approved!</h3>
-          <p className="mt-1 text-sm text-neutral-500">
-            Approved by <strong>{data?.lender?.name || 'Fintree Finance'}</strong>
+        <div className="mb-7 overflow-hidden rounded-[24px] bg-[#0E3B2C] p-8 text-center text-white sm:p-10">
+          <p className="text-sm text-emerald-100/70">Approved amount</p>
+          <p className="mt-2 text-4xl font-bold tracking-tight tabular-nums sm:text-5xl">
+            {approvedAmount}
+          </p>
+          <p className="mt-3 text-xs text-emerald-100/60">
+            Approved by {data?.lender?.name || 'your lending partner'}
           </p>
         </div>
       )}
 
       {/* Details grid */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-          <p className="text-xs font-semibold text-neutral-500">Loan Account Number (LAN)</p>
-          <p className="mt-1 font-mono text-lg font-bold text-neutral-900">{data?.loan?.lan}</p>
-        </div>
-        <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
-          <p className="text-xs font-semibold text-neutral-500">Approved Amount</p>
-          <p className="mt-1 text-lg font-bold text-brand-700">{approvedAmount}</p>
-        </div>
+      <div className="mb-7 grid gap-4 sm:grid-cols-2">
+        <Fact label="Loan account number" value={data?.loan?.lan} mono />
+        <Fact label="Approved amount" value={approvedAmount} strong />
       </div>
 
       {/* Tenure selection */}
       {!isAccepted ? (
         <div className="mb-8">
-          <p className="mb-3 text-sm font-bold text-neutral-900">Select Repayment Tenure</p>
-          <div className="flex flex-wrap gap-3">
+          <p className="text-base font-bold text-[#13211A]">How long do you need to repay?</p>
+          <p className="mt-1 text-sm text-slate-500">You can always repay earlier.</p>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {tenures.map(t => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setSelectedTenure(t)}
-                className={`rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${selectedTenure === t
-                  ? 'border-brand-500 bg-brand-50 text-brand-700 shadow-sm'
-                  : 'border-neutral-200 text-neutral-600 hover:border-brand-300 hover:bg-neutral-50'
+                aria-pressed={selectedTenure === t}
+                className={`relative cursor-pointer rounded-2xl border p-4 text-left transition ${selectedTenure === t
+                  ? 'border-[#1F8A5B] bg-[#E7F4EC]'
+                  : 'border-slate-200 hover:border-[#9BE3B5] hover:bg-slate-50'
                   }`}
               >
-                {t} Days
+                {selectedTenure === t && (
+                  <span className="absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-[#0E3B2C] text-white">
+                    <CheckCircle2 size={12} />
+                  </span>
+                )}
+                <p className={`text-xl font-bold tabular-nums ${selectedTenure === t ? 'text-[#0E3B2C]' : 'text-[#13211A]'}`}>{t}</p>
+                <p className={`text-xs ${selectedTenure === t ? 'text-[#0E3B2C]/70' : 'text-slate-500'}`}>days</p>
               </button>
             ))}
           </div>
         </div>
       ) : (
         <div className="mb-8 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-            <p className="text-xs font-semibold text-neutral-500">Tenure</p>
-            <p className="mt-1 text-base font-bold text-neutral-900">{data?.offer?.acceptedTenureDays} Days</p>
-          </div>
-          <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-            <p className="text-xs font-semibold text-neutral-500">Bullet Repayment Dues</p>
-            <p className="mt-1 text-base font-bold text-neutral-900">{formatCurrency(data?.offer?.acceptedEmiAmount)}</p>
-          </div>
-          <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-            <p className="text-xs font-semibold text-neutral-500">Total Repayment</p>
-            <p className="mt-1 text-base font-bold text-neutral-900">{formatCurrency(data?.offer?.acceptedTotalRepayment)}</p>
-          </div>
+          <Fact label="Tenure" value={`${data?.offer?.acceptedTenureDays} days`} />
+          <Fact label="Amount due at the end" value={formatCurrency(data?.offer?.acceptedEmiAmount)} />
+          <Fact label="Total repayment" value={formatCurrency(data?.offer?.acceptedTotalRepayment)} />
         </div>
       )}
 
       <div className="flex justify-end">
         <ActionButton onClick={handleAccept} loading={isAccepting}>
-          {isAccepted ? 'Proceed to KYC' : 'Accept Offer & Continue'}
+          {isAccepted ? 'Continue' : 'Accept and continue'}
         </ActionButton>
       </div>
     </StepCard>
@@ -581,121 +672,97 @@ function BankVerificationStep({ lan, data, onNext }) {
   };
 
   const inputClass = (fieldName) =>
-    `w-full rounded-xl border bg-white px-4 py-3 text-sm text-neutral-900 shadow-sm outline-none transition placeholder:text-neutral-400 focus:ring-4 disabled:bg-neutral-100 disabled:cursor-not-allowed ${fieldErrors[fieldName]
-      ? 'border-danger-300 focus:border-danger-500 focus:ring-danger-100'
-      : 'border-neutral-200 focus:border-info-500 focus:ring-info-100'
+    `min-h-12 w-full rounded-2xl border bg-white px-4 py-3 text-[15px] text-[#13211A] outline-none transition placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50 ${fieldErrors[fieldName]
+      ? 'border-rose-300 ring-4 ring-rose-50'
+      : 'border-slate-200 focus:border-[#1F8A5B] focus:ring-4 focus:ring-[#E7F4EC]'
     }`;
+
+  const labelClass = 'mb-2 block text-sm font-semibold text-slate-700';
 
   return (
     <StepCard
-      title="Bank Account Verification"
-      subtitle="Enter the bank account details where your loan will be disbursed."
+      title="Where should the money go?"
+      subtitle="We pay directly into your own bank account."
       icon={Landmark}
     >
       {isVerified ? (
         <div>
           <CompletedBadge
-            title="Bank Account Verified (Penny Drop Success)"
-            description="Verified by ₹1.00 instant deposit into account"
+            title="Bank account verified"
+            description="We sent ₹1 to this account and the name matched."
           />
 
-          <div className="mb-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Account Holder Name</p>
-              <p className="mt-1 text-base font-bold text-neutral-900">{bankData.accountHolderName || '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Bank Name</p>
-              <p className="mt-1 text-base font-bold text-neutral-900">{bankData.bankName || '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Account Number</p>
-              <p className="mt-1 font-mono text-base font-bold text-neutral-900">{bankData.accountMasked || '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">IFSC Code</p>
-              <p className="mt-1 font-mono text-base font-bold text-neutral-900">{bankData.ifsc || '—'}</p>
-            </div>
+          <div className="mb-7 grid gap-4 sm:grid-cols-2">
+            <Fact label="Account holder" value={bankData.accountHolderName || '—'} />
+            <Fact label="Bank" value={bankData.bankName || '—'} />
+            <Fact label="Account number" value={bankData.accountMasked || '—'} mono />
+            <Fact label="IFSC code" value={bankData.ifsc || '—'} mono />
           </div>
 
           <div className="flex justify-end">
             <ActionButton onClick={onNext}>
-              Proceed to KFS Acceptance
+              Continue
             </ActionButton>
           </div>
         </div>
       ) : (
         <div>
           {/* Penny Drop Info Card */}
-          <div className="mb-6 rounded-2xl border border-info-100 bg-gradient-to-r from-info-50/80 to-accent-50/50 p-4 sm:p-5">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-600 text-white shadow-md shadow-info-500/20">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-info-900">
-                  Instant ₹1.00 Penny Drop Verification
-                </h4>
-                <p className="mt-1 text-xs text-info-700 leading-relaxed">
-                  We will deposit ₹1.00 into your account to verify your name and ownership. Please ensure the account belongs to the applicant.
-                </p>
-              </div>
+          <div className="mb-7 flex items-start gap-3.5 rounded-2xl bg-[#F7F9F6] p-5">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#0E3B2C] text-[#9BE3B5]">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-[#13211A]">
+                We will send ₹1 to check the account
+              </h4>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                It confirms the account is real and in your name. The ₹1 is yours to keep. The
+                account must belong to you.
+              </p>
             </div>
           </div>
 
           {errorMsg && (
-            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50/90 p-4 text-xs font-medium text-danger-800">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" />
-              <div className="flex-1 leading-relaxed">{errorMsg}</div>
+            <div className="mb-7">
+              <InlineError message={errorMsg} />
             </div>
           )}
 
           {loadingPrevious ? (
-            <div className="mb-6 flex items-center gap-2 text-xs font-medium text-neutral-500">
+            <div className="mb-6 flex items-center gap-2 text-sm text-slate-500">
               <LoaderCircle className="h-4 w-4 animate-spin" />
-              Checking for a previously verified bank account...
+              Looking for an account you have used before…
             </div>
           ) : previousBank?.available && useSameAccount ? (
-            <div className="space-y-5">
-              <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-5">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-brand-800">
-                    Use your previously verified bank account
+            <div className="space-y-6">
+              <div className="rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-base font-bold text-[#13211A]">
+                    Use the account from your last loan
                   </h4>
                   <button
                     type="button"
                     onClick={() => setUseSameAccount(false)}
                     disabled={isLoading}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-info-700 transition hover:text-info-900 disabled:opacity-50"
+                    className="inline-flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-[#1F8A5B] transition hover:text-[#0E3B2C] disabled:opacity-50"
                   >
-                    <PenLine className="h-3.5 w-3.5" />
-                    Use a different account
+                    <PenLine className="h-4 w-4" />
+                    Use a different one
                   </button>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs font-semibold text-neutral-500">Account Holder Name</p>
-                    <p className="mt-1 text-sm font-bold text-neutral-900">{previousBank.accountHolderName || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-neutral-500">Bank Name</p>
-                    <p className="mt-1 text-sm font-bold text-neutral-900">{previousBank.bankName || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-neutral-500">Account Number</p>
-                    <p className="mt-1 font-mono text-sm font-bold text-neutral-900">{previousBank.accountNumberMasked || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-neutral-500">IFSC Code</p>
-                    <p className="mt-1 font-mono text-sm font-bold text-neutral-900">{previousBank.ifscCode || '—'}</p>
-                  </div>
+                  <Fact label="Account holder" value={previousBank.accountHolderName || '—'} />
+                  <Fact label="Bank" value={previousBank.bankName || '—'} />
+                  <Fact label="Account number" value={previousBank.accountNumberMasked || '—'} mono />
+                  <Fact label="IFSC code" value={previousBank.ifscCode || '—'} mono />
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
-                <ActionButton onClick={handleVerify} loading={isLoading} variant="blue">
-                  Send ₹1.00 & Verify Bank
+              <div className="flex justify-end">
+                <ActionButton onClick={handleVerify} loading={isLoading}>
+                  Send ₹1 and verify
                 </ActionButton>
               </div>
             </div>
@@ -706,63 +773,63 @@ function BankVerificationStep({ lan, data, onNext }) {
                   type="button"
                   onClick={() => setUseSameAccount(true)}
                   disabled={isLoading}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-info-700 transition hover:text-info-900 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-[#1F8A5B] transition hover:text-[#0E3B2C] disabled:opacity-50"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Use my previous bank account instead
+                  <RotateCcw className="h-4 w-4" />
+                  Use my previous account instead
                 </button>
               )}
 
               <div>
-                <label htmlFor="accountHolderName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Account Holder Name <span className="text-danger-500">*</span>
+                <label htmlFor="accountHolderName" className={labelClass}>
+                  Account holder name <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="accountHolderName"
                   name="accountHolderName"
                   type="text"
-                  placeholder="e.g. VISHAL YADAV (as per bank records)"
+                  placeholder="Exactly as it appears in your bank records"
                   value={formData.accountHolderName}
                   onChange={handleChange}
                   disabled={isLoading}
                   className={inputClass('accountHolderName')}
                 />
                 {fieldErrors.accountHolderName && (
-                  <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountHolderName}</p>
+                  <p className="animate-fade-in mt-2 text-sm text-rose-600">{fieldErrors.accountHolderName}</p>
                 )}
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="accountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                    Bank Account Number <span className="text-danger-500">*</span>
+                  <label htmlFor="accountNumber" className={labelClass}>
+                    Account number <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="accountNumber"
                     name="accountNumber"
                     type="text"
                     inputMode="numeric"
-                    placeholder="Enter 9–20 digit account number"
+                    placeholder="9 to 20 digits"
                     value={formData.accountNumber}
                     onChange={handleChange}
                     disabled={isLoading}
                     className={inputClass('accountNumber')}
                   />
                   {fieldErrors.accountNumber && (
-                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.accountNumber}</p>
+                    <p className="animate-fade-in mt-2 text-sm text-rose-600">{fieldErrors.accountNumber}</p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="confirmAccountNumber" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                    Confirm Account Number <span className="text-danger-500">*</span>
+                  <label htmlFor="confirmAccountNumber" className={labelClass}>
+                    Confirm account number <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="confirmAccountNumber"
                     name="confirmAccountNumber"
                     type="text"
                     inputMode="numeric"
-                    placeholder="Re-enter account number"
+                    placeholder="Type it again"
                     value={formData.confirmAccountNumber}
                     onChange={handleChange}
                     onPaste={(e) => e.preventDefault()}
@@ -770,34 +837,34 @@ function BankVerificationStep({ lan, data, onNext }) {
                     className={inputClass('confirmAccountNumber')}
                   />
                   {fieldErrors.confirmAccountNumber && (
-                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.confirmAccountNumber}</p>
+                    <p className="animate-fade-in mt-2 text-sm text-rose-600">{fieldErrors.confirmAccountNumber}</p>
                   )}
                 </div>
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="ifscCode" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                    IFSC Code <span className="text-danger-500">*</span>
+                  <label htmlFor="ifscCode" className={labelClass}>
+                    IFSC code <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="ifscCode"
                     name="ifscCode"
                     type="text"
-                    placeholder="e.g. HDFC0001234"
+                    placeholder="HDFC0001234"
                     value={formData.ifscCode}
                     onChange={handleChange}
                     disabled={isLoading}
-                    className={`${inputClass('ifscCode')} uppercase tracking-wider font-mono`}
+                    className={`${inputClass('ifscCode')} uppercase tracking-wider`}
                   />
                   {fieldErrors.ifscCode && (
-                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.ifscCode}</p>
+                    <p className="animate-fade-in mt-2 text-sm text-rose-600">{fieldErrors.ifscCode}</p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="accountType" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                    Account Type <span className="text-danger-500">*</span>
+                  <label htmlFor="accountType" className={labelClass}>
+                    Account type <span className="text-rose-500">*</span>
                   </label>
                   <select
                     id="accountType"
@@ -807,63 +874,60 @@ function BankVerificationStep({ lan, data, onNext }) {
                     disabled={isLoading}
                     className={inputClass('accountType')}
                   >
-                    <option value="SAVINGS">Savings Account</option>
-                    <option value="CURRENT">Current Account</option>
+                    <option value="SAVINGS">Savings account</option>
+                    <option value="CURRENT">Current account</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="bankName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                    Bank Name <span className="text-danger-500">*</span>
+                  <label htmlFor="bankName" className={labelClass}>
+                    Bank name <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="bankName"
                     name="bankName"
                     type="text"
-                    placeholder="e.g. HDFC Bank Ltd"
+                    placeholder="HDFC Bank"
                     value={formData.bankName}
                     onChange={handleChange}
                     disabled={isLoading}
                     className={inputClass('bankName')}
                   />
                   {fieldErrors.bankName && (
-                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.bankName}</p>
+                    <p className="animate-fade-in mt-2 text-sm text-rose-600">{fieldErrors.bankName}</p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="branchName" className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                    Branch Name <span className="text-danger-500">*</span>
+                  <label htmlFor="branchName" className={labelClass}>
+                    Branch <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="branchName"
                     name="branchName"
                     type="text"
-                    placeholder="e.g. Andheri West"
+                    placeholder="Andheri West"
                     value={formData.branchName}
                     onChange={handleChange}
                     disabled={isLoading}
                     className={inputClass('branchName')}
                   />
                   {fieldErrors.branchName && (
-                    <p className="mt-1.5 text-xs text-danger-600 font-medium">{fieldErrors.branchName}</p>
+                    <p className="animate-fade-in mt-2 text-sm text-rose-600">{fieldErrors.branchName}</p>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-xl bg-neutral-50 border border-neutral-100 p-3.5 text-xs text-neutral-500">
-                <div className="flex items-center gap-2">
-                  <BadgeCheck className="h-4 w-4 text-brand-600" />
-                  <span>256-bit AES Encrypted Storage</span>
-                </div>
-                <span className="font-semibold text-neutral-700">PCI-DSS Compliant</span>
-              </div>
+              <p className="flex items-center gap-2 rounded-2xl bg-[#F7F9F6] p-4 text-sm text-slate-500">
+                <ShieldCheck className="h-4 w-4 shrink-0 text-[#1F8A5B]" />
+                Your bank details are encrypted and used only for this loan.
+              </p>
 
-              <div className="mt-8 flex justify-end pt-2">
-                <ActionButton type="submit" onClick={handleVerify} loading={isLoading} variant="blue">
-                  Send ₹1.00 & Verify Bank
+              <div className="flex justify-end pt-2">
+                <ActionButton type="submit" onClick={handleVerify} loading={isLoading}>
+                  Send ₹1 and verify
                 </ActionButton>
               </div>
             </form>
@@ -955,111 +1019,98 @@ function KfsStep({ lan, data, onNext }) {
   };
 
   const summaryCards = [
-    { label: 'Sanctioned Loan Amount', value: formatCurrency(loanAmount), tag: 'Principal Sum' },
-    { label: 'Net Disbursal Amount', value: formatCurrency(netDisbursalAmount), tag: 'Credited to Bank', highlight: true },
-    { label: 'Total Repayment Amount', value: formatCurrency(totalRepaymentAmount), tag: 'Principal + Interest' },
-    { label: 'Annual Interest Rate (ROI)', value: `${interestRate}% p.a.`, tag: 'Fixed Interest' },
-    { label: 'Annual Percentage Rate (APR)', value: `${apr}%`, tag: 'Total Cost of Credit' },
-    { label: 'Tenure & Repayment Due Date', value: `${tenureDays} Days (${formatDate(dueDate)})`, tag: 'Single Bullet Payment' },
+    { label: 'Loan amount', value: formatCurrency(loanAmount), tag: 'Sanctioned' },
+    { label: 'You will receive', value: formatCurrency(netDisbursalAmount), tag: 'Into your bank', highlight: true },
+    { label: 'You will repay', value: formatCurrency(totalRepaymentAmount), tag: 'Principal + interest' },
+    { label: 'Interest rate', value: `${interestRate}% p.a.`, tag: 'Fixed' },
+    { label: 'Annual percentage rate', value: `${apr}%`, tag: 'All-in cost' },
+    { label: 'Repay by', value: `${formatDate(dueDate)}`, tag: `${tenureDays} days, one payment` },
   ];
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
-      <div className="p-6 sm:p-8">
-        {isAccepted && (
-          <CompletedBadge
-            title="Key Fact Statement Accepted"
-            description="Stored securely in DB with full regulatory compliance details"
+    <StepCard
+      title="The key facts of your loan"
+      subtitle="Everything that matters, in one place. Read it, then accept to continue."
+      icon={FileText}
+    >
+      {isAccepted && (
+        <CompletedBadge
+          title="Key facts accepted"
+          description="You accepted the charges, repayment date and penal terms."
+        />
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleViewKfs}
+          className={BTN_SOFT}
+        >
+          <Eye size={16} />
+          Read the full statement
+        </button>
+
+        {kfsDocumentUrl && (
+          <a
+            href={kfsDocumentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={BTN_SECONDARY}
+          >
+            <ExternalLink size={15} /> Open the PDF
+          </a>
+        )}
+      </div>
+
+      {/* Financial Summary Grid */}
+      <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {summaryCards.map((item) => (
+          <div
+            key={item.label}
+            className={`rounded-2xl p-5 ${item.highlight ? 'bg-[#0E3B2C] text-white' : 'bg-[#F7F9F6]'}`}
+          >
+            <p className={`text-xs ${item.highlight ? 'text-emerald-100/70' : 'text-slate-500'}`}>
+              {item.label}
+            </p>
+            <p className={`mt-1.5 text-2xl font-bold tabular-nums ${item.highlight ? 'text-white' : 'text-[#13211A]'}`}>
+              {item.value}
+            </p>
+            <p className={`mt-1 text-xs ${item.highlight ? 'text-emerald-100/60' : 'text-slate-400'}`}>
+              {item.tag}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {!isAccepted && (
+        <label className="mt-7 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-5 transition hover:bg-slate-50">
+          <input
+            type="checkbox"
+            checked={isConsentChecked}
+            onChange={(event) => {
+              setIsConsentChecked(event.target.checked);
+              setErrorMsg('');
+            }}
+            disabled={isLoading}
+            className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
           />
-        )}
+          <span className="text-sm leading-6 text-[#13211A]">
+            I have read and accept the Key Fact Statement, the charges, my repayment obligation and
+            the penal charge terms.
+          </span>
+        </label>
+      )}
 
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-info-50 text-info-600">
-              <FileText size={26} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-extrabold text-neutral-950">Key Fact Statement (KFS)</h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Personal Loan Statement · {lender?.name || 'Fintree Finance Private Limited'} · LAN: <span className="font-mono font-semibold text-neutral-700">{lan}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {kfsDocumentUrl && (
-              <a
-                href={kfsDocumentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-4 py-2.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
-              >
-                <ExternalLink size={14} /> PDF File
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={handleViewKfs}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-info-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-info-700"
-            >
-              <Eye size={16} />
-              View Full Mini-Statement
-            </button>
-          </div>
+      {errorMsg && (
+        <div className="mt-5">
+          <InlineError message={errorMsg} />
         </div>
+      )}
 
-        {/* Financial Summary Grid */}
-        <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {summaryCards.map((item) => (
-            <div
-              key={item.label}
-              className={`rounded-2xl border p-5 transition-all ${item.highlight
-                  ? 'border-brand-200 bg-brand-50/50 shadow-sm'
-                  : 'border-neutral-200 bg-neutral-50/30'
-                }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{item.label}</span>
-                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${item.highlight ? 'bg-brand-100 text-brand-800' : 'bg-neutral-200/70 text-neutral-700'
-                  }`}>
-                  {item.tag}
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-extrabold text-neutral-950">{item.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {!isAccepted && (
-          <label className="mt-7 flex cursor-pointer items-start gap-4 rounded-2xl border border-neutral-200 p-5 transition hover:bg-neutral-50">
-            <input
-              type="checkbox"
-              checked={isConsentChecked}
-              onChange={(event) => {
-                setIsConsentChecked(event.target.checked);
-                setErrorMsg('');
-              }}
-              disabled={isLoading}
-              className="mt-0.5 h-6 w-6 shrink-0 rounded border-neutral-300 text-info-600 focus:ring-info-500"
-            />
-            <span className="text-sm font-semibold leading-6 text-neutral-800">
-              I have read and accept the KFS, charges, repayment obligation and penal charge terms.
-            </span>
-          </label>
-        )}
-
-        {errorMsg && (
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger-100 bg-danger-50 p-3 text-sm text-danger-700">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        <div className="mt-7 flex justify-end">
-          <ActionButton onClick={handleAccept} loading={isLoading} disabled={!isAccepted && !isConsentChecked}>
-            {isAccepted ? 'Proceed to e-Mandate' : 'Accept KFS & Continue'}
-          </ActionButton>
-        </div>
+      <div className="mt-7 flex justify-end">
+        <ActionButton onClick={handleAccept} loading={isLoading} disabled={!isAccepted && !isConsentChecked}>
+          {isAccepted ? 'Continue' : 'Accept and continue'}
+        </ActionButton>
       </div>
 
       {/* KFS Mini Statement Modal */}
@@ -1075,7 +1126,7 @@ function KfsStep({ lan, data, onNext }) {
           onClose={() => setShowModal(false)}
         />
       )}
-    </div>
+    </StepCard>
   );
 }
 
@@ -1118,36 +1169,31 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
     window.print();
   };
 
+  const th = 'px-4 py-3 text-xs font-semibold text-slate-500';
+  const td = 'px-4 py-3.5 text-sm text-[#13211A]';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/60 p-4 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl sm:p-8 max-h-[90vh] overflow-y-auto print:max-w-none print:shadow-none print:p-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0A2318]/70 p-4 backdrop-blur-sm">
+      <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl sm:p-9 print:max-h-none print:max-w-none print:p-0 print:shadow-none">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-200 pb-5 print:border-b-2">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent-600 text-white font-extrabold text-lg">
-              F
-            </div>
-            <div>
-              <h3 className="text-xl font-extrabold text-neutral-950 sm:text-2xl">
-                KEY FACT STATEMENT & MINI-STATEMENT
-              </h3>
-              <p className="text-xs text-neutral-500">
-                Issued by {lender?.name || 'Fintree Finance Private Limited'} (RBI Regulated NBFC)
-              </p>
-            </div>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-6">
+          <div>
+            <h3 className="text-xl font-bold tracking-tight text-[#13211A] sm:text-2xl">
+              Key Fact Statement
+            </h3>
+            <p className="mt-1.5 text-sm text-slate-500">
+              Issued by {lender?.name || 'your lending partner'} · Loan account {lan}
+            </p>
           </div>
 
           <div className="flex items-center gap-2 print:hidden">
-            <button
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 shadow-sm"
-            >
-              Print / Save PDF
+            <button onClick={handlePrint} className={BTN_SECONDARY}>
+              Print or save
             </button>
             <button
               onClick={onClose}
-              className="grid h-9 w-9 place-items-center rounded-xl text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              className="grid h-10 w-10 cursor-pointer place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
             >
               <X size={20} />
             </button>
@@ -1155,68 +1201,78 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
         </div>
 
         {/* Borrower & Loan Metadata */}
-        <div className="mt-6 grid gap-4 rounded-2xl bg-neutral-50 p-5 sm:grid-cols-2 text-xs border border-neutral-200">
-          <div>
-            <p className="text-neutral-500 font-medium">Borrower Name:</p>
-            <p className="font-bold text-neutral-900 text-sm">{kfs?.borrowerName || customer?.fullName || 'Borrower'}</p>
-            <p className="text-neutral-500 font-medium mt-2">PAN Number:</p>
-            <p className="font-bold text-neutral-900">{kfs?.borrowerPan || customer?.panNumber || '—'}</p>
+        <div className="mt-6 grid gap-5 rounded-2xl bg-[#F7F9F6] p-5 sm:grid-cols-2">
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs text-slate-500">Borrower</p>
+              <p className="mt-0.5 text-sm font-semibold text-[#13211A]">{kfs?.borrowerName || customer?.fullName || 'Borrower'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">PAN</p>
+              <p className="mt-0.5 text-sm font-semibold tracking-wide text-[#13211A]">{kfs?.borrowerPan || customer?.panNumber || '—'}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-neutral-500 font-medium">Loan Application Reference (LAN):</p>
-            <p className="font-mono font-bold text-accent-700 text-sm">{lan}</p>
-            <p className="text-neutral-500 font-medium mt-2">Disbursal Bank Account:</p>
-            <p className="font-bold text-neutral-900">{bank?.bankName || kfs?.bankName || 'Verified Bank'} ({bank?.accountMasked || kfs?.accountMasked || 'XXXX'})</p>
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs text-slate-500">Loan account number</p>
+              <p className="mt-0.5 text-sm font-semibold tracking-wide text-[#0E3B2C]">{lan}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Money goes to</p>
+              <p className="mt-0.5 text-sm font-semibold text-[#13211A]">
+                {bank?.bankName || kfs?.bankName || 'Verified bank'} ({bank?.accountMasked || kfs?.accountMasked || 'XXXX'})
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Summary Table */}
-        <div className="mt-6">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">1. Key Financial Terms & Cost Breakdown</h4>
-          <div className="overflow-hidden rounded-xl border border-neutral-200 text-xs">
+        <div className="mt-8">
+          <h4 className="text-base font-bold text-[#13211A]">What this loan costs</h4>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
             <table className="w-full text-left">
-              <thead className="bg-neutral-100 font-semibold text-neutral-700">
+              <thead className="bg-[#F7F9F6]">
                 <tr>
-                  <th className="p-3">Component / Description</th>
-                  <th className="p-3 text-right">Calculation / Rate</th>
-                  <th className="p-3 text-right">Amount (INR)</th>
+                  <th className={th}>Item</th>
+                  <th className={`${th} text-right`}>How it is worked out</th>
+                  <th className={`${th} text-right`}>Amount</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200">
+              <tbody className="divide-y divide-slate-100">
                 <tr>
-                  <td className="p-3 font-medium text-neutral-900">(A) Sanctioned Loan Amount</td>
-                  <td className="p-3 text-right text-neutral-500">Principal Sum</td>
-                  <td className="p-3 text-right font-bold text-neutral-900">{formatCurrency(loanAmount)}</td>
-                </tr>
-                <tr>
-                  <td className="p-3 font-medium text-neutral-900">(B) Processing Fee</td>
-                  <td className="p-3 text-right text-neutral-500">{processingFeePercentLabel}% of Principal</td>
-                  <td className="p-3 text-right font-semibold text-danger-600">- {formatCurrency(processingFee)}</td>
+                  <td className={td}>Loan amount</td>
+                  <td className={`${td} text-right text-slate-500`}>Principal</td>
+                  <td className={`${td} text-right font-semibold tabular-nums`}>{formatCurrency(loanAmount)}</td>
                 </tr>
                 <tr>
-                  <td className="p-3 font-medium text-neutral-900">(C) Goods & Services Tax (GST)</td>
-                  <td className="p-3 text-right text-neutral-500">{processingFeeGstPercentLabel}% on Processing Fee</td>
-                  <td className="p-3 text-right font-semibold text-danger-600">- {formatCurrency(processingFeeGst)}</td>
-                </tr>
-                <tr className="bg-brand-50/60 font-bold">
-                  <td className="p-3 text-brand-950">(D) Net Disbursal Amount (A - B - C)</td>
-                  <td className="p-3 text-right text-brand-700">Credited to Bank Account</td>
-                  <td className="p-3 text-right text-brand-700 text-sm">{formatCurrency(netDisbursalAmount)}</td>
+                  <td className={td}>Processing fee</td>
+                  <td className={`${td} text-right text-slate-500`}>{processingFeePercentLabel}% of the loan</td>
+                  <td className={`${td} text-right font-semibold tabular-nums text-rose-600`}>− {formatCurrency(processingFee)}</td>
                 </tr>
                 <tr>
-                  <td className="p-3 font-medium text-neutral-900">(E) Total Interest Charge</td>
-                  <td className="p-3 text-right text-neutral-500">{interestRate}% p.a. over {tenureDays} Days</td>
-                  <td className="p-3 text-right font-semibold text-neutral-900">+ {formatCurrency(totalInterest)}</td>
+                  <td className={td}>GST</td>
+                  <td className={`${td} text-right text-slate-500`}>{processingFeeGstPercentLabel}% on the fee</td>
+                  <td className={`${td} text-right font-semibold tabular-nums text-rose-600`}>− {formatCurrency(processingFeeGst)}</td>
                 </tr>
-                <tr className="bg-accent-50/70 font-extrabold text-accent-950">
-                  <td className="p-3 text-accent-950">(F) Total Repayment Amount (A + E)</td>
-                  <td className="p-3 text-right text-accent-700">Due on {formatDate(dueDate)}</td>
-                  <td className="p-3 text-right text-accent-900 text-base">{formatCurrency(totalRepaymentAmount)}</td>
+                <tr className="bg-[#E7F4EC]">
+                  <td className={`${td} font-bold text-[#0E3B2C]`}>You receive</td>
+                  <td className={`${td} text-right text-[#0E3B2C]/70`}>Into your bank account</td>
+                  <td className={`${td} text-right text-base font-bold tabular-nums text-[#0E3B2C]`}>{formatCurrency(netDisbursalAmount)}</td>
                 </tr>
-                <tr className="bg-caution-50/50 font-semibold text-caution-950">
-                  <td className="p-3">(G) Annual Percentage Rate (APR)</td>
-                  <td className="p-3 text-right text-caution-800">Total Cost of Credit per Annum</td>
-                  <td className="p-3 text-right font-extrabold text-caution-950 text-sm">{apr}% p.a.</td>
+                <tr>
+                  <td className={td}>Interest</td>
+                  <td className={`${td} text-right text-slate-500`}>{interestRate}% a year over {tenureDays} days</td>
+                  <td className={`${td} text-right font-semibold tabular-nums`}>+ {formatCurrency(totalInterest)}</td>
+                </tr>
+                <tr className="bg-[#F7F9F6]">
+                  <td className={`${td} font-bold`}>You repay</td>
+                  <td className={`${td} text-right text-slate-500`}>By {formatDate(dueDate)}</td>
+                  <td className={`${td} text-right text-base font-bold tabular-nums`}>{formatCurrency(totalRepaymentAmount)}</td>
+                </tr>
+                <tr>
+                  <td className={td}>Annual percentage rate</td>
+                  <td className={`${td} text-right text-slate-500`}>Total cost of credit per year</td>
+                  <td className={`${td} text-right font-bold tabular-nums`}>{apr}%</td>
                 </tr>
               </tbody>
             </table>
@@ -1224,26 +1280,26 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
         </div>
 
         {/* Repayment Schedule Mini Statement */}
-        <div className="mt-6">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-700 mb-3">2. Repayment Schedule (Mini-Statement)</h4>
-          <div className="overflow-hidden rounded-xl border border-neutral-200 text-xs">
+        <div className="mt-8">
+          <h4 className="text-base font-bold text-[#13211A]">Your repayment</h4>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
             <table className="w-full text-left">
-              <thead className="bg-neutral-100 font-semibold text-neutral-700">
+              <thead className="bg-[#F7F9F6]">
                 <tr>
-                  <th className="p-3">Instalment #</th>
-                  <th className="p-3">Due Date</th>
-                  <th className="p-3 text-right">Principal</th>
-                  <th className="p-3 text-right">Interest</th>
-                  <th className="p-3 text-right">Total Payable</th>
+                  <th className={th}>Payment</th>
+                  <th className={th}>Due</th>
+                  <th className={`${th} text-right`}>Principal</th>
+                  <th className={`${th} text-right`}>Interest</th>
+                  <th className={`${th} text-right`}>Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200">
-                <tr className="bg-white">
-                  <td className="p-3 font-semibold text-neutral-900">#1 (Bullet Repayment)</td>
-                  <td className="p-3 text-neutral-700 font-medium">{formatDate(dueDate)}</td>
-                  <td className="p-3 text-right font-medium text-neutral-900">{formatCurrency(loanAmount)}</td>
-                  <td className="p-3 text-right font-medium text-neutral-900">{formatCurrency(totalInterest)}</td>
-                  <td className="p-3 text-right font-extrabold text-accent-700">{formatCurrency(totalRepaymentAmount)}</td>
+              <tbody>
+                <tr>
+                  <td className={`${td} font-semibold`}>One single payment</td>
+                  <td className={td}>{formatDate(dueDate)}</td>
+                  <td className={`${td} text-right tabular-nums`}>{formatCurrency(loanAmount)}</td>
+                  <td className={`${td} text-right tabular-nums`}>{formatCurrency(totalInterest)}</td>
+                  <td className={`${td} text-right font-bold tabular-nums text-[#0E3B2C]`}>{formatCurrency(totalRepaymentAmount)}</td>
                 </tr>
               </tbody>
             </table>
@@ -1251,19 +1307,18 @@ function KfsMiniStatementModal({ lan, kfs, loan, offer, lender, customer, bank, 
         </div>
 
         {/* Regulatory Notices */}
-        <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-[11px] text-neutral-600 leading-relaxed">
-          <p className="font-bold text-neutral-800">Penal & Late Payment Policy:</p>
-          <p className="mt-1">
-            Penal charges of 0.1% per day will be levied on overdue principal for any delay post due date. Cheque/E-NACH bounce charges of ₹500 + GST apply per bounce attempt. Cooling-off period of 3 days is provided during which the borrower can exit by paying principal + proportionate APR.
+        <div className="mt-8 rounded-2xl bg-[#F7F9F6] p-5 text-sm leading-6 text-slate-600">
+          <p className="font-bold text-[#13211A]">If you pay late</p>
+          <p className="mt-1.5">
+            Penal charges of 0.1% per day apply on the overdue principal after the due date. A
+            bounced payment costs ₹500 plus GST each time. You also have a 3-day cooling-off
+            period, during which you can exit by repaying the principal plus the proportionate APR.
           </p>
         </div>
 
-        <div className="mt-6 flex justify-end print:hidden">
-          <button
-            onClick={onClose}
-            className="rounded-xl bg-neutral-900 px-6 py-2.5 text-xs font-bold text-white hover:bg-neutral-800 shadow"
-          >
-            Close Statement View
+        <div className="mt-7 flex justify-end print:hidden">
+          <button onClick={onClose} className={BTN_PRIMARY}>
+            Close
           </button>
         </div>
 
@@ -1433,7 +1488,7 @@ function MandateStep({ lan, data, onNext }) {
             onResponse: async () => {
               await handleManualCheckStatus();
             },
-            theme: '#0284c7',
+            theme: '#0E3B2C',
           });
           startPolling(pollSec);
           return;
@@ -1451,7 +1506,7 @@ function MandateStep({ lan, data, onNext }) {
       const screenWidth = window.screen.availWidth || window.innerWidth;
       const screenHeight = window.screen.availHeight || window.innerHeight;
       window.open(targetUrl, 'EasebuzzMandatePortal', `width=${screenWidth},height=${screenHeight},top=0,left=0,scrollbars=yes,resizable=yes`);
-      setStatusMsg('Easebuzz e-Mandate portal opened in full screen window. Complete authorization to finish setup.');
+      setStatusMsg('The authorization window is open. Finish there and come back to this tab.');
       startPolling(pollSec);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to initiate e-Mandate authorization');
@@ -1480,7 +1535,7 @@ function MandateStep({ lan, data, onNext }) {
         setIsModalOpen(false);
         setErrorMsg('Mandate status check failed or was rejected. Please initiate mandate authorization again.');
       } else {
-        setStatusMsg('Mandate status is still pending authorization with your bank.');
+        setStatusMsg('Your bank has not confirmed the mandate yet.');
       }
     } catch (err) {
       setErrorMsg(err.message || 'Unable to refresh mandate status.');
@@ -1503,86 +1558,82 @@ function MandateStep({ lan, data, onNext }) {
         await onNext();
       } else {
         setIsModalOpen(false);
-        setStatusMsg('Mandate authorization is still pending.');
+        setStatusMsg('Your mandate is not authorized yet.');
       }
     } catch {
       setIsModalOpen(false);
-      setStatusMsg('Mandate modal closed.');
+      setStatusMsg('Authorization window closed.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <StepCard title="e-Mandate Setup" subtitle="Set up auto-debit for your EMI repayments via Easebuzz Autocollect." icon={CreditCard}>
+    <StepCard
+      title="Set up automatic repayment"
+      subtitle="You approve this once with your bank. We only collect what your schedule says."
+      icon={CreditCard}
+    >
       {isCompleted ? (
         <div>
           <CompletedBadge
-            title="e-Mandate Authorized"
-            description="Auto-debit mandate registered and authorized with your bank via Easebuzz Autocollect"
+            title="Automatic repayment is set up"
+            description="Your bank has approved the mandate."
           />
 
-          <div className="mb-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Bank Name</p>
-              <p className="mt-1 text-base font-bold text-neutral-900">{mandateData.bankName || bankData.bankName || '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Account Number</p>
-              <p className="mt-1 font-mono text-base font-bold text-neutral-900">{mandateData.maskedAccountNumber || bankData.accountMasked || '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Maximum Debit Amount</p>
-              <p className="mt-1 text-base font-bold text-neutral-900">{mandateAmount}</p>
-            </div>
-            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold text-neutral-500">Frequency</p>
-              <p className="mt-1 text-base font-bold text-neutral-900">{mandateFrequencyDisplay}</p>
-            </div>
+          <div className="mb-7 grid gap-4 sm:grid-cols-2">
+            <Fact label="Bank" value={mandateData.bankName || bankData.bankName || '—'} />
+            <Fact label="Account number" value={mandateData.maskedAccountNumber || bankData.accountMasked || '—'} mono />
+            <Fact label="Most we can ever collect" value={mandateAmount} />
+            <Fact label="How often" value={mandateFrequencyDisplay} />
           </div>
 
           <div className="flex justify-end">
             <ActionButton onClick={onNext}>
-              Proceed to e-Sign
+              Continue
             </ActionButton>
           </div>
         </div>
       ) : (
         <div>
           {/* Summary Box */}
-          <div className="mb-6 rounded-2xl border border-info-100 bg-info-50/80 p-5">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-info-900 mb-3">
-              e-Mandate Authorization Summary
-            </h4>
-            <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="mb-6 rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
+            <h4 className="text-base font-bold text-[#13211A]">What you are approving</h4>
+            <div className="mt-5 grid gap-5 sm:grid-cols-2">
               <div>
-                <span className="text-xs text-neutral-500 block">Bank Account</span>
-                <strong className="text-neutral-900">{bankData.bankName || 'Verified Bank Account'} ({bankData.accountMasked || '—'})</strong>
+                <p className="text-xs text-slate-500">Bank account</p>
+                <p className="mt-1 text-sm font-semibold text-[#13211A]">
+                  {bankData.bankName || 'Your verified account'} ({bankData.accountMasked || '—'})
+                </p>
               </div>
               <div>
-                <span className="text-xs text-neutral-500 block">Maximum Mandate Ceiling</span>
-                <strong className="text-brand-700">{mandateAmount}</strong>
+                <p className="text-xs text-slate-500">Most we can ever collect</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums text-[#0E3B2C]">{mandateAmount}</p>
               </div>
               <div>
-                <span className="text-xs text-neutral-500 block">Mandate Type</span>
-                <strong className="text-neutral-900">UPI Autopay / eNACH</strong>
+                <p className="text-xs text-slate-500">Method</p>
+                <p className="mt-1 text-sm font-semibold text-[#13211A]">UPI Autopay or netbanking</p>
               </div>
               <div>
-                <span className="text-xs text-neutral-500 block">Debit Frequency</span>
-                <strong className="text-neutral-900">{mandateFrequencyDisplay}</strong>
+                <p className="text-xs text-slate-500">How often</p>
+                <p className="mt-1 text-sm font-semibold text-[#13211A]">{mandateFrequencyDisplay}</p>
               </div>
             </div>
           </div>
 
           {/* Informational Note */}
-          <div className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs leading-relaxed text-neutral-600">
-            <p className="font-semibold text-neutral-800">Important Information:</p>
-            <p className="mt-1">
-              Your mandate authorizes automatic EMI debit according to the repayment schedule. No amount will be debited during setup unless specifically disclosed by the provider.
-            </p>
-          </div>
+          <p className="mb-6 flex items-start gap-2.5 text-sm leading-6 text-slate-500">
+            <ShieldCheck size={16} className="mt-0.5 shrink-0 text-[#1F8A5B]" />
+            Nothing is debited while you set this up. Money is only collected on your repayment
+            date, up to the limit shown above.
+          </p>
 
-          <div className="mb-6 flex items-start gap-3">
+          <label
+            htmlFor="mandateConsent"
+            className={`mb-6 flex cursor-pointer items-start gap-3 rounded-2xl border p-5 transition ${
+              consent ? 'border-[#1F8A5B] bg-[#E7F4EC]' : 'border-slate-200 hover:bg-slate-50'
+            }`}
+          >
             <input
               type="checkbox"
               id="mandateConsent"
@@ -1591,41 +1642,41 @@ function MandateStep({ lan, data, onNext }) {
                 setConsent(e.target.checked);
                 setErrorMsg('');
               }}
-              className="mt-1 h-5 w-5 rounded border-neutral-300 text-info-600 focus:ring-info-600 cursor-pointer"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B]"
             />
-            <label htmlFor="mandateConsent" className="text-sm text-neutral-700 cursor-pointer leading-relaxed">
-              I authorize Fintree Finance Private Limited to register an electronic mandate on my verified bank account for repayment obligations under this loan.
-            </label>
-          </div>
+            <span className="text-sm leading-6 text-[#13211A]">
+              I authorise my lender to set up an electronic mandate on my verified bank account for
+              repayments under this loan.
+            </span>
+          </label>
 
           {errorMsg && (
-            <div className="mb-4 rounded-xl bg-danger-50 p-3.5 text-sm text-danger-700 flex items-start gap-2.5 border border-danger-200">
-              <AlertCircle className="h-5 w-5 shrink-0 text-danger-600 mt-0.5" />
-              <div className="flex-1">{errorMsg}</div>
+            <div className="mb-5">
+              <InlineError message={errorMsg} />
             </div>
           )}
 
           {statusMsg && !errorMsg && (
-            <div className="mb-4 rounded-xl bg-info-50 p-3 text-xs text-info-800 font-medium border border-info-200">
-              {statusMsg}
+            <div className="mb-5">
+              <InlineNote message={statusMsg} />
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="mt-8 flex flex-wrap justify-between items-center gap-4 pt-2">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
             {portalUrl ? (
               <button
                 type="button"
                 onClick={() => handleInitiate(true, selectedMandateType)}
                 disabled={isLoading || isCheckingStatus || !consent}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-xs font-bold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer disabled:opacity-50"
+                className={BTN_SECONDARY}
               >
-                <RotateCcw size={14} />
-                <span>Start New Authorization Session</span>
+                <RotateCcw size={15} />
+                Start again
               </button>
             ) : <div />}
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {/* "Resume e-Mandate" (reopening the stored portalUrl in an iframe) was
                   removed: Easebuzz checkout access keys are single-use — the moment the
                   SDK popup opens once (see the accessKey branch above), that specific key
@@ -1641,17 +1692,15 @@ function MandateStep({ lan, data, onNext }) {
                     loading={isLoading || isCheckingStatus}
                     disabled={!consent}
                     variant="slate"
-                    className="!bg-neutral-800 hover:!bg-neutral-900 text-white"
                   >
-                    Set Up via Netbanking / Debit Card
+                    Use netbanking or debit card
                   </ActionButton>
                   <ActionButton
                     onClick={() => handleInitiate(false, 'UPI')}
                     loading={isLoading || isCheckingStatus}
                     disabled={!consent}
-                    variant="blue"
                   >
-                    Set Up via UPI Autopay
+                    Use UPI Autopay
                   </ActionButton>
                 </>
               ) : (
@@ -1659,52 +1708,52 @@ function MandateStep({ lan, data, onNext }) {
                   onClick={() => handleInitiate(false)}
                   loading={isLoading || isCheckingStatus}
                   disabled={!consent}
-                  variant="blue"
                 >
-                  {isCheckingStatus ? 'Checking Status…' : 'Re-open Mandate Portal'}
+                  {isCheckingStatus ? 'Checking' : 'Open the authorization window'}
                 </ActionButton>
               )}
             </div>
           </div>
 
+          {!consent && !isLoading && (
+            <p className="mt-3 flex items-center justify-end gap-1.5 text-sm text-slate-500">
+              Tick the box above to continue
+            </p>
+          )}
+
           {/* Secure Same-Page Modal Overlay - Full Screen */}
           {isModalOpen && portalUrl && isAllowedEasebuzzUrl(portalUrl) && (
             <div className="fixed inset-0 z-50 flex flex-col bg-white animate-in fade-in duration-200">
-              <div className="relative w-full h-full bg-white flex flex-col overflow-hidden border-0">
+              <div className="relative flex h-full w-full flex-col overflow-hidden bg-white">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3 bg-neutral-50 shrink-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-brand-500 animate-pulse" />
-                      <h3 className="text-base font-bold text-neutral-900">e-Mandate Authorization</h3>
-                    </div>
-                    {transactionId && (
-                      <span className="rounded-lg bg-neutral-200/80 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-neutral-700">
-                        TxID: {transactionId}
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-3.5">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <h3 className="text-base font-bold text-[#13211A]">Authorizing with your bank</h3>
+                    {mandateStatus && (
+                      <span className="w-fit rounded-full bg-[#E7F4EC] px-3 py-1 text-xs font-semibold text-[#0E3B2C]">
+                        {mandateStatus.toLowerCase().replace(/_/g, ' ')}
                       </span>
                     )}
-                    {mandateStatus && (
-                      <span className="rounded-lg bg-info-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-info-800">
-                        {mandateStatus}
-                      </span>
+                    {transactionId && (
+                      <span className="w-fit text-xs text-slate-400">{transactionId}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => window.open(portalUrl, '_blank', 'noopener,noreferrer')}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-info-600 bg-info-50 px-3 py-1.5 text-xs font-semibold text-info-700 hover:bg-info-100 transition cursor-pointer"
-                      title="Open in new window if provider frame is restricted"
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[#E7F4EC] px-4 py-2 text-sm font-semibold text-[#0E3B2C] transition hover:bg-[#D5EDDF]"
+                      title="Open in a new window if this frame is blocked"
                     >
                       <ExternalLink size={14} />
-                      <span>Open Full Page</span>
+                      Open in a new tab
                     </button>
                     <button
                       type="button"
                       onClick={handleCloseModal}
                       disabled={isLoading}
-                      className="rounded-full p-2 text-neutral-400 hover:bg-neutral-200/80 hover:text-neutral-700 transition cursor-pointer"
-                      title="Close Window"
+                      className="cursor-pointer rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                      title="Close"
                     >
                       <X size={20} />
                     </button>
@@ -1712,7 +1761,7 @@ function MandateStep({ lan, data, onNext }) {
                 </div>
 
                 {/* Modal Body / Iframe */}
-                <div className="flex-1 w-full bg-white relative overflow-hidden">
+                <div className="relative w-full flex-1 overflow-hidden bg-white">
                   <iframe
                     src={portalUrl}
                     title="Easebuzz e-Mandate Authorization"
@@ -1723,27 +1772,27 @@ function MandateStep({ lan, data, onNext }) {
                 </div>
 
                 {/* Modal Footer */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 px-5 py-3.5 bg-neutral-50 text-xs">
-                  <div className="flex items-center gap-2 text-neutral-600">
-                    <LoaderCircle className="h-4 w-4 animate-spin text-info-600" />
-                    <span>Checking mandate status with your bank…</span>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3.5">
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <LoaderCircle className="h-4 w-4 animate-spin text-[#1F8A5B]" />
+                    <span>Waiting for your bank to confirm…</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={handleManualCheckStatus}
                       disabled={isLoading}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 font-semibold text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
+                      className={BTN_SECONDARY}
                     >
-                      {isLoading ? <LoaderCircle size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-                      <span>Refresh Status</span>
+                      {isLoading ? <LoaderCircle size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                      Refresh
                     </button>
                     <button
                       type="button"
                       onClick={handleCloseModal}
-                      className="rounded-lg border border-neutral-300 bg-neutral-200/60 px-3 py-1.5 font-semibold text-neutral-800 hover:bg-neutral-300 transition cursor-pointer"
+                      className={BTN_SECONDARY}
                     >
-                      Cancel / Close
+                      Close
                     </button>
                   </div>
                 </div>
@@ -1859,7 +1908,7 @@ function EsignStep({ lan, data, onNext }) {
       setOtpSent(true);
       setExpiresTimer(res.expiresInSeconds || 300);
       setResendTimer(res.resendAfterSeconds || 60);
-      setStatusMsg(`OTP sent to your verified mobile number (${res.maskedMobile}).`);
+      setStatusMsg(`We sent a code to ${res.maskedMobile}.`);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to send OTP.');
     } finally {
@@ -1888,152 +1937,172 @@ function EsignStep({ lan, data, onNext }) {
   };
 
   return (
-    <StepCard title="e-Sign Loan Agreement" subtitle="Electronically accept your loan agreement using mobile OTP authentication." icon={PenLine}>
+    <StepCard
+      title="Read and sign your agreement"
+      subtitle="Open the agreement, then sign it with a code sent to your mobile."
+      icon={PenLine}
+    >
       {isCompleted ? (
         <div>
           <CompletedBadge
-            title="Loan Agreement Electronically Accepted"
-            description="Agreement electronically accepted via OTP authentication and stamped with legal evidence"
+            title="Agreement signed"
+            description="Signed with an OTP from your registered mobile number."
           />
 
           {errorMsg && (
-            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-danger-200 bg-danger-50/90 p-4 text-xs font-medium text-danger-800">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" />
-              <div className="flex-1 leading-relaxed">{errorMsg}</div>
+            <div className="mb-6">
+              <InlineError message={errorMsg} />
             </div>
           )}
 
-          <div className="mb-6 flex flex-wrap gap-3">
+          <div className="mb-7 flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => handleDownloadDocument('accepted')}
               disabled={downloadingDoc === 'accepted'}
-              className="inline-flex items-center gap-2 rounded-xl border border-info-200 bg-info-50 px-4 py-2.5 text-xs font-bold text-info-700 transition hover:bg-info-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={BTN_SOFT}
             >
-              {downloadingDoc === 'accepted' ? <LoaderCircle size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-              <span>Download Accepted Agreement</span>
+              {downloadingDoc === 'accepted' ? <LoaderCircle size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+              Download your agreement
             </button>
 
             <button
               type="button"
               onClick={() => handleDownloadDocument('audit')}
               disabled={downloadingDoc === 'audit'}
-              className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-xs font-bold text-neutral-700 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className={BTN_SECONDARY}
             >
-              {downloadingDoc === 'audit' ? <LoaderCircle size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-              <span>Download Audit Certificate</span>
+              {downloadingDoc === 'audit' ? <LoaderCircle size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+              Download the signing certificate
             </button>
           </div>
 
           <div className="flex justify-end">
-            <ActionButton onClick={onNext} variant="blue">
-              Proceed to Disbursal
+            <ActionButton onClick={onNext}>
+              Continue
             </ActionButton>
           </div>
         </div>
       ) : (
         <div>
           {/* Information & Preview Action */}
-          <div className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
-            <h4 className="text-sm font-bold text-neutral-900 mb-1">Electronic Agreement Acceptance</h4>
-            <p className="text-xs text-neutral-600 mb-4">
-              Please preview your complete loan agreement. Once viewed, check the consent box and enter the OTP sent to your registered mobile number to execute acceptance.
+          <div className="mb-7 rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
+            <h4 className="text-base font-bold text-[#13211A]">Read it before you sign</h4>
+            <p className="mt-1.5 text-sm leading-6 text-slate-500">
+              Open your loan agreement and read it through. Then tick the box and enter the code we
+              send to your registered mobile number.
             </p>
 
-            <div className="flex items-center gap-3">
+            <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={handleOpenPreview}
-                className="inline-flex items-center gap-2 rounded-xl border border-info-600 bg-info-50 px-4 py-2.5 text-xs font-bold text-info-700 hover:bg-info-100 transition cursor-pointer"
+                className={BTN_SOFT}
               >
-                <Eye size={15} />
-                <span>View Agreement Document</span>
+                <Eye size={16} />
+                Open the agreement
               </button>
               {documentViewed && (
-                <span className="inline-flex items-center gap-1 font-semibold text-xs text-brand-700 bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200">
-                  <CheckCircle2 size={13} />
-                  <span>Document Viewed</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-sm font-semibold text-[#0E3B2C]">
+                  <CheckCircle2 size={15} className="text-[#1F8A5B]" />
+                  Opened
                 </span>
               )}
             </div>
           </div>
 
           {/* Consent Checkbox */}
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-neutral-200 p-4 bg-white shadow-xs">
+          <label
+            htmlFor="esignConsent"
+            className={`mb-6 flex items-start gap-3 rounded-2xl border p-5 transition ${
+              !documentViewed
+                ? 'cursor-not-allowed border-slate-200 opacity-60'
+                : consent
+                  ? 'cursor-pointer border-[#1F8A5B] bg-[#E7F4EC]'
+                  : 'cursor-pointer border-slate-200 hover:bg-slate-50'
+            }`}
+          >
             <input
               type="checkbox"
               id="esignConsent"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
               disabled={!documentViewed}
-              className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-info-600 focus:ring-info-500 cursor-pointer disabled:opacity-50"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-[#1F8A5B] disabled:opacity-50"
             />
-            <label htmlFor="esignConsent" className="text-xs leading-relaxed text-neutral-700 cursor-pointer">
-              I confirm that I have read and understood the Personal Loan Agreement. I consent to execute and accept this agreement electronically using the OTP sent to my verified mobile number. I acknowledge that my authenticated session, document hash, timestamp, IP address and device information will be recorded as evidence of this acceptance.
-            </label>
-          </div>
+            <span className="text-sm leading-6 text-[#13211A]">
+              I have read and understood the loan agreement, and I agree to sign it electronically
+              using the code sent to my verified mobile number. I understand that my session,
+              document hash, timestamp, IP address and device details are recorded as proof of this
+              signature.
+            </span>
+          </label>
 
           {errorMsg && (
-            <div className="mb-4 rounded-xl bg-danger-50 p-3.5 text-xs text-danger-700 flex items-start gap-2 border border-danger-200">
-              <AlertCircle className="h-4 w-4 shrink-0 text-danger-600 mt-0.5" />
-              <span>{errorMsg}</span>
+            <div className="mb-5">
+              <InlineError message={errorMsg} />
             </div>
           )}
 
           {statusMsg && !errorMsg && (
-            <div className="mb-4 rounded-xl bg-info-50 p-3 text-xs text-info-800 font-medium border border-info-200">
-              {statusMsg}
+            <div className="mb-5">
+              <InlineNote message={statusMsg} />
             </div>
           )}
 
           {/* OTP Generation & Entry Form */}
           {!otpSent ? (
-            <div className="flex justify-end">
-              <ActionButton
-                onClick={handleSendOtp}
-                loading={isLoading}
-                disabled={!documentViewed || !consent}
-                variant="blue"
-              >
-                Send Signing OTP
-              </ActionButton>
+            <div>
+              <div className="flex justify-end">
+                <ActionButton
+                  onClick={handleSendOtp}
+                  loading={isLoading}
+                  disabled={!documentViewed || !consent}
+                >
+                  Send me the code
+                </ActionButton>
+              </div>
+              {(!documentViewed || !consent) && !isLoading && (
+                <p className="mt-3 text-right text-sm text-slate-500">
+                  {!documentViewed ? 'Open the agreement first' : 'Tick the box above to continue'}
+                </p>
+              )}
             </div>
           ) : (
-            <div className="rounded-2xl border border-info-100 bg-info-50/50 p-5 mb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <label className="text-xs font-bold text-neutral-900">
-                  Enter 6-Digit Signing OTP
-                </label>
-                <div className="flex items-center gap-3 text-[11px] font-semibold text-neutral-500">
+            <div className="rounded-2xl bg-[#F7F9F6] p-5 sm:p-6">
+              <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                <p className="text-base font-bold text-[#13211A]">
+                  Enter the 6-digit code
+                </p>
+                <div className="flex items-center gap-3 text-sm text-slate-500">
                   <span>Sent to {maskedMobile}</span>
                   {expiresTimer > 0 && (
-                    <span className="text-info-700 font-mono">
+                    <span className="tabular-nums text-[#1F8A5B]">
                       Expires in {Math.floor(expiresTimer / 60)}:{(expiresTimer % 60).toString().padStart(2, '0')}
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <OtpInput length={6} value={otp} onChange={setOtp} autoFocus />
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <ActionButton
                     onClick={handleVerifyOtp}
                     loading={isLoading}
                     disabled={otp.length !== 6}
-                    variant="blue"
                   >
-                    Verify & Accept Agreement
+                    Sign the agreement
                   </ActionButton>
 
                   <button
                     type="button"
                     onClick={handleSendOtp}
                     disabled={isLoading || resendTimer > 0}
-                    className="rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-xs font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 transition cursor-pointer"
+                    className={BTN_SECONDARY}
                   >
-                    {resendTimer > 0 ? `Resend (${resendTimer}s)` : 'Resend OTP'}
+                    {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend the code'}
                   </button>
                 </div>
               </div>
@@ -2042,27 +2111,24 @@ function EsignStep({ lan, data, onNext }) {
 
           {/* Document Preview Modal */}
           {isPreviewOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="relative w-full max-w-4xl h-[90vh] sm:h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-neutral-200">
-                <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 bg-neutral-50">
-                  <div className="flex items-center gap-2">
-                    <PenLine className="h-5 w-5 text-info-600" />
-                    <h3 className="text-base font-bold text-neutral-900">Personal Loan Agreement Preview</h3>
-                  </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A2318]/70 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-6">
+              <div className="relative flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl sm:h-[85vh]">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                  <h3 className="text-base font-bold text-[#13211A]">Your loan agreement</h3>
                   <button
                     type="button"
                     onClick={() => setIsPreviewOpen(false)}
-                    className="rounded-full p-2 text-neutral-400 hover:bg-neutral-200/80 hover:text-neutral-700 transition cursor-pointer"
+                    className="cursor-pointer rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                   >
                     <X size={20} />
                   </button>
                 </div>
 
-                <div className="flex-1 w-full bg-neutral-100 relative overflow-hidden">
+                <div className="relative w-full flex-1 overflow-hidden bg-slate-100">
                   {previewLoading ? (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-neutral-500">
-                      <LoaderCircle className="h-6 w-6 animate-spin" />
-                      <span className="text-xs font-semibold">Loading agreement...</span>
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-slate-500">
+                      <LoaderCircle className="h-6 w-6 animate-spin text-[#1F8A5B]" />
+                      <span className="text-sm">Loading your agreement…</span>
                     </div>
                   ) : previewBlobUrl ? (
                     <iframe
@@ -2071,21 +2137,21 @@ function EsignStep({ lan, data, onNext }) {
                       className="h-full w-full border-0"
                     />
                   ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center text-neutral-500">
-                      <AlertCircle className="h-6 w-6 text-danger-500" />
-                      <span className="text-xs font-semibold">{errorMsg || 'Unable to load the agreement.'}</span>
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center text-slate-500">
+                      <AlertCircle className="h-6 w-6 text-rose-500" />
+                      <span className="text-sm">{errorMsg || 'We could not load the agreement.'}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between border-t border-neutral-100 px-5 py-3.5 bg-neutral-50 text-xs">
-                  <span className="text-neutral-600 font-medium">Please review all pages of your agreement before accepting.</span>
+                <div className="flex items-center justify-between gap-4 border-t border-slate-100 px-5 py-4">
+                  <span className="text-sm text-slate-500">Read every page before you sign.</span>
                   <button
                     type="button"
                     onClick={() => setIsPreviewOpen(false)}
-                    className="rounded-xl border border-info-600 bg-info-600 px-4 py-2 text-xs font-bold text-white hover:bg-info-700 transition cursor-pointer"
+                    className={BTN_PRIMARY}
                   >
-                    Close Preview
+                    Done reading
                   </button>
                 </div>
               </div>
@@ -2106,13 +2172,13 @@ function DisbursalStep({ lan, data, onRefresh: _onRefresh, onGoToStep }) {
   const workflow = data?.workflow || {};
 
   const missingSteps = [];
-  if (!workflow.offerAccepted) missingSteps.push({ id: 'APPROVAL_SUMMARY', name: 'Offer Acceptance' });
-  if (!workflow.digilockerVerified) missingSteps.push({ id: 'DIGILOCKER_KYC', name: 'Aadhaar KYC' });
-  if (!workflow.addressConfirmed) missingSteps.push({ id: 'ADDRESS_CONFIRMATION', name: 'Address Confirmation' });
-  if (!workflow.bankVerified) missingSteps.push({ id: 'BANK_VERIFICATION', name: 'Bank Account Verification' });
-  if (!workflow.kfsAccepted) missingSteps.push({ id: 'KFS_ACCEPTANCE', name: 'Key Fact Statement (KFS)' });
-  if (!workflow.mandateCompleted) missingSteps.push({ id: 'EMANDATE', name: 'e-Mandate Setup' });
-  if (!workflow.esignCompleted) missingSteps.push({ id: 'ESIGN', name: 'e-Sign Loan Agreement' });
+  if (!workflow.offerAccepted) missingSteps.push({ id: 'APPROVAL_SUMMARY', name: 'Accept your offer' });
+  if (!workflow.digilockerVerified) missingSteps.push({ id: 'DIGILOCKER_KYC', name: 'Aadhaar check' });
+  if (!workflow.addressConfirmed) missingSteps.push({ id: 'ADDRESS_CONFIRMATION', name: 'Confirm your address' });
+  if (!workflow.bankVerified) missingSteps.push({ id: 'BANK_VERIFICATION', name: 'Verify your bank account' });
+  if (!workflow.kfsAccepted) missingSteps.push({ id: 'KFS_ACCEPTANCE', name: 'Accept the key facts' });
+  if (!workflow.mandateCompleted) missingSteps.push({ id: 'EMANDATE', name: 'Set up automatic repayment' });
+  if (!workflow.esignCompleted) missingSteps.push({ id: 'ESIGN', name: 'Sign your agreement' });
 
   const allCompleted = missingSteps.length === 0;
 
@@ -2141,117 +2207,106 @@ function DisbursalStep({ lan, data, onRefresh: _onRefresh, onGoToStep }) {
 
   return (
     <StepCard
-      title={isDisbursed ? 'Loan Disbursed!' : 'Ready for Disbursal'}
+      title={isDisbursed ? 'Your money is on its way' : 'Ready for your money'}
       subtitle={
         isDisbursed
-          ? 'Your loan amount has been credited to your bank account.'
+          ? 'The loan has been sent to your bank account.'
           : allCompleted
-            ? 'All steps completed! Request your loan disbursal below.'
-            : 'Complete remaining steps to request disbursal.'
+            ? 'Everything is done. Ask for your money below.'
+            : 'A couple of things are still pending.'
       }
       icon={Landmark}
     >
-      <div className="py-4">
-        {/* Case A: Already Disbursed */}
-        {isDisbursed ? (
-          <div className="text-center">
-            <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-brand-100 text-brand-600 ring-8 ring-brand-50">
-              <CheckCircle2 size={40} />
-            </div>
-            <h3 className="mt-5 text-2xl font-extrabold text-neutral-900">
-              Disbursement Successful!
-            </h3>
-            <p className="mt-2 text-sm text-neutral-600 max-w-md mx-auto">
-              The loan amount of <strong className="text-brand-700">{disbursalAmount}</strong> has been credited to your bank account.
-            </p>
+      {/* Case A: Already Disbursed */}
+      {isDisbursed ? (
+        <div className="text-center">
+          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-[#E7F4EC] text-[#1F8A5B] ring-8 ring-[#E7F4EC]/50">
+            <CheckCircle2 size={38} />
+          </div>
+          <h3 className="mt-6 text-2xl font-bold tracking-tight text-[#13211A]">
+            Sent to your bank
+          </h3>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+            <strong className="font-semibold tabular-nums text-[#0E3B2C]">{disbursalAmount}</strong> has
+            been credited to your account.
+          </p>
 
-            <div className="mt-6 max-w-lg mx-auto rounded-2xl border border-brand-200 bg-brand-50/50 p-5 text-left text-sm space-y-3">
-              <div className="flex justify-between border-b border-brand-100 pb-2">
-                <span className="text-neutral-500 font-medium">Loan Account Number (LAN)</span>
-                <span className="font-mono font-bold text-neutral-900">{data?.loan?.lan}</span>
-              </div>
-              <div className="flex justify-between border-b border-brand-100 pb-2">
-                <span className="text-neutral-500 font-medium">Bank Name</span>
-                <span className="font-bold text-neutral-900">{data?.bank?.bankName || '—'}</span>
-              </div>
-              <div className="flex justify-between border-b border-brand-100 pb-2">
-                <span className="text-neutral-500 font-medium">Account Number</span>
-                <span className="font-mono font-bold text-neutral-900">{data?.bank?.accountMasked || '—'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500 font-medium">Account Holder</span>
-                <span className="font-bold text-neutral-900">{data?.bank?.accountHolderName || data?.customer?.fullName || '—'}</span>
-              </div>
+          <div className="mx-auto mt-7 grid max-w-lg gap-4 text-left sm:grid-cols-2">
+            <Fact label="Loan account number" value={data?.loan?.lan} mono />
+            <Fact label="Bank" value={data?.bank?.bankName || '—'} />
+            <Fact label="Account number" value={data?.bank?.accountMasked || '—'} mono />
+            <Fact label="Account holder" value={data?.bank?.accountHolderName || data?.customer?.fullName || '—'} />
+          </div>
+        </div>
+      ) : !allCompleted ? (
+        /* Case B: Incomplete Steps */
+        <div>
+          <div className="flex items-start gap-3.5 rounded-2xl bg-amber-50 p-5">
+            <AlertCircle size={20} className="mt-0.5 shrink-0 text-amber-700" />
+            <div>
+              <h3 className="text-base font-bold text-[#13211A]">Still to do</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                We can only send your money once these are finished.
+              </p>
             </div>
           </div>
-        ) : !allCompleted ? (
-          /* Case B: Incomplete Steps */
-          <div className="rounded-2xl border border-caution-200 bg-caution-50/80 p-6 text-caution-950">
-            <div className="flex items-center gap-3 text-caution-800 font-bold text-lg">
-              <AlertCircle size={22} />
-              <span>Complete Pending Steps</span>
-            </div>
-            <p className="mt-2 text-sm text-caution-900 leading-relaxed">
-              Disbursal cannot be requested until all post-approval steps are stored in the database. Please complete the following pending steps:
-            </p>
-            <ul className="mt-4 space-y-2">
-              {missingSteps.map((step) => (
-                <li key={step.id} className="flex items-center justify-between rounded-xl bg-white/80 p-3 border border-caution-200 text-sm">
-                  <span className="font-semibold text-neutral-800">{step.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => onGoToStep(step.id)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-700 hover:text-brand-800 cursor-pointer"
-                  >
-                    Complete step <ChevronRight size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+
+          <ul className="mt-5 space-y-3">
+            {missingSteps.map((step) => (
+              <li
+                key={step.id}
+                className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-4"
+              >
+                <span className="text-sm font-semibold text-[#13211A]">{step.name}</span>
+                <button
+                  type="button"
+                  onClick={() => onGoToStep(step.id)}
+                  className="inline-flex cursor-pointer items-center gap-1 text-sm font-semibold text-[#1F8A5B] transition hover:text-[#0E3B2C]"
+                >
+                  Finish this <ChevronRight size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        /* Case C: All Completed & Ready for Disbursal */
+        <div className="text-center">
+          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-[#E7F4EC] text-[#1F8A5B] ring-8 ring-[#E7F4EC]/50">
+            <Landmark size={34} />
           </div>
-        ) : (
-          /* Case C: All Completed & Ready for Disbursal */
-          <div className="text-center">
-            <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-info-100 text-info-600 ring-8 ring-info-50">
-              <Landmark size={36} />
-            </div>
-            <h3 className="mt-5 text-xl font-extrabold text-neutral-900">
-              All Steps Completed Successfully!
-            </h3>
-            <p className="mt-2 text-sm text-neutral-500 max-w-md mx-auto">
-              All your verification documents, bank details, KFS agreement, and mandate are verified and stored in the DB.
+          <h3 className="mt-6 text-2xl font-bold tracking-tight text-[#13211A]">
+            Everything is done
+          </h3>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+            Your bank account, key facts, mandate and agreement are all confirmed.
+          </p>
+
+          <div className="mx-auto mt-7 max-w-lg rounded-2xl bg-[#0E3B2C] p-6 text-white">
+            <p className="text-sm text-emerald-100/70">You will receive</p>
+            <p className="mt-2 text-4xl font-bold tracking-tight tabular-nums">{disbursalAmount}</p>
+            <p className="mt-3 text-xs text-emerald-100/60">
+              {data?.bank?.bankName || 'Your bank'} · {data?.bank?.accountMasked || '—'}
             </p>
-
-            <div className="mt-6 max-w-lg mx-auto rounded-2xl border border-neutral-200 bg-neutral-50 p-5 text-left text-sm space-y-3">
-              <div className="flex justify-between border-b border-neutral-200 pb-2">
-                <span className="text-neutral-500 font-medium">Net Disbursal Amount</span>
-                <span className="font-extrabold text-brand-700 text-base">{disbursalAmount}</span>
-              </div>
-              <div className="flex justify-between border-b border-neutral-200 pb-2">
-                <span className="text-neutral-500 font-medium">Destination Bank</span>
-                <span className="font-bold text-neutral-900">{data?.bank?.bankName || '—'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500 font-medium">Destination Account</span>
-                <span className="font-mono font-bold text-neutral-900">{data?.bank?.accountMasked || '—'}</span>
-              </div>
-            </div>
-
-            {errorMsg && (
-              <div className="mt-4 max-w-lg mx-auto rounded-xl bg-danger-50 p-3 text-sm text-danger-700 flex items-center gap-2 text-left">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <div className="mt-8 flex justify-center">
-              <ActionButton onClick={handleRequest} loading={isLoading}>
-                Request Disbursal
-              </ActionButton>
-            </div>
           </div>
-        )}
-      </div>
+
+          {errorMsg && (
+            <div className="mx-auto mt-5 max-w-lg text-left">
+              <InlineError message={errorMsg} />
+            </div>
+          )}
+
+          <div className="mt-8 flex justify-center">
+            <ActionButton onClick={handleRequest} loading={isLoading}>
+              Send me my money
+            </ActionButton>
+          </div>
+
+          <p className="mt-4 text-xs text-slate-400">
+            Most transfers reach the account within a few hours.
+          </p>
+        </div>
+      )}
     </StepCard>
   );
 }
