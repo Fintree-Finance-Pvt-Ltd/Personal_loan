@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  plApplicationStageReminder: any;
+
   /**
    * Off by default. Set PRISMA_SLOW_QUERY_MS (e.g. 200) to log every SQL statement that
    * takes at least that long - the fastest way to find the query behind a slow endpoint.
