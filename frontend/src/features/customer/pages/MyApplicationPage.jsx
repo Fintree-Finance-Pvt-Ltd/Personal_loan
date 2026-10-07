@@ -338,12 +338,17 @@ function deriveCustomerWorkflow(customer) {
     (Array.isArray(customer.plPaymentLinks) && customer.plPaymentLinks.some((p) => p.status === 'SUCCESS')),
   );
 
-  const hasActiveApplication = Boolean(customer.latestApplicationId);
+  const hasCompletedBasicDetails =
+  mobileVerified &&
+  panVerified &&
+  hasFullName &&
+  hasPanNumber &&
+  hasDob &&
+  hasGender;
 
-  let basicDetailsCompleted =
-    assessmentFeePaid ||
-    hasActiveApplication ||
-    (mobileVerified && panVerified && hasFullName && hasPanNumber && hasDob && hasGender);
+let basicDetailsCompleted =
+  assessmentFeePaid &&
+  hasCompletedBasicDetails;
 
   const empType = customer.employmentType;
   let profileDetailsCompleted = false;
