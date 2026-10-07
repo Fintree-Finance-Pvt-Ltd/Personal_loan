@@ -45,6 +45,7 @@ import { IvrModule } from './modules/integrations/ivr/ivr.module';
 import { SmsModule } from './modules/integrations/sms/sms.module';
 import { WhatsAppModule } from './modules/integrations/whatsapp/whatsapp.module';
 import { ReferralModule } from './modules/referral/referral.module';
+import { StageReminderModule } from './modules/stage-reminder/stage-reminder.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { ReferralModule } from './modules/referral/referral.module';
     SmsModule,
     WhatsAppModule,
     ReferralModule,
+    StageReminderModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
