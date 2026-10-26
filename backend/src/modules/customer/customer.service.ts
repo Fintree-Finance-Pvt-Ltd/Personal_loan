@@ -686,11 +686,43 @@ export class CustomerService {
       throw new NotFoundException('Customer not found.');
     }
     
-    if (!customer.applications || customer.applications.length === 0) {
-      throw new BadRequestException('Customer has no applications');
+    let latestApp = customer.applications?.[0];
+
+    // If customer has no application yet, auto-provision dummy KYC and draft application
+    if (!latestApp) {
+      const panToUse = customer.panNumber || `ABCDE${Math.floor(1000 + Math.random() * 9000)}F`;
+      await this.prisma.customer.update({
+        where: { id: customerId },
+        data: {
+          fullName: customer.fullName || 'Demo Applicant',
+          firstName: customer.firstName || 'Demo',
+          lastName: customer.lastName || 'Applicant',
+          panNumber: panToUse,
+          panVerified: true,
+          panVerifiedAt: new Date(),
+          dateOfBirth: customer.dateOfBirth || new Date('1995-05-15'),
+          gender: customer.gender || 'MALE',
+          residentialPincode: customer.residentialPincode || '110001',
+          residentialCity: customer.residentialCity || 'Delhi',
+          residentialState: customer.residentialState || 'Delhi',
+          aadhaarVerified: true,
+          aadhaarVerifiedAt: new Date(),
+          aadhaarLastFourDigits: customer.aadhaarLastFourDigits || '1234',
+        },
+      });
+
+      const datePart = new Date().toISOString().slice(2, 10).replaceAll('-', '');
+      const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+      latestApp = await this.prisma.plApplication.create({
+        data: {
+          customerId,
+          applicationNumber: `APP-${datePart}-${randomPart}`,
+          status: PlApplicationStatus.SUBMITTED,
+          submittedAt: new Date(),
+          requestedAmount: 50000,
+        },
+      });
     }
-    
-    const latestApp = customer.applications[0];
 
     const status = body?.approved === false ? CustomerOnboardingStatus.LENDER_REJECTED : CustomerOnboardingStatus.LENDER_APPROVED;
 
@@ -722,6 +754,7 @@ export class CustomerService {
     return {
       success: true,
       message: `Application status updated to ${status}.`,
+      lan: loan?.lan,
       data: {
         customerId: customer.id.toString(),
         onboardingStatus: status,
@@ -1154,10 +1187,23 @@ export class CustomerService {
     if (!customer) throw new NotFoundException('Customer not found');
 
     let loan = customer.loans?.[0];
-    const latestApp = customer.applications?.[0];
+    let latestApp = customer.applications?.[0];
+
+    if (!latestApp) {
+      const datePart = new Date().toISOString().slice(2, 10).replaceAll('-', '');
+      const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+      latestApp = await this.prisma.plApplication.create({
+        data: {
+          customerId,
+          applicationNumber: `APP-${datePart}-${randomPart}`,
+          status: PlApplicationStatus.LENDER_APPROVED,
+          submittedAt: new Date(),
+          approvedAmount: 15000,
+        },
+      });
+    }
 
     if (!loan) {
-      if (!latestApp) throw new BadRequestException('Customer has no applications');
       loan = await this.loanService.createLoanAfterApproval(latestApp.id, customerId, 15000);
     }
 
@@ -1235,10 +1281,23 @@ export class CustomerService {
     if (!customer) throw new NotFoundException('Customer not found');
 
     let loan = customer.loans?.[0];
-    const latestApp = customer.applications?.[0];
+    let latestApp = customer.applications?.[0];
+
+    if (!latestApp) {
+      const datePart = new Date().toISOString().slice(2, 10).replaceAll('-', '');
+      const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+      latestApp = await this.prisma.plApplication.create({
+        data: {
+          customerId,
+          applicationNumber: `APP-${datePart}-${randomPart}`,
+          status: PlApplicationStatus.LENDER_APPROVED,
+          submittedAt: new Date(),
+          approvedAmount: 15000,
+        },
+      });
+    }
 
     if (!loan) {
-      if (!latestApp) throw new BadRequestException('Customer has no applications');
       loan = await this.loanService.createLoanAfterApproval(latestApp.id, customerId, 15000);
     }
 
@@ -1273,10 +1332,23 @@ export class CustomerService {
     if (!customer) throw new NotFoundException('Customer not found');
 
     let loan = customer.loans?.[0];
-    const latestApp = customer.applications?.[0];
+    let latestApp = customer.applications?.[0];
+
+    if (!latestApp) {
+      const datePart = new Date().toISOString().slice(2, 10).replaceAll('-', '');
+      const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+      latestApp = await this.prisma.plApplication.create({
+        data: {
+          customerId,
+          applicationNumber: `APP-${datePart}-${randomPart}`,
+          status: PlApplicationStatus.LENDER_APPROVED,
+          submittedAt: new Date(),
+          approvedAmount: 15000,
+        },
+      });
+    }
 
     if (!loan) {
-      if (!latestApp) throw new BadRequestException('Customer has no applications');
       loan = await this.loanService.createLoanAfterApproval(latestApp.id, customerId, 15000);
     }
 

@@ -1760,32 +1760,50 @@ export default function MyApplicationPage() {
       showMessage('Simulating lender approval...', 'info');
       const result = await simulateTestApproval();
       showMessage('Lender approved successfully! Opening Post-Approval Journey...', 'success');
-      await fetchCustomer();
-      if (result?.data?.lan) {
-        navigate(`/customer/loan/${encodeURIComponent(result.data.lan)}/journey`);
+      const targetLan = result?.lan || result?.data?.lan;
+      if (targetLan) {
+        navigate(`/customer/loan/${encodeURIComponent(targetLan)}/journey`);
       } else {
         await fetchCustomer();
       }
     } catch (err) {
-      showMessage(err?.message || 'Failed to simulate lender approval.', 'error');
+      const errorMsg = typeof err === 'string' ? err : err?.message || 'Failed to simulate lender approval.';
+      showMessage(errorMsg, 'error');
     }
   };
 
   return (
     <div className="mx-auto max-w-7xl">
-      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-purple-200 bg-purple-50/80 p-4 shadow-sm">
+      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-purple-200 bg-purple-50/90 p-4 shadow-sm">
         <div>
           <h4 className="text-sm font-bold text-purple-900 flex items-center gap-2">
-            <span>⚡ [Testing Branch] Fast-Track Lender Approval & Disbursal</span>
+            <span>⚡ [Testing Branch] Fast-Track Lender Approval & Stage Skipping</span>
           </h4>
           <p className="text-xs text-purple-700 mt-0.5">
-            Bypass external lender steps and simulate instant approval to test post-approval journey & disbursal.
+            Simulate approval instantly, or click on any stage below to jump/skip freely across all stages.
           </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold text-purple-800 mr-1">Skip to Stage:</span>
+            {FLOW_STEPS.map((s, idx) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => goToStep(s.id)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition cursor-pointer ${
+                  currentStep === s.id
+                    ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
+                    : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-100 hover:border-purple-300'
+                }`}
+              >
+                {idx + 1}. {s.label}
+              </button>
+            ))}
+          </div>
         </div>
         <button
           type="button"
           onClick={handleSimulateApproval}
-          className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:bg-purple-700 cursor-pointer shrink-0"
+          className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-xs font-bold text-white shadow transition hover:bg-purple-700 cursor-pointer shrink-0"
         >
           Simulate Lender Approval
         </button>
@@ -1794,6 +1812,7 @@ export default function MyApplicationPage() {
       <ApplicationProgress
         currentStep={currentStep}
         workflow={workflow}
+        onStepClick={goToStep}
       />
 
       {message && (
@@ -2198,7 +2217,7 @@ function AadhaarKycStep({
   );
 }
 
-function ApplicationProgress({ currentStep, workflow }) {
+function ApplicationProgress({ currentStep, workflow, onStepClick }) {
   const stepIndices = {
     basic_details: 0,
     assessment_fee: 1,
@@ -2224,7 +2243,7 @@ function ApplicationProgress({ currentStep, workflow }) {
             </h1>
 
             <p className="mt-2 text-sm text-emerald-50">
-              Complete all steps and submit your application to the assigned lender.
+              Complete all steps and submit your application to the assigned lender. You can click any stage below to jump directly.
             </p>
           </div>
 
@@ -2307,29 +2326,34 @@ function ApplicationProgress({ currentStep, workflow }) {
 
             return (
               <div key={step.id} className="flex flex-1 items-center">
-                <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onStepClick && onStepClick(step.id)}
+                  className="flex items-center gap-2 cursor-pointer transition hover:opacity-85 group text-left focus:outline-none"
+                  title={`Click to jump to ${step.label}`}
+                >
                   <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${isCompleted
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold transition group-hover:scale-105 ${isCompleted
                         ? 'bg-emerald-600 text-white'
                         : isActive
                           ? 'bg-blue-600 text-white ring-4 ring-blue-100'
-                          : 'bg-slate-100 text-slate-400'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                       }`}
                   >
                     {isCompleted ? <Check size={17} /> : index + 1}
                   </div>
 
                   <span
-                    className={`whitespace-nowrap text-xs font-semibold ${isActive
-                        ? 'text-blue-700'
+                    className={`whitespace-nowrap text-xs font-semibold group-hover:underline ${isActive
+                        ? 'text-blue-700 font-bold'
                         : isCompleted
                           ? 'text-emerald-700'
-                          : 'text-slate-400'
+                          : 'text-slate-500'
                       }`}
                   >
                     {step.label}
                   </span>
-                </div>
+                </button>
 
                 {index < FLOW_STEPS.length - 1 && (
                   <div
@@ -2350,6 +2374,8 @@ function MessageBanner({
   message,
   type,
 }) {
+  if (!message) return null;
+  const content = typeof message === 'object' ? (message?.message || JSON.stringify(message)) : String(message);
   return (
     <div
       className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${type === 'error'
@@ -2357,7 +2383,7 @@ function MessageBanner({
           : 'border-emerald-200 bg-emerald-50 text-emerald-700'
         }`}
     >
-      {message}
+      {content}
     </div>
   );
 }

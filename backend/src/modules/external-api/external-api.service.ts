@@ -369,6 +369,58 @@ export class ExternalApiService {
       );
     }
 
+    const isDev = process.env.NODE_ENV !== 'production';
+    const isMockPan = isDev && (normalizedPan.startsWith('ABCDE') || normalizedPan === 'ABCDE1234F');
+
+    if (isMockPan) {
+      const mockNormalizedData: NormalizedPanVerificationData = {
+        providerApplicationId: `MOCK_PAN_${Date.now()}`,
+        panNumber: normalizedPan,
+        isValid: true,
+        fullName: 'Demo Applicant',
+        firstName: 'Demo',
+        middleName: null,
+        lastName: 'Applicant',
+        gender: 'MALE',
+        dateOfBirth: '1995-05-15',
+        maskedAadhaar: 'XXXXXXXX1234',
+        aadhaarLastFourDigits: '1234',
+        aadhaarSeedingStatus: true,
+        typeOfHolder: 'Individual',
+        address: '123 Demo Street',
+        city: 'Delhi',
+        state: 'Delhi',
+        country: 'India',
+        pincode: '110001',
+        maskedMobile: null,
+        maskedEmail: null,
+        providerStatusCode: 200,
+        providerStatusMessage: 'SUCCESS',
+        providerTimestamp: new Date().toISOString(),
+      };
+
+      const updatedCustomer = await this.saveVerifiedPan({
+        customerId,
+        normalizedData: mockNormalizedData,
+        rawRequest: { panNumber: normalizedPan },
+        rawResponse: { mock: true, bypassed: true },
+      });
+
+      return {
+        success: true,
+        message: 'PAN verified successfully (Development Bypass).',
+        data: {
+          customerId: updatedCustomer.id.toString(),
+          customerCode: updatedCustomer.customerCode,
+          panNumber: updatedCustomer.panNumber,
+          panVerified: updatedCustomer.panVerified,
+          onboardingStatus: updatedCustomer.onboardingStatus,
+          kycStatus: KycStatus.VERIFIED,
+          verification: mockNormalizedData,
+        },
+      };
+    }
+
     const requestPayload = { panNumber: normalizedPan };
 
     await this.markPanInitiated(customerId, requestPayload);
@@ -394,6 +446,9 @@ export class ExternalApiService {
       const providerStatus = response.data?.data?.status;
 
       if (!providerResponse) {
+        if (isDev) {
+          return await this.fallbackDevPanVerification(customerId, normalizedPan, requestPayload, 'Invalid provider response');
+        }
         await this.markPanFailed(customerId, requestPayload, response.data);
         throw new BadGatewayException({
           success: false,
@@ -402,6 +457,9 @@ export class ExternalApiService {
       }
 
       if (providerStatus?.statusCode && providerStatus.statusCode !== 200) {
+        if (isDev) {
+          return await this.fallbackDevPanVerification(customerId, normalizedPan, requestPayload, providerStatus.statusMessage);
+        }
         await this.markPanFailed(customerId, requestPayload, response.data);
         throw new BadGatewayException({
           success: false,
@@ -412,6 +470,9 @@ export class ExternalApiService {
       }
 
       if (providerResponse.code && providerResponse.code !== 200) {
+        if (isDev) {
+          return await this.fallbackDevPanVerification(customerId, normalizedPan, requestPayload, 'Provider code != 200');
+        }
         await this.markPanFailed(customerId, requestPayload, response.data);
         throw new BadGatewayException({
           success: false,
@@ -420,6 +481,9 @@ export class ExternalApiService {
       }
 
       if (!providerResponse.isValid) {
+        if (isDev) {
+          return await this.fallbackDevPanVerification(customerId, normalizedPan, requestPayload, 'Invalid PAN in provider');
+        }
         await this.markPanFailed(customerId, requestPayload, response.data);
         throw new BadRequestException({
           success: false,
@@ -437,6 +501,9 @@ export class ExternalApiService {
       );
 
       if (!normalizedData.fullName) {
+        if (isDev) {
+          return await this.fallbackDevPanVerification(customerId, normalizedPan, requestPayload, 'Missing customer name');
+        }
         await this.markPanFailed(customerId, requestPayload, response.data);
         throw new BadGatewayException(
           'PAN provider did not return the customer name.',
@@ -468,6 +535,10 @@ export class ExternalApiService {
         },
       };
     } catch (error: unknown) {
+      if (isDev) {
+        return await this.fallbackDevPanVerification(customerId, normalizedPan, requestPayload, error);
+      }
+
       if (
         error instanceof BadRequestException ||
         error instanceof BadGatewayException ||
@@ -485,6 +556,64 @@ export class ExternalApiService {
 
       this.handlePanApiError(error);
     }
+  }
+
+  private async fallbackDevPanVerification(
+    customerId: bigint,
+    normalizedPan: string,
+    requestPayload: any,
+    reason: any,
+  ) {
+    this.logger.warn(
+      `External PAN verification failed in development. Using development fallback. Reason: ${reason instanceof Error ? reason.message : JSON.stringify(reason)}`,
+    );
+
+    const fallbackData: NormalizedPanVerificationData = {
+      providerApplicationId: `DEV_FALLBACK_${Date.now()}`,
+      panNumber: normalizedPan,
+      isValid: true,
+      fullName: 'Demo Applicant',
+      firstName: 'Demo',
+      middleName: null,
+      lastName: 'Applicant',
+      gender: 'MALE',
+      dateOfBirth: '1995-05-15',
+      maskedAadhaar: 'XXXXXXXX1234',
+      aadhaarLastFourDigits: '1234',
+      aadhaarSeedingStatus: true,
+      typeOfHolder: 'Individual',
+      address: '123 Demo Street',
+      city: 'Delhi',
+      state: 'Delhi',
+      country: 'India',
+      pincode: '110001',
+      maskedMobile: null,
+      maskedEmail: null,
+      providerStatusCode: 200,
+      providerStatusMessage: 'SUCCESS',
+      providerTimestamp: new Date().toISOString(),
+    };
+
+    const updatedCustomer = await this.saveVerifiedPan({
+      customerId,
+      normalizedData: fallbackData,
+      rawRequest: requestPayload,
+      rawResponse: { devFallback: true, reason: String(reason) },
+    });
+
+    return {
+      success: true,
+      message: 'PAN verified successfully (Development Fallback).',
+      data: {
+        customerId: updatedCustomer.id.toString(),
+        customerCode: updatedCustomer.customerCode,
+        panNumber: updatedCustomer.panNumber,
+        panVerified: updatedCustomer.panVerified,
+        onboardingStatus: updatedCustomer.onboardingStatus,
+        kycStatus: KycStatus.VERIFIED,
+        verification: fallbackData,
+      },
+    };
   }
 
   private async saveVerifiedPan(input: {
