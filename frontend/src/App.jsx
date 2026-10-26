@@ -81,6 +81,7 @@ export default function App() {
         <Route path="/customer/dashboard" element={<CustomerDashboard />} />
         <Route path="/customer/application" element={<MyApplicationPage />} />
         <Route path="/customer/loan/:lan/post-approval" element={<PostApprovalJourneyPage />} />
+        <Route path="/customer/loan/:lan/journey" element={<PostApprovalJourneyPage />} />
         <Route path="/customer/loan/:lan/details" element={<CustomerLoanDetailsPage />} />
         <Route path="/customer/loan-details" element={<CustomerLoanDetailsPage />} />
         <Route path="/customer/profile" element={<CustomerProfilePage />} />

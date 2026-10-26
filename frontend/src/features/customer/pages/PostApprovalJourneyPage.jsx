@@ -72,6 +72,31 @@ export default function PostApprovalJourneyPage() {
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
   const [selectedStepId, setSelectedStepId] = useState(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationMsg, setSimulationMsg] = useState({ text: '', type: '' });
+
+  const handleSimulateAction = async (actionType) => {
+    setIsSimulating(true);
+    setSimulationMsg({ text: 'Processing simulation...', type: 'info' });
+    try {
+      if (actionType === 'mandate') {
+        await simulateTestMandate();
+        setSimulationMsg({ text: '⚡ e-Mandate bypassed & authorized successfully!', type: 'success' });
+      } else if (actionType === 'esign') {
+        await simulateTestEsign();
+        setSimulationMsg({ text: '⚡ e-Sign bypassed & completed successfully!', type: 'success' });
+      } else if (actionType === 'disbursal') {
+        await simulateTestDisbursal();
+        setSimulationMsg({ text: '⚡ Disbursal processed & loan disbursed successfully!', type: 'success' });
+      }
+      await fetchJourney();
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Simulation failed.';
+      setSimulationMsg({ text: msg, type: 'error' });
+    } finally {
+      setIsSimulating(false);
+    }
+  };
 
   const fetchJourney = async () => {
     setIsLoading(true);
@@ -177,13 +202,84 @@ export default function PostApprovalJourneyPage() {
         </div>
       </section>
 
+      {/* Testing Branch Banner */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-purple-200 bg-purple-50/90 p-4 shadow-sm">
+        <div>
+          <h4 className="text-sm font-bold text-purple-900 flex items-center gap-2">
+            <span>⚡ [Testing Branch] Post-Approval Stage Skipping & Fast-Track</span>
+          </h4>
+          <p className="text-xs text-purple-700 mt-0.5">
+            Click on any stage below to jump freely, or simulate next post-approval actions.
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold text-purple-800 mr-1">Skip to Stage:</span>
+            {STEPS.map((s, idx) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSelectedStepId(s.id)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition cursor-pointer ${
+                  activeStepId === s.id
+                    ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
+                    : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-100 hover:border-purple-300'
+                }`}
+              >
+                {idx + 1}. {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateAction('mandate')}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold text-white shadow transition hover:bg-purple-700 cursor-pointer disabled:opacity-50"
+            title="Fast-track e-Mandate authorization"
+          >
+            <Zap size={13} /> Bypass Mandate
+          </button>
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateAction('esign')}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold text-white shadow transition hover:bg-purple-700 cursor-pointer disabled:opacity-50"
+            title="Fast-track e-Sign loan agreement"
+          >
+            <Zap size={13} /> Bypass eSign
+          </button>
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateAction('disbursal')}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow transition hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
+            title="Fast-track Disbursal"
+          >
+            <Zap size={13} /> Simulate Disbursal
+          </button>
+        </div>
+      </div>
+
+      {simulationMsg.text && (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${
+            simulationMsg.type === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : simulationMsg.type === 'info'
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          }`}
+        >
+          {simulationMsg.text}
+        </div>
+      )}
+
       {/* Steps progress strip */}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex overflow-x-auto">
           {STEPS.map((step, idx) => {
             const isDone = idx < currentIdx || (idx === currentIdx && isDisbursed);
             const isActive = step.id === activeStepId;
-            const isClickable = idx <= currentIdx;
             const Icon = step.icon;
 
             return (
@@ -191,28 +287,28 @@ export default function PostApprovalJourneyPage() {
                 key={step.id}
                 type="button"
                 onClick={() => {
-                  if (isClickable) setSelectedStepId(step.id);
+                  setSelectedStepId(step.id);
                 }}
-                disabled={!isClickable}
-                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors cursor-pointer disabled:cursor-not-allowed ${isActive
+                className={`flex min-w-[90px] flex-1 flex-col items-center gap-1.5 border-b-2 px-3 py-3 text-center transition-colors cursor-pointer hover:bg-emerald-50/70 ${isActive
                   ? 'border-emerald-600 bg-emerald-50'
                   : isDone
                     ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50'
-                    : 'border-transparent bg-white opacity-60'
+                    : 'border-transparent bg-white text-slate-500 hover:text-emerald-700'
                   }`}
+                title={`Open ${step.label} stage`}
               >
                 <div
                   className={`grid h-8 w-8 place-items-center rounded-full transition ${isDone
                     ? 'bg-emerald-500 text-white'
                     : isActive
                       ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400'
-                      : 'bg-slate-100 text-slate-400'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
                 >
                   {isDone ? <CheckCircle2 size={16} /> : <Icon size={15} />}
                 </div>
                 <p
-                  className={`text-[11px] font-semibold leading-tight ${isActive ? 'text-emerald-900 font-bold' : isDone ? 'text-emerald-700' : 'text-slate-400'
+                  className={`text-[11px] font-semibold leading-tight ${isActive ? 'text-emerald-900 font-bold' : isDone ? 'text-emerald-700' : 'text-slate-600'
                     }`}
                 >
                   {step.label}
